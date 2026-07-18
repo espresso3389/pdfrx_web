@@ -602,6 +602,10 @@ export class PdfrxViewer {
     }
     if (this.mode.kind !== 'none') return;
 
+    // Non-primary buttons (right/middle click) never start an interaction;
+    // the contextmenu event shows the menu without touching the selection.
+    if (e.button !== 0) return;
+
     this.capturePointer(e.pointerId);
     const docPoint = viewToDocument(this.transform, local);
 
