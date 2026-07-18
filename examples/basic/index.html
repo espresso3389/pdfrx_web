@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pdfrx-viewer example</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 6px 12px;
+        background: #263238;
+        color: #eceff1;
+        font-size: 13px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex: none;
+      }
+      header code {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 1px 6px;
+        border-radius: 3px;
+      }
+      pdfrx-viewer {
+        flex: 1;
+        min-height: 0;
+      }
+      #sel {
+        margin-left: auto;
+        max-width: 40ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>pdfrx-viewer</strong>
+      <span>drag text: select / drag bg: pan / wheel: scroll / ctrl+wheel: zoom / dbl-click: word / ctrl+C: copy</span>
+      <span id="sel"></span>
+    </header>
+    <pdfrx-viewer id="viewer" src="/hello.pdf" wasm-modules-url="/pdfium/"></pdfrx-viewer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

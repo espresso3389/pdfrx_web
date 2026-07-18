@@ -1,0 +1,14 @@
+{
+  "name": "pdfrx-web",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "sync-assets": "node scripts/sync-assets.mjs",
+    "build": "npm run build --workspace=@pdfrx/engine --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer",
+    "test": "npm run test --workspace=@pdfrx/viewer-core",
+    "dev": "npm run dev --workspace=@pdfrx/example-basic"
+  }
+}

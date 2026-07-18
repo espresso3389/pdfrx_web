@@ -1,0 +1,19 @@
+{
+  "name": "@pdfrx/example-basic",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pdfrx/engine": "*",
+    "@pdfrx/viewer": "*",
+    "@pdfrx/viewer-core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
