@@ -15,23 +15,78 @@ const tabOutline = document.getElementById('tabOutline')!;
 const thumbsPane = document.getElementById('thumbsPane')!;
 const outlinePane = document.getElementById('outlinePane')!;
 
+const openFileBtn = document.getElementById('openFileBtn')!;
+const openUrlBtn = document.getElementById('openUrlBtn')!;
+const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+
 let searcher: PdfTextSearcher | null = null;
 
-el.addEventListener('load', () => {
+function onDocumentLoaded(): void {
   const viewer = el.viewer!;
-  console.log(`loaded: ${viewer.document?.pages.length} pages`);
+  console.log(`loaded: ${viewer.document?.sourceName} (${viewer.document?.pages.length} pages)`);
 
   // --- Search ---
+  searchBox.value = '';
   searcher = viewer.createTextSearcher();
   searcher.addListener(updateSearchStatus);
+  updateSearchStatus();
 
   // --- Sidebar ---
   void buildThumbnails();
   void buildOutline();
-});
+}
+
+el.addEventListener('load', onDocumentLoaded);
 
 el.addEventListener('error', (e) => {
   console.error('failed to load PDF:', (e as CustomEvent).detail);
+});
+
+// --- Open File / Open URL ---
+
+const passwordProvider = (): string | null => window.prompt('This document is password protected.\nPassword:');
+
+async function openLocalFile(file: File): Promise<void> {
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    await el.viewer!.openData(data, { sourceName: file.name, passwordProvider });
+    onDocumentLoaded();
+  } catch (e) {
+    console.error(e);
+    alert(`Failed to open ${file.name}: ${e}`);
+  }
+}
+
+openFileBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = '';
+  if (file) void openLocalFile(file);
+});
+
+openUrlBtn.addEventListener('click', async () => {
+  const url = window.prompt('PDF URL:');
+  if (!url) return;
+  try {
+    await el.viewer!.openUrl(url, { passwordProvider });
+    onDocumentLoaded();
+  } catch (e) {
+    console.error(e);
+    alert(`Failed to open ${url}: ${e}`);
+  }
+});
+
+// Drag & drop a PDF file onto the viewer
+el.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = 'copy';
+});
+el.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = [...(e.dataTransfer?.files ?? [])].find(
+    (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
+  );
+  if (file) void openLocalFile(file);
 });
 
 // --- Search UI ---

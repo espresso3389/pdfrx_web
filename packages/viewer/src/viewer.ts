@@ -12,6 +12,8 @@ import {
   type PdfDest,
   type PdfDocument,
   type PdfLink,
+  type PdfOpenOptions,
+  type PdfOpenUrlOptions,
   type PdfOutlineNode,
   type PdfrxEngineOptions,
 } from '@pdfrx/engine';
@@ -168,14 +170,12 @@ export class PdfrxViewer {
   // Public API
   // -------------------------------------------------------------------------
 
-  async openUrl(url: string | URL): Promise<void> {
-    await this.setDocument(await this.engine.openUrl(url));
+  async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<void> {
+    await this.setDocument(await this.engine.openUrl(url, options));
   }
 
-  async openData(data: Uint8Array | ArrayBuffer, sourceName?: string): Promise<void> {
-    await this.setDocument(
-      await this.engine.openData(data, sourceName !== undefined ? { sourceName } : {}),
-    );
+  async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
+    await this.setDocument(await this.engine.openData(data, options));
   }
 
   get document(): PdfDocument | null {
