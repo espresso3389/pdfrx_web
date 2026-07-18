@@ -7,10 +7,18 @@
  * canvas — there is deliberately no DOM text layer (see pdfrx design).
  */
 
-import { PdfrxEngine, type PdfDocument, type PdfLink, type PdfrxEngineOptions } from '@pdfrx/engine';
+import {
+  PdfrxEngine,
+  type PdfDest,
+  type PdfDocument,
+  type PdfLink,
+  type PdfOutlineNode,
+  type PdfrxEngineOptions,
+} from '@pdfrx/engine';
 import {
   adjustBoundaryMargins,
   anchorPoint,
+  calcTransformFor,
   calcTransformForRect,
   calcVisibleRect,
   clampToBoundary,
@@ -25,7 +33,9 @@ import {
   getSelectedRanges,
   layoutPagesVertical,
   pdfRectToRectInDocument,
+  rectCenter,
   rectContains,
+  rectContainsRect,
   rectHeight,
   rectInflate,
   rectIntersect,
@@ -39,6 +49,7 @@ import {
   type PageGeometry,
   type PageLayout,
   type PdfPageText,
+  type PdfRect,
   type Rect,
   type SelectablePage,
   type SelectionAnchors,
@@ -47,6 +58,7 @@ import {
   type ViewTransform,
 } from '@pdfrx/viewer-core';
 import { PageRenderCache } from './render-cache.js';
+import { PdfTextSearcher } from './text-searcher.js';
 
 export interface PdfrxViewerOptions {
   /** Engine to use; if omitted, one is created from `engineOptions`. */
@@ -140,6 +152,7 @@ export class PdfrxViewer {
   private lastPointerType = 'mouse';
   private menuEl: HTMLDivElement | null = null;
   private pendingMenuOnUp = false;
+  private searcher: PdfTextSearcher | null = null;
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -226,6 +239,200 @@ export class PdfrxViewer {
     );
   }
 
+  /** The page (1-based) currently covering the largest visible area, or null. */
+  get currentPageNumber(): number | null {
+    if (!this.layout) return null;
+    const visible = calcVisibleRect(this.transform, this.viewSize);
+    let best: number | null = null;
+    let bestArea = 0;
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const r = rectIntersect(this.layout.pageLayouts[i]!, visible);
+      if (rectIsEmpty(r)) continue;
+      const area = rectWidth(r) * rectHeight(r);
+      if (area > bestArea) {
+        bestArea = area;
+        best = i + 1;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Navigate to a PDF explicit destination — port of `_calcMatrixForDest`.
+   * Falls back to `goToPage` for unknown/short-hand destinations.
+   */
+  goToDest(dest: PdfDest | null): void {
+    if (!dest) return;
+    const t = this.calcTransformForDest(dest);
+    if (t) this.setTransform(t);
+    else this.goToPage(dest.pageNumber);
+  }
+
+  private calcTransformForDest(dest: PdfDest): ViewTransform | null {
+    if (!this.layout) return null;
+    const page = this.pageGeoms[dest.pageNumber - 1];
+    const pageRect = this.layout.pageLayouts[dest.pageNumber - 1];
+    if (!page || !pageRect) return null;
+    const calcX = (x: number | null | undefined): number => ((x ?? 0) / page.width) * rectWidth(pageRect);
+    const calcY = (y: number | null | undefined): number => ((page.height - (y ?? 0)) / page.height) * rectHeight(pageRect);
+    const params = dest.params;
+    const cur = this.transform;
+    switch (dest.command) {
+      case 'xyz': {
+        if (params.length >= 2) {
+          const zoom = params.length >= 3 && params[2] != null && params[2] !== 0 ? params[2] : cur.zoom;
+          const hw = this.viewSize.width / 2 / zoom;
+          const hh = this.viewSize.height / 2 / zoom;
+          return calcTransformFor(
+            { x: pageRect.left + calcX(params[0]) + hw, y: pageRect.top + calcY(params[1]) + hh },
+            zoom,
+            this.viewSize,
+          );
+        }
+        break;
+      }
+      case 'fit':
+      case 'fitB':
+        return calcTransformForRect(rectInflate(pageRect, this.margin), this.viewSize, { zoomMax: this.maxZoom });
+      case 'fitH':
+      case 'fitBH': {
+        if (params.length >= 1) {
+          const hh = this.viewSize.height / 2 / cur.zoom;
+          return calcTransformFor(
+            { x: pageRect.left, y: pageRect.top + calcY(params[0]) + hh },
+            cur.zoom,
+            this.viewSize,
+          );
+        }
+        break;
+      }
+      case 'fitV':
+      case 'fitBV': {
+        if (params.length >= 1) {
+          const hw = this.viewSize.width / 2 / cur.zoom;
+          return calcTransformFor(
+            { x: pageRect.left + calcX(params[0]) + hw, y: pageRect.top },
+            cur.zoom,
+            this.viewSize,
+          );
+        }
+        break;
+      }
+      case 'fitR': {
+        if (params.length === 4) {
+          // page /FitR left bottom right top
+          const rect: Rect = {
+            left: pageRect.left + calcX(params[0]),
+            top: pageRect.top + calcY(params[3]),
+            right: pageRect.left + calcX(params[2]),
+            bottom: pageRect.top + calcY(params[1]),
+          };
+          return calcTransformForRect(rect, this.viewSize);
+        }
+        break;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Bring a rectangle (PDF page coordinates on the given page) into view,
+   * keeping the current zoom. No-op when already visible.
+   */
+  ensureVisiblePageRect(pageNumber: number, rect: PdfRect, margin = 0): void {
+    if (!this.layout) return;
+    const page = this.pageGeoms[pageNumber - 1];
+    const pageRect = this.layout.pageLayouts[pageNumber - 1];
+    if (!page || !pageRect) return;
+    const docRect = pdfRectToRectInDocument(rect, page, pageRect);
+    const visible = calcVisibleRect(this.transform, this.viewSize, margin);
+    if (rectContainsRect(visible, docRect)) return;
+    this.setTransform(calcTransformFor(rectCenter(docRect), this.transform.zoom, this.viewSize));
+  }
+
+  /** Loads (and caches) the structured text of a page. */
+  async loadPageText(pageNumber: number): Promise<PdfPageText | null> {
+    this.ensureText(pageNumber);
+    const t = this.pageTexts.get(pageNumber);
+    if (!t) return null;
+    return t instanceof Promise ? await t : t;
+  }
+
+  /** Document outline (bookmarks). */
+  async loadOutline(): Promise<PdfOutlineNode[]> {
+    return (await this.doc?.loadOutline()) ?? [];
+  }
+
+  /** Render a page thumbnail at the given CSS width. */
+  async renderPageThumbnail(pageNumber: number, width = 120): Promise<ImageBitmap | null> {
+    const page = this.doc?.pages[pageNumber - 1];
+    if (!page) return null;
+    const scale = (width * (window.devicePixelRatio || 1)) / page.width;
+    const image = await page.render({
+      fullWidth: Math.ceil(page.width * scale),
+      fullHeight: Math.ceil(page.height * scale),
+    });
+    return image ? await image.toImageBitmap() : null;
+  }
+
+  /**
+   * Creates a text searcher whose matches are highlighted by this viewer.
+   * The previous searcher (if any) is disposed.
+   */
+  createTextSearcher(): PdfTextSearcher {
+    this.searcher?.dispose();
+    this.searcher = new PdfTextSearcher(this);
+    return this.searcher;
+  }
+
+  /** @internal — repaint request from collaborators (e.g. the searcher). */
+  invalidatePaint(): void {
+    this.invalidate();
+  }
+
+  /**
+   * Render all pages at the given DPI and open the browser print dialog.
+   */
+  async print(options: { dpi?: number } = {}): Promise<void> {
+    if (!this.doc) return;
+    const dpi = options.dpi ?? 150;
+    const sources: string[] = [];
+    const work = document.createElement('canvas');
+    const workCtx = work.getContext('2d')!;
+    for (const page of this.doc.pages) {
+      // Cap the pixel size so huge pages don't blow the memory budget.
+      const scale = Math.min(dpi / 72, Math.sqrt((8 * 1024 * 1024) / (page.width * page.height)));
+      const image = await page.render({
+        fullWidth: Math.ceil(page.width * scale),
+        fullHeight: Math.ceil(page.height * scale),
+      });
+      if (!image) continue;
+      work.width = image.width;
+      work.height = image.height;
+      workCtx.putImageData(image.toImageData(), 0, 0);
+      sources.push(work.toDataURL('image/png'));
+    }
+    if (sources.length === 0) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentDocument!;
+    idoc.open();
+    idoc.write(
+      '<!doctype html><html><head><style>@page{margin:0}body{margin:0}' +
+        'img{display:block;width:100%;page-break-after:always}</style></head><body>' +
+        sources.map((src) => `<img src="${src}">`).join('') +
+        '</body></html>',
+    );
+    idoc.close();
+    await Promise.all([...idoc.images].map((img) => img.decode().catch(() => undefined)));
+    iframe.contentWindow!.focus();
+    iframe.contentWindow!.print();
+    // Give the print spooler time to snapshot the document before removal.
+    setTimeout(() => iframe.remove(), 60_000);
+  }
+
   setZoom(zoom: number, viewCenter?: Offset): void {
     const center = viewCenter ?? { x: this.viewSize.width / 2, y: this.viewSize.height / 2 };
     this.zoomAt(center, zoom);
@@ -241,6 +448,7 @@ export class PdfrxViewer {
     this.stopFling();
     this.resizeObserver.disconnect();
     this.hideContextMenu();
+    this.searcher?.dispose();
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.engine.dispose();
@@ -388,7 +596,7 @@ export class PdfrxViewer {
     if (link.url) {
       window.open(link.url, '_blank', 'noopener,noreferrer');
     } else if (link.dest) {
-      this.goToPage(link.dest.pageNumber);
+      this.goToDest(link.dest);
     }
   }
 
@@ -816,17 +1024,87 @@ export class PdfrxViewer {
     }
   };
 
+  /** Document-space distance scrolled per arrow-key press (view px), as in pdfrx. */
+  private static readonly SCROLL_BY_ARROW_KEY = 25;
+
+  // Port of _PdfViewerState._onKey.
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-      e.preventDefault();
-      void this.copySelection();
-    } else if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-      e.preventDefault();
-      void this.selectAll();
-    } else if (e.key === 'Escape') {
-      this.clearSelection();
-    }
+    const cmd = e.ctrlKey || e.metaKey;
+    const k = PdfrxViewer.SCROLL_BY_ARROW_KEY;
+    const handled = ((): boolean => {
+      if (cmd && e.key.toLowerCase() === 'c') {
+        void this.copySelection();
+        return true;
+      }
+      if (cmd && e.key.toLowerCase() === 'a') {
+        void this.selectAll();
+        return true;
+      }
+      switch (e.key) {
+        case 'Escape':
+          this.clearSelection();
+          return true;
+        case 'PageUp':
+          return this.goToRelativePage(-1);
+        case 'PageDown':
+          return this.goToRelativePage(1);
+        case ' ':
+          return this.goToRelativePage(e.shiftKey ? -1 : 1);
+        case 'Home':
+          this.goToPage(1);
+          return true;
+        case 'End':
+          this.goToPage(this.doc?.pages.length ?? 1);
+          return true;
+        case 'ArrowDown':
+          this.scrollByKey(0, k);
+          return true;
+        case 'ArrowUp':
+          this.scrollByKey(0, -k);
+          return true;
+        case 'ArrowLeft':
+          this.scrollByKey(-k, 0);
+          return true;
+        case 'ArrowRight':
+          this.scrollByKey(k, 0);
+          return true;
+        case '+':
+        case '=':
+          if (cmd) {
+            this.setZoom(this.transform.zoom * 1.2);
+            return true;
+          }
+          return false;
+        case '-':
+          if (cmd) {
+            this.setZoom(this.transform.zoom / 1.2);
+            return true;
+          }
+          return false;
+        default:
+          return false;
+      }
+    })();
+    if (handled) e.preventDefault();
   };
+
+  private goToRelativePage(delta: number): boolean {
+    if (!this.doc) return false;
+    const current = this.currentPageNumber;
+    if (current === null) return false;
+    const target = Math.min(Math.max(current + delta, 1), this.doc.pages.length);
+    if (target !== current) this.goToPage(target);
+    return true;
+  }
+
+  /** Scroll the view content; positive dy scrolls down (like arrow-down). */
+  private scrollByKey(dx: number, dy: number): void {
+    this.setTransform({
+      zoom: this.transform.zoom,
+      xZoomed: this.transform.xZoomed - dx,
+      yZoomed: this.transform.yZoomed - dy,
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Context menu (DOM chrome; counterpart of AdaptiveTextSelectionToolbar)
@@ -1001,6 +1279,24 @@ export class PdfrxViewer {
       const patch = this.cache.getPatch(pageNumber);
       if (patch) {
         ctx.drawImage(patch.bitmap, patch.rect.left, patch.rect.top, rectWidth(patch.rect), rectHeight(patch.rect));
+      }
+    }
+
+    // Search match highlights (below the selection highlight, like pdfrx)
+    if (this.searcher?.hasMatches) {
+      const currentMatch = this.searcher.currentMatch;
+      for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+        const pageRect = this.layout.pageLayouts[i]!;
+        if (!rectOverlaps(pageRect, visible)) continue;
+        const range = this.searcher.getMatchesRangeForPage(i + 1);
+        if (!range) continue;
+        const pageGeom = this.pageGeoms[i]!;
+        for (let m = range.start; m < range.end; m++) {
+          const match = this.searcher.matches[m]!;
+          const r = pdfRectToRectInDocument(match.bounds, pageGeom, pageRect);
+          ctx.fillStyle = match === currentMatch ? 'rgba(255, 152, 0, 0.5)' : 'rgba(255, 235, 59, 0.5)';
+          ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
+        }
       }
     }
 

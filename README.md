@@ -15,10 +15,18 @@ and the TypeScript client in this repo.
 | `@pdfrx/engine` | Typed client for the pdfium worker protocol: open/render pages, text with char rects, links, outline, progressive loading, font management. Counterpart of `pdfrx_wasm.dart`. |
 | `@pdfrx/viewer-core` | Platform-independent core logic ported from pdfrx: geometry/rotation math (`pdf_rect.dart`, `pdfrx_flutter.dart` conversions), page layout, viewport transform + boundary clamping (`PdfMatrix4Ext`, `_calcMatrixFor*`, `_calcOverscroll`), structured text flow analysis (`pdf_text_formatter.dart`), and the text selection core (`_findTextAndIndexForPoint`, `_updateTextSelection`, `selectWord`). Pure TS, no DOM; covered by vitest suites whose vectors are designed to be mirrored on the Dart side. |
 | `@pdfrx/viewer` | Canvas2D + Pointer Events viewer shell exposing the `<pdfrx-viewer>` custom element. Pan/zoom (drag, wheel, ctrl+wheel, pinch) with boundary clamping and touch fling inertia, page bitmap cache + high-zoom sharp patches, canvas-painted text selection (mouse text-drag, double-click word, touch long-press + draggable handles + magnifier lens — no DOM text layer, by design), edge auto-scroll during selection drags, context menu (Copy / Select All, auto-shown after touch selection), links overlay (hover highlight, external URLs via noopener, internal dest jumps), clipboard copy (Ctrl+C / Ctrl+A / Esc). |
-| `@pdfrx/example-basic` | Vite app hosting `<pdfrx-viewer>`. |
+| `@pdfrx/example-basic` | Vite app hosting `<pdfrx-viewer>` with a search bar, thumbnails/outline sidebar, and print button. |
 
-Planned next: keyboard navigation (page up/down, arrows), search UI,
-thumbnails/outline panes, form filling, printing.
+The viewer also provides: keyboard navigation (PageUp/Down, Space, Home/End,
+arrows, Ctrl+= / Ctrl+-), text search (`createTextSearcher()`, a port of
+pdfrx's `PdfTextSearcher` with progressive per-page search and match
+highlighting), explicit-destination navigation (`goToDest`, xyz/fit/fitH/
+fitV/fitR), page thumbnails (`renderPageThumbnail`), outline loading, and
+printing (`print()`, renders pages at ~150 DPI into a hidden iframe).
+
+Planned next: form filling (requires exposing PDFium `FORM_On*` APIs from the
+pdfium worker in the pdfrx repository), annotation editing, vertical-text
+selection handle refinements.
 
 ## Development
 
