@@ -423,10 +423,10 @@ class FileSystemEmulator {
 
   /**
    * fd__write
-   * @param {num} fd
-   * @param {num} iovs
-   * @param {num} iovs_len
-   * @param {num} ret_ptr
+   * @param {number} fd
+   * @param {number} iovs
+   * @param {number} iovs_len
+   * @param {number} ret_ptr
    */
   write(fd, iovs, iovs_len, ret_ptr) {
     const context = this.fd2context[fd];
@@ -446,10 +446,10 @@ class FileSystemEmulator {
 
   /**
    * fd_read
-   * @param {num} fd
-   * @param {num} iovs
-   * @param {num} iovs_len
-   * @param {num} ret_ptr
+   * @param {number} fd
+   * @param {number} iovs
+   * @param {number} iovs_len
+   * @param {number} ret_ptr
    */
   read(fd, iovs, iovs_len, ret_ptr) {
     /** @type {FileDescriptorContext} */
@@ -475,9 +475,9 @@ class FileSystemEmulator {
 
   /**
    * __syscall_fstat64
-   * @param {num} fd
-   * @param {num} statbuf
-   * @returns {num}
+   * @param {number} fd
+   * @param {number} statbuf
+   * @returns {number}
    */
   fstat(fd, statbuf) {
     const context = this.fd2context[fd];
@@ -489,9 +489,9 @@ class FileSystemEmulator {
 
   /**
    * __syscall_stat64
-   * @param {num} pathnamePtr
-   * @param {num} statbuf
-   * @returns {num}
+   * @param {number} pathnamePtr
+   * @param {number} statbuf
+   * @returns {number}
    */
   stat64(pathnamePtr, statbuf) {
     const fn = StringUtils.utf8BytesToString(new Uint8Array(Pdfium.memory.buffer, pathnamePtr, 2048));
@@ -507,10 +507,10 @@ class FileSystemEmulator {
 
   /**
    * __syscall_getdents64
-   * @param {num} fd
-   * @param {num} dirp struct linux_dirent64
-   * @param {num} count
-   * @returns {num}
+   * @param {number} fd
+   * @param {number} dirp struct linux_dirent64
+   * @param {number} count
+   * @returns {number}
    */
   getdents64(fd, dirp, count) {
     /** @type {DirectoryFileDescriptorContext} */
