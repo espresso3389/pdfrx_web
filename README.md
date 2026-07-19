@@ -1,5 +1,8 @@
 # pdfrx_web
 
+[![npm](https://img.shields.io/npm/v/%40pdfrx%2Fviewer?label=%40pdfrx%2Fviewer)](https://www.npmjs.com/package/@pdfrx/viewer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A canvas-based PDF viewer component for the browser, written in TypeScript.
 It is a web-native port of the [pdfrx](https://github.com/espresso3389/pdfrx)
 Flutter viewer, built on the same pdfium WASM engine — same rendering
@@ -77,10 +80,15 @@ await viewer.print();
 
 Two things your app must provide:
 
-1. **The pdfium engine assets.** Copy `pdfium_worker.js` and `pdfium.wasm`
-   from `node_modules/@pdfrx/engine/assets/` to a static path on your server
-   and point `wasmModulesUrl` at it. They can live on any origin (a CDN is
-   fine).
+1. **The pdfium engine assets.** Point `wasmModulesUrl` at a directory
+   containing `pdfium_worker.js` and `pdfium.wasm`. Either copy them from
+   `node_modules/@pdfrx/engine/assets/` to a static path on your server, or
+   simply use the jsDelivr CDN (any origin works):
+
+   ```ts
+   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.1.0/assets/' }
+   ```
+
 2. **CORS for remote PDFs.** `openUrl` fetches the document, so PDFs on
    other origins need CORS headers (same as any `fetch`).
 
@@ -90,11 +98,11 @@ Password-protected files are supported via
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [`@pdfrx/viewer`](packages/viewer) | The viewer component (`<pdfrx-viewer>` / `PdfrxViewer`). |
-| [`@pdfrx/viewer-core`](packages/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
-| [`@pdfrx/engine`](packages/engine) | Typed client for the pdfium WASM worker: open/render pages, text, links, outline, fonts. |
+| Package | npm | Description |
+|---|---|---|
+| [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component (`<pdfrx-viewer>` / `PdfrxViewer`). |
+| [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
+| [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the pdfium WASM worker: open/render pages, text, links, outline, fonts. |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the packages relate
 to the pdfrx Dart/Flutter implementation, the worker protocol contract, and

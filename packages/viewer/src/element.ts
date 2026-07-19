@@ -1,12 +1,17 @@
 import { PdfrxViewer } from './viewer.js';
 
+// Keep the module importable in non-browser environments (SSR); the element
+// is only usable in a browser, but importing it must not throw.
+const HTMLElementBase: typeof HTMLElement =
+  typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as unknown as typeof HTMLElement);
+
 /**
  * `<pdfrx-viewer src="doc.pdf" wasm-modules-url="pdfium/">`
  *
  * A thin custom-element wrapper over `PdfrxViewer`. The element fills its own
  * box; size it with CSS.
  */
-export class PdfrxViewerElement extends HTMLElement {
+export class PdfrxViewerElement extends HTMLElementBase {
   static observedAttributes = ['src'];
 
   #viewer: PdfrxViewer | null = null;
@@ -50,7 +55,7 @@ export class PdfrxViewerElement extends HTMLElement {
 }
 
 export function definePdfrxViewerElement(tagName = 'pdfrx-viewer'): void {
-  if (!customElements.get(tagName)) {
+  if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
     customElements.define(tagName, PdfrxViewerElement);
   }
 }
