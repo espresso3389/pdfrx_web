@@ -89,3 +89,7 @@ shell adds:
   the document as-is.
 - Scroll physics beyond exponential-decay fling (no platform-specific curves),
   annotation editing.
+
+For the full list of features that upstream [pdfrx](https://github.com/espresso3389/pdfrx)
+has but this port does not yet — and which are deliberately out of scope — see
+[FEATURE-PARITY.md](FEATURE-PARITY.md).
