@@ -220,7 +220,7 @@ const rawPageSize = (page: PageGeometry): { width: number; height: number } => {
 /**
  * Rotate a PDF rect by `rotation` 90-degree steps within `page`. Port of
  * `PdfRect.rotate`. `rotation` is masked to 0-3; the page's raw (unrotated)
- * dimensions are derived from its visual size via {@link rawPageSize}.
+ * dimensions are derived from its visual size.
  */
 export function pdfRectRotate(r: PdfRect, rotation: number, page: PageGeometry): PdfRect {
   const { width, height } = rawPageSize(page);

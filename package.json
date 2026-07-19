@@ -9,7 +9,11 @@
     "sync-assets": "node scripts/sync-assets.mjs",
     "build": "npm run build --workspace=@pdfrx/engine --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer",
     "test": "npm run test --workspace=@pdfrx/viewer-core",
+    "docs": "typedoc",
     "dev": "npm run dev --workspace=@pdfrx/example-basic"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "typedoc": "^0.28.20"
+  }
 }

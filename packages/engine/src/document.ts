@@ -383,7 +383,10 @@ export class PdfDocument {
    * opening are replayed to the new listener on a microtask, so late
    * subscribers do not miss them.
    */
-  addEventListener<E extends PdfDocumentEventName>(event: E, listener: Listener<E>): () => void {
+  addEventListener<E extends PdfDocumentEventName>(
+    event: E,
+    listener: (event: PdfDocumentEventMap[E]) => void,
+  ): () => void {
     let set = this.listeners.get(event);
     if (!set) {
       set = new Set();

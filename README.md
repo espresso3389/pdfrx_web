@@ -1,6 +1,7 @@
 # pdfrx_web
 
 [![npm](https://img.shields.io/npm/v/%40pdfrx%2Fviewer?label=%40pdfrx%2Fviewer)](https://www.npmjs.com/package/@pdfrx/viewer)
+[![API docs](https://img.shields.io/badge/API-docs-blue)](https://espresso3389.github.io/pdfrx_web/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A canvas-based PDF viewer component for the browser, written in TypeScript.
@@ -103,6 +104,9 @@ Password-protected files are supported via
 | [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component (`<pdfrx-viewer>` / `PdfrxViewer`). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
 | [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the pdfium WASM worker: open/render pages, text, links, outline, fonts. |
+
+Full **[API reference](https://espresso3389.github.io/pdfrx_web/)** is
+generated with TypeDoc and published to GitHub Pages.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the packages relate
 to the pdfrx Dart/Flutter implementation, the worker protocol contract, and

@@ -34,6 +34,7 @@ export * from './types.js';
 export type {
   PdfiumCommand,
   PdfiumCommandMap,
+  WireAnnotation,
   WireDest,
   WireDocument,
   WireError,

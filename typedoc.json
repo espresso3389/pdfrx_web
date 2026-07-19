@@ -1,0 +1,20 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "pdfrx_web",
+  "entryPointStrategy": "packages",
+  "entryPoints": ["packages/engine", "packages/viewer-core", "packages/viewer"],
+  "out": "docs-site",
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "navigationLinks": {
+    "GitHub": "https://github.com/espresso3389/pdfrx_web",
+    "npm": "https://www.npmjs.com/package/@pdfrx/viewer"
+  }
+}
