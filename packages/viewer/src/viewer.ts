@@ -13,6 +13,7 @@ import {
   type PdfDocument,
   type PdfFontQuery,
   type PdfLink,
+  type PdfPage,
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfOutlineNode,
@@ -90,11 +91,98 @@ export interface PdfrxViewerOptions {
   /** Maximum zoom. Default: 8 (same as pdfrx maxScale). */
   maxZoom?: number;
   /**
+   * Minimum zoom. When omitted, it is computed dynamically as
+   * `min(`{@link PdfrxViewer.coverScale}`, `{@link PdfrxViewer.fitPageScale}`)`
+   * for the current page (pdfrx's `minScale`), so you can never zoom out past
+   * seeing a whole page. Set an explicit number to override that behavior.
+   */
+  minZoom?: number;
+  /**
+   * How the first page is fitted into the viewport when a document loads (and
+   * on viewport resize, until the user pans/zooms). See {@link PdfrxViewer.fitToPage}.
+   *
+   * - `'page'` (default) — the whole first page fits within the viewport.
+   * - `'width'` — the first page's width fills the viewport (top-aligned).
+   * - `'height'` — the first page's height fills the viewport.
+   */
+  initialFit?: FitMode;
+  /**
+   * Drop shadow drawn behind every page (in screen space, so it looks the same
+   * at any zoom). Defaults to a soft shadow; pass `null` to remove it. See
+   * {@link PageDropShadow}.
+   */
+  pageDropShadow?: PageDropShadow | null;
+  /**
+   * Border drawn around every page (in screen space). Off by default; set a
+   * {@link PageBorder} to enable it.
+   */
+  pageBorder?: PageBorder | null;
+  /**
+   * Custom painters invoked **behind** each page, before the page background is
+   * filled — useful for custom shadows or backdrops that extend outside the
+   * page. Each callback receives the canvas already transformed to document
+   * coordinates and the page's document-space rect. Counterpart of pdfrx's
+   * `pageBackgroundPaintCallbacks`.
+   */
+  pageBackgroundPaintCallbacks?: PagePaintCallback[];
+  /**
+   * Custom painters invoked **on top of** each page's rendered content — useful
+   * for watermarks, page numbers, or custom borders. Same coordinate space as
+   * {@link pageBackgroundPaintCallbacks}. Counterpart of pdfrx's
+   * `pagePaintCallbacks`.
+   */
+  pagePaintCallbacks?: PagePaintCallback[];
+  /**
    * Resolver for fonts the PDF does not embed. Defaults to the Google Fonts
    * resolver (downloads from fonts.gstatic.com); pass `null` to disable.
    */
   fontResolver?: FontResolver | null;
 }
+
+/**
+ * How a page is scaled to fit the viewport.
+ *
+ * - `'page'` — fit the entire page (both width and height are contained).
+ * - `'width'` — the page width fills the viewport width.
+ * - `'height'` — the page height fills the viewport height.
+ */
+export type FitMode = 'page' | 'width' | 'height';
+
+/**
+ * Drop shadow drawn behind each page (mirrors pdfrx's `pageDropShadow`). All
+ * lengths are in CSS pixels and are **not** scaled by zoom, so the shadow keeps
+ * a constant on-screen appearance.
+ */
+export interface PageDropShadow {
+  /** Shadow color. Default: `'rgba(0, 0, 0, 0.5)'`. */
+  color?: string;
+  /** Gaussian blur radius in CSS pixels. Default: `4`. */
+  blur?: number;
+  /** Horizontal offset in CSS pixels. Default: `2`. */
+  offsetX?: number;
+  /** Vertical offset in CSS pixels. Default: `2`. */
+  offsetY?: number;
+}
+
+/** Border stroked around each page. Lengths are in CSS pixels (zoom-independent). */
+export interface PageBorder {
+  /** Stroke color. Default: `'rgba(0, 0, 0, 0.3)'`. */
+  color?: string;
+  /** Stroke width in CSS pixels. Default: `1`. */
+  width?: number;
+}
+
+/**
+ * A custom page painter. The canvas is already transformed to **document
+ * coordinates** (the same space as `pageRect`), and the current scale factor is
+ * `devicePixelRatio * zoom`. Save/restore the context yourself if you change
+ * its state.
+ *
+ * @param ctx - The 2D context, transformed to document space.
+ * @param pageRect - The page's rectangle in document coordinates.
+ * @param page - The {@link PdfPage} being painted (for size, rotation, number).
+ */
+export type PagePaintCallback = (ctx: CanvasRenderingContext2D, pageRect: Rect, page: PdfPage) => void;
 
 type InteractionMode =
   | { kind: 'none' }
@@ -197,9 +285,22 @@ export class PdfrxViewer {
 
   private viewSize: Size = { width: 0, height: 0 };
   private transform: ViewTransform = { zoom: 1, xZoomed: 0, yZoomed: 0 };
-  private minZoom = 0.1;
   private get maxZoom(): number {
     return this.options.maxZoom ?? 8;
+  }
+  /**
+   * Effective minimum zoom. If {@link PdfrxViewerOptions.minZoom} is set, that
+   * value is used. Otherwise it mirrors pdfrx's `minScale`: the smaller of
+   * {@link coverScale} (fit the whole document's bounding box) and the current
+   * page's {@link fitPageScale} (fit one whole page), computed dynamically from
+   * the current page so you can never zoom out past seeing a whole page.
+   */
+  private get minZoom(): number {
+    if (this.options.minZoom !== undefined) return this.options.minZoom;
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return 0.1;
+    const cover = this.coverScale;
+    const fitPage = this.pageFitScale(this.currentPageNumber ?? 1);
+    return fitPage == null ? cover : Math.min(cover, fitPage);
   }
 
   private mode: InteractionMode = { kind: 'none' };
@@ -332,14 +433,110 @@ export class PdfrxViewer {
     return true;
   }
 
-  /** Fit the given page (1-based) into the view. */
+  /** Fit the given page (1-based) into the view — alias of {@link fitToPage}. */
   goToPage(pageNumber: number): void {
-    if (!this.layout) return;
-    const pageRect = this.layout.pageLayouts[pageNumber - 1];
-    if (!pageRect) return;
-    this.setTransform(
-      calcTransformForRect(rectInflate(pageRect, this.margin), this.viewSize, { zoomMax: this.maxZoom }),
+    this.fitToPage(pageNumber);
+  }
+
+  /** The current zoom factor (`1` = 72 DPI, one PDF point per CSS pixel). */
+  get zoom(): number {
+    return this.transform.zoom;
+  }
+
+  /**
+   * The **cover scale** (pdfrx `coverScale`): the zoom at which the whole
+   * document's bounding box covers the viewport, i.e. `max(viewW / docW,
+   * viewH / docH)`. In the default vertical layout this is effectively the
+   * fit-document-width scale — you cannot zoom out past it and still fill the
+   * viewport horizontally. Returns `1` before a document is laid out.
+   */
+  get coverScale(): number {
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return 1;
+    return Math.max(
+      this.viewSize.width / this.layout.documentSize.width,
+      this.viewSize.height / this.layout.documentSize.height,
     );
+  }
+
+  /**
+   * The **fit-page scale** (pdfrx `alternativeFitScale`): the zoom at which an
+   * entire page fits within the viewport, `min(viewW / pageW, viewH / pageH)`
+   * (page size includes the {@link PdfrxViewerOptions.margin}). Defaults to the
+   * current page. Returns `null` before a document is laid out or if the page
+   * number is out of range.
+   *
+   * The effective minimum zoom is `min(coverScale, fitPageScale)`.
+   */
+  fitPageScale(pageNumber?: number): number | null {
+    return this.pageFitScale(pageNumber ?? this.currentPageNumber ?? 1);
+  }
+
+  /** @internal Fit-page scale for a specific page (1-based), or null if out of range. */
+  private pageFitScale(pageNumber: number): number | null {
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return null;
+    const pr = this.layout.pageLayouts[pageNumber - 1];
+    if (!pr) return null;
+    const m2 = this.margin * 2;
+    const scale = Math.min(
+      this.viewSize.width / (rectWidth(pr) + m2),
+      this.viewSize.height / (rectHeight(pr) + m2),
+    );
+    return scale > 0 ? scale : null;
+  }
+
+  /** @internal Computes the transform that fits a page into the view per mode. */
+  private fitTransform(pageNumber: number, mode: FitMode): ViewTransform | null {
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return null;
+    const pr = this.layout.pageLayouts[pageNumber - 1];
+    if (!pr) return null;
+    const inflated = rectInflate(pr, this.margin);
+    const w = rectWidth(inflated);
+    const h = rectHeight(inflated);
+    const clampZoom = (z: number): number => Math.min(Math.max(z, this.minZoom), this.maxZoom);
+    const center = rectCenter(inflated);
+    switch (mode) {
+      case 'page': {
+        const zoom = clampZoom(Math.min(this.viewSize.width / w, this.viewSize.height / h));
+        return calcTransformFor(center, zoom, this.viewSize);
+      }
+      case 'width': {
+        const zoom = clampZoom(this.viewSize.width / w);
+        // Fill width, aligning the top of the page to the top of the viewport.
+        return calcTransformFor({ x: center.x, y: inflated.top + this.viewSize.height / 2 / zoom }, zoom, this.viewSize);
+      }
+      case 'height': {
+        const zoom = clampZoom(this.viewSize.height / h);
+        return calcTransformFor(center, zoom, this.viewSize);
+      }
+    }
+  }
+
+  /**
+   * Fit an entire page within the viewport (both width and height contained).
+   * Defaults to the current page. This is the "Fit Page" action.
+   */
+  fitToPage(pageNumber?: number): void {
+    const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'page');
+    if (t) this.setTransform(t);
+  }
+
+  /**
+   * Scale a page so its width fills the viewport, aligning the top of the page
+   * to the top of the viewport. Defaults to the current page. This is the
+   * "Fit Width" action (a common default for continuous reading).
+   */
+  fitToWidth(pageNumber?: number): void {
+    const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'width');
+    if (t) this.setTransform(t);
+  }
+
+  /**
+   * Scale a page so its height fills the viewport, centered horizontally.
+   * Defaults to the current page. This is the "Fit Height" action.
+   */
+  fitToHeight(pageNumber?: number): void {
+    const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'height');
+    if (t) this.setTransform(t);
   }
 
   /** The page (1-based) currently covering the largest visible area, or null. */
@@ -539,10 +736,14 @@ export class PdfrxViewer {
 
   /**
    * Sets the absolute zoom, keeping a view point fixed on screen. The value is
-   * clamped to `[minZoom, maxZoom]` (minZoom is derived from the fit scale;
-   * maxZoom is {@link PdfrxViewerOptions.maxZoom}, default 8).
+   * clamped to `[minZoom, maxZoom]`, where the effective minimum is
+   * `min(`{@link coverScale}`, `{@link fitPageScale}`)` — you can never zoom out
+   * past seeing a whole page — and the maximum is
+   * {@link PdfrxViewerOptions.maxZoom} (default 8). To fit a page rather than
+   * pick an absolute factor, use {@link fitToPage} / {@link fitToWidth} /
+   * {@link fitToHeight}.
    *
-   * @param zoom - Target zoom factor.
+   * @param zoom - Target zoom factor (`1` = one PDF point per CSS pixel).
    * @param viewCenter - View-space point to keep stationary. Defaults to the
    *   center of the viewport.
    */
@@ -583,6 +784,25 @@ export class PdfrxViewer {
     return this.options.margin ?? 8;
   }
 
+  /** Resolved page drop shadow, or null when disabled. Defaults to a soft shadow. */
+  private get resolvedPageDropShadow(): Required<PageDropShadow> | null {
+    const s = this.options.pageDropShadow;
+    if (s === null) return null;
+    return {
+      color: s?.color ?? 'rgba(0, 0, 0, 0.5)',
+      blur: s?.blur ?? 4,
+      offsetX: s?.offsetX ?? 2,
+      offsetY: s?.offsetY ?? 2,
+    };
+  }
+
+  /** Resolved page border, or null when disabled (the default). */
+  private get resolvedPageBorder(): Required<PageBorder> | null {
+    const b = this.options.pageBorder;
+    if (!b) return null;
+    return { color: b.color ?? 'rgba(0, 0, 0, 0.3)', width: b.width ?? 1 };
+  }
+
   private async setDocument(doc: PdfDocument): Promise<void> {
     this.cache?.dispose();
     await this.doc?.dispose();
@@ -608,16 +828,8 @@ export class PdfrxViewer {
 
   private resetView(): void {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return;
-    const firstPage = this.layout.pageLayouts[0];
-    if (!firstPage) return;
-    const fit = calcTransformForRect(rectInflate(firstPage, this.margin), this.viewSize);
-    // minZoom mirrors pdfrx's min(coverScale, alternativeFitScale)
-    const coverScale = Math.min(
-      this.viewSize.width / this.layout.documentSize.width,
-      this.viewSize.height / this.layout.documentSize.height,
-    );
-    this.minZoom = Math.min(coverScale, fit.zoom);
-    this.setTransform(fit);
+    const t = this.fitTransform(1, this.options.initialFit ?? 'page');
+    if (t) this.setTransform(t);
   }
 
   private onResize(): void {
@@ -1421,9 +1633,16 @@ export class PdfrxViewer {
     }
     this.cache.clearPatchesExcept(visiblePages);
 
+    // Page drop shadows behind pages (screen space, before content)
+    this.paintPageShadows(dpr, t, visible);
+
     // Document content (pages + selection highlight) in document space
     ctx.setTransform(dpr * t.zoom, 0, 0, dpr * t.zoom, dpr * t.xZoomed, dpr * t.yZoomed);
     this.paintDocContent(visible);
+
+    // Page borders on top of page edges (screen space, after content)
+    this.paintPageBorders(dpr, t, visible);
+    ctx.setTransform(dpr * t.zoom, 0, 0, dpr * t.zoom, dpr * t.xZoomed, dpr * t.yZoomed);
 
     // Hovered link highlight
     if (this.hoveredLink) {
@@ -1457,6 +1676,63 @@ export class PdfrxViewer {
   }
 
   /**
+   * Draws the drop shadow behind every visible page in screen space, so the
+   * shadow keeps a constant on-screen size at any zoom. The filled rectangles
+   * are later covered exactly by the opaque page background, leaving only the
+   * shadow (outside each page) visible.
+   */
+  private paintPageShadows(dpr: number, t: ViewTransform, visible: Rect): void {
+    const s = this.resolvedPageDropShadow;
+    if (!s || !this.layout) return;
+    const ctx = this.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.save();
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = s.blur;
+    ctx.shadowOffsetX = s.offsetX;
+    ctx.shadowOffsetY = s.offsetY;
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      if (!rectOverlaps(pageRect, visible)) continue;
+      const vr = documentRectToView(t, pageRect);
+      ctx.fillRect(vr.left, vr.top, vr.right - vr.left, vr.bottom - vr.top);
+    }
+    ctx.restore();
+  }
+
+  /** Strokes a border around every visible page in screen space (crisp at any zoom). */
+  private paintPageBorders(dpr: number, t: ViewTransform, visible: Rect): void {
+    const b = this.resolvedPageBorder;
+    if (!b || !this.layout) return;
+    const ctx = this.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = b.width;
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      if (!rectOverlaps(pageRect, visible)) continue;
+      const vr = documentRectToView(t, pageRect);
+      ctx.strokeRect(vr.left, vr.top, vr.right - vr.left, vr.bottom - vr.top);
+    }
+  }
+
+  /** Runs custom page painters in document space, isolating context state and errors. */
+  private runPagePainters(callbacks: PagePaintCallback[], pageRect: Rect, page: PdfPage): void {
+    const ctx = this.ctx;
+    for (const cb of callbacks) {
+      ctx.save();
+      try {
+        cb(ctx, pageRect, page);
+      } catch (e) {
+        console.error('Error in page paint callback:', e);
+      } finally {
+        ctx.restore();
+      }
+    }
+  }
+
+  /**
    * Draws pages and the selection highlight in document coordinates.
    * The ctx transform (document -> device) must already be set; this is
    * shared by the main view pass and the magnifier lens.
@@ -1467,10 +1743,15 @@ export class PdfrxViewer {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
+    const bgCallbacks = this.options.pageBackgroundPaintCallbacks;
+    const fgCallbacks = this.options.pagePaintCallbacks;
     for (let i = 0; i < this.layout.pageLayouts.length; i++) {
       const pageRect = this.layout.pageLayouts[i]!;
       if (!rectOverlaps(pageRect, visible)) continue;
       const pageNumber = i + 1;
+      const page = this.doc?.pages[i];
+
+      if (page && bgCallbacks?.length) this.runPagePainters(bgCallbacks, pageRect, page);
 
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(pageRect.left, pageRect.top, rectWidth(pageRect), rectHeight(pageRect));
@@ -1483,6 +1764,8 @@ export class PdfrxViewer {
       if (patch) {
         ctx.drawImage(patch.bitmap, patch.rect.left, patch.rect.top, rectWidth(patch.rect), rectHeight(patch.rect));
       }
+
+      if (page && fgCallbacks?.length) this.runPagePainters(fgCallbacks, pageRect, page);
     }
 
     // Search match highlights (below the selection highlight, like pdfrx)

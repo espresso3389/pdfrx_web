@@ -1,4 +1,4 @@
-import { PdfrxViewer } from './viewer.js';
+import { PdfrxViewer, type FitMode } from './viewer.js';
 
 // Keep the module importable in non-browser environments (SSR); the element
 // is only usable in a browser, but importing it must not throw.
@@ -19,6 +19,8 @@ const HTMLElementBase: typeof HTMLElement =
  * - `wasm-modules-url` — directory that contains `pdfium_worker.js` and
  *   `pdfium.wasm`; passed through as the engine's `wasmModulesUrl`. Read once on
  *   connect; defaults to `'pdfium/'`.
+ * - `initial-fit` — how the first page is fitted on load/resize: `'page'`
+ *   (default), `'width'`, or `'height'`. Read once on connect.
  *
  * Events (both `CustomEvent`):
  * - `load` — dispatched on every document change (including programmatic opens
@@ -48,8 +50,12 @@ export class PdfrxViewerElement extends HTMLElementBase {
   /** Creates the viewer, wires up the `load` event, and opens `src` if present. */
   connectedCallback(): void {
     if (!this.style.display) this.style.display = 'block';
+    const fitAttr = this.getAttribute('initial-fit');
+    const initialFit: FitMode | undefined =
+      fitAttr === 'width' || fitAttr === 'height' || fitAttr === 'page' ? fitAttr : undefined;
     this.#viewer = new PdfrxViewer(this, {
       engineOptions: { wasmModulesUrl: this.getAttribute('wasm-modules-url') ?? 'pdfium/' },
+      initialFit,
     });
     // Fires for every document change, including programmatic opens and the
     // automatic reopen after missing-font registration.

@@ -112,6 +112,12 @@
         margin-left: auto;
         opacity: 0.85;
       }
+      .sep {
+        width: 1px;
+        align-self: stretch;
+        margin: 4px 2px;
+        background: rgba(255, 255, 255, 0.2);
+      }
     </style>
   </head>
   <body>
@@ -125,6 +131,12 @@
       <button id="searchNext" title="Next match">▼</button>
       <span id="searchStatus"></span>
       <button id="printBtn" title="Print">Print</button>
+      <span class="sep"></span>
+      <button id="fitPageBtn" title="Fit whole page">Fit Page</button>
+      <button id="fitWidthBtn" title="Fit page width">Fit Width</button>
+      <button id="fitHeightBtn" title="Fit page height">Fit Height</button>
+      <button id="zoomOutBtn" title="Zoom out">−</button>
+      <button id="zoomInBtn" title="Zoom in">+</button>
       <span id="pageStatus"></span>
     </header>
     <div id="main">

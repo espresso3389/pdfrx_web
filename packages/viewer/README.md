@@ -70,12 +70,21 @@ so cross-origin documents need CORS headers.
 - `openUrl(url, options?)` / `openData(data, options?)` — options include
   `passwordProvider` for protected documents
 - `goToPage(n)` / `goToDest(dest)` / `currentPageNumber`
+- `fitToPage(n?)` / `fitToWidth(n?)` / `fitToHeight(n?)` — fit a page (defaults
+  to the current one); `setZoom(z, viewCenter?)` / `zoom`
+- `coverScale` / `fitPageScale(n?)` — the two fit scales; the minimum zoom is
+  their smaller value (see the `initialFit` option for the on-load fit mode)
 - `createTextSearcher()` — progressive search with match highlighting
 - `selectedText` / `selectAll()` / `copySelection()` / `clearSelection()`
 - `loadOutline()` / `renderPageThumbnail(n, width)`
 - `print({ dpi? })`
 - `options.fontResolver` — missing-font fallback (defaults to Google Fonts;
   pass `null` to disable)
+- Page decoration: `options.pageDropShadow` (soft shadow by default; `null`
+  disables) and `options.pageBorder` (off by default) draw a screen-space
+  shadow/border around each page. For anything custom, `options.pagePaintCallbacks`
+  and `options.pageBackgroundPaintCallbacks` are `(ctx, pageRect, page)` painters
+  that run in document coordinates on top of / behind each page
 
 See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
 app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).

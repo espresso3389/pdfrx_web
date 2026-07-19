@@ -118,6 +118,20 @@ function updateSearchStatus(): void {
 
 printBtn.addEventListener('click', () => void el.viewer?.print());
 
+// --- Fit / Zoom ---
+
+document.getElementById('fitPageBtn')!.addEventListener('click', () => el.viewer?.fitToPage());
+document.getElementById('fitWidthBtn')!.addEventListener('click', () => el.viewer?.fitToWidth());
+document.getElementById('fitHeightBtn')!.addEventListener('click', () => el.viewer?.fitToHeight());
+document.getElementById('zoomInBtn')!.addEventListener('click', () => {
+  const v = el.viewer;
+  if (v) v.setZoom(v.zoom * 1.25);
+});
+document.getElementById('zoomOutBtn')!.addEventListener('click', () => {
+  const v = el.viewer;
+  if (v) v.setZoom(v.zoom / 1.25);
+});
+
 // --- Page status ---
 
 setInterval(() => {
