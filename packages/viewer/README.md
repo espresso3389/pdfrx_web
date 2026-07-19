@@ -60,31 +60,27 @@ console.log(viewer.selectedText);
 await viewer.print();
 ```
 
-`wasmModulesUrl` must point at a directory containing `pdfium_worker.js` and
+[`wasmModulesUrl`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxEngineOptions.html#wasmmodulesurl) must point at a directory containing `pdfium_worker.js` and
 `pdfium.wasm`. Use the jsDelivr URL above, or self-host by copying them from
 `node_modules/@pdfrx/engine/assets/`. Remote PDFs are fetched with `fetch`,
 so cross-origin documents need CORS headers.
 
 ## API highlights
 
-- `openUrl(url, options?)` / `openData(data, options?)` — options include
-  `passwordProvider` for protected documents
-- `goToPage(n)` / `goToDest(dest)` / `currentPageNumber`
-- `fitToPage(n?)` / `fitToWidth(n?)` / `fitToHeight(n?)` — fit a page (defaults
-  to the current one); `setZoom(z, viewCenter?)` / `zoom`
-- `coverScale` / `fitPageScale(n?)` — the two fit scales; the minimum zoom is
-  their smaller value (see the `initialFit` option for the on-load fit mode)
-- `createTextSearcher()` — progressive search with match highlighting
-- `selectedText` / `selectAll()` / `copySelection()` / `clearSelection()`
-- `loadOutline()` / `renderPageThumbnail(n, width)`
-- `print({ dpi? })`
-- `options.fontResolver` — missing-font fallback (defaults to Google Fonts;
-  pass `null` to disable)
-- Page decoration: `options.pageDropShadow` (soft shadow by default; `null`
-  disables) and `options.pageBorder` (off by default) draw a screen-space
-  shadow/border around each page. For anything custom, `options.pagePaintCallbacks`
-  and `options.pageBackgroundPaintCallbacks` are `(ctx, pageRect, page)` painters
-  that run in document coordinates on top of / behind each page
+Each symbol links directly to its entry in the
+[API reference](https://espresso3389.github.io/pdfrx_web/).
+
+- [`openUrl(url, options?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) / [`openData(data, options?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata) — options include `passwordProvider` for protected documents
+- [`goToPage(n)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#gotopage) / [`goToDest(dest)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#gotodest) / [`currentPageNumber`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currentpagenumber)
+- [`fitToPage(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittopage) / [`fitToWidth(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittowidth) / [`fitToHeight(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittoheight) — fit a page (defaults to the current one); [`setZoom(z, viewCenter?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setzoom) / [`zoom`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoom)
+- [`coverScale`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#coverscale) / [`fitPageScale(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fitpagescale) — the two fit scales; the minimum zoom is their smaller value (or set [`minZoom`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#minzoom)). See [`initialFit`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#initialfit) for the on-load fit mode
+- [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher) — progressive search with match highlighting
+- [`selectedText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectedtext) / [`selectAll()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectall) / [`copySelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#copyselection) / [`clearSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#clearselection)
+- [`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) / [`renderPageThumbnail(n, width)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail)
+- [`print({ dpi? })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#print)
+- [`options.fontResolver`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#fontresolver) — missing-font fallback (defaults to Google Fonts; pass `null` to disable)
+- Page decoration: [`pageDropShadow`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagedropshadow) (soft shadow by default; `null` disables) and [`pageBorder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageborder) (off by default) draw a screen-space shadow/border around each page. For anything custom, [`pagePaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagepaintcallbacks) and [`pageBackgroundPaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagebackgroundpaintcallbacks) are `(ctx, pageRect, page)` painters that run in document coordinates on top of / behind each page
+- [`pageOverlaysBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageoverlaysbuilder) / [`setPageOverlaysBuilder(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpageoverlaysbuilder) — place **DOM elements** over each page that pan and zoom with it (like Flutter pdfrx's `pageOverlaysBuilder`). Position elements in page-point coordinates; the layer is click-through unless an element sets `pointerEvents: 'auto'`. Call [`refreshOverlays()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshoverlays) to rebuild
 
 See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
 app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).

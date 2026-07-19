@@ -133,6 +133,20 @@ export interface PdfrxViewerOptions {
    */
   pagePaintCallbacks?: PagePaintCallback[];
   /**
+   * Builds DOM overlays laid over each page. The returned elements are placed in
+   * a per-page layer that is translated and scaled to follow the page, so they
+   * pan and zoom together with it — the DOM counterpart of pdfrx's
+   * `pageOverlaysBuilder`. Position the elements in **page-point coordinates**
+   * (origin at the page's top-left, one unit = one PDF point at zoom 1); the
+   * viewer applies the zoom scale. See {@link PageOverlaysBuilder}.
+   *
+   * The overlay layer is click-through by default; give an element
+   * `pointerEvents: 'auto'` to make it interactive. Built lazily per visible
+   * page — cheap for large documents. Call {@link PdfrxViewer.refreshOverlays}
+   * to rebuild after external state changes.
+   */
+  pageOverlaysBuilder?: PageOverlaysBuilder;
+  /**
    * Resolver for fonts the PDF does not embed. Defaults to the Google Fonts
    * resolver (downloads from fonts.gstatic.com); pass `null` to disable.
    */
@@ -183,6 +197,28 @@ export interface PageBorder {
  * @param page - The {@link PdfPage} being painted (for size, rotation, number).
  */
 export type PagePaintCallback = (ctx: CanvasRenderingContext2D, pageRect: Rect, page: PdfPage) => void;
+
+/** Information passed to a {@link PageOverlaysBuilder} for one page. */
+export interface PageOverlayInfo {
+  /** 1-based page number. */
+  pageNumber: number;
+  /** The {@link PdfPage} (size, rotation, number). */
+  page: PdfPage;
+  /**
+   * The overlay coordinate space: the page size in PDF points. Position overlay
+   * elements within `[0, width] × [0, height]` (top-left origin); the viewer
+   * scales the whole layer by the current zoom.
+   */
+  pageSize: Size;
+}
+
+/**
+ * Builds DOM overlays for a page (see {@link PdfrxViewerOptions.pageOverlaysBuilder}).
+ * Return one element, an array of elements, or `null`/`undefined` for none. The
+ * elements are positioned in page-point coordinates and follow the page as it
+ * pans and zooms.
+ */
+export type PageOverlaysBuilder = (info: PageOverlayInfo) => HTMLElement | HTMLElement[] | null | undefined;
 
 type InteractionMode =
   | { kind: 'none' }
@@ -253,6 +289,14 @@ export class PdfrxViewer {
     container.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
 
+    // DOM overlay layer above the canvas: holds per-page overlay containers
+    // that are transformed to follow each page (see pageOverlaysBuilder). It is
+    // click-through by default (pointer-events: none) so viewer gestures still
+    // reach the canvas; individual overlays opt in with pointer-events: auto.
+    this.overlayRoot = document.createElement('div');
+    this.overlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    container.appendChild(this.overlayRoot);
+
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(container);
     this.onResize();
@@ -273,6 +317,9 @@ export class PdfrxViewer {
   private readonly ownsEngine: boolean;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
+  private readonly overlayRoot: HTMLDivElement;
+  /** Per-page overlay containers, built lazily when a page first becomes visible. */
+  private readonly overlayContainers = new Map<number, HTMLElement>();
   private readonly resizeObserver: ResizeObserver;
 
   private doc: PdfDocument | null = null;
@@ -773,6 +820,7 @@ export class PdfrxViewer {
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.engine.dispose();
+    this.overlayRoot.remove();
     this.canvas.remove();
   }
 
@@ -807,6 +855,8 @@ export class PdfrxViewer {
     this.cache?.dispose();
     await this.doc?.dispose();
     this.pageTexts.clear();
+    this.overlayContainers.clear();
+    this.overlayRoot.replaceChildren();
     this.clearSelection();
 
     this.doc = doc;
@@ -1673,6 +1723,96 @@ export class PdfrxViewer {
     }
 
     this.paintMagnifier(dpr);
+
+    // Keep DOM page overlays in sync with the view transform.
+    this.updateOverlays();
+  }
+
+  // -------------------------------------------------------------------------
+  // Page overlays (DOM elements that follow each page)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Rebuilds all page overlays from {@link PdfrxViewerOptions.pageOverlaysBuilder}.
+   * Call this after the state your builder depends on has changed.
+   */
+  refreshOverlays(): void {
+    this.overlayContainers.clear();
+    this.overlayRoot.replaceChildren();
+    this.invalidate();
+  }
+
+  /**
+   * Sets (or clears with `null`) the page overlays builder and rebuilds
+   * overlays. Convenience for callers that construct the viewer without the
+   * {@link PdfrxViewerOptions.pageOverlaysBuilder} option (e.g. the custom element).
+   */
+  setPageOverlaysBuilder(builder: PageOverlaysBuilder | null): void {
+    this.options.pageOverlaysBuilder = builder ?? undefined;
+    this.refreshOverlays();
+  }
+
+  /** Positions/builds per-page overlay containers to follow the view transform. */
+  private updateOverlays(): void {
+    const builder = this.options.pageOverlaysBuilder;
+    if (!builder || !this.layout || !this.doc) {
+      if (this.overlayRoot.childElementCount) this.overlayRoot.replaceChildren();
+      this.overlayContainers.clear();
+      return;
+    }
+    const t = this.transform;
+    const visible = calcVisibleRect(t, this.viewSize);
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      const onScreen = rectOverlaps(pageRect, visible);
+      const pageNumber = i + 1;
+      let container = this.overlayContainers.get(pageNumber);
+      if (onScreen && !container) {
+        const built = this.buildOverlayContainer(pageNumber, pageRect, builder);
+        if (built) {
+          container = built;
+          this.overlayContainers.set(pageNumber, built);
+          this.overlayRoot.appendChild(built);
+        }
+      }
+      if (!container) continue;
+      if (onScreen) {
+        const vr = documentRectToView(t, pageRect);
+        container.style.display = '';
+        container.style.transform = `translate(${vr.left}px, ${vr.top}px) scale(${t.zoom})`;
+      } else {
+        container.style.display = 'none';
+      }
+    }
+  }
+
+  /** Builds one page's overlay container by invoking the builder, or null if it produced nothing. */
+  private buildOverlayContainer(
+    pageNumber: number,
+    pageRect: Rect,
+    builder: PageOverlaysBuilder,
+  ): HTMLElement | null {
+    const page = this.doc?.pages[pageNumber - 1];
+    if (!page) return null;
+    const pageSize: Size = { width: rectWidth(pageRect), height: rectHeight(pageRect) };
+    let result: HTMLElement | HTMLElement[] | null | undefined;
+    try {
+      result = builder({ pageNumber, page, pageSize });
+    } catch (e) {
+      console.error('Error in pageOverlaysBuilder:', e);
+      return null;
+    }
+    const els = result == null ? [] : Array.isArray(result) ? result : [result];
+    if (els.length === 0) return null;
+    const container = document.createElement('div');
+    // The container spans the page in point-space; transform-origin at its
+    // top-left so translate+scale map point-space onto the current view rect.
+    // Click-through by default (children opt in with pointer-events: auto).
+    container.style.cssText =
+      `position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;` +
+      `width:${pageSize.width}px;height:${pageSize.height}px;`;
+    for (const el of els) container.appendChild(el);
+    return container;
   }
 
   /**

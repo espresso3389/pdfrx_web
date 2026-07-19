@@ -132,6 +132,39 @@ document.getElementById('zoomOutBtn')!.addEventListener('click', () => {
   if (v) v.setZoom(v.zoom / 1.25);
 });
 
+// --- Demo page overlays (DOM elements that pan & zoom with the page) ---
+
+let overlaysOn = false;
+const overlayBtn = document.getElementById('overlayBtn')!;
+overlayBtn.addEventListener('click', () => {
+  const v = el.viewer;
+  if (!v) return;
+  overlaysOn = !overlaysOn;
+  overlayBtn.textContent = `Overlay: ${overlaysOn ? 'on' : 'off'}`;
+  v.setPageOverlaysBuilder(overlaysOn ? demoOverlaysBuilder : null);
+});
+
+// Elements are positioned in page-point coordinates; the viewer scales them.
+function demoOverlaysBuilder({ pageNumber, pageSize }: { pageNumber: number; pageSize: { width: number; height: number } }) {
+  // A badge pinned to the page's top-left corner.
+  const badge = document.createElement('div');
+  badge.textContent = `Page ${pageNumber}`;
+  badge.style.cssText =
+    'position:absolute;left:12px;top:12px;padding:4px 10px;border-radius:6px;' +
+    'background:rgba(33,150,243,0.9);color:#fff;font:600 14px system-ui;white-space:nowrap;';
+
+  // An interactive button centered horizontally near the bottom.
+  const btn = document.createElement('button');
+  btn.textContent = 'Click me';
+  btn.style.cssText =
+    `position:absolute;left:${pageSize.width / 2 - 45}px;top:${pageSize.height - 60}px;` +
+    'width:90px;height:32px;border:0;border-radius:6px;cursor:pointer;pointer-events:auto;' +
+    'background:#ff9800;color:#fff;font:600 13px system-ui;';
+  btn.addEventListener('click', () => alert(`Overlay button on page ${pageNumber} clicked`));
+
+  return [badge, btn];
+}
+
 // --- Page status ---
 
 setInterval(() => {

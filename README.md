@@ -86,7 +86,7 @@ await viewer.print();
 
 Two things your app must provide:
 
-1. **The pdfium engine assets.** Point `wasmModulesUrl` at a directory
+1. **The pdfium engine assets.** Point [`wasmModulesUrl`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxEngineOptions.html#wasmmodulesurl) at a directory
    containing `pdfium_worker.js` and `pdfium.wasm`. Either copy them from
    `node_modules/@pdfrx/engine/assets/` to a static path on your server, or
    simply use the jsDelivr CDN (any origin works):
@@ -95,18 +95,19 @@ Two things your app must provide:
    engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.1.0/assets/' }
    ```
 
-2. **CORS for remote PDFs.** `openUrl` fetches the document, so PDFs on
+2. **CORS for remote PDFs.** [`openUrl`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) fetches the document, so PDFs on
    other origins need CORS headers (same as any `fetch`).
 
-Documents opened from a `File`/`ArrayBuffer` use `viewer.openData(data)`.
-Password-protected files are supported via
+Documents opened from a `File`/`ArrayBuffer` use [`viewer.openData(data)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata).
+Password-protected files are supported by passing a
+[`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider):
 `openUrl(url, { passwordProvider: () => prompt('Password?') })`.
 
 ## Packages
 
 | Package | npm | Description |
 |---|---|---|
-| [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component (`<pdfrx-viewer>` / `PdfrxViewer`). |
+| [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
 | [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the pdfium WASM worker: open/render pages, text, links, outline, fonts. |
 
