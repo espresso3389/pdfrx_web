@@ -20,6 +20,11 @@ export class PdfrxViewerElement extends HTMLElement {
     this.#viewer = new PdfrxViewer(this, {
       engineOptions: { wasmModulesUrl: this.getAttribute('wasm-modules-url') ?? 'pdfium/' },
     });
+    // Fires for every document change, including programmatic opens and the
+    // automatic reopen after missing-font registration.
+    this.#viewer.addDocumentChangeListener(() => {
+      this.dispatchEvent(new CustomEvent('load', { detail: { src: this.getAttribute('src') } }));
+    });
     const src = this.getAttribute('src');
     if (src) void this.#load(src);
   }
@@ -38,7 +43,6 @@ export class PdfrxViewerElement extends HTMLElement {
   async #load(src: string): Promise<void> {
     try {
       await this.#viewer?.openUrl(src);
-      this.dispatchEvent(new CustomEvent('load', { detail: { src } }));
     } catch (e) {
       this.dispatchEvent(new CustomEvent('error', { detail: { src, error: e } }));
     }

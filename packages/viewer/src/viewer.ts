@@ -11,12 +11,14 @@ import {
   PdfrxEngine,
   type PdfDest,
   type PdfDocument,
+  type PdfFontQuery,
   type PdfLink,
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfOutlineNode,
   type PdfrxEngineOptions,
 } from '@pdfrx/engine';
+import { googleFontsResolver, type FontResolver } from './font-fallback.js';
 import {
   adjustBoundaryMargins,
   anchorPoint,
@@ -76,6 +78,11 @@ export interface PdfrxViewerOptions {
   handleColor?: string;
   /** Maximum zoom. Default: 8 (same as pdfrx maxScale). */
   maxZoom?: number;
+  /**
+   * Resolver for fonts the PDF does not embed. Defaults to the Google Fonts
+   * resolver (downloads from fonts.gstatic.com); pass `null` to disable.
+   */
+  fontResolver?: FontResolver | null;
 }
 
 type InteractionMode =
@@ -155,6 +162,11 @@ export class PdfrxViewer {
   private menuEl: HTMLDivElement | null = null;
   private pendingMenuOnUp = false;
   private searcher: PdfTextSearcher | null = null;
+  private currentSource:
+    | { kind: 'url'; url: string | URL; options: PdfOpenUrlOptions }
+    | { kind: 'data'; data: Uint8Array | ArrayBuffer; options: PdfOpenOptions }
+    | null = null;
+  private readonly documentChangeListeners = new Set<() => void>();
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -171,11 +183,24 @@ export class PdfrxViewer {
   // -------------------------------------------------------------------------
 
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<void> {
-    await this.setDocument(await this.engine.openUrl(url, options));
+    const doc = await this.engine.openUrl(url, options);
+    this.currentSource = { kind: 'url', url, options };
+    await this.setDocument(doc);
   }
 
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
-    await this.setDocument(await this.engine.openData(data, options));
+    const doc = await this.engine.openData(data, options);
+    this.currentSource = { kind: 'data', data, options };
+    await this.setDocument(doc);
+  }
+
+  /**
+   * Registers a listener called whenever the shown document changes —
+   * including the automatic reopen after missing-font registration.
+   */
+  addDocumentChangeListener(listener: () => void): () => void {
+    this.documentChangeListeners.add(listener);
+    return () => this.documentChangeListeners.delete(listener);
   }
 
   get document(): PdfDocument | null {
@@ -475,7 +500,15 @@ export class PdfrxViewer {
     this.cache = new PageRenderCache(doc, () => this.invalidate());
     this.pageLinks.clear();
     this.hoveredLink = null;
+    doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     this.resetView();
+    for (const listener of this.documentChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in document change listener:', e);
+      }
+    }
   }
 
   private resetView(): void {
@@ -554,6 +587,81 @@ export class PdfrxViewer {
       return text;
     })();
     this.pageTexts.set(pageNumber, promise);
+  }
+
+  // ---- Missing-font fallback ----
+
+  /** Queries already processed (or failed), keyed independently of the document. */
+  private readonly attemptedFontKeys = new Set<string>();
+  /** Download cache so several queries resolving to the same file fetch once. */
+  private readonly fontDownloads = new Map<string, Promise<Uint8Array | null>>();
+  /** Serializes fallback batches so reloadFonts is not called concurrently. */
+  private fontWork: Promise<void> = Promise.resolve();
+
+  private onMissingFonts(queries: PdfFontQuery[]): void {
+    const resolver = this.options.fontResolver === undefined ? googleFontsResolver : this.options.fontResolver;
+    if (!resolver) return;
+    const fresh = queries.filter((q) => {
+      const key = `${q.face}|${q.weight}|${q.isItalic}|${q.charset}|${q.pitchFamily}`;
+      if (this.attemptedFontKeys.has(key)) return false;
+      this.attemptedFontKeys.add(key);
+      return true;
+    });
+    if (fresh.length === 0) return;
+    this.fontWork = this.fontWork.then(() => this.resolveMissingFonts(resolver, fresh));
+  }
+
+  private async resolveMissingFonts(resolver: FontResolver, queries: PdfFontQuery[]): Promise<void> {
+    let registered = 0;
+    for (const query of queries) {
+      try {
+        const resolution = resolver(query);
+        if (!resolution) continue;
+        let download = this.fontDownloads.get(resolution.url);
+        if (!download) {
+          download = (async (): Promise<Uint8Array | null> => {
+            const response = await fetch(resolution.url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return new Uint8Array(await response.arrayBuffer());
+          })().catch((e) => {
+            console.warn(`pdfrx: failed to download fallback font ${resolution.url}:`, e);
+            return null;
+          });
+          this.fontDownloads.set(resolution.url, download);
+        }
+        const data = await download;
+        if (!data) continue;
+        await this.engine.addFontData(query.face, data, resolution.resolvedFace);
+        console.info(`pdfrx: font fallback "${query.face}" -> "${resolution.resolvedFace}" (${data.length} bytes)`);
+        registered++;
+      } catch (e) {
+        console.warn('pdfrx: font fallback failed for', query, e);
+      }
+    }
+    if (registered === 0 || this.disposed) return;
+
+    await this.engine.reloadFonts();
+    // Refreshing the mapper is not enough: pdfium caches substituted fonts
+    // per document, so the document must be reopened (the Dart viewer does
+    // `load(forceReload: true)` for the same reason). Preserve the view state.
+    const source = this.currentSource;
+    if (!source) {
+      this.cache?.clearAllRendered();
+      this.pageTexts.clear();
+      this.invalidate();
+      return;
+    }
+    try {
+      const saved = this.transform;
+      if (source.kind === 'url') {
+        await this.setDocument(await this.engine.openUrl(source.url, source.options));
+      } else {
+        await this.setDocument(await this.engine.openData(source.data, source.options));
+      }
+      this.setTransform(saved);
+    } catch (e) {
+      console.error('pdfrx: failed to reload document after font registration:', e);
+    }
   }
 
   // ---- Links ----

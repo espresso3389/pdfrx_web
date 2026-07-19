@@ -182,6 +182,15 @@ export class PageRenderCache {
     }
   }
 
+  /** Drops all rendered bitmaps (e.g. after font registration changed glyphs). */
+  clearAllRendered(): void {
+    for (const { bitmap } of this.base.values()) bitmap.close();
+    for (const { bitmap } of this.patches.values()) bitmap.close();
+    this.base.clear();
+    this.patches.clear();
+    this.baseRendering.clear();
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.patchTimer) clearTimeout(this.patchTimer);

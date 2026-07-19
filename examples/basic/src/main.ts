@@ -46,11 +46,13 @@ el.addEventListener('error', (e) => {
 
 const passwordProvider = (): string | null => window.prompt('This document is password protected.\nPassword:');
 
+// NOTE: the 'load' event fires for every document change (including the
+// automatic reopen after font fallback), so open helpers don't need to call
+// onDocumentLoaded() themselves.
 async function openLocalFile(file: File): Promise<void> {
   try {
     const data = new Uint8Array(await file.arrayBuffer());
     await el.viewer!.openData(data, { sourceName: file.name, passwordProvider });
-    onDocumentLoaded();
   } catch (e) {
     console.error(e);
     alert(`Failed to open ${file.name}: ${e}`);
@@ -69,7 +71,6 @@ openUrlBtn.addEventListener('click', async () => {
   if (!url) return;
   try {
     await el.viewer!.openUrl(url, { passwordProvider });
-    onDocumentLoaded();
   } catch (e) {
     console.error(e);
     alert(`Failed to open ${url}: ${e}`);

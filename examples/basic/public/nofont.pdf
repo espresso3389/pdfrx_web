@@ -1,0 +1,50 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Resources << /Font << /F1 4 0 R /F2 6 0 R >> >> /Contents 8 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /Arial /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 122 /Widths [500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500] /FontDescriptor 5 0 R >>
+endobj
+5 0 obj
+<< /Type /FontDescriptor /FontName /Arial /Flags 32 /FontBBox [-100 -300 1000 900] /ItalicAngle 0 /Ascent 728 /Descent -210 /CapHeight 716 /StemV 87 >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /MS-PGothic /Encoding /90ms-RKSJ-H /DescendantFonts [7 0 R] >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /MS-PGothic /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /FontDescriptor 9 0 R /DW 1000 >>
+endobj
+8 0 obj
+<< /Length 186 >>
+stream
+BT /F1 24 Tf 40 240 Td (Missing Font Fallback) Tj ET
+BT /F1 14 Tf 40 210 Td (Times-like text uses Tinos substitute.) Tj ET
+BT /F2 24 Tf 40 160 Td <93FA967B8CEA82CC8365834C83588367> Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /FontDescriptor /FontName /MS-PGothic /Flags 4 /FontBBox [-100 -300 1100 900] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 716 /StemV 87 >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000000771 00000 n 
+0000000938 00000 n 
+0000001057 00000 n 
+0000001238 00000 n 
+0000001475 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1646
+%%EOF

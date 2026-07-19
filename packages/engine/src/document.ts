@@ -294,6 +294,17 @@ export class PdfDocument {
       this.listeners.set(event, set);
     }
     set.add(listener as Listener<PdfDocumentEventName>);
+    // Missing fonts are typically discovered while the document is being
+    // opened — before anyone can subscribe. Replay them to new listeners
+    // (the Dart implementation gets this from rxdart's BehaviorSubject).
+    if (event === 'missingFonts' && this.accumulatedFontQueries.length > 0) {
+      const queries = this.accumulatedFontQueries.slice();
+      queueMicrotask(() => {
+        if (!this._isDisposed && set.has(listener as Listener<PdfDocumentEventName>)) {
+          (listener as Listener<'missingFonts'>)({ queries });
+        }
+      });
+    }
     return () => set.delete(listener as Listener<PdfDocumentEventName>);
   }
 
@@ -314,6 +325,10 @@ export class PdfDocument {
     this.emit('loadComplete', {});
   }
 
+  /** All font queries reported so far; replayed to late subscribers. */
+  private readonly accumulatedFontQueries: PdfFontQuery[] = [];
+  private readonly accumulatedFontKeys = new Set<string>();
+
   /** @internal */
   updateMissingFonts(missingFonts: WireFontQueries | undefined): void {
     if (!missingFonts) return;
@@ -326,6 +341,13 @@ export class PdfDocument {
       charset: f.charset,
       pitchFamily: f.pitchFamily,
     }));
+    for (const q of queries) {
+      const key = `${q.face}|${q.weight}|${q.isItalic}|${q.charset}|${q.pitchFamily}`;
+      if (!this.accumulatedFontKeys.has(key)) {
+        this.accumulatedFontKeys.add(key);
+        this.accumulatedFontQueries.push(q);
+      }
+    }
     this.emit('missingFonts', { queries });
   }
 
