@@ -5,6 +5,9 @@ port of the [pdfrx](https://github.com/espresso3389/pdfrx) Flutter viewer,
 built on the same pdfium WASM engine. Same rendering fidelity, same behavior,
 no Flutter runtime.
 
+**[Live demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
+**[API reference](https://espresso3389.github.io/pdfrx_web/)**
+
 - pdfium-quality rendering with zoomed sharp re-rendering
 - Pan / wheel / pinch zoom with inertia, keyboard navigation
 - Canvas-painted text selection: mouse drag, double-click word selection,
