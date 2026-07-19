@@ -24,6 +24,7 @@ export {
   PdfDocument,
   PdfPage,
   PdfrxEngine,
+  type PdfAssembleSource,
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfPageRenderOptions,

@@ -30,7 +30,7 @@ Upstream API names are given so you can find the reference implementation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ❌ | Upstream `PdfDocument.pages=` setter + `assemble()` + page proxies (`rotatedBy`, `withPageNumber`, cross-document import). The `assemble` **worker command already exists** in `protocol.ts` but is not exposed on `PdfDocument`; `encodePdf()` currently encodes the document as-is. This is the single biggest engine gap. |
+| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.assemblePages(sources)` is the primitive (per-slot document + 1-based page + rotation), with `reorderPages`, `rotatePages` / `rotatePage`, `removePages`, `duplicatePage`, and `importPages(from, …)` conveniences. Pages reload and `pageStatusChanged` fires; `encodePdf()` reflects the edits (verified by re-opening the encoded bytes). |
 | Custom random-access source | ❌ | Upstream `PdfDocument.openCustom({read, fileSize, …})` — supply bytes on demand via a read callback. pdfrx_web opens only via `openUrl` / `openData`. |
 | Render cancellation | ❌ | Upstream `page.render(cancellationToken:)` + `PdfPageRenderCancellationToken`. pdfrx_web renders are fire-and-forget (the viewer's cache mitigates this internally, but there is no public cancel). |
 | Permission helpers | ◐ | pdfrx_web `PdfPermissions` exposes `{permissions, securityHandlerRevision}` only. Upstream adds `allowsCopying`, `allowsPrinting`, `allowsDocumentAssembly`, `allowsModifyAnnotations`. Easy to add from the raw flags. |
@@ -157,17 +157,20 @@ web package replaces them with an imperative `PdfrxViewer` class and the
 
 ---
 
-## Summary of the top port candidates
+## Top port candidates — all landed ✅
 
-If prioritizing, the highest-value gaps that are genuinely web-applicable:
+The six highest-value, web-applicable gaps identified in the first pass have all
+been ported (see the ✅ rows above):
 
-1. **Page manipulation API** (`assemble` is already in the worker protocol — wire
-   it to `PdfDocument`, add reorder/rotate/import + edit-aware `encodePdf`).
-2. **Horizontal / custom layouts** (`layoutPagesHorizontal` already exists in
-   core — expose a scroll-direction / `layoutPages` option).
-3. **Public coordinate conversion & page hit-testing** + an **`onPageChanged`**
-   notification.
-4. **Link tap handler** and **programmatic selection set/restore**.
-5. **Animated navigation** and **double-tap-to-zoom** with zoom snap steps.
-6. **Interaction configurability** (enable/disable pan/zoom, wheel/arrow amounts,
-   interaction callbacks) and **viewer-fixed overlays / scroll thumbs**.
+1. ✅ **Page manipulation API** — `assemblePages` + reorder/rotate/remove/
+   duplicate/import, edit-aware `encodePdf`.
+2. ✅ **Horizontal / custom layouts** — `layoutDirection` + custom `layoutPages`.
+3. ✅ **Public coordinate conversion & page hit-testing** + **`onPageChanged`**.
+4. ✅ **Link tap handler** + **programmatic selection set/restore**.
+5. ✅ **Animated navigation** + **double-tap-to-zoom** with zoom snap steps.
+6. ✅ **Interaction configurability** + **viewer-fixed overlays** (the injection
+   point for scroll thumbs).
+
+The remaining gaps in the tables above are lower-priority (`◐` partials and
+narrower `❌` items); the biggest still-open ones are custom-source open
+(`openCustom`), render cancellation, and richer per-page status events.

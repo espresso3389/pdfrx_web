@@ -19,7 +19,10 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 `packages/engine/src/protocol.ts` documents every command's parameter and
 result shapes (18 commands: document open/close, progressive loading, page
 rendering with partial regions, text with per-character rects, links, outline,
-font management, `assemble`/`encodePdf`). Notable client behaviors:
+font management, `assemble`/`encodePdf`). `assemble` is surfaced on
+`PdfDocument` as `assemblePages()` (plus `reorderPages` / `rotatePages` /
+`removePages` / `duplicatePage` / `importPages`), and `encodePdf()` reflects
+those edits. Notable client behaviors:
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
   the engine resolves relative document URLs against `document.baseURI` before
@@ -85,8 +88,6 @@ shell adds:
 
 - Form filling: requires exposing the engine's `FORM_On*` APIs from the worker
   (protocol extension).
-- Page reassembly (`assemble`) and page-set mutation APIs; `encodePdf` encodes
-  the document as-is.
 - Scroll physics beyond exponential-decay fling (no platform-specific curves),
   annotation editing.
 
