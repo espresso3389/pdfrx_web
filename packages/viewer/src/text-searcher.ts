@@ -106,6 +106,14 @@ export class PdfTextSearcher {
     return this._searchingPageNumber / this._totalPageCount;
   }
 
+  /**
+   * The 1-based page number currently being scanned, or `null` before a search
+   * starts. Reaches the last page once scanning completes.
+   */
+  get searchingPageNumber(): number | null {
+    return this._searchingPageNumber;
+  }
+
   /** The pattern of the most recent search, or `null` if none is active. */
   get pattern(): string | RegExp | null {
     return this.lastSearchCondition?.pattern ?? null;

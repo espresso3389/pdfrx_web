@@ -121,7 +121,7 @@ match/active-match highlight painting.
 | Feature | Status | Notes |
 |---|---|---|
 | Match highlight color config | ✅ | `PdfrxViewerOptions.matchTextColor` / `activeMatchTextColor` set the search-match and active-match highlight fills (defaulting to the previous yellow/orange). |
-| `searchingPageNumber` progress detail | ◐ | pdfrx_web exposes `searchProgress`; upstream additionally reports which page is being scanned. |
+| `searchingPageNumber` progress detail | ✅ | `PdfTextSearcher.searchingPageNumber` reports the 1-based page currently being scanned (alongside `searchProgress`). |
 
 ---
 
