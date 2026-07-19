@@ -1,50 +1,115 @@
 # pdfrx_web
 
-TypeScript port of the [pdfrx](https://github.com/espresso3389/pdfrx) viewer stack for the browser,
-built on pdfrx's pdfium WASM engine.
+A canvas-based PDF viewer component for the browser, written in TypeScript.
+It is a web-native port of the [pdfrx](https://github.com/espresso3389/pdfrx)
+Flutter viewer, built on the same pdfium WASM engine — same rendering
+fidelity, same behavior, no Flutter runtime.
 
-## Architecture
+**Features**
 
-The pdfium WASM engine (`pdfium_worker.js` + `pdfium.wasm`) is developed in the pdfrx
-repository and consumed here as-is — the postMessage protocol between the worker and its
-clients is the shared contract between the Dart client (`pdfrx/lib/src/wasm/pdfrx_wasm.dart`)
-and the TypeScript client in this repo.
+- pdfium-quality rendering with zoomed sharp re-rendering
+- Pan / wheel / pinch zoom with inertia, keyboard navigation
+- Canvas-painted text selection: mouse drag, double-click word selection,
+  touch long-press with draggable handles and a magnifier lens
+- Text search with highlights, outline (bookmarks), page thumbnails
+- Links (external URLs and internal destinations), context menu, clipboard
+- Printing
+- Automatic missing-font fallback via Google Fonts (Arimo/Tinos/Cousine for
+  standard fonts, Noto families for CJK and other scripts)
+- Password-protected documents
+
+## Try the demo
+
+```sh
+git clone https://github.com/espresso3389/pdfrx_web.git
+cd pdfrx_web
+npm install
+npm run build
+npm run dev     # open http://localhost:5173
+```
+
+The demo has a search bar, thumbnails/outline sidebar, print button, and
+supports opening local files (button or drag & drop) and URLs.
+
+## Usage
+
+> [!NOTE]
+> The packages are not published to npm yet; consume them from this
+> repository (e.g. as a git dependency or workspace) for now.
+
+The easiest way is the `<pdfrx-viewer>` custom element:
+
+```html
+<script type="module">
+  import { definePdfrxViewerElement } from '@pdfrx/viewer';
+  definePdfrxViewerElement();
+</script>
+
+<!-- size it with CSS; wasm-modules-url points at the pdfium engine assets -->
+<pdfrx-viewer
+  src="/documents/manual.pdf"
+  wasm-modules-url="/pdfium/"
+  style="width: 100%; height: 100vh"
+></pdfrx-viewer>
+```
+
+Or drive the viewer programmatically:
+
+```ts
+import { PdfrxViewer } from '@pdfrx/viewer';
+
+const viewer = new PdfrxViewer(document.getElementById('container')!, {
+  engineOptions: { wasmModulesUrl: '/pdfium/' },
+});
+await viewer.openUrl('/documents/manual.pdf');
+
+viewer.goToPage(3);
+const searcher = viewer.createTextSearcher();
+searcher.startTextSearch('keyword');
+console.log(viewer.selectedText);
+await viewer.print();
+```
+
+Two things your app must provide:
+
+1. **The pdfium engine assets.** Copy `pdfium_worker.js` and `pdfium.wasm`
+   from `@pdfrx/engine/assets/` to a static path on your server and point
+   `wasmModulesUrl` at it. They can live on any origin (a CDN is fine).
+2. **CORS for remote PDFs.** `openUrl` fetches the document, so PDFs on
+   other origins need CORS headers (same as any `fetch`).
+
+Documents opened from a `File`/`ArrayBuffer` use `viewer.openData(data)`.
+Password-protected files are supported via
+`openUrl(url, { passwordProvider: () => prompt('Password?') })`.
+
+## Packages
 
 | Package | Description |
 |---|---|
-| `@pdfrx/engine` | Typed client for the pdfium worker protocol: open/render pages, text with char rects, links, outline, progressive loading, font management. Counterpart of `pdfrx_wasm.dart`. |
-| `@pdfrx/viewer-core` | Platform-independent core logic ported from pdfrx: geometry/rotation math (`pdf_rect.dart`, `pdfrx_flutter.dart` conversions), page layout, viewport transform + boundary clamping (`PdfMatrix4Ext`, `_calcMatrixFor*`, `_calcOverscroll`), structured text flow analysis (`pdf_text_formatter.dart`), and the text selection core (`_findTextAndIndexForPoint`, `_updateTextSelection`, `selectWord`). Pure TS, no DOM; covered by vitest suites whose vectors are designed to be mirrored on the Dart side. |
-| `@pdfrx/viewer` | Canvas2D + Pointer Events viewer shell exposing the `<pdfrx-viewer>` custom element. Pan/zoom (drag, wheel, ctrl+wheel, pinch) with boundary clamping and touch fling inertia, page bitmap cache + high-zoom sharp patches, canvas-painted text selection (mouse text-drag, double-click word, touch long-press + draggable handles + magnifier lens — no DOM text layer, by design), edge auto-scroll during selection drags, context menu (Copy / Select All, auto-shown after touch selection), links overlay (hover highlight, external URLs via noopener, internal dest jumps), clipboard copy (Ctrl+C / Ctrl+A / Esc). |
-| `@pdfrx/example-basic` | Vite app hosting `<pdfrx-viewer>` with a search bar, thumbnails/outline sidebar, and print button. |
+| [`@pdfrx/viewer`](packages/viewer) | The viewer component (`<pdfrx-viewer>` / `PdfrxViewer`). |
+| [`@pdfrx/viewer-core`](packages/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
+| [`@pdfrx/engine`](packages/engine) | Typed client for the pdfium WASM worker: open/render pages, text, links, outline, fonts. |
 
-The viewer also provides: keyboard navigation (PageUp/Down, Space, Home/End,
-arrows, Ctrl+= / Ctrl+-), text search (`createTextSearcher()`, a port of
-pdfrx's `PdfTextSearcher` with progressive per-page search and match
-highlighting), explicit-destination navigation (`goToDest`, xyz/fit/fitH/
-fitV/fitR), page thumbnails (`renderPageThumbnail`), outline loading, and
-printing (`print()`, renders pages at ~150 DPI into a hidden iframe).
-
-Planned next: form filling (requires exposing PDFium `FORM_On*` APIs from the
-pdfium worker in the pdfrx repository), annotation editing, vertical-text
-selection handle refinements.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the packages relate
+to the pdfrx Dart/Flutter implementation, the worker protocol contract, and
+coordinate conventions.
 
 ## Development
 
 ```sh
 npm install
-npm run build     # builds all packages
-npm run dev       # runs the basic example (Vite)
+npm run build     # tsc for all packages
+npm test          # viewer-core unit tests (vitest)
+npm run dev       # example app (Vite)
 ```
 
-The pdfium engine assets (`packages/engine/assets/pdfium_worker.js` /
-`pdfium.wasm`) are vendored in this repository, so a plain clone builds and
-runs standalone — no submodule, no postinstall.
+The pdfium engine assets are vendored under `packages/engine/assets/`, so a
+plain clone builds and runs standalone — no submodule, no postinstall.
 
-### Updating from pdfrx (maintainers)
+### Updating vendored code from pdfrx (maintainers)
 
-The pdfrx repository stays the single source of truth for the engine assets
-and the Google Fonts tables. It is available as the `external/pdfrx`
-submodule:
+The pdfrx repository is the single source of truth for the engine assets and
+the Google Fonts tables; it is available as the `external/pdfrx` submodule:
 
 ```sh
 git submodule update --init      # once
@@ -55,18 +120,8 @@ node scripts/gen-font-tables.mjs # regenerate packages/viewer/src/font-tables.ts
 Both scripts also accept an explicit checkout path or the `PDFRX_REPO`
 environment variable instead of the submodule.
 
-## Coordinate convention
+## License
 
-Same as pdfrx: PDF page coordinates in points (1/72"), origin bottom-left, y-up.
-Rects are `{left, top, right, bottom}` with `top >= bottom`. `PdfPage.loadText()` /
-`loadLinks()` already compensate for the page bounding-box offset (`bbLeft` / `bbBottom`),
-matching the Dart implementation.
-
-## Notes
-
-- The worker is spawned via a bootstrap blob, so `wasmModulesUrl` may point at any origin;
-  URLs passed to `openUrl` are resolved against `document.baseURI` before being sent to
-  the worker.
-- `PdfImage` holds BGRA pixels as produced by pdfium; use `toImageData()` /
-  `toImageBitmap()` for Canvas 2D.
-- Page reassembly (`assemble`) and form-filling APIs are not ported yet.
+MIT — see [LICENSE](LICENSE). The Google Fonts files downloaded by the font
+fallback are licensed under the SIL OFL 1.1 / Apache 2.0 by their respective
+owners.
