@@ -1,6 +1,6 @@
 # pdfrx_web
 
-[![npm](https://img.shields.io/npm/v/@pdfrx/viewer)](https://www.npmjs.com/package/@pdfrx/viewer)
+[![npm](https://img.shields.io/badge/npm-@pdfrx%2Fviewer-cb3837)](https://www.npmjs.com/package/@pdfrx/viewer)
 [![Live demo](https://img.shields.io/badge/demo-live-brightgreen)](https://espresso3389.github.io/pdfrx_web/demo/)
 [![API docs](https://img.shields.io/badge/API-docs-blue)](https://espresso3389.github.io/pdfrx_web/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
