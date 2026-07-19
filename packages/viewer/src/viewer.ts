@@ -38,6 +38,7 @@ import {
   getSelectedRanges,
   layoutPagesVertical,
   pdfRectToRectInDocument,
+  rangeBounds,
   rectCenter,
   rectContains,
   rectContainsRect,
@@ -217,6 +218,92 @@ export interface PageOverlayInfo {
  */
 export type PageOverlaysBuilder = (info: PageOverlayInfo) => HTMLElement | HTMLElement[] | null | undefined;
 
+/**
+ * One end of a text selection: a page and a character index into that page's
+ * text (`fullText`). Both selection ends are inclusive.
+ */
+export interface PdfTextSelectionPoint {
+  /** 1-based page number. */
+  readonly pageNumber: number;
+  /** Character index into the page's `fullText`. */
+  readonly index: number;
+}
+
+/**
+ * The selection's two endpoints, ordered so `start` precedes `end` in reading
+ * order. This is the cheap, always-available selection **state** — it carries
+ * no text and touches no page geometry. Resolve the actual text and rectangles
+ * on demand via {@link PdfTextSelection.getSelectedTextRanges} /
+ * {@link PdfTextSelection.getSelectedText}.
+ */
+export interface PdfTextSelectionRange {
+  readonly start: PdfTextSelectionPoint;
+  readonly end: PdfTextSelectionPoint;
+}
+
+/** A resolved per-page selection range with its text and geometry. */
+export interface PdfSelectedTextRange {
+  /** 1-based page number this range belongs to. */
+  readonly pageNumber: number;
+  /** Inclusive start index into the page's `fullText`. */
+  readonly start: number;
+  /** Exclusive end index into the page's `fullText`. */
+  readonly end: number;
+  /** The range's text. */
+  readonly text: string;
+  /**
+   * Bounding rectangle over the whole range, in **PDF page coordinates**
+   * (points, origin bottom-left, y-up).
+   */
+  readonly bounds: PdfRect;
+  /** One bounding rectangle per character in the range, in PDF page coordinates. */
+  readonly charRects: readonly PdfRect[];
+}
+
+/**
+ * A snapshot of the text-selection **state**, delivered to
+ * {@link PdfrxViewer.addSelectionChangeListener} listeners and returned by
+ * {@link PdfrxViewer.selection}.
+ *
+ * Following pdfrx, this object holds only the selection endpoints
+ * ({@link range}); it does **not** eagerly compute the selected text.
+ * Resolving text and per-page geometry — which can be comparatively expensive
+ * and may need to load the text of pages between the endpoints — is deferred to
+ * the explicit async {@link getSelectedText} / {@link getSelectedTextRanges}
+ * methods.
+ */
+export interface PdfTextSelection {
+  /** True when nothing is selected. */
+  readonly isEmpty: boolean;
+  /**
+   * The selection endpoints (`start` precedes `end`), or `null` when
+   * {@link isEmpty}. Cheap: derived from internal state without touching page
+   * text.
+   */
+  readonly range: PdfTextSelectionRange | null;
+  /**
+   * Resolves the selection into per-page ranges with text and geometry (each
+   * range's {@link PdfSelectedTextRange.bounds | bounds} give the selected
+   * text's location in PDF page coordinates). Loads the text of fully-covered
+   * intermediate pages as needed, hence async. Returns `[]` when {@link isEmpty}.
+   */
+  getSelectedTextRanges(): Promise<PdfSelectedTextRange[]>;
+  /**
+   * Resolves the full selected text across pages in reading order (empty string
+   * when {@link isEmpty}). See {@link getSelectedTextRanges} for why it is async.
+   */
+  getSelectedText(): Promise<string>;
+}
+
+/**
+ * Called whenever the text selection changes (see
+ * {@link PdfrxViewer.addSelectionChangeListener}). Fires when the selected
+ * range changes and when it is cleared; it does not fire while a drag hovers
+ * over the same character. The passed {@link PdfTextSelection} is a snapshot of
+ * the state at that moment.
+ */
+export type SelectionChangeListener = (selection: PdfTextSelection) => void;
+
 type InteractionMode =
   | { kind: 'none' }
   | { kind: 'pan'; pointerId: number; lastX: number; lastY: number; moved: boolean; startedAt: number }
@@ -357,6 +444,9 @@ export class PdfrxViewer {
     | { kind: 'data'; data: Uint8Array | ArrayBuffer; options: PdfOpenOptions }
     | null = null;
   private readonly documentChangeListeners = new Set<() => void>();
+  private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
+  /** Signature of the last-notified selection, so we don't fire on no-op updates. */
+  private lastSelectionSig = 'empty';
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -408,6 +498,28 @@ export class PdfrxViewer {
     return () => this.documentChangeListeners.delete(listener);
   }
 
+  /**
+   * Registers a listener called whenever the text selection changes — as the
+   * user drags to select, when a word/all is selected programmatically, and when
+   * the selection is cleared. The listener receives a {@link PdfTextSelection}
+   * snapshot; you can also pull the current state via {@link selection} at any
+   * time.
+   *
+   * The listener is not called for no-op updates (e.g. a drag that stays over
+   * the same character).
+   *
+   * @returns An unsubscribe function.
+   */
+  addSelectionChangeListener(listener: SelectionChangeListener): () => void {
+    this.selectionChangeListeners.add(listener);
+    return () => this.selectionChangeListeners.delete(listener);
+  }
+
+  /** A snapshot of the current text selection. */
+  get selection(): PdfTextSelection {
+    return this.buildSelection();
+  }
+
   /** The currently open {@link PdfDocument}, or `null` before the first open. */
   get document(): PdfDocument | null {
     return this.doc;
@@ -442,6 +554,7 @@ export class PdfrxViewer {
     this.anchors = null;
     this.showHandles = false;
     this.hideContextMenu();
+    this.notifySelectionChanged();
     this.invalidate();
   }
 
@@ -1078,7 +1191,88 @@ export class PdfrxViewer {
     } else {
       this.anchors = null;
     }
+    this.notifySelectionChanged();
     this.invalidate();
+  }
+
+  /**
+   * Builds a {@link PdfTextSelection} snapshot of the current selection. The
+   * snapshot captures the endpoints; text/geometry are resolved on demand.
+   */
+  private buildSelection(): PdfTextSelection {
+    const a = this.selA;
+    const b = this.selB;
+    if (!a || !b) {
+      return {
+        isEmpty: true,
+        range: null,
+        getSelectedTextRanges: () => Promise.resolve([]),
+        getSelectedText: () => Promise.resolve(''),
+      };
+    }
+    const [first, last] = selectionPointLE(a, b) ? [a, b] : [b, a];
+    const resolveRanges = (): Promise<PdfSelectedTextRange[]> => this.resolveSelectedRanges(a, b);
+    return {
+      isEmpty: false,
+      range: {
+        start: { pageNumber: first.text.pageNumber, index: first.index },
+        end: { pageNumber: last.text.pageNumber, index: last.index },
+      },
+      getSelectedTextRanges: resolveRanges,
+      async getSelectedText(): Promise<string> {
+        return (await resolveRanges()).map((r) => r.text).join('\n');
+      },
+    };
+  }
+
+  /**
+   * Resolves a selection (given its raw endpoints) into per-page ranges with
+   * text and geometry, loading the text of intermediate pages as needed.
+   */
+  private async resolveSelectedRanges(a: SelectionPoint, b: SelectionPoint): Promise<PdfSelectedTextRange[]> {
+    const firstPage = Math.min(a.text.pageNumber, b.text.pageNumber);
+    const lastPage = Math.max(a.text.pageNumber, b.text.pageNumber);
+    // Endpoints are always on loaded pages; load any fully-covered pages between.
+    const pending: Promise<PdfPageText | null>[] = [];
+    for (let n = firstPage + 1; n < lastPage; n++) pending.push(this.loadTextAsync(n));
+    await Promise.all(pending);
+    return getSelectedRanges(a, b, (n) => this.getLoadedText(n)).map((r) => ({
+      pageNumber: r.pageText.pageNumber,
+      start: r.start,
+      end: r.end,
+      text: r.pageText.fullText.substring(r.start, r.end),
+      bounds: rangeBounds(r),
+      charRects: r.pageText.charRects.slice(r.start, r.end),
+    }));
+  }
+
+  /** Ensures a page's text is loaded and resolves to it (or `null` if unavailable). */
+  private async loadTextAsync(pageNumber: number): Promise<PdfPageText | null> {
+    this.ensureText(pageNumber);
+    const t = this.pageTexts.get(pageNumber);
+    return t instanceof Promise ? await t : (t ?? null);
+  }
+
+  /** A stable identity for the current selection range (or `'empty'`). */
+  private selectionSignature(): string {
+    if (!this.selA || !this.selB) return 'empty';
+    return `${this.selA.text.pageNumber}:${this.selA.index}|${this.selB.text.pageNumber}:${this.selB.index}`;
+  }
+
+  /** Notifies selection-change listeners, unless the range is unchanged. */
+  private notifySelectionChanged(): void {
+    const sig = this.selectionSignature();
+    if (sig === this.lastSelectionSig) return;
+    this.lastSelectionSig = sig;
+    if (this.selectionChangeListeners.size === 0) return;
+    const selection = this.buildSelection();
+    for (const listener of this.selectionChangeListeners) {
+      try {
+        listener(selection);
+      } catch (e) {
+        console.error('Error in selection change listener:', e);
+      }
+    }
   }
 
   /**

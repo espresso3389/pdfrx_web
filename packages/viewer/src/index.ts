@@ -26,7 +26,13 @@ export {
   type PagePaintCallback,
   type PageOverlaysBuilder,
   type PageOverlayInfo,
+  type PdfTextSelection,
+  type PdfTextSelectionPoint,
+  type PdfTextSelectionRange,
+  type PdfSelectedTextRange,
+  type SelectionChangeListener,
 } from './viewer.js';
+export type { PdfRect } from '@pdfrx/viewer-core';
 export { definePdfrxViewerElement, PdfrxViewerElement } from './element.js';
 export { PdfTextSearcher, type SearchMatch, type StartTextSearchOptions } from './text-searcher.js';
 export { googleFontsResolver, type FontResolution, type FontResolver } from './font-fallback.js';

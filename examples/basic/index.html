@@ -108,8 +108,16 @@
         text-align: center;
         opacity: 0.85;
       }
-      #pageStatus {
+      #selStatus {
         margin-left: auto;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        opacity: 0.85;
+      }
+      #pageStatus {
+        margin-left: 12px;
         opacity: 0.85;
       }
       .sep {
@@ -138,6 +146,7 @@
       <button id="zoomOutBtn" title="Zoom out">−</button>
       <button id="zoomInBtn" title="Zoom in">+</button>
       <button id="overlayBtn" title="Toggle demo page overlays">Overlay: off</button>
+      <span id="selStatus"></span>
       <span id="pageStatus"></span>
     </header>
     <div id="main">

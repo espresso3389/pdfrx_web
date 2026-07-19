@@ -10,6 +10,7 @@ const searchNext = document.getElementById('searchNext')!;
 const searchStatus = document.getElementById('searchStatus')!;
 const printBtn = document.getElementById('printBtn')!;
 const pageStatus = document.getElementById('pageStatus')!;
+const selStatus = document.getElementById('selStatus')!;
 const tabThumbs = document.getElementById('tabThumbs')!;
 const tabOutline = document.getElementById('tabOutline')!;
 const thumbsPane = document.getElementById('thumbsPane')!;
@@ -30,6 +31,34 @@ function onDocumentLoaded(): void {
   searcher = viewer.createTextSearcher();
   searcher.addListener(updateSearchStatus);
   updateSearchStatus();
+
+  // --- Selection change notification ---
+  // The listener gets only the selection *state* (endpoints) synchronously; it
+  // resolves text and geometry on demand, mirroring pdfrx.
+  let selToken = 0;
+  viewer.addSelectionChangeListener((sel) => {
+    const token = ++selToken;
+    if (sel.isEmpty || !sel.range) {
+      selStatus.textContent = '';
+      selStatus.title = '';
+      return;
+    }
+    const { start, end } = sel.range;
+    const pages = start.pageNumber === end.pageNumber ? `p.${start.pageNumber}` : `p.${start.pageNumber}–${end.pageNumber}`;
+    // Cheap: show the range immediately.
+    selStatus.textContent = `Selected ${pages}…`;
+    // On demand: resolve text + per-page rects (PdfRect).
+    void sel.getSelectedTextRanges().then((ranges) => {
+      if (token !== selToken) return; // superseded by a newer selection
+      const text = ranges.map((r) => r.text).join('\n');
+      selStatus.textContent = `Selected ${pages}: ${text}`;
+      selStatus.title = text;
+      console.log(
+        'selection ranges:',
+        ranges.map((r) => ({ page: r.pageNumber, start: r.start, end: r.end, bounds: r.bounds })),
+      );
+    });
+  });
 
   // --- Sidebar ---
   void buildThumbnails();
