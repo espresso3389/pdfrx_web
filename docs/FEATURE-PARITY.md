@@ -77,10 +77,10 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Interaction toggles / limits | ❌ | Upstream `panEnabled`, `scaleEnabled`, `panAxis`, `boundaryMargin`, `scrollByMouseWheel`, `scrollByArrowKey`, keyboard-nav enable/params. pdfrx_web hardcodes these. |
-| Interaction callbacks | ❌ | Upstream `onInteractionStart/Update/End`, `onGeneralTap` (tap/dblTap/longPress/secondaryTap), `onSecondaryTapUp`, `onLongPressStart`, `onKey`. pdfrx_web has none. |
-| Viewer-fixed overlays (`viewerOverlayBuilder`) | ❌ | pdfrx_web has **page** overlays (pan/zoom with the page) but no viewport-fixed overlay layer. |
-| Scroll thumbs | ❌ | Upstream `PdfViewerScrollThumb`. Not ported (depends on `viewerOverlayBuilder`). |
+| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, and `boundaryMargin` (over-pan). `panAxis` is the one remaining sub-knob. |
+| Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
+| Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
+| Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |
 | Loading / progress / error UI hooks | ◐ | Upstream `loadingBannerBuilder` (with download progress), `errorBannerBuilder`. pdfrx_web's `<pdfrx-viewer>` emits `load` / `error` events but ships no progress/error UI and no download-progress surfacing in the viewer. |
 | Custom scroll physics | ⏸️ | Upstream `scrollPhysics` + Instant/Physics delegates. pdfrx_web has a fixed inertia model. |
 

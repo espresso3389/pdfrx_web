@@ -206,7 +206,60 @@ export interface PdfrxViewerOptions {
    * selects a word, the common text-viewer behavior).
    */
   doubleClickToZoom?: boolean;
+  /** Enables drag-to-pan (background drag / touch drag). Default: `true`. */
+  panEnabled?: boolean;
+  /** Enables gesture zoom (pinch and ctrl/cmd + wheel). Programmatic zoom is
+   * unaffected. Default: `true`. */
+  zoomEnabled?: boolean;
+  /** Enables mouse-wheel / trackpad scrolling. Default: `true`. */
+  scrollByMouseWheel?: boolean;
+  /** Enables arrow-key / Page/Home/End scrolling. Default: `true`. */
+  scrollByArrowKey?: boolean;
+  /**
+   * Extra scrollable margin, in document units, added around the document so it
+   * can be panned past its edges. Default: `0` (edges are hard boundaries).
+   */
+  boundaryMargin?: number;
+  /**
+   * Called when a gesture (pan/pinch/select/handle-drag) begins. Pair with
+   * {@link onInteractionEnd} to e.g. pause other work while the user interacts.
+   */
+  onInteractionStart?: () => void;
+  /** Called when the current gesture ends and the viewer returns to idle. */
+  onInteractionEnd?: () => void;
+  /**
+   * Called for discrete pointer gestures — single tap, double-tap, long-press,
+   * and secondary (right/two-finger) tap — with the type and view-space point.
+   * Fires in addition to the viewer's own handling (selection, links, zoom).
+   */
+  onGeneralTap?: (event: PdfViewerTapEvent) => void;
+  /**
+   * Builds DOM overlays fixed to the **viewport** (they do not pan or zoom with
+   * the pages) — for scroll thumbs, floating toolbars, page badges, etc. The
+   * layer sits above the canvas and is click-through unless a child sets
+   * `pointerEvents: 'auto'`. Rebuilt on resize and document change; call
+   * {@link PdfrxViewer.refreshViewerOverlays} to rebuild on demand.
+   */
+  viewerOverlayBuilder?: ViewerOverlayBuilder;
 }
+
+/** The kind of discrete tap reported to {@link PdfrxViewerOptions.onGeneralTap}. */
+export type PdfViewerTapType = 'tap' | 'doubleTap' | 'longPress' | 'secondaryTap';
+
+/** A discrete pointer gesture (see {@link PdfrxViewerOptions.onGeneralTap}). */
+export interface PdfViewerTapEvent {
+  /** Which gesture occurred. */
+  readonly type: PdfViewerTapType;
+  /** View-space point (CSS pixels relative to the canvas top-left). */
+  readonly viewPoint: Offset;
+}
+
+/**
+ * Builds viewport-fixed DOM overlays (see
+ * {@link PdfrxViewerOptions.viewerOverlayBuilder}). Return one element, an array,
+ * or `null`/`undefined` for none. Position elements in view-space (CSS pixels).
+ */
+export type ViewerOverlayBuilder = (info: { viewSize: Size }) => HTMLElement | HTMLElement[] | null | undefined;
 
 /**
  * Handles a link activation (see {@link PdfrxViewerOptions.onLinkTap}). Receives
@@ -481,6 +534,11 @@ export class PdfrxViewer {
     this.overlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
     container.appendChild(this.overlayRoot);
 
+    // Viewport-fixed overlay layer (does not pan/zoom); above the page overlays.
+    this.viewerOverlayRoot = document.createElement('div');
+    this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    container.appendChild(this.viewerOverlayRoot);
+
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(container);
     this.onResize();
@@ -502,8 +560,11 @@ export class PdfrxViewer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly overlayRoot: HTMLDivElement;
+  private readonly viewerOverlayRoot: HTMLDivElement;
   /** Per-page overlay containers, built lazily when a page first becomes visible. */
   private readonly overlayContainers = new Map<number, HTMLElement>();
+  /** True while a pointer gesture is in progress (for onInteractionStart/End). */
+  private interactionActive = false;
   private readonly resizeObserver: ResizeObserver;
 
   private doc: PdfDocument | null = null;
@@ -1235,6 +1296,7 @@ export class PdfrxViewer {
     void this.doc?.dispose();
     if (this.ownsEngine) this.engine.dispose();
     this.overlayRoot.remove();
+    this.viewerOverlayRoot.remove();
     this.canvas.remove();
   }
 
@@ -1282,6 +1344,7 @@ export class PdfrxViewer {
     this.hoveredLink = null;
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     this.resetView();
+    this.buildViewerOverlays();
     for (const listener of this.documentChangeListeners) {
       try {
         listener();
@@ -1316,6 +1379,7 @@ export class PdfrxViewer {
     } else {
       this.setTransform(this.transform); // re-clamp
     }
+    this.buildViewerOverlays(); // viewport-fixed overlays depend on view size
   }
 
   // -------------------------------------------------------------------------
@@ -1324,7 +1388,9 @@ export class PdfrxViewer {
 
   private clamp(t: ViewTransform): ViewTransform {
     if (!this.layout) return t;
-    const margins = adjustBoundaryMargins(this.viewSize, t.zoom, this.layout.documentSize, edgeInsetsZero);
+    const bm = this.options.boundaryMargin ?? 0;
+    const boundary = bm > 0 ? { left: bm, top: bm, right: bm, bottom: bm } : edgeInsetsZero;
+    const margins = adjustBoundaryMargins(this.viewSize, t.zoom, this.layout.documentSize, boundary);
     return clampToBoundary(t, this.viewSize, this.layout.documentSize, margins);
   }
 
@@ -1830,6 +1896,11 @@ export class PdfrxViewer {
   }
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    this.onPointerDownCore(e);
+    this.reconcileInteraction();
+  };
+
+  private onPointerDownCore(e: PointerEvent): void {
     this.canvas.focus({ preventScroll: true });
     this.lastPointerType = e.pointerType;
     this.hideContextMenu();
@@ -1839,7 +1910,7 @@ export class PdfrxViewer {
     const local = this.localPoint(e);
 
     // Second pointer while panning -> pinch
-    if (this.mode.kind === 'pan' && e.pointerType === 'touch') {
+    if (this.mode.kind === 'pan' && e.pointerType === 'touch' && this.options.zoomEnabled !== false) {
       this.cancelLongPress();
       const first = this.mode.pointerId;
       const firstPos = { x: this.mode.lastX, y: this.mode.lastY };
@@ -1885,16 +1956,25 @@ export class PdfrxViewer {
     }
 
     // 3) pan (touch always starts as pan; long-press upgrades to word select)
+    if (this.options.panEnabled === false) {
+      // Pan disabled: still allow touch long-press word selection, but no drag-pan.
+      if (e.pointerType === 'touch') {
+        this.mode = { kind: 'pan', pointerId: e.pointerId, lastX: local.x, lastY: local.y, moved: false, startedAt: e.timeStamp };
+        this.startLongPress(docPoint);
+      }
+      return;
+    }
     this.mode = { kind: 'pan', pointerId: e.pointerId, lastX: local.x, lastY: local.y, moved: false, startedAt: e.timeStamp };
     if (e.pointerType === 'touch') {
       this.startLongPress(docPoint);
     }
-  };
+  }
 
   private startLongPress(docPoint: Offset): void {
     this.cancelLongPress();
     this.longPressTimer = setTimeout(() => {
       if (this.mode.kind === 'pan' && !this.mode.moved) {
+        this.emitTap('longPress', documentToView(this.transform, docPoint));
         const word = selectWordAt(docPoint, this.selectablePages());
         if (word) {
           this.selA = word.selA;
@@ -1942,6 +2022,7 @@ export class PdfrxViewer {
         this.cancelLongPress();
         this.mode.lastX = local.x;
         this.mode.lastY = local.y;
+        if (this.options.panEnabled === false) return; // moved, but pan is disabled
         this.recordVelocitySample(e.timeStamp, local);
         this.setTransform({
           zoom: this.transform.zoom,
@@ -2002,11 +2083,12 @@ export class PdfrxViewer {
           if (!moved) {
             const local = this.localPoint(e);
             if (e.pointerType === 'touch' && this.consumeDoubleTap(local, e.timeStamp)) {
+              this.emitTap('doubleTap', local);
               this.zoomToggle(local, this.defaultAnimationDuration || 250);
             } else {
               this.handleTap(local);
             }
-          } else if (e.pointerType === 'touch') {
+          } else if (e.pointerType === 'touch' && this.options.panEnabled !== false) {
             this.startFling(e.timeStamp);
           }
         }
@@ -2037,10 +2119,38 @@ export class PdfrxViewer {
       this.pendingMenuOnUp = false;
       if (this.selA && this.selB) this.showContextMenuNearSelection();
     }
+    this.reconcileInteraction();
   };
+
+  /** Fires onInteractionStart/End when the gesture state crosses idle↔active. */
+  private reconcileInteraction(): void {
+    const active = this.mode.kind !== 'none';
+    if (active === this.interactionActive) return;
+    this.interactionActive = active;
+    const cb = active ? this.options.onInteractionStart : this.options.onInteractionEnd;
+    if (cb) {
+      try {
+        cb();
+      } catch (e) {
+        console.error('Error in interaction callback:', e);
+      }
+    }
+  }
+
+  /** Delivers a discrete tap gesture to {@link PdfrxViewerOptions.onGeneralTap}. */
+  private emitTap(type: PdfViewerTapType, viewPoint: Offset): void {
+    const cb = this.options.onGeneralTap;
+    if (!cb) return;
+    try {
+      cb({ type, viewPoint });
+    } catch (e) {
+      console.error('Error in onGeneralTap handler:', e);
+    }
+  }
 
   /** Tap (press without move): open a link if hit, otherwise clear the selection. */
   private handleTap(local: Offset): void {
+    this.emitTap('tap', local);
     const link = this.linkAt(viewToDocument(this.transform, local));
     if (link) {
       this.openLink(link.link);
@@ -2069,10 +2179,12 @@ export class PdfrxViewer {
   }
 
   private readonly onDoubleClick = (e: MouseEvent): void => {
+    const local = this.localPoint(e);
+    this.emitTap('doubleTap', local);
     if (this.options.doubleClickToZoom) {
-      this.zoomToggle(this.localPoint(e), this.defaultAnimationDuration || 250);
+      this.zoomToggle(local, this.defaultAnimationDuration || 250);
     } else {
-      this.selectWordAtPoint(this.localPoint(e));
+      this.selectWordAtPoint(local);
     }
   };
 
@@ -2082,8 +2194,10 @@ export class PdfrxViewer {
     this.stopFling();
     const local = this.localPoint(e);
     if (e.ctrlKey || e.metaKey) {
+      if (this.options.zoomEnabled === false) return;
       this.zoomAt(local, this.transform.zoom * Math.exp(-e.deltaY * 0.002));
     } else {
+      if (this.options.scrollByMouseWheel === false) return;
       let dx = e.deltaX;
       let dy = e.deltaY;
       // In horizontal layout, a plain vertical wheel scrolls sideways through
@@ -2133,17 +2247,13 @@ export class PdfrxViewer {
           this.goToPage(this.doc?.pages.length ?? 1);
           return true;
         case 'ArrowDown':
-          this.scrollByKey(0, k);
-          return true;
+          return this.scrollByKey(0, k);
         case 'ArrowUp':
-          this.scrollByKey(0, -k);
-          return true;
+          return this.scrollByKey(0, -k);
         case 'ArrowLeft':
-          this.scrollByKey(-k, 0);
-          return true;
+          return this.scrollByKey(-k, 0);
         case 'ArrowRight':
-          this.scrollByKey(k, 0);
-          return true;
+          return this.scrollByKey(k, 0);
         case '+':
         case '=':
           if (cmd) {
@@ -2173,13 +2283,19 @@ export class PdfrxViewer {
     return true;
   }
 
-  /** Scroll the view content; positive dy scrolls down (like arrow-down). */
-  private scrollByKey(dx: number, dy: number): void {
+  /**
+   * Scroll the view content; positive dy scrolls down (like arrow-down). Returns
+   * whether it acted (false when {@link PdfrxViewerOptions.scrollByArrowKey} is
+   * disabled).
+   */
+  private scrollByKey(dx: number, dy: number): boolean {
+    if (this.options.scrollByArrowKey === false) return false;
     this.setTransform({
       zoom: this.transform.zoom,
       xZoomed: this.transform.xZoomed - dx,
       yZoomed: this.transform.yZoomed - dy,
     });
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -2188,7 +2304,9 @@ export class PdfrxViewer {
 
   private readonly onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
-    this.showContextMenu(this.localPoint(e));
+    const local = this.localPoint(e);
+    this.emitTap('secondaryTap', local);
+    this.showContextMenu(local);
   };
 
   private showContextMenuNearSelection(): void {
@@ -2370,6 +2488,40 @@ export class PdfrxViewer {
   setPageOverlaysBuilder(builder: PageOverlaysBuilder | null): void {
     this.options.pageOverlaysBuilder = builder ?? undefined;
     this.refreshOverlays();
+  }
+
+  /**
+   * Rebuilds the viewport-fixed overlays from
+   * {@link PdfrxViewerOptions.viewerOverlayBuilder}. Called automatically on
+   * resize and document change; call this after your builder's inputs change.
+   */
+  refreshViewerOverlays(): void {
+    this.buildViewerOverlays();
+  }
+
+  /**
+   * Sets (or clears with `null`) the viewport-fixed overlay builder and rebuilds
+   * it. Convenience for callers that construct the viewer without the
+   * {@link PdfrxViewerOptions.viewerOverlayBuilder} option.
+   */
+  setViewerOverlayBuilder(builder: ViewerOverlayBuilder | null): void {
+    this.options.viewerOverlayBuilder = builder ?? undefined;
+    this.buildViewerOverlays();
+  }
+
+  private buildViewerOverlays(): void {
+    this.viewerOverlayRoot.replaceChildren();
+    const builder = this.options.viewerOverlayBuilder;
+    if (!builder || this.viewSize.width <= 0 || this.viewSize.height <= 0) return;
+    let built: HTMLElement | HTMLElement[] | null | undefined;
+    try {
+      built = builder({ viewSize: this.viewSize });
+    } catch (e) {
+      console.error('Error in viewerOverlayBuilder:', e);
+      return;
+    }
+    if (!built) return;
+    for (const el of Array.isArray(built) ? built : [built]) this.viewerOverlayRoot.appendChild(el);
   }
 
   /** Positions/builds per-page overlay containers to follow the view transform. */

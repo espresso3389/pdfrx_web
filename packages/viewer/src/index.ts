@@ -36,6 +36,9 @@ export {
   type LinkTapHandler,
   type LayoutDirection,
   type LayoutPagesFn,
+  type PdfViewerTapEvent,
+  type PdfViewerTapType,
+  type ViewerOverlayBuilder,
 } from './viewer.js';
 export type { PdfRect, PdfPoint, Offset, PageGeometry, PageLayout, LayoutPagesOptions } from '@pdfrx/viewer-core';
 export { layoutPagesVertical, layoutPagesHorizontal } from '@pdfrx/viewer-core';
