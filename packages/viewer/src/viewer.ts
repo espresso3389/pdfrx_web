@@ -177,6 +177,35 @@ export interface PdfrxViewerOptions {
    * default. Omit it to keep the built-in behavior.
    */
   onLinkTap?: LinkTapHandler;
+  /**
+   * Default animation duration in milliseconds for navigation and zoom
+   * (`goToPage`, `goToDest`, `fitTo*`, `setZoom`, `zoomUp`/`zoomDown`,
+   * `zoomToggle`). `0` (the default) means jump instantly. Each of those methods
+   * also takes a per-call `duration` that overrides this.
+   */
+  animationDuration?: number;
+  /**
+   * Multiplicative step between zoom stops for {@link PdfrxViewer.zoomUp} /
+   * {@link PdfrxViewer.zoomDown} (and ctrl/cmd +/-). Stops are `factor^k`, so
+   * repeated up/down lands on the same grid. Default: `√2`.
+   */
+  zoomStepFactor?: number;
+  /**
+   * How far {@link PdfrxViewer.zoomToggle} (and double-tap, when enabled) zooms
+   * in, as a multiple of the fit-page scale. Default: `3`.
+   */
+  doubleTapZoomFactor?: number;
+  /**
+   * Enables touch **double-tap** to zoom in/out at the tapped point (animated
+   * with {@link animationDuration} or a 250 ms default). On by default.
+   */
+  doubleTapToZoom?: boolean;
+  /**
+   * Make a **mouse double-click** zoom (via {@link PdfrxViewer.zoomToggle})
+   * instead of selecting the word under the cursor. Off by default (double-click
+   * selects a word, the common text-viewer behavior).
+   */
+  doubleClickToZoom?: boolean;
 }
 
 /**
@@ -390,6 +419,8 @@ type InteractionMode =
 const HANDLE_HIT_RADIUS = 24;
 const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_SLOP = 30;
 
 /**
  * Canvas-based PDF viewer: renders pages to a `<canvas>` and drives panning,
@@ -531,6 +562,18 @@ export class PdfrxViewer {
   private rafId: number | null = null;
   private paintTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+
+  /** In-flight transform animation (navigation/zoom tween), or null. */
+  private anim: {
+    from: ViewTransform;
+    to: ViewTransform;
+    startTime: number;
+    duration: number;
+    handle: number | ReturnType<typeof setTimeout>;
+    hidden: boolean;
+  } | null = null;
+  /** Last completed tap (for touch double-tap detection). */
+  private lastTap: { time: number; x: number; y: number } | null = null;
 
   // -------------------------------------------------------------------------
   // Public API
@@ -784,9 +827,14 @@ export class PdfrxViewer {
     return true;
   }
 
-  /** Fit the given page (1-based) into the view — alias of {@link fitToPage}. */
-  goToPage(pageNumber: number): void {
-    this.fitToPage(pageNumber);
+  /**
+   * Fit the given page (1-based) into the view — alias of {@link fitToPage}.
+   *
+   * @param duration - Animation duration in ms (defaults to
+   *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
+   */
+  goToPage(pageNumber: number, duration?: number): void {
+    this.fitToPage(pageNumber, duration);
   }
 
   /** The current zoom factor (`1` = 72 DPI, one PDF point per CSS pixel). */
@@ -865,10 +913,13 @@ export class PdfrxViewer {
   /**
    * Fit an entire page within the viewport (both width and height contained).
    * Defaults to the current page. This is the "Fit Page" action.
+   *
+   * @param duration - Animation duration in ms (defaults to
+   *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
    */
-  fitToPage(pageNumber?: number): void {
+  fitToPage(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'page');
-    if (t) this.setTransform(t);
+    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
   }
 
   /**
@@ -876,18 +927,18 @@ export class PdfrxViewer {
    * to the top of the viewport. Defaults to the current page. This is the
    * "Fit Width" action (a common default for continuous reading).
    */
-  fitToWidth(pageNumber?: number): void {
+  fitToWidth(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'width');
-    if (t) this.setTransform(t);
+    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
   }
 
   /**
    * Scale a page so its height fills the viewport, centered horizontally.
    * Defaults to the current page. This is the "Fit Height" action.
    */
-  fitToHeight(pageNumber?: number): void {
+  fitToHeight(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'height');
-    if (t) this.setTransform(t);
+    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
   }
 
   /** The page (1-based) currently covering the largest visible area, or null. */
@@ -911,12 +962,15 @@ export class PdfrxViewer {
   /**
    * Navigate to a PDF explicit destination. Falls back to `goToPage` for
    * unknown/short-hand destinations.
+   *
+   * @param duration - Animation duration in ms (defaults to
+   *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
    */
-  goToDest(dest: PdfDest | null): void {
+  goToDest(dest: PdfDest | null, duration?: number): void {
     if (!dest) return;
     const t = this.calcTransformForDest(dest);
-    if (t) this.setTransform(t);
-    else this.goToPage(dest.pageNumber);
+    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    else this.goToPage(dest.pageNumber, duration);
   }
 
   /** @internal Computes the transform for a destination command (xyz, fit variants, fitR). */
@@ -1097,10 +1151,65 @@ export class PdfrxViewer {
    * @param zoom - Target zoom factor (`1` = one PDF point per CSS pixel).
    * @param viewCenter - View-space point to keep stationary. Defaults to the
    *   center of the viewport.
+   * @param duration - Animation duration in ms (defaults to
+   *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
    */
-  setZoom(zoom: number, viewCenter?: Offset): void {
+  setZoom(zoom: number, viewCenter?: Offset, duration?: number): void {
     const center = viewCenter ?? { x: this.viewSize.width / 2, y: this.viewSize.height / 2 };
-    this.zoomAt(center, zoom);
+    this.zoomAt(center, zoom, duration ?? this.defaultAnimationDuration);
+  }
+
+  /**
+   * Zooms **in** to the next zoom stop (`factor^k`, see
+   * {@link PdfrxViewerOptions.zoomStepFactor}), keeping `viewCenter` fixed.
+   */
+  zoomUp(viewCenter?: Offset, duration?: number): void {
+    this.setZoom(this.getNextZoom(), viewCenter, duration);
+  }
+
+  /** Zooms **out** to the previous zoom stop. See {@link zoomUp}. */
+  zoomDown(viewCenter?: Offset, duration?: number): void {
+    this.setZoom(this.getPreviousZoom(), viewCenter, duration);
+  }
+
+  /**
+   * Toggles between the fit-page zoom and a zoomed-in level
+   * ({@link PdfrxViewerOptions.doubleTapZoomFactor}× fit), centered on
+   * `viewPoint`. This is what touch double-tap and (optionally) mouse
+   * double-click invoke.
+   */
+  zoomToggle(viewPoint?: Offset, duration?: number): void {
+    const fit = this.pageFitScale(this.currentPageNumber ?? 1) ?? this.transform.zoom;
+    const zoomedIn = this.clampZoom(fit * (this.options.doubleTapZoomFactor ?? 3));
+    const atFit = Math.abs(this.transform.zoom - fit) <= fit * 0.02;
+    this.setZoom(atFit ? zoomedIn : fit, viewPoint, duration);
+  }
+
+  /** The next zoom stop above `zoom` on the `factor^k` grid, clamped. */
+  getNextZoom(zoom = this.transform.zoom): number {
+    const f = this.zoomStepFactor;
+    const k = Math.floor(Math.log(zoom) / Math.log(f) + 1e-6) + 1;
+    return this.clampZoom(Math.pow(f, k));
+  }
+
+  /** The previous zoom stop below `zoom` on the `factor^k` grid, clamped. */
+  getPreviousZoom(zoom = this.transform.zoom): number {
+    const f = this.zoomStepFactor;
+    const k = Math.ceil(Math.log(zoom) / Math.log(f) - 1e-6) - 1;
+    return this.clampZoom(Math.pow(f, k));
+  }
+
+  private get zoomStepFactor(): number {
+    const f = this.options.zoomStepFactor ?? Math.SQRT2;
+    return f > 1 ? f : Math.SQRT2;
+  }
+
+  private clampZoom(zoom: number): number {
+    return Math.min(Math.max(zoom, this.minZoom), this.maxZoom);
+  }
+
+  private get defaultAnimationDuration(): number {
+    return Math.max(0, this.options.animationDuration ?? 0);
   }
 
   /**
@@ -1116,6 +1225,7 @@ export class PdfrxViewer {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     if (this.paintTimer !== null) clearTimeout(this.paintTimer);
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.stopAnimation();
     this.stopAutoScroll();
     this.stopFling();
     this.resizeObserver.disconnect();
@@ -1218,19 +1328,75 @@ export class PdfrxViewer {
     return clampToBoundary(t, this.viewSize, this.layout.documentSize, margins);
   }
 
+  /** Applies a transform immediately, cancelling any in-flight animation. */
   private setTransform(t: ViewTransform): void {
+    this.stopAnimation();
     this.transform = this.clamp(t);
     this.invalidate();
   }
 
-  private zoomAt(viewPoint: Offset, newZoom: number): void {
-    const zoom = Math.min(Math.max(newZoom, this.minZoom), this.maxZoom);
+  private zoomAt(viewPoint: Offset, newZoom: number, duration = 0): void {
+    const zoom = this.clampZoom(newZoom);
     const docPoint = viewToDocument(this.transform, viewPoint);
-    this.setTransform({
-      zoom,
-      xZoomed: viewPoint.x - docPoint.x * zoom,
-      yZoomed: viewPoint.y - docPoint.y * zoom,
-    });
+    this.navigateTo(
+      { zoom, xZoomed: viewPoint.x - docPoint.x * zoom, yZoomed: viewPoint.y - docPoint.y * zoom },
+      duration,
+    );
+  }
+
+  /**
+   * Moves to `target`, animating over `duration` ms (or jumping when `duration`
+   * <= 0). The target is boundary-clamped; intermediate frames interpolate the
+   * affine transform with an ease-out curve.
+   */
+  private navigateTo(target: ViewTransform, duration: number): void {
+    const to = this.clamp(target);
+    this.stopAnimation();
+    if (duration <= 0 || this.viewSize.width <= 0) {
+      this.transform = to;
+      this.invalidate();
+      return;
+    }
+    const from = this.transform;
+    // No visible change -> skip the animation.
+    if (Math.abs(from.zoom - to.zoom) < 1e-6 && Math.abs(from.xZoomed - to.xZoomed) < 0.5 && Math.abs(from.yZoomed - to.yZoomed) < 0.5) {
+      this.transform = to;
+      this.invalidate();
+      return;
+    }
+    const hidden = document.visibilityState === 'hidden';
+    const startTime = performance.now();
+    const step = (): void => {
+      if (!this.anim) return;
+      const elapsed = performance.now() - this.anim.startTime;
+      const raw = Math.min(1, elapsed / this.anim.duration);
+      const e = 1 - Math.pow(1 - raw, 3); // easeOutCubic
+      const a = this.anim.from;
+      const b = this.anim.to;
+      this.transform = {
+        zoom: a.zoom + (b.zoom - a.zoom) * e,
+        xZoomed: a.xZoomed + (b.xZoomed - a.xZoomed) * e,
+        yZoomed: a.yZoomed + (b.yZoomed - a.yZoomed) * e,
+      };
+      this.invalidate();
+      if (raw >= 1) {
+        this.transform = b;
+        this.anim = null;
+        this.invalidate();
+      } else {
+        this.anim.handle = hidden ? setTimeout(step, 16) : requestAnimationFrame(step);
+      }
+    };
+    this.anim = { from, to, startTime, duration, handle: 0, hidden };
+    this.anim.handle = hidden ? setTimeout(step, 16) : requestAnimationFrame(step);
+  }
+
+  /** Cancels any in-flight navigation/zoom animation (leaving the transform as-is). */
+  private stopAnimation(): void {
+    if (!this.anim) return;
+    if (this.anim.hidden) clearTimeout(this.anim.handle as ReturnType<typeof setTimeout>);
+    else cancelAnimationFrame(this.anim.handle as number);
+    this.anim = null;
   }
 
   // -------------------------------------------------------------------------
@@ -1668,6 +1834,7 @@ export class PdfrxViewer {
     this.lastPointerType = e.pointerType;
     this.hideContextMenu();
     this.stopFling();
+    this.stopAnimation();
     this.velocitySamples.length = 0;
     const local = this.localPoint(e);
 
@@ -1833,7 +2000,12 @@ export class PdfrxViewer {
           const moved = this.mode.moved;
           this.mode = { kind: 'none' };
           if (!moved) {
-            this.handleTap(this.localPoint(e));
+            const local = this.localPoint(e);
+            if (e.pointerType === 'touch' && this.consumeDoubleTap(local, e.timeStamp)) {
+              this.zoomToggle(local, this.defaultAnimationDuration || 250);
+            } else {
+              this.handleTap(local);
+            }
           } else if (e.pointerType === 'touch') {
             this.startFling(e.timeStamp);
           }
@@ -1877,8 +2049,31 @@ export class PdfrxViewer {
     this.clearSelection();
   }
 
+  /**
+   * Records a touch tap and reports whether it completes a double-tap (two taps
+   * close in time and space). Returns false — and does not arm — when
+   * {@link PdfrxViewerOptions.doubleTapToZoom} is disabled.
+   */
+  private consumeDoubleTap(local: Offset, time: number): boolean {
+    if (this.options.doubleTapToZoom === false) {
+      this.lastTap = null;
+      return false;
+    }
+    const prev = this.lastTap;
+    if (prev && time - prev.time <= DOUBLE_TAP_MS && Math.hypot(local.x - prev.x, local.y - prev.y) <= DOUBLE_TAP_SLOP) {
+      this.lastTap = null;
+      return true;
+    }
+    this.lastTap = { time, x: local.x, y: local.y };
+    return false;
+  }
+
   private readonly onDoubleClick = (e: MouseEvent): void => {
-    this.selectWordAtPoint(this.localPoint(e));
+    if (this.options.doubleClickToZoom) {
+      this.zoomToggle(this.localPoint(e), this.defaultAnimationDuration || 250);
+    } else {
+      this.selectWordAtPoint(this.localPoint(e));
+    }
   };
 
   private readonly onWheel = (e: WheelEvent): void => {
@@ -1952,13 +2147,13 @@ export class PdfrxViewer {
         case '+':
         case '=':
           if (cmd) {
-            this.setZoom(this.transform.zoom * 1.2);
+            this.zoomUp();
             return true;
           }
           return false;
         case '-':
           if (cmd) {
-            this.setZoom(this.transform.zoom / 1.2);
+            this.zoomDown();
             return true;
           }
           return false;

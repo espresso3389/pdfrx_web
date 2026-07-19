@@ -46,9 +46,9 @@ Upstream API names are given so you can find the reference implementation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Animated navigation / zoom transitions | ❌ | Upstream `goToPage/goToArea/goToDest/setZoom(duration:)` animate. pdfrx_web moves are instant. |
-| Double-tap / dbl-click to zoom | ❌ | Upstream double-tap cycles zoom stops. pdfrx_web double-click selects a word instead; no zoom-toggle gesture. |
-| Zoom snap steps | ❌ | Upstream `zoomUp/zoomDown`, `getNextZoom/getPreviousZoom`, and `PdfViewerZoomStepsDelegate` (Default/Smart) provide discrete stops. pdfrx_web zoom is continuous (`setZoom`, ctrl+wheel, pinch). |
+| Animated navigation / zoom transitions | ✅ | `goToPage` / `goToDest` / `fitTo*` / `setZoom` / `zoomUp` / `zoomDown` / `zoomToggle` take a `duration` (ms); `PdfrxViewerOptions.animationDuration` sets the default. Ease-out-cubic tween. |
+| Double-tap / dbl-click to zoom | ✅ | Touch double-tap zooms at the tapped point (`doubleTapToZoom`, on by default); `doubleClickToZoom` makes mouse double-click do the same instead of word-select. `PdfrxViewer.zoomToggle` is the programmatic entry point. |
+| Zoom snap steps | ✅ | `zoomUp` / `zoomDown` snap to a `factor^k` grid (`zoomStepFactor`, default √2); `getNextZoom` / `getPreviousZoom` expose the stops. ctrl/cmd +/- use them. |
 | `goToArea` / `goToRectInsidePage` / `goToPosition` | ◐ | pdfrx_web has `goToPage`, `goToDest`, `fitToPage/Width/Height`, `ensureVisiblePageRect`. The richer target-a-rect/position/anchor family (with `PdfPageAnchor`) is not surfaced publicly, though the math lives in `@pdfrx/viewer-core`. |
 | Public coordinate conversion & hit-testing | ✅ | `PdfrxViewer.viewToDocumentPoint` / `documentToViewPoint` convert view↔document space, and `getPageHitTestResult(viewPoint)` returns the page under a point plus the location in PDF page coordinates (`PdfPageHitTestResult`). |
 | `onPageChanged` notification | ✅ | `PdfrxViewer.addPageChangeListener(fn)` fires (deduplicated) when the current page changes; the example uses it instead of polling. |

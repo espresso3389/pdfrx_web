@@ -159,14 +159,8 @@ printBtn.addEventListener('click', () => void el.viewer?.print());
 document.getElementById('fitPageBtn')!.addEventListener('click', () => el.viewer?.fitToPage());
 document.getElementById('fitWidthBtn')!.addEventListener('click', () => el.viewer?.fitToWidth());
 document.getElementById('fitHeightBtn')!.addEventListener('click', () => el.viewer?.fitToHeight());
-document.getElementById('zoomInBtn')!.addEventListener('click', () => {
-  const v = el.viewer;
-  if (v) v.setZoom(v.zoom * 1.25);
-});
-document.getElementById('zoomOutBtn')!.addEventListener('click', () => {
-  const v = el.viewer;
-  if (v) v.setZoom(v.zoom / 1.25);
-});
+document.getElementById('zoomInBtn')!.addEventListener('click', () => el.viewer?.zoomUp(undefined, 200));
+document.getElementById('zoomOutBtn')!.addEventListener('click', () => el.viewer?.zoomDown(undefined, 200));
 
 // --- Demo page overlays (DOM elements that pan & zoom with the page) ---
 
@@ -243,7 +237,7 @@ async function buildThumbnails(): Promise<void> {
     canvas.style.width = '130px';
     canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
     bitmap.close();
-    canvas.addEventListener('click', () => viewer.goToPage(page.pageNumber));
+    canvas.addEventListener('click', () => viewer.goToPage(page.pageNumber, 300));
     const label = document.createElement('div');
     label.className = 'thumb-label';
     label.textContent = `${page.pageNumber}`;
@@ -269,7 +263,7 @@ async function buildOutline(): Promise<void> {
       item.style.paddingLeft = `${depth * 12}px`;
       item.textContent = node.title;
       item.title = node.title;
-      item.addEventListener('click', () => viewer.goToDest(node.dest));
+      item.addEventListener('click', () => viewer.goToDest(node.dest, 300));
       outlinePane.appendChild(item);
       addNodes(node.children, depth + 1);
     }
