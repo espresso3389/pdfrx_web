@@ -9,8 +9,11 @@ it directly when you only need rendering/extraction without the viewer UI.
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
-The WASM binaries (`assets/pdfium_worker.js`, `assets/pdfium.wasm`) are bundled
-in this package.
+The rendering engine is bundled in this package: `assets/pdfium.wasm` is a
+prebuilt [PDFium](https://pdfium.googlesource.com/pdfium/) WebAssembly binary
+from [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries),
+and `assets/pdfium_worker.js` is the worker that drives it (see
+[`assets/UPSTREAM.md`](assets/UPSTREAM.md) for provenance).
 
 ## Installation
 

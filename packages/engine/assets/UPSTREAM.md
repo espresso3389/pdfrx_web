@@ -1,11 +1,23 @@
 # Vendored WASM engine assets
 
-`pdfium_worker.js` and `pdfium.wasm` are the bundled rendering engine, committed
-to this repo so it builds standalone.
+`pdfium.wasm` and `pdfium_worker.js` are the bundled rendering engine, committed
+to this repo so it builds standalone. Both are now maintained here directly.
 
-- Originally sourced from https://github.com/espresso3389/pdfrx
-  (`packages/pdfrx/assets`) at commit `03e2d3af078a7fb937ef3f7a604bb4477a6187e9`.
-- `pdfium_worker.js` carries one local modification: the render bitmap copy-out
-  emits **RGBA** (Canvas/WebGL-ready) instead of the engine's native BGRA. These
-  files are now maintained in place; re-apply the RGBA change if you replace them
-  with a newer build (see `PdfImage` in `packages/engine/src/types.ts`).
+## `pdfium.wasm`
+
+A prebuilt PDFium WebAssembly binary from
+[bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) — a
+general-purpose PDFium build, not specific to this project. Update it by
+dropping in a newer build from that project. PDFium is licensed under the
+BSD-style [PDFium license](https://pdfium.googlesource.com/pdfium/+/main/LICENSE).
+
+## `pdfium_worker.js`
+
+The Web Worker that drives `pdfium.wasm` and speaks the postMessage protocol in
+`packages/engine/src/protocol.ts`. It originated in the
+[pdfrx](https://github.com/espresso3389/pdfrx) project and is maintained here as
+a fork.
+
+- Local modification: the render bitmap copy-out emits **RGBA** (Canvas/WebGL-
+  ready) instead of PDFium's native BGRA. If you re-sync it from upstream,
+  re-apply that change (see `PdfImage` in `packages/engine/src/types.ts`).
