@@ -31,11 +31,16 @@ npm run dev     # open http://localhost:5173
 The demo has a search bar, thumbnails/outline sidebar, print button, and
 supports opening local files (button or drag & drop) and URLs.
 
-## Usage
+## Installation
 
-> [!NOTE]
-> The packages are not published to npm yet; consume them from this
-> repository (e.g. as a git dependency or workspace) for now.
+```sh
+npm install @pdfrx/viewer
+```
+
+This pulls in `@pdfrx/viewer-core` and `@pdfrx/engine` (which bundles the
+pdfium WASM engine assets) automatically.
+
+## Usage
 
 The easiest way is the `<pdfrx-viewer>` custom element:
 
@@ -73,8 +78,9 @@ await viewer.print();
 Two things your app must provide:
 
 1. **The pdfium engine assets.** Copy `pdfium_worker.js` and `pdfium.wasm`
-   from `@pdfrx/engine/assets/` to a static path on your server and point
-   `wasmModulesUrl` at it. They can live on any origin (a CDN is fine).
+   from `node_modules/@pdfrx/engine/assets/` to a static path on your server
+   and point `wasmModulesUrl` at it. They can live on any origin (a CDN is
+   fine).
 2. **CORS for remote PDFs.** `openUrl` fetches the document, so PDFs on
    other origins need CORS headers (same as any `fetch`).
 
