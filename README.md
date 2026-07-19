@@ -1,6 +1,7 @@
 # pdfrx_web
 
 [![npm](https://img.shields.io/npm/v/%40pdfrx%2Fviewer?label=%40pdfrx%2Fviewer)](https://www.npmjs.com/package/@pdfrx/viewer)
+[![Live demo](https://img.shields.io/badge/demo-live-brightgreen)](https://espresso3389.github.io/pdfrx_web/demo/)
 [![API docs](https://img.shields.io/badge/API-docs-blue)](https://espresso3389.github.io/pdfrx_web/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -24,6 +25,13 @@ fidelity, same behavior, no Flutter runtime.
 
 ## Try the demo
 
+**[Live demo →](https://espresso3389.github.io/pdfrx_web/demo/)** — runs
+entirely in your browser.
+
+The demo has a search bar, thumbnails/outline sidebar, print button, and
+supports opening local files (button or drag & drop) and URLs. To run it
+locally:
+
 ```sh
 git clone https://github.com/espresso3389/pdfrx_web.git
 cd pdfrx_web
@@ -31,9 +39,6 @@ npm install
 npm run build
 npm run dev     # open http://localhost:5173
 ```
-
-The demo has a search bar, thumbnails/outline sidebar, print button, and
-supports opening local files (button or drag & drop) and URLs.
 
 ## Installation
 

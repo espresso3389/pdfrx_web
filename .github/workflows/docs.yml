@@ -28,8 +28,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run docs
+      # Builds packages, TypeDoc API reference, and the example app, then
+      # assembles them into docs-site/ (docs at root, demo under /demo/).
+      - run: npm run build:pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs-site
