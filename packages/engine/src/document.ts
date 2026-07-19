@@ -649,7 +649,8 @@ export class PdfPage {
   private readonly bbBottom: number;
 
   /**
-   * Renders (a part of) the page to a {@link PdfImage} of BGRA8888 pixels.
+   * Renders (a part of) the page to a {@link PdfImage} of RGBA8888 pixels
+   * (Canvas/WebGL-ready; the worker converts from pdfium's native BGRA).
    *
    * The page is scaled to `fullWidth` x `fullHeight` (defaulting to the page
    * size in points, i.e. 72 dpi) and the `x`/`y`/`width`/`height` sub-region of

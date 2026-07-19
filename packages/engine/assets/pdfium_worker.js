@@ -1762,19 +1762,28 @@ async function renderPage(params) {
     if (formHandle && annotationRenderingMode == PdfAnnotationRenderingMode_annotationAndForms) {
       Pdfium.wasmExports.FPDF_FFLDraw(formHandle, bitmap, pageHandle, -x, -y, fullWidth, fullHeight, rotation, flags);
     }
+    // pdfium renders BGRA; emit RGBA so the result is directly Canvas/WebGL-ready
+    // on the web (no web consumer wants BGRA). The B<->R swap is folded into the
+    // copy that happens here anyway, so it is effectively free.
+    // [pdfrx_web: RGBA output patch — reapplied by scripts/sync-assets.mjs]
     const src = new Uint8Array(Pdfium.memory.buffer, bufferPtr, bufferSize);
     let copiedBuffer = new ArrayBuffer(bufferSize);
     let dest = new Uint8Array(copiedBuffer);
     if (flags & premultipliedAlpha) {
       for (let i = 0; i < src.length; i += 4) {
         const a = src[i + 3];
-        dest[i] = (src[i] * a + 128) >> 8;
+        dest[i] = (src[i + 2] * a + 128) >> 8;
         dest[i + 1] = (src[i + 1] * a + 128) >> 8;
-        dest[i + 2] = (src[i + 2] * a + 128) >> 8;
+        dest[i + 2] = (src[i] * a + 128) >> 8;
         dest[i + 3] = a;
       }
     } else {
-      dest.set(src);
+      for (let i = 0; i < src.length; i += 4) {
+        dest[i] = src[i + 2];
+        dest[i + 1] = src[i + 1];
+        dest[i + 2] = src[i];
+        dest[i + 3] = src[i + 3];
+      }
     }
 
     _updateMissingFonts(docHandle);

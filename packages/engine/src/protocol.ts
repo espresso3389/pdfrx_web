@@ -223,7 +223,11 @@ export interface PdfiumCommandMap {
     params: { pageHandle: number };
     result: { message: string };
   };
-  /** Renders (a region of) a page to a BGRA8888 bitmap. */
+  /**
+   * Renders (a region of) a page to an RGBA8888 bitmap. pdfium renders BGRA
+   * natively; the vendored worker swaps to RGBA on the way out (see
+   * `scripts/sync-assets.mjs`) so the result is Canvas/WebGL-ready.
+   */
   renderPage: {
     params: {
       docHandle: number;
@@ -244,7 +248,7 @@ export interface PdfiumCommandMap {
       formHandle?: number;
     };
     result: {
-      /** BGRA8888, tightly packed, width*height*4 bytes. */
+      /** RGBA8888, tightly packed, width*height*4 bytes. */
       imageData: ArrayBuffer;
       width: number;
       height: number;

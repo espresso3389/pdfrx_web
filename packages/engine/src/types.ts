@@ -186,11 +186,14 @@ export class PdfPasswordException extends Error {
 }
 
 /**
- * Result of rendering (a part of) a page: BGRA8888 pixels.
+ * Result of rendering (a part of) a page: RGBA8888 pixels, ready for Canvas 2D
+ * and WebGL without any channel conversion.
  *
- * The worker returns pixels in pdfium's native BGRA order; use
- * {@link toImageData} / {@link toImageBitmap} to obtain Canvas-ready
- * (RGBA-ordered) images. Counterpart of `PdfImage` in pdfrx. See
+ * pdfium renders in its native BGRA order, but the worker swaps channels while
+ * copying the bitmap out (effectively free), so {@link pixels} is already
+ * RGBA — the only pixel format the web can consume directly. (This is where
+ * the web port deliberately diverges from Flutter pdfrx, whose `PdfImage`
+ * stays BGRA because Skia's `decodeImageFromPixels` takes BGRA natively.) See
  * {@link PdfPage.render}.
  */
 export class PdfImage {
@@ -199,21 +202,19 @@ export class PdfImage {
     readonly width: number,
     /** Height of the bitmap in pixels. */
     readonly height: number,
-    /** BGRA8888, tightly packed, `width * height * 4` bytes. */
+    /** RGBA8888, tightly packed, `width * height * 4` bytes. */
     readonly pixels: Uint8Array,
   ) {}
 
-  /** Converts BGRA to RGBA and wraps the result in an `ImageData` for Canvas 2D. */
+  /**
+   * Wraps the RGBA pixels in an `ImageData` for Canvas 2D. Zero-copy: the
+   * returned `ImageData` shares this image's pixel buffer, so do not mutate
+   * {@link pixels} afterwards if you keep using the `ImageData`.
+   */
   toImageData(): ImageData {
-    const src = this.pixels;
-    const dest = new Uint8ClampedArray(src.length);
-    for (let i = 0; i < src.length; i += 4) {
-      dest[i] = src[i + 2]!;
-      dest[i + 1] = src[i + 1]!;
-      dest[i + 2] = src[i]!;
-      dest[i + 3] = src[i + 3]!;
-    }
-    return new ImageData(dest, this.width, this.height);
+    const p = this.pixels;
+    const data = new Uint8ClampedArray(p.buffer as ArrayBuffer, p.byteOffset, p.byteLength);
+    return new ImageData(data, this.width, this.height);
   }
 
   /** Creates an `ImageBitmap`, which is cheaper to draw repeatedly than `putImageData`. */

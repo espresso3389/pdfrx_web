@@ -31,8 +31,11 @@ Notable client behaviors ported from `pdfrx_wasm.dart`:
   before sending them.
 - Password retry loop: empty-password first attempt, then the
   `passwordProvider` until success or `null`.
-- `renderPage` returns tightly-packed BGRA8888; `PdfImage.toImageData()`
-  swizzles to RGBA for Canvas 2D.
+- pdfium renders BGRA8888, but the vendored worker swaps channels while copying
+  the bitmap out (folded into the copy, so effectively free), so `renderPage`
+  returns tightly-packed **RGBA8888** and `PdfImage.toImageData()` wraps it
+  zero-copy. The RGBA rewrite is reapplied by `scripts/sync-assets.mjs` on every
+  sync; upstream pdfrx stays BGRA because Flutter/Skia consumes BGRA natively.
 - Missing-font queries discovered while opening a document are replayed to
   listeners that subscribe later (the Dart side gets this behavior from
   rxdart's `BehaviorSubject`).
