@@ -33,7 +33,7 @@ Upstream API names are given so you can find the reference implementation.
 | Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.assemblePages(sources)` is the primitive (per-slot document + 1-based page + rotation), with `reorderPages`, `rotatePages` / `rotatePage`, `removePages`, `duplicatePage`, and `importPages(from, …)` conveniences. Pages reload and `pageStatusChanged` fires; `encodePdf()` reflects the edits (verified by re-opening the encoded bytes). |
 | Custom random-access source | ❌ | Upstream `PdfDocument.openCustom({read, fileSize, …})` — supply bytes on demand via a read callback. pdfrx_web opens only via `openUrl` / `openData`. |
 | Render cancellation | ❌ | Upstream `page.render(cancellationToken:)` + `PdfPageRenderCancellationToken`. pdfrx_web renders are fire-and-forget (the viewer's cache mitigates this internally, but there is no public cancel). |
-| Permission helpers | ◐ | pdfrx_web `PdfPermissions` exposes `{permissions, securityHandlerRevision}` only. Upstream adds `allowsCopying`, `allowsPrinting`, `allowsDocumentAssembly`, `allowsModifyAnnotations`. Easy to add from the raw flags. |
+| Permission helpers | ✅ | `PdfPermissions` now exposes `allowsCopying`, `allowsDocumentAssembly`, `allowsPrinting`, and `allowsModifyAnnotations`, using the same bit masks as upstream pdfrx so a document evaluates identically in both. |
 | Rich page-status events | ◐ | Upstream `pageStatusChanged` reports per-page `moved(oldPageNumber)` / `modified`. pdfrx_web emits `{pageNumbers}` only. |
 | Font management model | ◐ | Different design. Upstream ships `PdfFontManager` with pluggable resolvers, OS font discovery (`.windows/.linux/.macos`), `loadMissingFonts`, charset metadata, and local font files. pdfrx_web covers the same *need* with `addFontData` / `reloadFonts` / `clearAllFontData` + the built-in `googleFontsResolver`. Full manager API is not ported. |
 | Request timeout for URL open | ◐ | Upstream `openUri(timeout:)`. pdfrx_web `openUrl` supports `headers` / `withCredentials` / `preferRangeAccess` but no timeout. |
@@ -104,7 +104,7 @@ on-demand text/geometry. Remaining gaps:
 | Feature | Status | Notes |
 |---|---|---|
 | Programmatic selection set / restore | ✅ | `PdfrxViewer.setTextSelection(range)` sets/restores an arbitrary range (the same `PdfTextSelectionRange` shape `selection.range` returns, so save/restore round-trips), and `selectWordAtPoint(viewPoint)` selects a word programmatically. `null` clears. |
-| Copy-permission gating | ❌ | Upstream `isCopyAllowed` (from document permissions) gates copy. pdfrx_web's `copySelection()` does not check permissions. |
+| Copy-permission gating | ✅ | `PdfrxViewer.isCopyAllowed` (from document permissions) gates `copySelection()` and disables the context-menu **Copy** item. Matches upstream: unencrypted documents allow copying; encrypted ones allow it unless permissions forbid it. |
 | Context-menu customization | ◐ | pdfrx_web shows a fixed Copy / Select-All menu. Upstream `buildContextMenu` / `customizeContextMenuItems` let the app replace/extend it. |
 | Selection-handle / magnifier customization | ◐ | pdfrx_web styling is fixed (`selectionColor`, `handleColor`). Upstream `buildSelectionHandle`, `calcSelectionHandleOffset`, and `PdfViewerSelectionMagnifierParams` are extensively customizable. |
 | Selection-handle pan callbacks | ❌ | Upstream `onSelectionHandlePanStart/Update/End`. |
@@ -120,7 +120,7 @@ match/active-match highlight painting.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Match highlight color config | ◐ | pdfrx_web hardcodes the highlight colors. Upstream `matchTextColor` / `activeMatchTextColor`. |
+| Match highlight color config | ✅ | `PdfrxViewerOptions.matchTextColor` / `activeMatchTextColor` set the search-match and active-match highlight fills (defaulting to the previous yellow/orange). |
 | `searchingPageNumber` progress detail | ◐ | pdfrx_web exposes `searchProgress`; upstream additionally reports which page is being scanned. |
 
 ---

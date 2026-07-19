@@ -49,12 +49,38 @@ export const pdfPageRotationToIndex = (rotation: PdfPageRotation): number => rot
 /**
  * Encryption/permission information of a document. Present only for encrypted
  * documents; see {@link PdfDocument.permissions}.
+ *
+ * The permission flags follow PDF 32000-1:2008, Table 22. The `allows*` helpers
+ * mirror the pdfrx semantics exactly, including the same bit masks, so a
+ * document evaluates identically here and in upstream pdfrx.
  */
-export interface PdfPermissions {
-  /** Raw permission flags from the PDF security handler. */
-  readonly permissions: number;
-  /** Revision of the standard security handler that produced {@link permissions}. */
-  readonly securityHandlerRevision: number;
+export class PdfPermissions {
+  constructor(
+    /** Raw permission flags from the PDF security handler. */
+    readonly permissions: number,
+    /** Revision of the standard security handler that produced {@link permissions}. */
+    readonly securityHandlerRevision: number,
+  ) {}
+
+  /** Whether the document allows copying/extracting its contents. */
+  get allowsCopying(): boolean {
+    return (this.permissions & 4) !== 0;
+  }
+
+  /** Whether the document allows document assembly (insert/rotate/delete pages). */
+  get allowsDocumentAssembly(): boolean {
+    return (this.permissions & 8) !== 0;
+  }
+
+  /** Whether the document allows printing its pages. */
+  get allowsPrinting(): boolean {
+    return (this.permissions & 16) !== 0;
+  }
+
+  /** Whether the document allows modifying annotations and form fields. */
+  get allowsModifyAnnotations(): boolean {
+    return (this.permissions & 32) !== 0;
+  }
 }
 
 /**

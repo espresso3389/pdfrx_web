@@ -108,6 +108,13 @@ export interface PdfrxViewerOptions {
   selectionColor?: string;
   /** Selection handle color (touch). Default: '#2196f3'. */
   handleColor?: string;
+  /** Fill style for search-match highlights. Default: 'rgba(255, 235, 59, 0.5)'. */
+  matchTextColor?: string;
+  /**
+   * Fill style for the active (current) search-match highlight. Default:
+   * 'rgba(255, 152, 0, 0.5)'.
+   */
+  activeMatchTextColor?: string;
   /** Maximum zoom. Default: 8. */
   maxZoom?: number;
   /**
@@ -876,12 +883,23 @@ export class PdfrxViewer {
   }
 
   /**
+   * Whether copying the document's text is permitted. Mirrors pdfrx: a document
+   * with no encryption/permissions allows copying, and an encrypted document
+   * allows it unless its permissions explicitly forbid it
+   * ({@link PdfPermissions.allowsCopying} is `false`).
+   */
+  get isCopyAllowed(): boolean {
+    return this.doc?.permissions?.allowsCopying !== false;
+  }
+
+  /**
    * Copies the current selection to the system clipboard.
    *
    * @returns `true` if there was text to copy (and the write was attempted),
-   *   `false` if the selection was empty.
+   *   `false` if the selection was empty or the document forbids copying.
    */
   async copySelection(): Promise<boolean> {
+    if (!this.isCopyAllowed) return false;
     const text = this.selectedText;
     if (!text) return false;
     await navigator.clipboard.writeText(text);
@@ -2336,7 +2354,7 @@ export class PdfrxViewer {
       }
       menu.appendChild(item);
     };
-    addItem('Copy', !!(this.selA && this.selB), () => {
+    addItem('Copy', !!(this.selA && this.selB) && this.isCopyAllowed, () => {
       void this.copySelection().then(() => this.clearSelection());
     });
     addItem('Select All', true, () => {
@@ -2692,7 +2710,10 @@ export class PdfrxViewer {
         for (let m = range.start; m < range.end; m++) {
           const match = this.searcher.matches[m]!;
           const r = pdfRectToRectInDocument(match.bounds, pageGeom, pageRect);
-          ctx.fillStyle = match === currentMatch ? 'rgba(255, 152, 0, 0.5)' : 'rgba(255, 235, 59, 0.5)';
+          ctx.fillStyle =
+            match === currentMatch
+              ? (this.options.activeMatchTextColor ?? 'rgba(255, 152, 0, 0.5)')
+              : (this.options.matchTextColor ?? 'rgba(255, 235, 59, 0.5)');
           ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
         }
       }

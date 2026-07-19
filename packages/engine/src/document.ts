@@ -26,7 +26,7 @@ import {
   type PdfPageRawText,
   type PdfPageRotation,
   type PdfPasswordProvider,
-  type PdfPermissions,
+  PdfPermissions,
   type PdfRect,
 } from './types.js';
 
@@ -736,7 +736,7 @@ export class PdfDocument {
    */
   private static parsePermissions(wire: WireDocument): PdfPermissions | null {
     if (wire.permissions >= 0 && wire.securityHandlerRevision >= 0) {
-      return { permissions: wire.permissions, securityHandlerRevision: wire.securityHandlerRevision };
+      return new PdfPermissions(wire.permissions, wire.securityHandlerRevision);
     }
     return null;
   }
