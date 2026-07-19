@@ -34,8 +34,11 @@ export {
   type PdfPageHitTestResult,
   type PageChangeListener,
   type LinkTapHandler,
+  type LayoutDirection,
+  type LayoutPagesFn,
 } from './viewer.js';
-export type { PdfRect, PdfPoint, Offset } from '@pdfrx/viewer-core';
+export type { PdfRect, PdfPoint, Offset, PageGeometry, PageLayout, LayoutPagesOptions } from '@pdfrx/viewer-core';
+export { layoutPagesVertical, layoutPagesHorizontal } from '@pdfrx/viewer-core';
 export { definePdfrxViewerElement, PdfrxViewerElement } from './element.js';
 export { PdfTextSearcher, type SearchMatch, type StartTextSearchOptions } from './text-searcher.js';
 export { googleFontsResolver, type FontResolution, type FontResolver } from './font-fallback.js';

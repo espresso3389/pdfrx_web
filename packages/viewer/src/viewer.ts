@@ -36,6 +36,7 @@ import {
   findTextAndIndexForPoint,
   formatText,
   getSelectedRanges,
+  layoutPagesHorizontal,
   layoutPagesVertical,
   offsetToPdfPointInDocument,
   pdfRectToRectInDocument,
@@ -85,6 +86,22 @@ export interface PdfrxViewerOptions {
   engineOptions?: PdfrxEngineOptions;
   /** Margin around/between pages in document units. Default: 8. */
   margin?: number;
+  /**
+   * Direction pages are laid out and scrolled: `'vertical'` (default, stacked
+   * top-to-bottom) or `'horizontal'` (side-by-side). In horizontal mode a plain
+   * mouse wheel scrolls sideways through the pages. Ignored when
+   * {@link layoutPages} is set. Can also be changed at runtime with
+   * {@link PdfrxViewer.setLayoutDirection}.
+   */
+  layoutDirection?: LayoutDirection;
+  /**
+   * Custom page-layout function, for facing/two-up/grid arrangements. Given the
+   * page geometries and the resolved margin, return each page's rect (document
+   * coordinates, y-down) and the total document size. When set, it fully
+   * replaces the built-in vertical/horizontal layouts (so {@link layoutDirection}
+   * is ignored). See {@link LayoutPagesFn}.
+   */
+  layoutPages?: LayoutPagesFn;
   /** Background color of the viewer. Default: '#808080'. */
   backgroundColor?: string;
   /** Selection highlight fill style. Default: 'rgba(33, 150, 243, 0.35)'. */
@@ -234,6 +251,18 @@ export interface PageOverlayInfo {
  * pans and zooms.
  */
 export type PageOverlaysBuilder = (info: PageOverlayInfo) => HTMLElement | HTMLElement[] | null | undefined;
+
+/** Page-layout direction (see {@link PdfrxViewerOptions.layoutDirection}). */
+export type LayoutDirection = 'vertical' | 'horizontal';
+
+/**
+ * A custom page-layout function (see {@link PdfrxViewerOptions.layoutPages}).
+ * Given the page geometries and the resolved margin, it returns a
+ * {@link PageLayout}: each page's rect in document coordinates (y-down) and the
+ * total document size. `@pdfrx/viewer-core` exports `layoutPagesVertical` /
+ * `layoutPagesHorizontal` as ready-made implementations and building blocks.
+ */
+export type LayoutPagesFn = (pages: readonly PageGeometry[], options: { margin: number }) => PageLayout;
 
 /**
  * One end of a text selection: a page and a character index into that page's
@@ -402,6 +431,7 @@ export class PdfrxViewer {
     this.options = options;
     this.engine = options.engine ?? new PdfrxEngine(options.engineOptions ?? { wasmModulesUrl: 'pdfium/' });
     this.ownsEngine = !options.engine;
+    this.layoutDirectionValue = options.layoutDirection ?? 'vertical';
 
     if (!container.style.position && getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -448,6 +478,7 @@ export class PdfrxViewer {
   private doc: PdfDocument | null = null;
   private pageGeoms: PageGeometry[] = [];
   private layout: PageLayout | null = null;
+  private layoutDirectionValue: LayoutDirection;
   private cache: PageRenderCache | null = null;
   private readonly pageTexts = new Map<number, PdfPageText | Promise<PdfPageText>>();
   private readonly pageLinks = new Map<number, PdfLink[] | Promise<PdfLink[]>>();
@@ -627,6 +658,24 @@ export class PdfrxViewer {
    */
   get currentTransform(): ViewTransform {
     return this.transform;
+  }
+
+  /** The current page-layout direction. See {@link setLayoutDirection}. */
+  get layoutDirection(): LayoutDirection {
+    return this.layoutDirectionValue;
+  }
+
+  /**
+   * Switches the page-layout direction at runtime, re-laying out the document
+   * and refitting the view. No-op if unchanged or if a custom
+   * {@link PdfrxViewerOptions.layoutPages} is in effect (which always wins).
+   */
+  setLayoutDirection(direction: LayoutDirection): void {
+    if (direction === this.layoutDirectionValue || this.options.layoutPages) return;
+    this.layoutDirectionValue = direction;
+    if (!this.doc) return;
+    this.layout = this.computeLayout();
+    this.resetView();
   }
 
   /**
@@ -1117,7 +1166,7 @@ export class PdfrxViewer {
 
     this.doc = doc;
     this.pageGeoms = doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
-    this.layout = layoutPagesVertical(this.pageGeoms, { margin: this.margin });
+    this.layout = this.computeLayout();
     this.cache = new PageRenderCache(doc, () => this.invalidate());
     this.pageLinks.clear();
     this.hoveredLink = null;
@@ -1130,6 +1179,14 @@ export class PdfrxViewer {
         console.error('Error in document change listener:', e);
       }
     }
+  }
+
+  /** Computes the page layout from the custom hook, or the direction built-ins. */
+  private computeLayout(): PageLayout {
+    const opts = { margin: this.margin };
+    if (this.options.layoutPages) return this.options.layoutPages(this.pageGeoms, opts);
+    const layout = this.layoutDirectionValue === 'horizontal' ? layoutPagesHorizontal : layoutPagesVertical;
+    return layout(this.pageGeoms, opts);
   }
 
   private resetView(): void {
@@ -1832,10 +1889,18 @@ export class PdfrxViewer {
     if (e.ctrlKey || e.metaKey) {
       this.zoomAt(local, this.transform.zoom * Math.exp(-e.deltaY * 0.002));
     } else {
+      let dx = e.deltaX;
+      let dy = e.deltaY;
+      // In horizontal layout, a plain vertical wheel scrolls sideways through
+      // the pages (shift+wheel and trackpad horizontal deltas still work).
+      if (this.layoutDirectionValue === 'horizontal' && dx === 0 && !e.shiftKey) {
+        dx = dy;
+        dy = 0;
+      }
       this.setTransform({
         zoom: this.transform.zoom,
-        xZoomed: this.transform.xZoomed - e.deltaX,
-        yZoomed: this.transform.yZoomed - e.deltaY,
+        xZoomed: this.transform.xZoomed - dx,
+        yZoomed: this.transform.yZoomed - dy,
       });
     }
   };

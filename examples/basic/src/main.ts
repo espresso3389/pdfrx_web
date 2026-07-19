@@ -180,6 +180,17 @@ overlayBtn.addEventListener('click', () => {
   v.setPageOverlaysBuilder(overlaysOn ? demoOverlaysBuilder : null);
 });
 
+// --- Layout direction toggle (vertical <-> horizontal) ---
+
+const layoutBtn = document.getElementById('layoutBtn')!;
+layoutBtn.addEventListener('click', () => {
+  const v = el.viewer;
+  if (!v) return;
+  const next = v.layoutDirection === 'vertical' ? 'horizontal' : 'vertical';
+  v.setLayoutDirection(next);
+  layoutBtn.textContent = `Layout: ${next}`;
+});
+
 // Elements are positioned in page-point coordinates; the viewer scales them.
 function demoOverlaysBuilder({ pageNumber, pageSize }: { pageNumber: number; pageSize: { width: number; height: number } }) {
   // A badge pinned to the page's top-left corner.

@@ -60,9 +60,9 @@ Upstream API names are given so you can find the reference implementation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Horizontal scroll / layout | ◐ | `layoutPagesHorizontal` exists in `@pdfrx/viewer-core`, but `PdfrxViewer` hardcodes `layoutPagesVertical`. There is no option to switch scroll direction. |
-| Facing / two-up / grid layouts | ❌ | Upstream custom `layoutPages` function supports facing pages, spreads, etc. pdfrx_web has no custom-layout injection point. |
-| Custom `layoutPages` hook | ❌ | Upstream lets the app compute `PdfPageLayout` (page rects + document size). Not exposed. |
+| Horizontal scroll / layout | ✅ | `PdfrxViewerOptions.layoutDirection: 'vertical' \| 'horizontal'`, switchable at runtime via `PdfrxViewer.setLayoutDirection`. A plain mouse wheel scrolls sideways in horizontal mode. |
+| Facing / two-up / grid layouts | ◐ | No built-in facing/spread layout, but the `layoutPages` hook (below) lets an app compute any arrangement from the page geometries. |
+| Custom `layoutPages` hook | ✅ | `PdfrxViewerOptions.layoutPages(pages, {margin}) => PageLayout` computes page rects + document size. `layoutPagesVertical` / `layoutPagesHorizontal` are exported as building blocks. |
 | Page-snapping / anchored underflow alignment options | ◐ | Boundary/overscroll clamping and anchors exist in core; the viewer does not expose `pageAnchor` / snap configuration. |
 
 ---
