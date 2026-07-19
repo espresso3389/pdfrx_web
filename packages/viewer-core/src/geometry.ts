@@ -350,3 +350,16 @@ export function offsetToPdfPoint(o: Offset, { page, scaledPageSize, rotation }: 
     page,
   );
 }
+
+/**
+ * Convert a document-space point to PDF page space using the page's laid-out
+ * rect. Inverse of {@link pdfPointToOffsetInDocument}.
+ */
+export function offsetToPdfPointInDocument(o: Offset, page: PageGeometry, pageRect: Rect): PdfPoint {
+  const scale = page.height / rectHeight(pageRect);
+  return pdfPointRotateReverse(
+    { x: (o.x - pageRect.left) * scale, y: page.height - (o.y - pageRect.top) * scale },
+    page.rotation,
+    page,
+  );
+}

@@ -60,6 +60,13 @@ function onDocumentLoaded(): void {
     });
   });
 
+  // --- Page-change notification (replaces polling) ---
+  viewer.addPageChangeListener((page) => {
+    const total = viewer.document?.pages.length ?? 0;
+    pageStatus.textContent = page ? `p.${page} / ${total}` : '';
+    for (const [n, img] of thumbElements) img.classList.toggle('current', n === page);
+  });
+
   // --- Sidebar ---
   void buildThumbnails();
   void buildOutline();
@@ -193,18 +200,6 @@ function demoOverlaysBuilder({ pageNumber, pageSize }: { pageNumber: number; pag
 
   return [badge, btn];
 }
-
-// --- Page status ---
-
-setInterval(() => {
-  const viewer = el.viewer;
-  if (!viewer?.document) return;
-  const page = viewer.currentPageNumber;
-  pageStatus.textContent = page ? `p.${page} / ${viewer.document.pages.length}` : '';
-  for (const [n, img] of thumbElements) {
-    img.classList.toggle('current', n === page);
-  }
-}, 300);
 
 // --- Sidebar tabs ---
 

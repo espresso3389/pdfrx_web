@@ -10,6 +10,7 @@ things pdfrx_web has that pdfrx lacks.
 
 **Legend**
 
+- ✅ Implemented — ported since this document was first written.
 - ❌ Not implemented — a candidate to port.
 - ◐ Partial — a narrower version exists; details in Notes.
 - ⏸️ Intentionally not ported — Flutter-specific, web-inapplicable, or a
@@ -49,8 +50,8 @@ Upstream API names are given so you can find the reference implementation.
 | Double-tap / dbl-click to zoom | ❌ | Upstream double-tap cycles zoom stops. pdfrx_web double-click selects a word instead; no zoom-toggle gesture. |
 | Zoom snap steps | ❌ | Upstream `zoomUp/zoomDown`, `getNextZoom/getPreviousZoom`, and `PdfViewerZoomStepsDelegate` (Default/Smart) provide discrete stops. pdfrx_web zoom is continuous (`setZoom`, ctrl+wheel, pinch). |
 | `goToArea` / `goToRectInsidePage` / `goToPosition` | ◐ | pdfrx_web has `goToPage`, `goToDest`, `fitToPage/Width/Height`, `ensureVisiblePageRect`. The richer target-a-rect/position/anchor family (with `PdfPageAnchor`) is not surfaced publicly, though the math lives in `@pdfrx/viewer-core`. |
-| Public coordinate conversion & hit-testing | ❌ | Upstream `globalToLocal/localToDocument/…`, `getPdfPageHitTestResult`, `PdfViewerCoordinateConverter`. pdfrx_web keeps `viewToDocument`/`documentToView` in core but exposes no public "screen point → page + PDF point" API on the viewer. |
-| `onPageChanged` notification | ◐ | pdfrx_web exposes the `currentPageNumber` getter and `addDocumentChangeListener`, but no event that fires when the current page changes (the example polls on a timer). |
+| Public coordinate conversion & hit-testing | ✅ | `PdfrxViewer.viewToDocumentPoint` / `documentToViewPoint` convert view↔document space, and `getPageHitTestResult(viewPoint)` returns the page under a point plus the location in PDF page coordinates (`PdfPageHitTestResult`). |
+| `onPageChanged` notification | ✅ | `PdfrxViewer.addPageChangeListener(fn)` fires (deduplicated) when the current page changes; the example uses it instead of polling. |
 | `onViewerReady` / `onViewSizeChanged` callbacks | ❌ | No direct equivalents. |
 
 ---

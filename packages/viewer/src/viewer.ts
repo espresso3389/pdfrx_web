@@ -37,6 +37,7 @@ import {
   formatText,
   getSelectedRanges,
   layoutPagesVertical,
+  offsetToPdfPointInDocument,
   pdfRectToRectInDocument,
   rangeBounds,
   rectCenter,
@@ -55,6 +56,7 @@ import {
   type PageGeometry,
   type PageLayout,
   type PdfPageText,
+  type PdfPoint,
   type PdfRect,
   type Rect,
   type SelectablePage,
@@ -304,6 +306,29 @@ export interface PdfTextSelection {
  */
 export type SelectionChangeListener = (selection: PdfTextSelection) => void;
 
+/**
+ * The result of hit-testing a view-space point against the laid-out pages
+ * (see {@link PdfrxViewer.getPageHitTestResult}).
+ */
+export interface PdfPageHitTestResult {
+  /** 1-based number of the page under the point. */
+  readonly pageNumber: number;
+  /** The {@link PdfPage} under the point. */
+  readonly page: PdfPage;
+  /**
+   * The hit location in **PDF page coordinates** (points, origin bottom-left,
+   * y-up), relative to the page.
+   */
+  readonly pdfPoint: PdfPoint;
+}
+
+/**
+ * Called when the current page changes (see
+ * {@link PdfrxViewer.addPageChangeListener}). The argument is the new 1-based
+ * current page number, or `null` when no document is shown.
+ */
+export type PageChangeListener = (pageNumber: number | null) => void;
+
 type InteractionMode =
   | { kind: 'none' }
   | { kind: 'pan'; pointerId: number; lastX: number; lastY: number; moved: boolean; startedAt: number }
@@ -445,8 +470,11 @@ export class PdfrxViewer {
     | null = null;
   private readonly documentChangeListeners = new Set<() => void>();
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
+  private readonly pageChangeListeners = new Set<PageChangeListener>();
   /** Signature of the last-notified selection, so we don't fire on no-op updates. */
   private lastSelectionSig = 'empty';
+  /** Last current-page value notified to {@link pageChangeListeners}. */
+  private lastNotifiedPage: number | null = null;
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -515,9 +543,62 @@ export class PdfrxViewer {
     return () => this.selectionChangeListeners.delete(listener);
   }
 
+  /**
+   * Registers a listener called whenever the {@link currentPageNumber} changes —
+   * as the user scrolls/zooms and on document load (fires with the new 1-based
+   * page number, or `null` when no document is shown). The listener is
+   * deduplicated: it fires only when the value actually changes.
+   *
+   * @returns An unsubscribe function.
+   */
+  addPageChangeListener(listener: PageChangeListener): () => void {
+    this.pageChangeListeners.add(listener);
+    return () => this.pageChangeListeners.delete(listener);
+  }
+
   /** A snapshot of the current text selection. */
   get selection(): PdfTextSelection {
     return this.buildSelection();
+  }
+
+  /**
+   * Converts a **view-space** point (CSS pixels relative to the viewer canvas's
+   * top-left) to **document space** (the unzoomed coordinate space of the whole
+   * laid-out document).
+   */
+  viewToDocumentPoint(viewPoint: Offset): Offset {
+    return viewToDocument(this.transform, viewPoint);
+  }
+
+  /**
+   * Converts a **document-space** point to a **view-space** point (CSS pixels
+   * relative to the viewer canvas's top-left). Inverse of
+   * {@link viewToDocumentPoint}.
+   */
+  documentToViewPoint(docPoint: Offset): Offset {
+    return documentToView(this.transform, docPoint);
+  }
+
+  /**
+   * Hit-tests a **view-space** point (CSS pixels relative to the canvas, e.g.
+   * from `event.offsetX/Y`) against the laid-out pages.
+   *
+   * @returns The page under the point and the hit location in PDF page
+   *   coordinates, or `null` if the point is not over any page (in the margin or
+   *   background).
+   */
+  getPageHitTestResult(viewPoint: Offset): PdfPageHitTestResult | null {
+    if (!this.layout || !this.doc) return null;
+    const docPoint = viewToDocument(this.transform, viewPoint);
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      if (!rectContains(pageRect, docPoint)) continue;
+      const page = this.doc.pages[i];
+      const geom = this.pageGeoms[i];
+      if (!page || !geom) return null;
+      return { pageNumber: i + 1, page, pdfPoint: offsetToPdfPointInDocument(docPoint, geom, pageRect) };
+    }
+    return null;
   }
 
   /** The currently open {@link PdfDocument}, or `null` before the first open. */
@@ -967,6 +1048,7 @@ export class PdfrxViewer {
     this.overlayContainers.clear();
     this.overlayRoot.replaceChildren();
     this.clearSelection();
+    this.lastNotifiedPage = null;
 
     this.doc = doc;
     this.pageGeoms = doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
@@ -1271,6 +1353,19 @@ export class PdfrxViewer {
         listener(selection);
       } catch (e) {
         console.error('Error in selection change listener:', e);
+      }
+    }
+  }
+
+  /** Notifies page-change listeners when the current page differs from last time. */
+  private notifyPageChanged(page: number | null): void {
+    if (page === this.lastNotifiedPage) return;
+    this.lastNotifiedPage = page;
+    for (const listener of this.pageChangeListeners) {
+      try {
+        listener(page);
+      } catch (e) {
+        console.error('Error in page change listener:', e);
       }
     }
   }
@@ -1855,22 +1950,31 @@ export class PdfrxViewer {
     // Cache maintenance for visible pages
     const visiblePages = new Set<number>();
     const requiredScale = t.zoom * dpr;
+    // Track the page covering the largest visible area for onPageChanged.
+    let currentPage: number | null = null;
+    let currentPageArea = 0;
     for (let i = 0; i < this.layout.pageLayouts.length; i++) {
       const pageRect = this.layout.pageLayouts[i]!;
       if (!rectOverlaps(pageRect, visible)) continue;
       const pageNumber = i + 1;
       visiblePages.add(pageNumber);
+      const visibleOnPage = rectIntersect(pageRect, visible);
+      const area = rectWidth(visibleOnPage) * rectHeight(visibleOnPage);
+      if (area > currentPageArea) {
+        currentPageArea = area;
+        currentPage = pageNumber;
+      }
       this.cache.requestBase(pageNumber, requiredScale);
       this.ensureText(pageNumber);
       this.ensureLinks(pageNumber);
       if (requiredScale > this.cache.baseScaleCap(pageNumber) * 1.1) {
-        const visibleOnPage = rectIntersect(pageRect, visible);
         if (!rectIsEmpty(visibleOnPage)) {
           this.cache.schedulePatch(pageNumber, visibleOnPage, pageRect, requiredScale);
         }
       }
     }
     this.cache.clearPatchesExcept(visiblePages);
+    this.notifyPageChanged(currentPage);
 
     // Page drop shadows behind pages (screen space, before content)
     this.paintPageShadows(dpr, t, visible);
