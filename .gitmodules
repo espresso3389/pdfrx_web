@@ -1,0 +1,3 @@
+[submodule "external/pdfrx"]
+	path = external/pdfrx
+	url = https://github.com/espresso3389/pdfrx.git

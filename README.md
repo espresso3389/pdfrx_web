@@ -31,13 +31,29 @@ selection handle refinements.
 ## Development
 
 ```sh
-# Copy pdfium_worker.js / pdfium.wasm (and the sample PDF) from a pdfrx checkout
-node scripts/sync-assets.mjs path/to/pdfrx
-
 npm install
-npm run build     # builds @pdfrx/engine
+npm run build     # builds all packages
 npm run dev       # runs the basic example (Vite)
 ```
+
+The pdfium engine assets (`packages/engine/assets/pdfium_worker.js` /
+`pdfium.wasm`) are vendored in this repository, so a plain clone builds and
+runs standalone — no submodule, no postinstall.
+
+### Updating from pdfrx (maintainers)
+
+The pdfrx repository stays the single source of truth for the engine assets
+and the Google Fonts tables. It is available as the `external/pdfrx`
+submodule:
+
+```sh
+git submodule update --init      # once
+node scripts/sync-assets.mjs     # refresh pdfium_worker.js / pdfium.wasm (+ UPSTREAM.md)
+node scripts/gen-font-tables.mjs # regenerate packages/viewer/src/font-tables.ts
+```
+
+Both scripts also accept an explicit checkout path or the `PDFRX_REPO`
+environment variable instead of the submodule.
 
 ## Coordinate convention
 

@@ -2,13 +2,16 @@
 // google_fonts_resolver.dart so the Google Fonts hashes stay single-sourced.
 //
 // Usage: node scripts/gen-font-tables.mjs [path-to-pdfrx-repo]
+//        (default: the external/pdfrx submodule; run
+//         `git submodule update --init` first)
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePdfrxRepo } from './pdfrx-repo.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const pdfrxRepo = resolve(process.argv[2] ?? process.env.PDFRX_REPO ?? join(repoRoot, '..', 'pdfrx'));
+const pdfrxRepo = resolvePdfrxRepo(repoRoot, process.argv[2]);
 const dartFile = join(pdfrxRepo, 'packages', 'pdfrx', 'example', 'viewer', 'lib', 'google_fonts_resolver.dart');
 const outFile = join(repoRoot, 'packages', 'viewer', 'src', 'font-tables.ts');
 
