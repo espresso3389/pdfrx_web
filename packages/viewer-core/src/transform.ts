@@ -23,13 +23,20 @@ import {
   type Size,
 } from './geometry.js';
 
+/**
+ * The view state: uniform scale + translation. Port of the `Matrix4` that
+ * pdfrx keeps in the viewer (accessed via `PdfMatrix4Ext`).
+ */
 export interface ViewTransform {
+  /** Uniform scale factor (view pixels per document unit). */
   zoom: number;
+  /** View-space x of the document origin, i.e. the post-zoom x translation. */
   xZoomed: number;
+  /** View-space y of the document origin, i.e. the post-zoom y translation. */
   yZoomed: number;
 }
 
-/** Boundary margins around the document. May contain `Infinity` for unbounded panning. */
+/** Boundary margins around the document. May contain `Infinity` for unbounded panning. Port of Flutter's `EdgeInsets`. */
 export interface EdgeInsets {
   left: number;
   top: number;
@@ -37,11 +44,14 @@ export interface EdgeInsets {
   bottom: number;
 }
 
+/** All-zero {@link EdgeInsets}. */
 export const edgeInsetsZero: EdgeInsets = { left: 0, top: 0, right: 0, bottom: 0 };
 
+/** Whether any side of `e` is infinite (marks an unbounded/free-panning axis). */
 export const edgeInsetsContainsInfinite = (e: EdgeInsets): boolean =>
   !isFinite(e.left) || !isFinite(e.top) || !isFinite(e.right) || !isFinite(e.bottom);
 
+/** Component-wise sum of two {@link EdgeInsets}. */
 export const edgeInsetsAdd = (a: EdgeInsets, b: EdgeInsets): EdgeInsets => ({
   left: a.left + b.left,
   top: a.top + b.top,
@@ -49,11 +59,13 @@ export const edgeInsetsAdd = (a: EdgeInsets, b: EdgeInsets): EdgeInsets => ({
   bottom: a.bottom + b.bottom,
 });
 
+/** Grow a size by the horizontal/vertical insets. Port of `EdgeInsets.inflateSize`. */
 export const edgeInsetsInflateSize = (e: EdgeInsets, size: Size): Size => ({
   width: size.width + e.left + e.right,
   height: size.height + e.top + e.bottom,
 });
 
+/** Grow a rect outward by the insets. Port of `EdgeInsets.inflateRect`. */
 export const edgeInsetsInflateRect = (e: EdgeInsets, r: Rect): Rect => ({
   left: r.left - e.left,
   top: r.top - e.top,
@@ -73,7 +85,9 @@ export const edgeInsetsInflateRectIfFinite = (e: EdgeInsets, r: Rect): Rect => (
 // ViewTransform accessors (PdfMatrix4Ext port)
 // ---------------------------------------------------------------------------
 
+/** Document-space x of the view origin (top-left). Port of `PdfMatrix4Ext.x`. */
 export const transformX = (t: ViewTransform): number => t.xZoomed / t.zoom;
+/** Document-space y of the view origin (top-left). Port of `PdfMatrix4Ext.y`. */
 export const transformY = (t: ViewTransform): number => t.yZoomed / t.zoom;
 
 /** Document position currently shown at the view center. */

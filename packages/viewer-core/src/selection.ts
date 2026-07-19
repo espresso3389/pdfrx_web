@@ -37,6 +37,7 @@ export interface SelectionPoint {
   index: number;
 }
 
+/** Whether the point references an existing character on its page. */
 export const selectionPointIsValid = (p: SelectionPoint): boolean =>
   p.index >= 0 && p.index < p.text.charRects.length;
 
@@ -44,9 +45,11 @@ export const selectionPointIsValid = (p: SelectionPoint): boolean =>
 export const selectionPointLE = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index <= b.index;
 
+/** `PdfTextSelectionPoint.operator <` — strict ordering by (pageNumber, index). */
 export const selectionPointLT = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index < b.index;
 
+/** Which end of the selection an anchor is: `a` is the start, `b` the end. */
 export type SelectionAnchorType = 'a' | 'b';
 
 /** Port of `PdfTextSelectionAnchor`. `rect` is in document coordinates. */
@@ -120,6 +123,7 @@ export function findTextAndIndexForPoint(
   return null;
 }
 
+/** The A (start) and B (end) anchors of a selection; see {@link SelectionAnchor}. */
 export interface SelectionAnchors {
   a: SelectionAnchor;
   b: SelectionAnchor;
@@ -182,9 +186,13 @@ export function computeSelectionAnchors(
   };
 }
 
+/** Result of a word (fragment) selection: the two selection ends plus their anchors. */
 export interface WordSelection {
+  /** Start of the selected word (inclusive). */
   selA: SelectionPoint;
+  /** End of the selected word (inclusive). */
   selB: SelectionPoint;
+  /** A/B anchors for handle placement and highlight painting. */
   anchors: SelectionAnchors;
 }
 

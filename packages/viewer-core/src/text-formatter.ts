@@ -10,8 +10,14 @@
 import { pdfRectBoundingRect, pdfRectCenter, pdfRectIsEmpty, type PdfRect } from './geometry.js';
 import type { PdfPageText, PdfPageTextFragment, PdfTextDirection } from './text.js';
 
+/**
+ * Raw per-page text as returned by the engine, before flow analysis: the
+ * concatenated character stream plus one rect (PDF page coordinates) per
+ * UTF-16 code unit. Input to {@link formatText}.
+ */
 export interface RawPageText {
   fullText: string;
+  /** One rect per UTF-16 code unit of `fullText`, in PDF page coordinates (y-up). */
   charRects: PdfRect[];
 }
 

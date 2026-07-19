@@ -5,14 +5,17 @@
 
 import { rectContains, rectFromLTWH, type Offset, type PageGeometry, type Rect, type Size } from './geometry.js';
 
+/** Result of laying out the pages of a document. Port of `PdfPageLayout`. */
 export interface PageLayout {
-  /** Laid-out rect of each page in document coordinates. */
+  /** Laid-out rect of each page in document coordinates (y-down), indexed by 0-based page order. */
   pageLayouts: Rect[];
+  /** Total size of the laid-out document (all pages plus surrounding/between margins). */
   documentSize: Size;
 }
 
+/** Options for {@link layoutPagesVertical} / {@link layoutPagesHorizontal}. */
 export interface LayoutPagesOptions {
-  /** Margin around and between pages. Default: 8 (same as PdfViewerParams.margin). */
+  /** Margin around and between pages, in document units. Default: 8 (same as `PdfViewerParams.margin`). */
   margin?: number;
 }
 

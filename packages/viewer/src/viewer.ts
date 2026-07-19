@@ -64,9 +64,20 @@ import {
 import { PageRenderCache } from './render-cache.js';
 import { PdfTextSearcher } from './text-searcher.js';
 
+/** Construction options for {@link PdfrxViewer}. */
 export interface PdfrxViewerOptions {
-  /** Engine to use; if omitted, one is created from `engineOptions`. */
+  /**
+   * Engine to use. If omitted, the viewer creates and owns one from
+   * {@link engineOptions} and disposes it on {@link PdfrxViewer.dispose}. Pass a
+   * shared engine to open several viewers against one worker; then the caller
+   * owns its lifetime.
+   */
   engine?: PdfrxEngine;
+  /**
+   * Options for the engine created when {@link engine} is not supplied. Its
+   * `wasmModulesUrl` must point at a directory containing `pdfium_worker.js` and
+   * `pdfium.wasm`. Defaults to `{ wasmModulesUrl: 'pdfium/' }`.
+   */
   engineOptions?: PdfrxEngineOptions;
   /** Margin around/between pages in document units. Default: 8. */
   margin?: number;
@@ -103,7 +114,42 @@ const HANDLE_HIT_RADIUS = 24;
 const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
 
+/**
+ * Canvas-based PDF viewer — the imperative counterpart of the pdfrx Flutter
+ * `PdfViewer` widget plus its `PdfViewerController`.
+ *
+ * Constructs a `<canvas>` inside the given container, opens a document with
+ * {@link openUrl} / {@link openData}, and drives rendering, panning, pinch
+ * zoom, text selection, links, search, and printing. All geometry and selection
+ * logic lives in `@pdfrx/viewer-core` (ported from `pdf_viewer.dart`); this
+ * class owns the DOM canvas, the pointer state machine, and the render loop.
+ * Text selection is painted on the canvas — there is deliberately no DOM text
+ * layer (a core pdfrx design decision).
+ *
+ * Always call {@link dispose} when done; if the viewer created its own engine,
+ * disposal also tears down the pdfium worker.
+ *
+ * @example
+ * ```ts
+ * const viewer = new PdfrxViewer(document.getElementById('host')!, {
+ *   engineOptions: { wasmModulesUrl: 'pdfium/' }, // must contain pdfium_worker.js + pdfium.wasm
+ * });
+ * await viewer.openUrl('doc.pdf'); // fetched with CORS
+ * viewer.goToPage(3);
+ *
+ * const searcher = viewer.createTextSearcher();
+ * searcher.startTextSearch('invoice');
+ * // ...later
+ * viewer.dispose();
+ * ```
+ */
 export class PdfrxViewer {
+  /**
+   * @param container - Host element the canvas is appended to; it is made
+   *   `position: relative` if statically positioned so overlays (context menu)
+   *   can anchor to it. Size the viewer by sizing this element.
+   * @param options - See {@link PdfrxViewerOptions}.
+   */
   constructor(container: HTMLElement, options: PdfrxViewerOptions = {}) {
     this.container = container;
     this.options = options;
@@ -182,12 +228,25 @@ export class PdfrxViewer {
   // Public API
   // -------------------------------------------------------------------------
 
+  /**
+   * Opens a document by URL and displays it, replacing any current document.
+   *
+   * The engine fetches the file, so the URL must be same-origin or CORS-enabled
+   * (relative URLs resolve against `document.baseURI`). The source is retained
+   * so the viewer can transparently reopen it after registering missing-font
+   * fallbacks. For password-protected PDFs, supply a provider via `options`.
+   */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<void> {
     const doc = await this.engine.openUrl(url, options);
     this.currentSource = { kind: 'url', url, options };
     await this.setDocument(doc);
   }
 
+  /**
+   * Opens a document from in-memory bytes and displays it, replacing any current
+   * document. The source is retained for the missing-font reopen (see
+   * {@link openUrl}).
+   */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
     const doc = await this.engine.openData(data, options);
     this.currentSource = { kind: 'data', data, options };
@@ -197,20 +256,32 @@ export class PdfrxViewer {
   /**
    * Registers a listener called whenever the shown document changes —
    * including the automatic reopen after missing-font registration.
+   *
+   * @returns An unsubscribe function.
    */
   addDocumentChangeListener(listener: () => void): () => void {
     this.documentChangeListeners.add(listener);
     return () => this.documentChangeListeners.delete(listener);
   }
 
+  /** The currently open {@link PdfDocument}, or `null` before the first open. */
   get document(): PdfDocument | null {
     return this.doc;
   }
 
+  /**
+   * The current view transform (uniform zoom + pan). Document→view mapping used
+   * throughout the viewer; the port of pdfrx's `Matrix4` state.
+   */
   get currentTransform(): ViewTransform {
     return this.transform;
   }
 
+  /**
+   * The plain text of the current selection (empty string when nothing is
+   * selected). Only pages whose text has already loaded contribute; text is
+   * composed across pages in reading order.
+   */
   get selectedText(): string {
     if (!this.selA || !this.selB) return '';
     return composeSelectedText(
@@ -221,6 +292,7 @@ export class PdfrxViewer {
     );
   }
 
+  /** Clears the current text selection, hides its handles, and repaints. */
   clearSelection(): void {
     this.selA = this.selB = null;
     this.anchors = null;
@@ -247,6 +319,12 @@ export class PdfrxViewer {
     this.updateAnchors();
   }
 
+  /**
+   * Copies the current selection to the system clipboard.
+   *
+   * @returns `true` if there was text to copy (and the write was attempted),
+   *   `false` if the selection was empty.
+   */
   async copySelection(): Promise<boolean> {
     const text = this.selectedText;
     if (!text) return false;
@@ -293,6 +371,7 @@ export class PdfrxViewer {
     else this.goToPage(dest.pageNumber);
   }
 
+  /** @internal Computes the transform for a destination command (xyz, fit variants, fitR). */
   private calcTransformForDest(dest: PdfDest): ViewTransform | null {
     if (!this.layout) return null;
     const page = this.pageGeoms[dest.pageNumber - 1];
@@ -458,11 +537,27 @@ export class PdfrxViewer {
     setTimeout(() => iframe.remove(), 60_000);
   }
 
+  /**
+   * Sets the absolute zoom, keeping a view point fixed on screen. The value is
+   * clamped to `[minZoom, maxZoom]` (minZoom is derived from the fit scale;
+   * maxZoom is {@link PdfrxViewerOptions.maxZoom}, default 8).
+   *
+   * @param zoom - Target zoom factor.
+   * @param viewCenter - View-space point to keep stationary. Defaults to the
+   *   center of the viewport.
+   */
   setZoom(zoom: number, viewCenter?: Offset): void {
     const center = viewCenter ?? { x: this.viewSize.width / 2, y: this.viewSize.height / 2 };
     this.zoomAt(center, zoom);
   }
 
+  /**
+   * Tears down the viewer: cancels timers and animation frames, stops
+   * auto-scroll/fling, disconnects the resize observer, disposes the searcher,
+   * render cache, and document, and removes the canvas. If the viewer created
+   * its own engine (no {@link PdfrxViewerOptions.engine} was passed), the pdfium
+   * worker is shut down too. Idempotent.
+   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

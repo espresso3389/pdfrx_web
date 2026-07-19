@@ -66,13 +66,26 @@ const enum Charset {
 const isFixed = (q: PdfFontQuery): boolean => (q.pitchFamily & 1) !== 0;
 const isRoman = (q: PdfFontQuery): boolean => (q.pitchFamily & 16) !== 0;
 
+/**
+ * The outcome of resolving one missing-font query: which substitute file to
+ * download and the family name it declares. Port of pdfrx's
+ * `PdfFontResolution`.
+ */
 export interface FontResolution {
   /** The font family name PDFium is expected to see inside the file. */
   resolvedFace: string;
+  /** URL of the substitute font file to fetch (must be CORS-accessible). */
   url: string;
+  /** Expected byte length, used to reject stale or corrupted downloads. */
   expectedLength?: number;
 }
 
+/**
+ * Maps a missing-font query to a downloadable substitute, or `null` to leave it
+ * unresolved. Port of pdfrx's `PdfFontResolver`; pass one as
+ * {@link PdfrxViewerOptions.fontResolver} (the default is
+ * {@link googleFontsResolver}).
+ */
 export type FontResolver = (query: PdfFontQuery) => FontResolution | null;
 
 const containsAny = (value: string, patterns: string[]): boolean => patterns.some((p) => value.includes(p));
@@ -226,7 +239,14 @@ const fileToResolution = (font: GoogleFontsFile): FontResolution => ({
 });
 
 /**
- * The default resolver: standard/Core substitutes first, Noto coverage next.
+ * The default {@link FontResolver}: tries metric-compatible substitutes for PDF
+ * standard/Core fonts first (Arimo/Tinos/Cousine), then a Noto family chosen by
+ * charset and style. All files are served from fonts.gstatic.com with
+ * `access-control-allow-origin: *`. Port of the pdfrx example's
+ * `CompositeGoogleFontsResolver`.
+ *
+ * @returns A {@link FontResolution}, or `null` when no substitute is known
+ *   (e.g. symbol fonts).
  */
 export const googleFontsResolver: FontResolver = (query) => {
   const standard = resolveStandardFont(query);

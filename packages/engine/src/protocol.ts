@@ -25,11 +25,15 @@ export const enum PdfiumErrorCode {
 
 /** Error-shaped result returned by document open commands. */
 export interface WireError {
+  /** Numeric {@link PdfiumErrorCode}. */
   errorCode: number;
+  /** Symbolic name of {@link errorCode} (e.g. `"password"`), if the worker provided one. */
   errorCodeStr?: string;
+  /** Human-readable error description. */
   message: string;
 }
 
+/** Type guard: true if `result` is a {@link WireError} rather than a success payload. */
 export function isWireError(result: unknown): result is WireError {
   return typeof result === 'object' && result !== null && typeof (result as WireError).errorCode === 'number';
 }
@@ -43,15 +47,20 @@ export interface WireFontQuery {
   pitchFamily: number;
 }
 
-/** Map keyed by an opaque font-identity string. */
+/** Map of missing-font queries keyed by an opaque font-identity string (deduplicates repeats). */
 export type WireFontQueries = Record<string, WireFontQuery>;
 
+/** Per-page metadata as reported by the worker. Basis for {@link PdfPage}. */
 export interface WirePageInfo {
+  /** 0-based page index (converted to 1-based `pageNumber` on the client). */
   pageIndex: number;
+  /** Page width in points (1/72 inch). */
   width: number;
+  /** Page height in points (1/72 inch). */
   height: number;
   /** 0: none, 1: 90cw, 2: 180, 3: 270cw */
   rotation: number;
+  /** False for pages not yet materialized during progressive loading. */
   isLoaded: boolean;
   /** Left of the bounding box; text/link rects on the wire are not yet adjusted by this. */
   bbLeft: number;
@@ -59,28 +68,38 @@ export interface WirePageInfo {
   bbBottom: number;
 }
 
+/** Document-level handles and metadata returned by the open/create commands. */
 export interface WireDocument {
+  /** Opaque handle to the pdfium `FPDF_DOCUMENT` (kept on the worker side). */
   docHandle: number;
+  /** Raw permission flags, or negative if the document is not encrypted. */
   permissions: number;
+  /** Security-handler revision, or negative if the document is not encrypted. */
   securityHandlerRevision: number;
   pages: WirePageInfo[];
+  /** Opaque handle to the pdfium form-fill environment. */
   formHandle: number;
+  /** Opaque pointer bookkept alongside {@link formHandle}; passed back on close. */
   formInfo: number;
   missingFonts?: WireFontQueries;
 }
 
+/** A navigation destination on the wire (0-based page index). Basis for `PdfDest`. */
 export interface WireDest {
+  /** 0-based page index (converted to 1-based `pageNumber` on the client). */
   pageIndex: number;
   command: string;
   params: (number | null)[];
 }
 
+/** An outline (bookmark) node on the wire. Basis for `PdfOutlineNode`. */
 export interface WireOutlineNode {
   title: string;
   dest: WireDest | null;
   children: WireOutlineNode[];
 }
 
+/** Annotation metadata on the wire. Basis for `PdfAnnotation`. */
 export interface WireAnnotation {
   title?: string | null;
   content?: string | null;
@@ -91,22 +110,31 @@ export interface WireAnnotation {
   creationDate?: string | null;
 }
 
+/** A link on the wire (link annotation or auto-detected URL). Basis for `PdfLink`. */
 export interface WireLink {
+  /** Clickable areas in PDF page coordinates, not yet adjusted by the bounding box. */
   rects: WireRect[];
   url?: string | null;
   dest?: WireDest | null;
   annotation?: WireAnnotation | null;
 }
 
-/** Parameter/result shapes for every worker command. */
+/**
+ * Parameter/result shapes for every worker command, keyed by command name.
+ * Used by {@link PdfiumWorkerCommunicator.sendCommand} to type each round-trip.
+ */
 export interface PdfiumCommandMap {
+  /** Loads and initializes `pdfium.wasm`. Must complete before any other command runs. */
   init: {
     params: {
+      /** Extra headers used when the worker fetches `pdfium.wasm`. */
       headers?: Record<string, string>;
+      /** Whether the wasm fetch includes credentials. */
       withCredentials?: boolean;
     };
     result: Record<string, never>;
   };
+  /** Opens a document from a URL; the worker performs the fetch (subject to CORS). */
   loadDocumentFromUrl: {
     params: {
       url: string;
@@ -119,6 +147,7 @@ export interface PdfiumCommandMap {
     };
     result: WireDocument | WireError;
   };
+  /** Opens a document from in-memory bytes (the `ArrayBuffer` is transferred to the worker). */
   loadDocumentFromData: {
     params: {
       data: ArrayBuffer;
@@ -129,18 +158,23 @@ export interface PdfiumCommandMap {
     };
     result: WireDocument | WireError;
   };
+  /** Creates a new empty document. */
   createNewDocument: {
     params: Record<string, never>;
     result: WireDocument | WireError;
   };
+  /** Creates a single-page document whose page shows the given JPEG image. */
   createDocumentFromJpegData: {
     params: {
       jpegData: ArrayBuffer;
+      /** Page width in points (1/72 inch). */
       width: number;
+      /** Page height in points (1/72 inch). */
       height: number;
     };
     result: WireDocument | WireError;
   };
+  /** Loads the next chunk of pages during progressive loading, budgeted by `loadUnitDuration`. */
   loadPagesProgressively: {
     params: {
       docHandle: number;
@@ -152,9 +186,11 @@ export interface PdfiumCommandMap {
       missingFonts?: WireFontQueries;
     };
   };
+  /** Re-reads page metadata (e.g. after the document was modified). */
   reloadPages: {
     params: {
       docHandle: number;
+      /** 0-based indices to reload; all pages if omitted. */
       pageIndices?: number[];
       currentPagesCount: number;
     };
@@ -163,6 +199,7 @@ export interface PdfiumCommandMap {
       missingFonts?: WireFontQueries;
     };
   };
+  /** Closes a document and releases its handles (including the form environment). */
   closeDocument: {
     params: {
       docHandle: number;
@@ -171,18 +208,22 @@ export interface PdfiumCommandMap {
     };
     result: { message: string };
   };
+  /** Loads the document outline (bookmarks) tree. */
   loadOutline: {
     params: { docHandle: number };
     result: { outline: WireOutlineNode[] };
   };
+  /** Loads a single page and returns its pdfium page handle. */
   loadPage: {
     params: { docHandle: number; pageIndex: number };
     result: { pageHandle: number };
   };
+  /** Closes a page handle previously obtained from {@link PdfiumCommandMap.loadPage | loadPage}. */
   closePage: {
     params: { pageHandle: number };
     result: { message: string };
   };
+  /** Renders (a region of) a page to a BGRA8888 bitmap. */
   renderPage: {
     params: {
       docHandle: number;
@@ -210,6 +251,7 @@ export interface PdfiumCommandMap {
       missingFonts?: WireFontQueries;
     };
   };
+  /** Extracts the page's full text plus one bounding rect per UTF-16 code unit. */
   loadText: {
     params: { docHandle: number; pageIndex: number };
     result: {
@@ -218,6 +260,7 @@ export interface PdfiumCommandMap {
       missingFonts?: WireFontQueries;
     };
   };
+  /** Loads link annotations, optionally including auto-detected URL-like text. */
   loadLinks: {
     params: {
       docHandle: number;
@@ -226,10 +269,12 @@ export interface PdfiumCommandMap {
     };
     result: { links: WireLink[] };
   };
+  /** Re-applies registered font data and refreshes affected caches. */
   reloadFonts: {
     params: { dummy: true };
     result: Record<string, never>;
   };
+  /** Registers font bytes used to substitute a missing font (see {@link PdfrxEngine.addFontData}). */
   addFontData: {
     params: {
       face: string;
@@ -238,10 +283,12 @@ export interface PdfiumCommandMap {
     };
     result: Record<string, never>;
   };
+  /** Discards all font data previously registered via {@link PdfiumCommandMap.addFontData | addFontData}. */
   clearAllFontData: {
     params: { dummy: true };
     result: Record<string, never>;
   };
+  /** Reassembles a document's page order/rotation, optionally importing pages from other documents. */
   assemble: {
     params: {
       docHandle: number;
@@ -253,19 +300,29 @@ export interface PdfiumCommandMap {
     };
     result: { modified: boolean };
   };
+  /** Serializes the document to PDF bytes. */
   encodePdf: {
     params: {
       docHandle: number;
+      /** Append changes as an incremental update instead of a full rewrite. */
       incremental?: boolean;
+      /** Strip the document's encryption/security on save. */
       removeSecurity?: boolean;
     };
     result: { data: ArrayBuffer };
   };
 }
 
+/** Union of all worker command names (the keys of {@link PdfiumCommandMap}). */
 export type PdfiumCommand = keyof PdfiumCommandMap;
 
-/** Messages posted by the worker back to the main thread. */
+/**
+ * Messages posted by the worker back to the main thread.
+ *
+ * Variants tagged with `type` are unsolicited notifications (`ready`, `error`,
+ * `callback`); the `id`-tagged variants are the reply to a specific command
+ * request. Handled by {@link PdfiumWorkerCommunicator}.
+ */
 export type WorkerMessage =
   | { type: 'ready' }
   | { type: 'error'; error: string }

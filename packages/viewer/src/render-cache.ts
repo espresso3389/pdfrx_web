@@ -34,7 +34,18 @@ const SCALE_TOLERANCE = 1.4;
 /** Max pixels for one sharp patch. */
 const PATCH_PIXEL_BUDGET = 6 * 1024 * 1024;
 
+/**
+ * @internal
+ * Per-page bitmap cache owned by {@link PdfrxViewer}. Not part of the public
+ * API. Renders each page once at a capped scale and overlays a sharp,
+ * true-scale patch of the visible region when zoomed in, then hands the
+ * bitmaps back to the viewer's paint loop. See the module doc for the strategy.
+ */
 export class PageRenderCache {
+  /**
+   * @param doc - The open document to render pages from.
+   * @param onUpdate - Called after a bitmap finishes, to request a repaint.
+   */
   constructor(
     private readonly doc: PdfDocument,
     private readonly onUpdate: () => void,
@@ -47,21 +58,23 @@ export class PageRenderCache {
   private patchTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
+  /** @internal Current base (whole-page) bitmap for a page, if rendered. */
   getBase(pageNumber: number): BaseBitmap | undefined {
     return this.base.get(pageNumber);
   }
 
+  /** @internal Current sharp patch for a page, if one has been rendered. */
   getPatch(pageNumber: number): Patch | undefined {
     return this.patches.get(pageNumber);
   }
 
-  /** Cap the scale so the whole page stays within the pixel budget. */
+  /** @internal Cap the scale so the whole page stays within the pixel budget. */
   baseScaleCap(pageNumber: number): number {
     const page = this.doc.pages[pageNumber - 1]!;
     return Math.sqrt(BASE_PIXEL_BUDGET / (page.width * page.height));
   }
 
-  /** Ensure the base bitmap for a page approaches the required scale. */
+  /** @internal Ensure the base bitmap for a page approaches the required scale. */
   requestBase(pageNumber: number, requiredScale: number): void {
     if (this.disposed) return;
     const scale = Math.min(requiredScale, this.baseScaleCap(pageNumber));
@@ -98,6 +111,7 @@ export class PageRenderCache {
   }
 
   /**
+   * @internal
    * Schedule (debounced) a sharp patch render for the visible part of a page.
    * `visibleDocRect` is the intersection of the visible rect and the page rect,
    * in document coordinates; `pageRect` is the page's layout rect; `scale` is
@@ -123,6 +137,7 @@ export class PageRenderCache {
     }, 150);
   }
 
+  /** @internal Drop and close patches for pages no longer visible. */
   clearPatchesExcept(pageNumbers: ReadonlySet<number>): void {
     for (const [pageNumber, patch] of this.patches) {
       if (!pageNumbers.has(pageNumber)) {
@@ -182,7 +197,7 @@ export class PageRenderCache {
     }
   }
 
-  /** Drops all rendered bitmaps (e.g. after font registration changed glyphs). */
+  /** @internal Drops all rendered bitmaps (e.g. after font registration changed glyphs). */
   clearAllRendered(): void {
     for (const { bitmap } of this.base.values()) bitmap.close();
     for (const { bitmap } of this.patches.values()) bitmap.close();
@@ -191,6 +206,7 @@ export class PageRenderCache {
     this.baseRendering.clear();
   }
 
+  /** @internal Closes every cached bitmap and stops accepting new renders. */
   dispose(): void {
     this.disposed = true;
     if (this.patchTimer) clearTimeout(this.patchTimer);
