@@ -90,7 +90,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Link tap handler | ❌ | Upstream `PdfLinkHandlerParams.onLinkTap`. pdfrx_web opens external URLs with `window.open(...)` and in-document dests directly, with no app hook to intercept. |
+| Link tap handler | ✅ | `PdfrxViewerOptions.onLinkTap(link)` replaces the built-in open behavior; use `PdfLink.url` / `PdfLink.dest` and call `goToDest` / `window.open` yourself to keep parts of the default. |
 | Link styling / custom painter | ◐ | pdfrx_web paints a fixed hover highlight. Upstream exposes `linkColor`, `customPainter`, `linkWidgetBuilder`. Auto-link detection is implemented in both. |
 
 ---
@@ -103,7 +103,7 @@ on-demand text/geometry. Remaining gaps:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Programmatic selection set / restore | ❌ | Upstream `PdfTextSelectionDelegate.setTextSelectionPointRange(range)` and `selectWord(position)`. pdfrx_web can `selectAll()` and select words via gesture, but has no public API to set/restore an arbitrary range (e.g. for save/restore). |
+| Programmatic selection set / restore | ✅ | `PdfrxViewer.setTextSelection(range)` sets/restores an arbitrary range (the same `PdfTextSelectionRange` shape `selection.range` returns, so save/restore round-trips), and `selectWordAtPoint(viewPoint)` selects a word programmatically. `null` clears. |
 | Copy-permission gating | ❌ | Upstream `isCopyAllowed` (from document permissions) gates copy. pdfrx_web's `copySelection()` does not check permissions. |
 | Context-menu customization | ◐ | pdfrx_web shows a fixed Copy / Select-All menu. Upstream `buildContextMenu` / `customizeContextMenuItems` let the app replace/extend it. |
 | Selection-handle / magnifier customization | ◐ | pdfrx_web styling is fixed (`selectionColor`, `handleColor`). Upstream `buildSelectionHandle`, `calcSelectionHandleOffset`, and `PdfViewerSelectionMagnifierParams` are extensively customizable. |

@@ -33,6 +33,7 @@ export {
   type SelectionChangeListener,
   type PdfPageHitTestResult,
   type PageChangeListener,
+  type LinkTapHandler,
 } from './viewer.js';
 export type { PdfRect, PdfPoint, Offset } from '@pdfrx/viewer-core';
 export { definePdfrxViewerElement, PdfrxViewerElement } from './element.js';

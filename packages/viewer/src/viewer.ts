@@ -151,7 +151,22 @@ export interface PdfrxViewerOptions {
    * resolver (downloads from fonts.gstatic.com); pass `null` to disable.
    */
   fontResolver?: FontResolver | null;
+  /**
+   * Called when the user taps/clicks a link. When provided, it **replaces** the
+   * built-in behavior (open external URLs with `window.open`, navigate internal
+   * destinations with {@link PdfrxViewer.goToDest}). Use
+   * {@link PdfLink.url} / {@link PdfLink.dest} to decide, and call
+   * {@link PdfrxViewer.goToDest} / `window.open` yourself to keep parts of the
+   * default. Omit it to keep the built-in behavior.
+   */
+  onLinkTap?: LinkTapHandler;
 }
+
+/**
+ * Handles a link activation (see {@link PdfrxViewerOptions.onLinkTap}). Receives
+ * the tapped {@link PdfLink}; return value is ignored.
+ */
+export type LinkTapHandler = (link: PdfLink) => void;
 
 /**
  * How a page is scaled to fit the viewport.
@@ -655,6 +670,56 @@ export class PdfrxViewer {
     this.selB = { text: last, index: last.charRects.length - 1 };
     this.showHandles = this.lastPointerType === 'touch';
     this.updateAnchors();
+  }
+
+  /**
+   * Sets (or restores) the text selection from a {@link PdfTextSelectionRange} —
+   * the same shape carried by {@link selection}`.range`, so you can save that
+   * value and pass it back here later. Both endpoint indices are **inclusive**.
+   * Pass `null` to clear the selection (equivalent to {@link clearSelection}).
+   *
+   * Loads the endpoint pages' text as needed (hence async). Indices are clamped
+   * to each page's character range. Returns `true` if a selection was set, or
+   * `false` if it could not be (e.g. no document, or the endpoint pages have no
+   * selectable text).
+   */
+  async setTextSelection(range: PdfTextSelectionRange | null): Promise<boolean> {
+    if (!range) {
+      this.clearSelection();
+      return false;
+    }
+    if (!this.doc) return false;
+    const a = await this.selectionPointFor(range.start);
+    const b = await this.selectionPointFor(range.end);
+    if (!a || !b) return false;
+    this.selA = a;
+    this.selB = b;
+    this.showHandles = this.lastPointerType === 'touch';
+    this.updateAnchors();
+    return true;
+  }
+
+  /** @internal Resolves an endpoint (page + index) to an internal selection point. */
+  private async selectionPointFor(p: PdfTextSelectionPoint): Promise<SelectionPoint | null> {
+    const text = await this.loadTextAsync(p.pageNumber);
+    if (!text || text.charRects.length === 0) return null;
+    const index = Math.max(0, Math.min(p.index, text.charRects.length - 1));
+    return { text, index };
+  }
+
+  /**
+   * Selects the word at a **view-space** point (CSS pixels relative to the
+   * canvas), like a double-click. The point's page text must already be loaded
+   * (it is for visible pages). Returns `true` if a word was selected.
+   */
+  selectWordAtPoint(viewPoint: Offset): boolean {
+    const word = selectWordAt(viewToDocument(this.transform, viewPoint), this.selectablePages());
+    if (!word) return false;
+    this.selA = word.selA;
+    this.selB = word.selB;
+    this.showHandles = this.lastPointerType === 'touch';
+    this.updateAnchors();
+    return true;
   }
 
   /**
@@ -1248,6 +1313,15 @@ export class PdfrxViewer {
   }
 
   private openLink(link: PdfLink): void {
+    const handler = this.options.onLinkTap;
+    if (handler) {
+      try {
+        handler(link);
+      } catch (e) {
+        console.error('Error in onLinkTap handler:', e);
+      }
+      return;
+    }
     if (link.url) {
       window.open(link.url, '_blank', 'noopener,noreferrer');
     } else if (link.dest) {
@@ -1747,14 +1821,7 @@ export class PdfrxViewer {
   }
 
   private readonly onDoubleClick = (e: MouseEvent): void => {
-    const docPoint = viewToDocument(this.transform, this.localPoint(e));
-    const word = selectWordAt(docPoint, this.selectablePages());
-    if (word) {
-      this.selA = word.selA;
-      this.selB = word.selB;
-      this.showHandles = this.lastPointerType === 'touch';
-      this.updateAnchors();
-    }
+    this.selectWordAtPoint(this.localPoint(e));
   };
 
   private readonly onWheel = (e: WheelEvent): void => {
