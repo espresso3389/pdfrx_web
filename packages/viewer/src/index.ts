@@ -38,6 +38,7 @@ export {
   type LayoutPagesFn,
   type PdfViewerTapEvent,
   type PdfViewerTapType,
+  type PanAxis,
   type ViewerOverlayBuilder,
 } from './viewer.js';
 export type { PdfRect, PdfPoint, Offset, PageGeometry, PageLayout, LayoutPagesOptions } from '@pdfrx/viewer-core';

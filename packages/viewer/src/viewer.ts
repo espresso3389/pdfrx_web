@@ -215,6 +215,13 @@ export interface PdfrxViewerOptions {
   doubleClickToZoom?: boolean;
   /** Enables drag-to-pan (background drag / touch drag). Default: `true`. */
   panEnabled?: boolean;
+  /**
+   * Restricts drag-panning to one axis. `'free'` (default) pans in both;
+   * `'horizontal'` / `'vertical'` lock to that axis; `'aligned'` locks each pan
+   * gesture to whichever axis it starts moving along. Wheel/keyboard scrolling
+   * and programmatic navigation are unaffected.
+   */
+  panAxis?: PanAxis;
   /** Enables gesture zoom (pinch and ctrl/cmd + wheel). Programmatic zoom is
    * unaffected. Default: `true`. */
   zoomEnabled?: boolean;
@@ -235,6 +242,17 @@ export interface PdfrxViewerOptions {
   /** Called when the current gesture ends and the viewer returns to idle. */
   onInteractionEnd?: () => void;
   /**
+   * Called once a document has loaded and the viewer is laid out and ready to
+   * interact with (after the initial fit). Fires again whenever a new document
+   * is opened.
+   */
+  onViewerReady?: () => void;
+  /**
+   * Called when the viewport size changes (element resize), with the new size in
+   * CSS pixels. Not called for the initial layout.
+   */
+  onViewSizeChanged?: (viewSize: Size) => void;
+  /**
    * Called for discrete pointer gestures — single tap, double-tap, long-press,
    * and secondary (right/two-finger) tap — with the type and view-space point.
    * Fires in addition to the viewer's own handling (selection, links, zoom).
@@ -249,6 +267,12 @@ export interface PdfrxViewerOptions {
    */
   viewerOverlayBuilder?: ViewerOverlayBuilder;
 }
+
+/**
+ * Constrains drag-panning to an axis (see {@link PdfrxViewerOptions.panAxis}).
+ * `'aligned'` locks each gesture to the axis it first moves along.
+ */
+export type PanAxis = 'free' | 'horizontal' | 'vertical' | 'aligned';
 
 /** The kind of discrete tap reported to {@link PdfrxViewerOptions.onGeneralTap}. */
 export type PdfViewerTapType = 'tap' | 'doubleTap' | 'longPress' | 'secondaryTap';
@@ -464,7 +488,16 @@ export type PageChangeListener = (pageNumber: number | null) => void;
 
 type InteractionMode =
   | { kind: 'none' }
-  | { kind: 'pan'; pointerId: number; lastX: number; lastY: number; moved: boolean; startedAt: number }
+  | {
+      kind: 'pan';
+      pointerId: number;
+      lastX: number;
+      lastY: number;
+      moved: boolean;
+      startedAt: number;
+      /** For `panAxis: 'aligned'`: the axis this gesture locked onto once it moved. */
+      lockAxis?: 'x' | 'y';
+    }
   | { kind: 'select'; pointerId: number; moved: boolean }
   | { kind: 'dragHandle'; pointerId: number; part: 'a' | 'b'; pointerType: string }
   | {
@@ -1370,6 +1403,11 @@ export class PdfrxViewer {
         console.error('Error in document change listener:', e);
       }
     }
+    try {
+      this.options.onViewerReady?.();
+    } catch (e) {
+      console.error('Error in onViewerReady:', e);
+    }
   }
 
   /** Computes the page layout from the custom hook, or the direction built-ins. */
@@ -1386,9 +1424,25 @@ export class PdfrxViewer {
     if (t) this.setTransform(t);
   }
 
+  /** Applies {@link PdfrxViewerOptions.panAxis} to a raw pan delta. */
+  private constrainPan(dx: number, dy: number, mode: { lockAxis?: 'x' | 'y' }): [number, number] {
+    switch (this.options.panAxis ?? 'free') {
+      case 'horizontal':
+        return [dx, 0];
+      case 'vertical':
+        return [0, dy];
+      case 'aligned':
+        mode.lockAxis ??= Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+        return mode.lockAxis === 'x' ? [dx, 0] : [0, dy];
+      default:
+        return [dx, dy];
+    }
+  }
+
   private onResize(): void {
     const rect = this.container.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const changed = rect.width !== this.viewSize.width || rect.height !== this.viewSize.height;
     this.viewSize = { width: rect.width, height: rect.height };
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
@@ -1398,6 +1452,13 @@ export class PdfrxViewer {
       this.setTransform(this.transform); // re-clamp
     }
     this.buildViewerOverlays(); // viewport-fixed overlays depend on view size
+    if (changed) {
+      try {
+        this.options.onViewSizeChanged?.({ width: rect.width, height: rect.height });
+      } catch (e) {
+        console.error('Error in onViewSizeChanged:', e);
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2033,14 +2094,15 @@ export class PdfrxViewer {
       }
       case 'pan': {
         if (e.pointerId !== this.mode.pointerId) return;
-        const dx = local.x - this.mode.lastX;
-        const dy = local.y - this.mode.lastY;
+        let dx = local.x - this.mode.lastX;
+        let dy = local.y - this.mode.lastY;
         if (!this.mode.moved && Math.hypot(dx, dy) < TAP_SLOP) return;
         this.mode.moved = true;
         this.cancelLongPress();
         this.mode.lastX = local.x;
         this.mode.lastY = local.y;
         if (this.options.panEnabled === false) return; // moved, but pan is disabled
+        [dx, dy] = this.constrainPan(dx, dy, this.mode);
         this.recordVelocitySample(e.timeStamp, local);
         this.setTransform({
           zoom: this.transform.zoom,

@@ -52,7 +52,7 @@ Upstream API names are given so you can find the reference implementation.
 | `goToArea` / `goToRectInsidePage` / `goToPosition` | ◐ | pdfrx_web has `goToPage`, `goToDest`, `fitToPage/Width/Height`, `ensureVisiblePageRect`. The richer target-a-rect/position/anchor family (with `PdfPageAnchor`) is not surfaced publicly, though the math lives in `@pdfrx/viewer-core`. |
 | Public coordinate conversion & hit-testing | ✅ | `PdfrxViewer.viewToDocumentPoint` / `documentToViewPoint` convert view↔document space, and `getPageHitTestResult(viewPoint)` returns the page under a point plus the location in PDF page coordinates (`PdfPageHitTestResult`). |
 | `onPageChanged` notification | ✅ | `PdfrxViewer.addPageChangeListener(fn)` fires (deduplicated) when the current page changes; the example uses it instead of polling. |
-| `onViewerReady` / `onViewSizeChanged` callbacks | ❌ | No direct equivalents. |
+| `onViewerReady` / `onViewSizeChanged` callbacks | ✅ | `PdfrxViewerOptions.onViewerReady` fires once a document is loaded and laid out (again on each new document); `onViewSizeChanged(viewSize)` fires when the viewport is resized. |
 
 ---
 
@@ -77,7 +77,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, and `boundaryMargin` (over-pan). `panAxis` is the one remaining sub-knob. |
+| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, `boundaryMargin` (over-pan), and `panAxis` (`'free'` / `'horizontal'` / `'vertical'` / `'aligned'`) to lock drag-panning to an axis. |
 | Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
 | Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
 | Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |
