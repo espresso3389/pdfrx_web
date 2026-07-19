@@ -1,26 +1,25 @@
 /**
  * @packageDocumentation
- * `@pdfrx/engine` — a TypeScript port of the WASM/pdfium backend of the Dart
- * library {@link https://pub.dev/packages/pdfrx | pdfrx}.
+ * `@pdfrx/engine` — a typed client for rendering PDF documents in the browser.
  *
- * The package renders PDF documents in the browser using pdfium compiled to
- * WebAssembly. All pdfium work happens off the main thread in a dedicated Web
- * Worker; this package speaks a `postMessage` command protocol to that worker
- * and exposes an idiomatic, `Promise`-based object model on top of it.
+ * The heavy work runs off the main thread in a dedicated Web Worker (a WASM
+ * rendering engine); this package speaks a `postMessage` command protocol to
+ * that worker and exposes an idiomatic, `Promise`-based object model on top of
+ * it.
  *
  * The primary entry point is {@link PdfrxEngine}: construct one with the URL of
- * the directory that hosts the bundled pdfium wasm assets (`pdfium_worker.js`
- * and `pdfium.wasm`), then open documents with {@link PdfrxEngine.openUrl},
+ * the directory that hosts the bundled WASM assets (`pdfium_worker.js` and
+ * `pdfium.wasm`), then open documents with {@link PdfrxEngine.openUrl},
  * {@link PdfrxEngine.openData}, {@link PdfrxEngine.createNew}, or
  * {@link PdfrxEngine.createFromJpegData}. Opened documents are represented by
  * {@link PdfDocument}, their pages by {@link PdfPage}, and rendered bitmaps by
  * {@link PdfImage}.
  *
- * Lower-level building blocks — {@link PdfiumWorkerCommunicator} and the wire
- * types in {@link PdfiumCommandMap} — are also exported for advanced use.
+ * Lower-level building blocks — {@link WorkerCommunicator} and the wire types in
+ * {@link WorkerCommandMap} — are also exported for advanced use.
  */
 
-export { PdfiumWorkerCommunicator, type PdfiumWorkerOptions } from './communicator.js';
+export { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
 export {
   PdfDocument,
   PdfPage,
@@ -32,8 +31,8 @@ export {
 } from './document.js';
 export * from './types.js';
 export type {
-  PdfiumCommand,
-  PdfiumCommandMap,
+  WorkerCommand,
+  WorkerCommandMap,
   WireAnnotation,
   WireDest,
   WireDocument,
@@ -45,4 +44,4 @@ export type {
   WirePageInfo,
   WireRect,
 } from './protocol.js';
-export { isWireError, PdfiumErrorCode } from './protocol.js';
+export { isWireError, PdfErrorCode } from './protocol.js';

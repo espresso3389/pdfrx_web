@@ -1,10 +1,10 @@
 /**
  * Canvas-based PDF viewer shell.
  *
- * All geometry/selection logic lives in @pdfrx/viewer-core (ported from
- * pdfrx's Dart implementation); this class owns the DOM canvas, the pointer
- * state machine, and the render loop. Text selection is painted on the
- * canvas — there is deliberately no DOM text layer (see pdfrx design).
+ * All geometry/selection logic lives in @pdfrx/viewer-core; this class owns
+ * the DOM canvas, the pointer state machine, and the render loop. Text
+ * selection is painted on the canvas — there is deliberately no DOM text
+ * layer.
  */
 
 import {
@@ -88,12 +88,12 @@ export interface PdfrxViewerOptions {
   selectionColor?: string;
   /** Selection handle color (touch). Default: '#2196f3'. */
   handleColor?: string;
-  /** Maximum zoom. Default: 8 (same as pdfrx maxScale). */
+  /** Maximum zoom. Default: 8. */
   maxZoom?: number;
   /**
    * Minimum zoom. When omitted, it is computed dynamically as
    * `min(`{@link PdfrxViewer.coverScale}`, `{@link PdfrxViewer.fitPageScale}`)`
-   * for the current page (pdfrx's `minScale`), so you can never zoom out past
+   * for the current page, so you can never zoom out past
    * seeing a whole page. Set an explicit number to override that behavior.
    */
   minZoom?: number;
@@ -121,22 +121,19 @@ export interface PdfrxViewerOptions {
    * Custom painters invoked **behind** each page, before the page background is
    * filled — useful for custom shadows or backdrops that extend outside the
    * page. Each callback receives the canvas already transformed to document
-   * coordinates and the page's document-space rect. Counterpart of pdfrx's
-   * `pageBackgroundPaintCallbacks`.
+   * coordinates and the page's document-space rect.
    */
   pageBackgroundPaintCallbacks?: PagePaintCallback[];
   /**
    * Custom painters invoked **on top of** each page's rendered content — useful
    * for watermarks, page numbers, or custom borders. Same coordinate space as
-   * {@link pageBackgroundPaintCallbacks}. Counterpart of pdfrx's
-   * `pagePaintCallbacks`.
+   * {@link pageBackgroundPaintCallbacks}.
    */
   pagePaintCallbacks?: PagePaintCallback[];
   /**
    * Builds DOM overlays laid over each page. The returned elements are placed in
    * a per-page layer that is translated and scaled to follow the page, so they
-   * pan and zoom together with it — the DOM counterpart of pdfrx's
-   * `pageOverlaysBuilder`. Position the elements in **page-point coordinates**
+   * pan and zoom together with it. Position the elements in **page-point coordinates**
    * (origin at the page's top-left, one unit = one PDF point at zoom 1); the
    * viewer applies the zoom scale. See {@link PageOverlaysBuilder}.
    *
@@ -163,7 +160,7 @@ export interface PdfrxViewerOptions {
 export type FitMode = 'page' | 'width' | 'height';
 
 /**
- * Drop shadow drawn behind each page (mirrors pdfrx's `pageDropShadow`). All
+ * Drop shadow drawn behind each page. All
  * lengths are in CSS pixels and are **not** scaled by zoom, so the shadow keeps
  * a constant on-screen appearance.
  */
@@ -239,19 +236,18 @@ const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
 
 /**
- * Canvas-based PDF viewer — the imperative counterpart of the pdfrx Flutter
- * `PdfViewer` widget plus its `PdfViewerController`.
+ * Canvas-based PDF viewer: renders pages to a `<canvas>` and drives panning,
+ * zoom, text selection, links, search, and printing.
  *
  * Constructs a `<canvas>` inside the given container, opens a document with
  * {@link openUrl} / {@link openData}, and drives rendering, panning, pinch
  * zoom, text selection, links, search, and printing. All geometry and selection
- * logic lives in `@pdfrx/viewer-core` (ported from `pdf_viewer.dart`); this
- * class owns the DOM canvas, the pointer state machine, and the render loop.
- * Text selection is painted on the canvas — there is deliberately no DOM text
- * layer (a core pdfrx design decision).
+ * logic lives in `@pdfrx/viewer-core`; this class owns the DOM canvas, the
+ * pointer state machine, and the render loop. Text selection is painted on the
+ * canvas — there is deliberately no DOM text layer.
  *
  * Always call {@link dispose} when done; if the viewer created its own engine,
- * disposal also tears down the pdfium worker.
+ * disposal also tears down the rendering worker.
  *
  * @example
  * ```ts
@@ -337,7 +333,7 @@ export class PdfrxViewer {
   }
   /**
    * Effective minimum zoom. If {@link PdfrxViewerOptions.minZoom} is set, that
-   * value is used. Otherwise it mirrors pdfrx's `minScale`: the smaller of
+   * value is used. Otherwise it is the smaller of
    * {@link coverScale} (fit the whole document's bounding box) and the current
    * page's {@link fitPageScale} (fit one whole page), computed dynamically from
    * the current page so you can never zoom out past seeing a whole page.
@@ -419,7 +415,7 @@ export class PdfrxViewer {
 
   /**
    * The current view transform (uniform zoom + pan). Document→view mapping used
-   * throughout the viewer; the port of pdfrx's `Matrix4` state.
+   * throughout the viewer.
    */
   get currentTransform(): ViewTransform {
     return this.transform;
@@ -491,7 +487,7 @@ export class PdfrxViewer {
   }
 
   /**
-   * The **cover scale** (pdfrx `coverScale`): the zoom at which the whole
+   * The **cover scale**: the zoom at which the whole
    * document's bounding box covers the viewport, i.e. `max(viewW / docW,
    * viewH / docH)`. In the default vertical layout this is effectively the
    * fit-document-width scale — you cannot zoom out past it and still fill the
@@ -506,7 +502,7 @@ export class PdfrxViewer {
   }
 
   /**
-   * The **fit-page scale** (pdfrx `alternativeFitScale`): the zoom at which an
+   * The **fit-page scale**: the zoom at which an
    * entire page fits within the viewport, `min(viewW / pageW, viewH / pageH)`
    * (page size includes the {@link PdfrxViewerOptions.margin}). Defaults to the
    * current page. Returns `null` before a document is laid out or if the page
@@ -605,8 +601,8 @@ export class PdfrxViewer {
   }
 
   /**
-   * Navigate to a PDF explicit destination — port of `_calcMatrixForDest`.
-   * Falls back to `goToPage` for unknown/short-hand destinations.
+   * Navigate to a PDF explicit destination. Falls back to `goToPage` for
+   * unknown/short-hand destinations.
    */
   goToDest(dest: PdfDest | null): void {
     if (!dest) return;
@@ -803,8 +799,8 @@ export class PdfrxViewer {
    * Tears down the viewer: cancels timers and animation frames, stops
    * auto-scroll/fling, disconnects the resize observer, disposes the searcher,
    * render cache, and document, and removes the canvas. If the viewer created
-   * its own engine (no {@link PdfrxViewerOptions.engine} was passed), the pdfium
-   * worker is shut down too. Idempotent.
+   * its own engine (no {@link PdfrxViewerOptions.engine} was passed), the
+   * rendering worker is shut down too. Idempotent.
    */
   dispose(): void {
     if (this.disposed) return;
@@ -998,9 +994,8 @@ export class PdfrxViewer {
     if (registered === 0 || this.disposed) return;
 
     await this.engine.reloadFonts();
-    // Refreshing the mapper is not enough: pdfium caches substituted fonts
-    // per document, so the document must be reopened (the Dart viewer does
-    // `load(forceReload: true)` for the same reason). Preserve the view state.
+    // Refreshing the mapper is not enough: the engine caches substituted fonts
+    // per document, so the document must be reopened. Preserve the view state.
     const source = this.currentSource;
     if (!source) {
       this.cache?.clearAllRendered();
@@ -1489,10 +1484,10 @@ export class PdfrxViewer {
     }
   };
 
-  /** Document-space distance scrolled per arrow-key press (view px), as in pdfrx. */
+  /** Document-space distance scrolled per arrow-key press (view px). */
   private static readonly SCROLL_BY_ARROW_KEY = 25;
 
-  // Port of _PdfViewerState._onKey.
+  // Keyboard navigation handler.
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     const cmd = e.ctrlKey || e.metaKey;
     const k = PdfrxViewer.SCROLL_BY_ARROW_KEY;
@@ -1572,7 +1567,7 @@ export class PdfrxViewer {
   }
 
   // -------------------------------------------------------------------------
-  // Context menu (DOM chrome; counterpart of AdaptiveTextSelectionToolbar)
+  // Context menu (DOM chrome)
   // -------------------------------------------------------------------------
 
   private readonly onContextMenu = (e: MouseEvent): void => {
@@ -1908,7 +1903,7 @@ export class PdfrxViewer {
       if (page && fgCallbacks?.length) this.runPagePainters(fgCallbacks, pageRect, page);
     }
 
-    // Search match highlights (below the selection highlight, like pdfrx)
+    // Search match highlights (below the selection highlight)
     if (this.searcher?.hasMatches) {
       const currentMatch = this.searcher.currentMatch;
       for (let i = 0; i < this.layout.pageLayouts.length; i++) {
@@ -1946,7 +1941,7 @@ export class PdfrxViewer {
   }
 
   // -------------------------------------------------------------------------
-  // Magnifier — port of the magnifier logic in pdf_viewer.dart
+  // Magnifier
   // (_shouldShowMagnifierForAnchor, _getMagnifierRect, calcPosition)
   // -------------------------------------------------------------------------
 
@@ -1961,8 +1956,8 @@ export class PdfrxViewer {
     if (!this.anchors || !this.selA || !this.selB) return;
     const t = this.transform;
 
-    // Map the dragged part to the visual anchor (pdfrx's textAnchorMoving
-    // normalization: dragging A moves the visual start only if selA <= selB).
+    // Map the dragged part to the visual anchor: dragging A moves the visual
+    // start only if selA <= selB.
     const aIsStart = selectionPointLE(this.selA, this.selB);
     const visualPart = this.mode.part === 'a' ? (aIsStart ? 'a' : 'b') : aIsStart ? 'b' : 'a';
     const anchor = this.anchors[visualPart];
@@ -2007,7 +2002,7 @@ export class PdfrxViewer {
     ctx.fill(path);
     ctx.restore();
 
-    // magnified content (same as pdfrx: scale from the content rect's top-left)
+    // magnified content (scale from the content rect's top-left)
     ctx.save();
     ctx.clip(path);
     const magScale = Math.max(W / rectWidth(content), H / rectHeight(content));
@@ -2021,7 +2016,7 @@ export class PdfrxViewer {
     ctx.stroke(path);
   }
 
-  /** Port of `calcPosition` (margins 10 / top 20 / bottom 80) + `normalizeWidgetPosition`. */
+  /** Positions the magnifier lens (margins 10 / top 20 / bottom 80), clamped to the viewport. */
   private calcMagnifierPosition(
     direction: import('@pdfrx/viewer-core').PdfTextDirection,
     part: 'a' | 'b',

@@ -1,8 +1,7 @@
 /**
  * Page bitmap cache.
  *
- * Mirrors the strategy of pdfrx's `_PdfPageImageCache` +
- * `_PdfPartialImageRenderingRequest` in a simplified form:
+ * Strategy:
  *
  * - Each page has one *base* bitmap rendered at a capped scale, redrawn when
  *   the required scale drifts past a threshold.

@@ -1,9 +1,8 @@
 /**
- * Structured page text model — port of `pdfrx_engine/lib/src/pdf_text.dart`.
+ * Structured page text model.
  *
- * `PdfPageText` is a plain object; the Dart getters become functions taking
- * the owning objects explicitly, so everything stays JSON-serializable for
- * test vectors.
+ * `PdfPageText` is a plain object; accessors are functions taking the owning
+ * objects explicitly, so everything stays JSON-serializable for test vectors.
  */
 
 import { pdfRectBoundingRect, type PdfRect } from './geometry.js';
@@ -11,13 +10,13 @@ import { pdfRectBoundingRect, type PdfRect } from './geometry.js';
 /**
  * Reading direction of a text fragment/line. `vrtl` is vertical
  * right-to-left (CJK vertical writing); `unknown` when it cannot be inferred
- * (e.g. a single-character line). Port of `PdfTextDirection`.
+ * (e.g. a single-character line).
  */
 export type PdfTextDirection = 'ltr' | 'rtl' | 'vrtl' | 'unknown';
 
 /**
  * A contiguous run of characters sharing one reading direction — a word, a
- * space, or a line break. Port of `PdfPageTextFragment`.
+ * space, or a line break.
  */
 export interface PdfPageTextFragment {
   /** Fragment's start index on `PdfPageText.fullText`. */
@@ -30,8 +29,8 @@ export interface PdfPageTextFragment {
 }
 
 /**
- * The formatted, selection-ready text of a single page. Port of
- * `PdfPageText`. Char rects are in PDF page coordinates (points, y-up).
+ * The formatted, selection-ready text of a single page. Char rects are in PDF
+ * page coordinates (points, y-up).
  */
 export interface PdfPageText {
   /** 1-based page number. */
@@ -56,9 +55,8 @@ export const fragmentCharRects = (text: PdfPageText, f: PdfPageTextFragment): Pd
   text.charRects.slice(f.index, f.index + f.length);
 
 /**
- * `PdfPageText.getFragmentIndexForTextIndex` — binary search for the fragment
- * containing `textIndex`. Returns -1 when out of range and `fragments.length`
- * when `textIndex === fullText.length`.
+ * Binary search for the fragment containing `textIndex`. Returns -1 when out
+ * of range and `fragments.length` when `textIndex === fullText.length`.
  */
 export function getFragmentIndexForTextIndex(text: PdfPageText, textIndex: number): number {
   const fragments = text.fragments;
@@ -94,7 +92,7 @@ export function getFragmentForTextIndex(text: PdfPageText, textIndex: number): P
   return text.fragments[index]!;
 }
 
-/** A character range on one page; `start` inclusive, `end` exclusive. Port of `PdfPageTextRange`. */
+/** A character range on one page; `start` inclusive, `end` exclusive. */
 export interface PdfPageTextRange {
   pageText: PdfPageText;
   start: number;
@@ -129,8 +127,7 @@ export const rangeLastFragment = (r: PdfPageTextRange): PdfPageTextFragment | nu
 };
 
 /**
- * `PdfPageText.getRangeFromAB` — build a range from two *inclusive* character
- * indices in either order.
+ * Build a range from two *inclusive* character indices in either order.
  */
 export function getRangeFromAB(text: PdfPageText, a: number, b: number): PdfPageTextRange {
   const min = a < b ? a : b;
@@ -141,7 +138,7 @@ export function getRangeFromAB(text: PdfPageText, a: number, b: number): PdfPage
   return { pageText: text, start: min, end: max + 1 };
 }
 
-/** Per-fragment bounding rect of a sub-range; port of `PdfTextFragmentBoundingRect`. */
+/** Per-fragment bounding rect of a sub-range. */
 export interface PdfTextFragmentBoundingRect {
   fragment: PdfPageTextFragment;
   /** Start-In-Fragment index. */
@@ -154,8 +151,7 @@ export interface PdfTextFragmentBoundingRect {
 }
 
 /**
- * `PdfPageTextRange.enumerateFragmentBoundingRects` — the per-fragment rects
- * used to paint the selection highlight.
+ * The per-fragment rects used to paint the selection highlight.
  */
 export function enumerateFragmentBoundingRects(r: PdfPageTextRange): PdfTextFragmentBoundingRect[] {
   const result: PdfTextFragmentBoundingRect[] = [];
@@ -178,7 +174,7 @@ export function enumerateFragmentBoundingRects(r: PdfPageTextRange): PdfTextFrag
   return result;
 }
 
-/** `PdfPageText.allMatches` — find all matches of a pattern on the page. */
+/** Find all matches of a pattern on the page. */
 export function allMatches(
   text: PdfPageText,
   pattern: string | RegExp,

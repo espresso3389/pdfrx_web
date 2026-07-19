@@ -1,7 +1,7 @@
-import type { PdfiumCommand, PdfiumCommandMap, WorkerMessage } from './protocol.js';
+import type { WorkerCommand, WorkerCommandMap, WorkerMessage } from './protocol.js';
 
-/** Options for constructing a {@link PdfiumWorkerCommunicator}. */
-export interface PdfiumWorkerOptions {
+/** Options for constructing a {@link WorkerCommunicator}. */
+export interface WorkerCommunicatorOptions {
   /**
    * Base URL of the directory that contains `pdfium_worker.js` and `pdfium.wasm`.
    * Relative URLs are resolved against `document.baseURI`.
@@ -23,13 +23,11 @@ interface PendingRequest {
 }
 
 /**
- * Owns the pdfium worker and speaks the raw command protocol.
- *
- * TypeScript counterpart of pdfrx's `pdfium_client.js` + the init logic in
- * `pdfrx_wasm.dart`. The worker is spawned via a small bootstrap blob so that
- * the worker script and wasm can live on any origin.
+ * Owns the rendering worker and speaks its raw command protocol. The worker is
+ * spawned via a small bootstrap blob so that the worker script and wasm can
+ * live on any origin.
  */
-export class PdfiumWorkerCommunicator {
+export class WorkerCommunicator {
   private readonly worker: Worker;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly callbacks = new Map<number, (...args: never[]) => void>();
@@ -39,11 +37,11 @@ export class PdfiumWorkerCommunicator {
   private disposed = false;
 
   /**
-   * Spawns the worker (via a bootstrap blob) and kicks off pdfium
+   * Spawns the worker (via a bootstrap blob) and kicks off engine
    * initialization. The worker starts fetching `pdfium.wasm` immediately; await
    * {@link ready} before relying on it.
    */
-  constructor(options: PdfiumWorkerOptions) {
+  constructor(options: WorkerCommunicatorOptions) {
     const base = new URL(options.wasmModulesUrl, document.baseURI);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
@@ -60,7 +58,7 @@ export class PdfiumWorkerCommunicator {
 
     this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => this.onMessage(event.data);
     this.worker.onerror = (event) => {
-      const error = new Error(`pdfium worker error: ${event.message ?? 'unknown'}`);
+      const error = new Error(`worker error: ${event.message ?? 'unknown'}`);
       for (const pending of this.pending.values()) {
         pending.reject(error);
       }
@@ -75,7 +73,7 @@ export class PdfiumWorkerCommunicator {
     }).then(() => undefined);
   }
 
-  /** Resolves when the worker has loaded and initialized pdfium.wasm. */
+  /** Resolves when the worker has loaded and initialized the WASM engine. */
   get ready(): Promise<void> {
     return this.initPromise;
   }
@@ -91,7 +89,7 @@ export class PdfiumWorkerCommunicator {
         case 'ready':
           return;
         case 'error':
-          console.error('pdfium worker reported error:', data.error);
+          console.error('worker reported error:', data.error);
           return;
         case 'callback': {
           const callback = this.callbacks.get(data.callbackId);
@@ -99,7 +97,7 @@ export class PdfiumWorkerCommunicator {
             try {
               callback(...(data.args as never[]));
             } catch (e) {
-              console.error('Error in pdfium worker callback:', e);
+              console.error('Error in worker callback:', e);
             }
           }
           return;
@@ -127,13 +125,13 @@ export class PdfiumWorkerCommunicator {
    *
    * @param transfer Transferable objects to move (not copy) to the worker.
    */
-  async sendCommand<C extends PdfiumCommand>(
+  async sendCommand<C extends WorkerCommand>(
     command: C,
-    parameters: PdfiumCommandMap[C]['params'],
+    parameters: WorkerCommandMap[C]['params'],
     transfer?: Transferable[],
-  ): Promise<PdfiumCommandMap[C]['result']> {
+  ): Promise<WorkerCommandMap[C]['result']> {
     if (command !== 'init') await this.initPromise;
-    return (await this.sendCommandRaw(command, parameters, transfer)) as PdfiumCommandMap[C]['result'];
+    return (await this.sendCommandRaw(command, parameters, transfer)) as WorkerCommandMap[C]['result'];
   }
 
   /**
@@ -143,7 +141,7 @@ export class PdfiumWorkerCommunicator {
    */
   private sendCommandRaw(command: string, parameters: unknown, transfer?: Transferable[]): Promise<unknown> {
     if (this.disposed) {
-      return Promise.reject(new Error('PdfiumWorkerCommunicator is disposed'));
+      return Promise.reject(new Error('WorkerCommunicator is disposed'));
     }
     return new Promise((resolve, reject) => {
       const id = ++this.requestId;
@@ -173,7 +171,7 @@ export class PdfiumWorkerCommunicator {
     if (this.disposed) return;
     this.disposed = true;
     this.worker.terminate();
-    const error = new Error('PdfiumWorkerCommunicator is disposed');
+    const error = new Error('WorkerCommunicator is disposed');
     for (const pending of this.pending.values()) {
       pending.reject(error);
     }

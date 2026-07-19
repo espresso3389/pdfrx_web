@@ -1,6 +1,5 @@
 /**
- * Text flow analysis and fragment building — port of
- * `pdfrx_engine/lib/src/pdf_text_formatter.dart`.
+ * Text flow analysis and fragment building.
  *
  * Takes the raw page text from the engine (`fullText` + one rect per char)
  * and produces a `PdfPageText` with direction-aware fragments (words, spaces,
@@ -23,8 +22,8 @@ export interface RawPageText {
 
 /**
  * Maximum extent of a combined space rect, as a ratio to the line height
- * (or the line width for vertical text). See the Dart source for rationale
- * (PDFium generates zero-width spaces for large gaps, e.g. table columns).
+ * (or the line width for vertical text). The rationale: text extraction emits
+ * zero-width spaces for large gaps, e.g. table columns.
  */
 const MAX_SPACE_EXTENT_TO_LINE_HEIGHT_RATIO = 1.5;
 
@@ -55,7 +54,7 @@ const centerDiff = (from: PdfRect, to: PdfRect): Vec2 => {
   return { x: b.x - a.x, y: b.y - a.y };
 };
 
-/** `loadStructuredText` (the pure part; the raw text is supplied by the caller). */
+/** Analyze raw page text into a {@link PdfPageText} with direction-aware fragments. */
 export function formatText(raw: RawPageText, pageNumber: number): PdfPageText {
   const preprocessed = removeVirtualNewLines(raw);
   const inputFullText = preprocessed.fullText;
@@ -96,7 +95,7 @@ export function formatText(raw: RawPageText, pageNumber: number): PdfPageText {
         const a = inputCharRects[wordStart - 1]!;
         const b = inputCharRects[wordEnd]!;
         // Clamp the space extent so a generated space representing a large gap
-        // does not become one huge selectable rect (see Dart source).
+        // does not become one huge selectable rect.
         let isGeneratedGap = true;
         for (let i = wordStart; i < wordEnd; i++) {
           const r = inputCharRects[i]!;
@@ -290,9 +289,8 @@ export function formatText(raw: RawPageText, pageNumber: number): PdfPageText {
 }
 
 /**
- * `_loadFormattedText` post-processing: removes "virtual" line feeds that
- * some producers (e.g. Microsoft Word) insert between the characters of
- * vertical text runs.
+ * Post-processing that removes "virtual" line feeds which some producers
+ * (e.g. Microsoft Word) insert between the characters of vertical text runs.
  */
 export function removeVirtualNewLines(input: RawPageText): RawPageText {
   let fullText = '';

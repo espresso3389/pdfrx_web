@@ -1,7 +1,7 @@
-import { PdfiumWorkerCommunicator, type PdfiumWorkerOptions } from './communicator.js';
+import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
 import {
   isWireError,
-  PdfiumErrorCode,
+  PdfErrorCode,
   type WireDest,
   type WireDocument,
   type WireFontQueries,
@@ -29,8 +29,8 @@ import {
   type PdfRect,
 } from './types.js';
 
-/** Options for constructing a {@link PdfrxEngine} (currently the same as {@link PdfiumWorkerOptions}). */
-export interface PdfrxEngineOptions extends PdfiumWorkerOptions {}
+/** Options for constructing a {@link PdfrxEngine} (currently the same as {@link WorkerCommunicatorOptions}). */
+export interface PdfrxEngineOptions extends WorkerCommunicatorOptions {}
 
 /** Common options for the document-opening methods of {@link PdfrxEngine}. */
 export interface PdfOpenOptions {
@@ -64,8 +64,7 @@ export interface PdfOpenUrlOptions extends PdfOpenOptions {
  *
  * The page is conceptually scaled to `fullWidth` x `fullHeight` pixels, and the
  * `x`/`y`/`width`/`height` sub-rectangle of that scaled page is what gets
- * rendered. All values are in pixels unless noted otherwise. Counterpart of the
- * `render` parameters on `PdfPage` in pdfrx.
+ * rendered. All values are in pixels unless noted otherwise.
  */
 export interface PdfPageRenderOptions {
   /** Left of the rendered region in the scaled page (pixels). Default: 0. */
@@ -86,19 +85,18 @@ export interface PdfPageRenderOptions {
   rotationOverride?: PdfPageRotation;
   /** Whether/how annotations are drawn. Default: `'annotationAndForms'`. */
   annotationRenderingMode?: PdfAnnotationRenderingMode;
-  /** Raw pdfium `FPDF_*` render flags. */
+  /** Advanced: low-level renderer flags (`FPDF_*`). */
   flags?: number;
 }
 
 /**
- * Entry point to the pdfium WASM engine.
+ * Entry point to the rendering engine.
  *
- * Construct one with the URL of the directory hosting the bundled pdfium wasm
- * assets, then open documents with {@link openUrl}, {@link openData},
+ * Construct one with the URL of the directory hosting the bundled WASM assets,
+ * then open documents with {@link openUrl}, {@link openData},
  * {@link createNew}, or {@link createFromJpegData}. A single engine owns one
- * worker ({@link PdfiumWorkerCommunicator}) shared by all documents it opens;
- * call {@link dispose} to tear it down. TypeScript counterpart of
- * `PdfrxEntryFunctionsWasmImpl` in pdfrx.
+ * worker ({@link WorkerCommunicator}) shared by all documents it opens;
+ * call {@link dispose} to tear it down.
  *
  * @example
  * ```ts
@@ -115,17 +113,17 @@ export interface PdfPageRenderOptions {
  * ```
  */
 export class PdfrxEngine {
-  private communicator: PdfiumWorkerCommunicator | null = null;
+  private communicator: WorkerCommunicator | null = null;
   private readonly options: PdfrxEngineOptions;
 
   constructor(options: PdfrxEngineOptions) {
     this.options = options;
   }
 
-  /** Spawns the worker and initializes pdfium. Called implicitly by the open functions. */
+  /** Spawns the worker and initializes the engine. Called implicitly by the open functions. */
   async init(): Promise<void> {
     if (!this.communicator) {
-      this.communicator = new PdfiumWorkerCommunicator(this.options);
+      this.communicator = new WorkerCommunicator(this.options);
     }
     await this.communicator.ready;
   }
@@ -134,7 +132,7 @@ export class PdfrxEngine {
    * The active communicator, or throws if {@link init} has not run.
    * @internal
    */
-  private get comm(): PdfiumWorkerCommunicator {
+  private get comm(): WorkerCommunicator {
     if (!this.communicator) throw new Error('PdfrxEngine is not initialized');
     return this.communicator;
   }
@@ -150,7 +148,6 @@ export class PdfrxEngine {
    *
    * The bytes are copied into a fresh `ArrayBuffer` (transferred to the worker)
    * unless `data` is already a full, offset-zero `ArrayBuffer`.
-   * Counterpart of `openData` in pdfrx.
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<PdfDocument> {
     await this.init();
@@ -177,7 +174,7 @@ export class PdfrxEngine {
    * Opens a document by URL. The worker fetches the bytes, so the URL must be
    * reachable under the page's CORS policy; relative URLs are resolved against
    * `document.baseURI`. Set {@link PdfOpenUrlOptions.preferRangeAccess} to stream
-   * the file via range requests. Counterpart of `openUri` in pdfrx.
+   * the file via range requests.
    */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<PdfDocument> {
     await this.init();
@@ -217,7 +214,7 @@ export class PdfrxEngine {
     }
   }
 
-  /** Creates a new empty document. Counterpart of `createNew` in pdfrx. */
+  /** Creates a new empty document. */
   async createNew(sourceName = 'new'): Promise<PdfDocument> {
     await this.init();
     const result = await this.comm.sendCommand('createNewDocument', {});
@@ -230,7 +227,6 @@ export class PdfrxEngine {
   /**
    * Creates a single-page document that displays the given JPEG image.
    * `size.width`/`size.height` are the page dimensions in points (1/72 inch).
-   * Counterpart of `createFromJpegData` in pdfrx.
    */
   async createFromJpegData(
     jpegData: Uint8Array,
@@ -278,7 +274,7 @@ export class PdfrxEngine {
    *
    * If {@link PdfOpenOptions.firstAttemptByEmptyPassword} is set, the first
    * attempt uses an empty password; thereafter the {@link PdfPasswordProvider}
-   * is consulted and the open is retried while pdfium reports a password error.
+   * is consulted and the open is retried while the engine reports a password error.
    * Throws {@link PdfPasswordException} if the provider gives up.
    * @internal
    */
@@ -300,7 +296,7 @@ export class PdfrxEngine {
 
       const result = await open(password);
       if (isWireError(result)) {
-        if (result.errorCode === PdfiumErrorCode.password) continue;
+        if (result.errorCode === PdfErrorCode.password) continue;
         throw new Error(`Failed to open document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
       }
       const doc = new PdfDocument(this.comm, result, sourceName, onDispose);
@@ -323,13 +319,12 @@ type Listener<E extends PdfDocumentEventName> = (event: PdfDocumentEventMap[E]) 
  *
  * Obtain instances from the opening methods of {@link PdfrxEngine}; do not
  * construct directly. Always {@link dispose} a document when finished to release
- * the underlying pdfium handles. TypeScript counterpart of `_PdfDocumentWasm`
- * in pdfrx.
+ * the underlying native handles.
  */
 export class PdfDocument {
   /** @internal */
   constructor(
-    comm: PdfiumWorkerCommunicator,
+    comm: WorkerCommunicator,
     wire: WireDocument,
     /** Identifier of the document's source (e.g. `uri%...` or `data%...`); used in error messages. */
     readonly sourceName: string,
@@ -345,7 +340,7 @@ export class PdfDocument {
     this.updateMissingFonts(wire.missingFonts);
   }
 
-  private readonly comm: PdfiumWorkerCommunicator;
+  private readonly comm: WorkerCommunicator;
   /** @internal */
   readonly docHandle: number;
   /** @internal */
@@ -394,8 +389,8 @@ export class PdfDocument {
     }
     set.add(listener as Listener<PdfDocumentEventName>);
     // Missing fonts are typically discovered while the document is being
-    // opened — before anyone can subscribe. Replay them to new listeners
-    // (the Dart implementation gets this from rxdart's BehaviorSubject).
+    // opened — before anyone can subscribe. Replay them to new listeners so
+    // late subscribers do not miss them.
     if (event === 'missingFonts' && this.accumulatedFontQueries.length > 0) {
       const queries = this.accumulatedFontQueries.slice();
       queueMicrotask(() => {
@@ -455,7 +450,7 @@ export class PdfDocument {
   }
 
   /** @internal */
-  sendCommand: PdfiumWorkerCommunicator['sendCommand'] = (command, parameters, transfer) => {
+  sendCommand: WorkerCommunicator['sendCommand'] = (command, parameters, transfer) => {
     if (this._isDisposed) {
       return Promise.reject(new Error(`Document ${this.sourceName} is disposed`));
     }
@@ -463,7 +458,7 @@ export class PdfDocument {
   };
 
   /**
-   * Closes the document and releases its pdfium handles (and the form
+   * Closes the document and releases its native handles (and the form
    * environment). Idempotent; after disposal all page operations resolve to
    * `null`/empty or reject. Runs the `onDispose` hook supplied at open time.
    */
@@ -481,9 +476,8 @@ export class PdfDocument {
   }
 
   /**
-   * True if `other` is a {@link PdfDocument} backed by the same pdfium handle.
-   * Note this compares handles, not document contents. Counterpart of
-   * `isIdenticalDocumentHandle` in pdfrx.
+   * True if `other` is a {@link PdfDocument} backed by the same native handle.
+   * Note this compares handles, not document contents.
    */
   isIdenticalDocumentHandle(other: unknown): boolean {
     return other instanceof PdfDocument && other.docHandle === this.docHandle;
@@ -575,8 +569,8 @@ export class PdfDocument {
   /**
    * Serializes the document back to PDF bytes.
    *
-   * NOTE: unlike the Dart API, page reassembly (`assemble`) is not supported yet;
-   * this encodes the document as-is.
+   * NOTE: page reassembly (`assemble`) is not supported yet; this encodes the
+   * document as-is.
    */
   async encodePdf(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
     const result = await this.sendCommand('encodePdf', {
@@ -615,7 +609,7 @@ export class PdfDocument {
 
 /**
  * A page of a document. Obtain instances via {@link PdfDocument.pages}; do not
- * construct directly. TypeScript counterpart of `_PdfPageWasm` in pdfrx.
+ * construct directly.
  */
 export class PdfPage {
   /** @internal */
@@ -650,14 +644,13 @@ export class PdfPage {
 
   /**
    * Renders (a part of) the page to a {@link PdfImage} of RGBA8888 pixels
-   * (Canvas/WebGL-ready; the worker converts from pdfium's native BGRA).
+   * (Canvas/WebGL-ready; the worker converts from the engine's native BGRA).
    *
    * The page is scaled to `fullWidth` x `fullHeight` (defaulting to the page
    * size in points, i.e. 72 dpi) and the `x`/`y`/`width`/`height` sub-region of
    * that scaled page is returned. Use {@link PdfImage.toImageData} /
    * {@link PdfImage.toImageBitmap} to draw the result. Returns `null` if the
-   * document is already disposed. Counterpart of `_PdfPageWasm.render` in
-   * pdfrx_wasm.dart.
+   * document is already disposed.
    */
   async render(options: PdfPageRenderOptions = {}): Promise<PdfImage | null> {
     if (this.document.isDisposed) return null;
@@ -691,8 +684,7 @@ export class PdfPage {
   /**
    * Loads the full text of the page with one bounding rect per UTF-16 code unit
    * (in page coordinates). Returns `null` if the document is disposed or the
-   * page is not yet loaded (progressive loading). Counterpart of
-   * `_PdfPageWasm.loadText` in pdfrx_wasm.dart.
+   * page is not yet loaded (progressive loading).
    */
   async loadText(): Promise<PdfPageRawText | null> {
     if (this.document.isDisposed || !this.isLoaded) return null;
@@ -711,8 +703,7 @@ export class PdfPage {
    * Loads link annotations on the page and, when
    * `enableAutoLinkDetection` is true (the default), URL-like text detected in
    * the page content. Returns an empty array if the document is disposed or the
-   * page is not yet loaded. Counterpart of `_PdfPageWasm.loadLinks` in
-   * pdfrx_wasm.dart.
+   * page is not yet loaded.
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
     if (this.document.isDisposed || !this.isLoaded) return [];

@@ -1,6 +1,5 @@
 /**
- * Interactive text search — port of pdfrx's `PdfTextSearcher`
- * (`pdfrx/lib/src/widgets/pdf_text_searcher.dart`).
+ * Interactive text search.
  *
  * Progressively searches page texts, tracks the current match, and asks the
  * viewer to navigate/highlight. Create via `PdfrxViewer.createTextSearcher()`
@@ -16,8 +15,8 @@ import {
 import type { PdfrxViewer } from './viewer.js';
 
 /**
- * A single search hit. Port of pdfrx's `PdfPageTextRange`, flattened to the
- * fields the viewer needs to highlight and navigate to a match.
+ * A single search hit, flattened to the fields the viewer needs to highlight
+ * and navigate to a match.
  */
 export interface SearchMatch {
   /** 1-based page the match is on. */
@@ -52,8 +51,6 @@ interface SearchCondition {
  * {@link PdfrxViewer.createTextSearcher}; the owning viewer paints the match
  * highlights (all matches plus the {@link PdfTextSearcher.currentMatch | current match}
  * in a distinct color) and scrolls to matches as you navigate.
- *
- * Port of pdfrx's `PdfTextSearcher` (`pdf_text_searcher.dart`).
  *
  * @example
  * ```ts

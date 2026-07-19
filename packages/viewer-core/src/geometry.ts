@@ -1,28 +1,25 @@
 /**
  * Geometry primitives and coordinate conversions.
  *
- * Two coordinate spaces are used, mirroring pdfrx:
+ * Two coordinate spaces are used:
  *
- * - **View/document space** (`Offset`/`Rect`): y-down, like Flutter/Canvas.
+ * - **View/document space** (`Offset`/`Rect`): y-down, like Canvas.
  *   "Document" coordinates are the unzoomed coordinates of the whole laid-out
  *   document (all pages).
  * - **PDF page space** (`PdfPoint`/`PdfRect`): y-up, origin at the bottom-left
  *   of the page, in points (1/72 inch). `PdfRect.top >= PdfRect.bottom`.
  *
  * All types are plain JSON-serializable objects so that test vectors can be
- * shared with the Dart implementation.
- *
- * Dart counterparts: `pdfrx_engine/lib/src/pdf_rect.dart`, `pdf_point.dart`,
- * and the conversion extensions in `pdfrx/lib/src/pdfrx_flutter.dart`.
+ * shared across implementations.
  */
 
-/** A 2D point/vector in view/document space (y-down). Port of Flutter's `Offset`. */
+/** A 2D point/vector in view/document space (y-down). */
 export interface Offset {
   x: number;
   y: number;
 }
 
-/** A 2D size (width/height). Port of Flutter's `Size`. */
+/** A 2D size (width/height). */
 export interface Size {
   width: number;
   height: number;
@@ -54,8 +51,7 @@ export interface PdfRect {
  * The geometry of a page needed for coordinate conversions.
  *
  * `width`/`height` are the *visual* (already rotation-applied) page size in
- * points, exactly like pdfrx's `PdfPage.width`/`height`. `rotation` is the
- * page's own rotation in 90-degree steps (0-3).
+ * points. `rotation` is the page's own rotation in 90-degree steps (0-3).
  */
 export interface PageGeometry {
   width: number;
@@ -67,7 +63,7 @@ export interface PageGeometry {
 // Rect (y-down) helpers
 // ---------------------------------------------------------------------------
 
-/** Construct a {@link Rect} from left/top plus width/height (Flutter's `Rect.fromLTWH`). */
+/** Construct a {@link Rect} from left/top plus width/height. */
 export const rectFromLTWH = (left: number, top: number, width: number, height: number): Rect => ({
   left,
   top,
@@ -75,7 +71,7 @@ export const rectFromLTWH = (left: number, top: number, width: number, height: n
   bottom: top + height,
 });
 
-/** Construct a {@link Rect} centered on `center` with the given size (Flutter's `Rect.fromCenter`). */
+/** Construct a {@link Rect} centered on `center` with the given size. */
 export const rectFromCenter = (center: Offset, width: number, height: number): Rect => ({
   left: center.x - width / 2,
   top: center.y - height / 2,
@@ -92,7 +88,7 @@ export const rectSize = (r: Rect): Size => ({ width: rectWidth(r), height: rectH
 /** Center point of the rect. */
 export const rectCenter = (r: Rect): Offset => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
 
-/** Whether `p` lies inside `r`; left/top inclusive, right/bottom exclusive (Flutter's `Rect.contains`). */
+/** Whether `p` lies inside `r`; left/top inclusive, right/bottom exclusive. */
 export const rectContains = (r: Rect, p: Offset): boolean =>
   p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom;
 
@@ -112,7 +108,7 @@ export const rectTranslate = (r: Rect, dx: number, dy: number): Rect => ({
   bottom: r.bottom + dy,
 });
 
-/** Grow (or shrink, if negative) the rect on every side by `dx`/`dy` (Flutter's `Rect.inflate`). */
+/** Grow (or shrink, if negative) the rect on every side by `dx`/`dy`. */
 export const rectInflate = (r: Rect, dx: number, dy = dx): Rect => ({
   left: r.left - dx,
   top: r.top - dy,
@@ -132,19 +128,19 @@ export const rectIntersect = (a: Rect, b: Rect): Rect => ({
 export const rectIsEmpty = (r: Rect): boolean => r.left >= r.right || r.top >= r.bottom;
 
 // ---------------------------------------------------------------------------
-// PdfRect (y-up) helpers — ports of PdfRect in pdfrx_engine
+// PdfRect (y-up) helpers
 // ---------------------------------------------------------------------------
 
-/** Whether the PDF rect has non-positive width or height (`top <= bottom` since y-up). Port of `PdfRect.isEmpty`. */
+/** Whether the PDF rect has non-positive width or height (`top <= bottom` since y-up). */
 export const pdfRectIsEmpty = (r: PdfRect): boolean => r.left >= r.right || r.top <= r.bottom;
-/** Width of the PDF rect (`right - left`). Port of `PdfRect.width`. */
+/** Width of the PDF rect (`right - left`). */
 export const pdfRectWidth = (r: PdfRect): number => r.right - r.left;
-/** Height of the PDF rect (`top - bottom`; y-up). Port of `PdfRect.height`. */
+/** Height of the PDF rect (`top - bottom`; y-up). */
 export const pdfRectHeight = (r: PdfRect): number => r.top - r.bottom;
-/** Center point of the PDF rect. Port of `PdfRect.center`. */
+/** Center point of the PDF rect. */
 export const pdfRectCenter = (r: PdfRect): PdfPoint => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
 
-/** Smallest PDF rect enclosing both `a` and `b`. Port of `PdfRect.merge`. */
+/** Smallest PDF rect enclosing both `a` and `b`. */
 export const pdfRectMerge = (a: PdfRect, b: PdfRect): PdfRect => ({
   left: Math.min(a.left, b.left),
   top: Math.max(a.top, b.top),
@@ -152,17 +148,17 @@ export const pdfRectMerge = (a: PdfRect, b: PdfRect): PdfRect => ({
   bottom: Math.min(a.bottom, b.bottom),
 });
 
-/** Whether `(x, y)` lies inside `r`, expanded by `margin` on every side. Port of `PdfRect.containsXy`. */
+/** Whether `(x, y)` lies inside `r`, expanded by `margin` on every side. */
 export const pdfRectContainsXy = (r: PdfRect, x: number, y: number, margin = 0): boolean =>
   x >= r.left - margin && x <= r.right + margin && y >= r.bottom - margin && y <= r.top + margin;
 
-/** Whether `p` lies inside `r`, expanded by `margin`. Port of `PdfRect.containsPoint`. */
+/** Whether `p` lies inside `r`, expanded by `margin`. */
 export const pdfRectContainsPoint = (r: PdfRect, p: PdfPoint, margin = 0): boolean =>
   pdfRectContainsXy(r, p.x, p.y, margin);
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
-/** Squared distance from `p` to the nearest point of `r`; 0 when inside. Port of `PdfRect.distanceSquaredTo`. */
+/** Squared distance from `p` to the nearest point of `r`; 0 when inside. */
 export const pdfRectDistanceSquaredTo = (r: PdfRect, p: PdfPoint): number => {
   if (pdfRectContainsPoint(r, p)) return 0;
   const dx = clamp(p.x, r.left, r.right) - p.x;
@@ -170,11 +166,11 @@ export const pdfRectDistanceSquaredTo = (r: PdfRect, p: PdfPoint): number => {
   return dx * dx + dy * dy;
 };
 
-/** Whether `a` and `b` overlap with positive area (y-up variant). Port of `PdfRect.overlaps`. */
+/** Whether `a` and `b` overlap with positive area (y-up variant). */
 export const pdfRectOverlaps = (a: PdfRect, b: PdfRect): boolean =>
   a.left < b.right && a.right > b.left && a.top > b.bottom && a.bottom < b.top;
 
-/** Grow (or shrink) the PDF rect on every side; `dx` widens, `dy` raises the top / lowers the bottom. Port of `PdfRect.inflate`. */
+/** Grow (or shrink) the PDF rect on every side; `dx` widens, `dy` raises the top / lowers the bottom. */
 export const pdfRectInflate = (r: PdfRect, dx: number, dy: number): PdfRect => ({
   left: r.left - dx,
   top: r.top + dy,
@@ -182,7 +178,7 @@ export const pdfRectInflate = (r: PdfRect, dx: number, dy: number): PdfRect => (
   bottom: r.bottom - dy,
 });
 
-/** Shift the PDF rect by `(dx, dy)`. Port of `PdfRect.translate`. */
+/** Shift the PDF rect by `(dx, dy)`. */
 export const pdfRectTranslate = (r: PdfRect, dx: number, dy: number): PdfRect => ({
   left: r.left + dx,
   top: r.top + dy,
@@ -208,7 +204,7 @@ export function pdfRectBoundingRect(rects: readonly PdfRect[], start = 0, end = 
 }
 
 // ---------------------------------------------------------------------------
-// Rotation — ports of PdfRect.rotate/rotateReverse and PdfPoint counterparts
+// Rotation helpers for PdfRect / PdfPoint
 // ---------------------------------------------------------------------------
 
 /** Unrotated (raw PDF) page dimensions derived from the visual size. */
@@ -218,9 +214,9 @@ const rawPageSize = (page: PageGeometry): { width: number; height: number } => {
 };
 
 /**
- * Rotate a PDF rect by `rotation` 90-degree steps within `page`. Port of
- * `PdfRect.rotate`. `rotation` is masked to 0-3; the page's raw (unrotated)
- * dimensions are derived from its visual size.
+ * Rotate a PDF rect by `rotation` 90-degree steps within `page`. `rotation`
+ * is masked to 0-3; the page's raw (unrotated) dimensions are derived from its
+ * visual size.
  */
 export function pdfRectRotate(r: PdfRect, rotation: number, page: PageGeometry): PdfRect {
   const { width, height } = rawPageSize(page);
@@ -236,7 +232,7 @@ export function pdfRectRotate(r: PdfRect, rotation: number, page: PageGeometry):
   }
 }
 
-/** Inverse of {@link pdfRectRotate}. Port of `PdfRect.rotateReverse`. */
+/** Inverse of {@link pdfRectRotate}. */
 export function pdfRectRotateReverse(r: PdfRect, rotation: number, page: PageGeometry): PdfRect {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -251,7 +247,7 @@ export function pdfRectRotateReverse(r: PdfRect, rotation: number, page: PageGeo
   }
 }
 
-/** Rotate a PDF point by `rotation` 90-degree steps within `page`. Port of `PdfPoint.rotate`. */
+/** Rotate a PDF point by `rotation` 90-degree steps within `page`. */
 export function pdfPointRotate(p: PdfPoint, rotation: number, page: PageGeometry): PdfPoint {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -266,7 +262,7 @@ export function pdfPointRotate(p: PdfPoint, rotation: number, page: PageGeometry
   }
 }
 
-/** Inverse of {@link pdfPointRotate}. Port of `PdfPoint.rotateReverse`. */
+/** Inverse of {@link pdfPointRotate}. */
 export function pdfPointRotateReverse(p: PdfPoint, rotation: number, page: PageGeometry): PdfPoint {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -282,8 +278,7 @@ export function pdfPointRotateReverse(p: PdfPoint, rotation: number, page: PageG
 }
 
 // ---------------------------------------------------------------------------
-// PDF page space <-> view/document space — ports of the pdfrx_flutter.dart
-// conversion extensions
+// PDF page space <-> view/document space conversions
 // ---------------------------------------------------------------------------
 
 /** Options controlling a PDF-page-space <-> view-space conversion. */
@@ -296,7 +291,7 @@ export interface PageConversionOptions {
   rotation?: number;
 }
 
-/** `PdfRect.toRect` — to y-down page-local coordinates. */
+/** Convert a PDF rect to y-down page-local coordinates. */
 export function pdfRectToRect(r: PdfRect, { page, scaledPageSize, rotation }: PageConversionOptions): Rect {
   const rotated = pdfRectRotate(r, rotation ?? page.rotation, page);
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
@@ -308,13 +303,13 @@ export function pdfRectToRect(r: PdfRect, { page, scaledPageSize, rotation }: Pa
   };
 }
 
-/** `PdfRect.toRectInDocument` — to document coordinates using the page's laid-out rect. */
+/** Convert a PDF rect to document coordinates using the page's laid-out rect. */
 export function pdfRectToRectInDocument(r: PdfRect, page: PageGeometry, pageRect: Rect): Rect {
   const local = pdfRectToRect(r, { page, scaledPageSize: rectSize(pageRect) });
   return rectTranslate(local, pageRect.left, pageRect.top);
 }
 
-/** `Rect.toPdfRect` — from y-down page-local coordinates back to PDF page space. */
+/** Convert a y-down page-local rect back to PDF page space. */
 export function rectToPdfRect(rect: Rect, { page, scaledPageSize, rotation }: PageConversionOptions): PdfRect {
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
   return pdfRectRotateReverse(
@@ -329,14 +324,14 @@ export function rectToPdfRect(rect: Rect, { page, scaledPageSize, rotation }: Pa
   );
 }
 
-/** `PdfPoint.toOffset` — to y-down page-local coordinates. */
+/** Convert a PDF point to y-down page-local coordinates. */
 export function pdfPointToOffset(p: PdfPoint, { page, scaledPageSize, rotation }: PageConversionOptions): Offset {
   const rotated = pdfPointRotate(p, rotation ?? page.rotation, page);
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
   return { x: rotated.x * scale, y: (page.height - rotated.y) * scale };
 }
 
-/** `PdfPoint.toOffsetInDocument` — to document coordinates using the page's laid-out rect. */
+/** Convert a PDF point to document coordinates using the page's laid-out rect. */
 export function pdfPointToOffsetInDocument(p: PdfPoint, page: PageGeometry, pageRect: Rect): Offset {
   const rotated = pdfPointRotate(p, page.rotation, page);
   const scale = rectHeight(pageRect) / page.height;
@@ -346,7 +341,7 @@ export function pdfPointToOffsetInDocument(p: PdfPoint, page: PageGeometry, page
   };
 }
 
-/** `Offset.toPdfPoint` — from y-down page-local coordinates back to PDF page space. */
+/** Convert a y-down page-local point back to PDF page space. */
 export function offsetToPdfPoint(o: Offset, { page, scaledPageSize, rotation }: PageConversionOptions): PdfPoint {
   const scale = scaledPageSize === undefined ? 1.0 : page.height / scaledPageSize.height;
   return pdfPointRotateReverse(

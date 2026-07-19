@@ -21,8 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        # The external/pdfrx submodule is a maintainer tool; the docs build does
-        # not need it (engine assets and font tables are vendored).
       - uses: actions/setup-node@v4
         with:
           node-version: 22

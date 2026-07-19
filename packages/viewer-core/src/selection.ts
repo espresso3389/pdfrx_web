@@ -1,8 +1,5 @@
 /**
- * Text selection core — port of the selection logic in
- * `pdfrx/lib/src/widgets/pdf_viewer.dart` (`_findTextAndIndexForPoint`,
- * `_updateTextSelection`, `selectWord`, `PdfTextSelectionPoint`,
- * `PdfTextSelectionRange`, `PdfTextSelectionAnchor`).
+ * Text selection core.
  *
  * Everything here is pure: pointer geometry in, selection state out. The
  * caller (the viewer shell) owns pointer capture, page-text loading, and
@@ -41,28 +38,28 @@ export interface SelectionPoint {
 export const selectionPointIsValid = (p: SelectionPoint): boolean =>
   p.index >= 0 && p.index < p.text.charRects.length;
 
-/** `PdfTextSelectionPoint.operator <=` — ordered by (pageNumber, index). */
+/** Whether `a <= b`, ordered by (pageNumber, index). */
 export const selectionPointLE = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index <= b.index;
 
-/** `PdfTextSelectionPoint.operator <` — strict ordering by (pageNumber, index). */
+/** Whether `a < b`, strict ordering by (pageNumber, index). */
 export const selectionPointLT = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index < b.index;
 
 /** Which end of the selection an anchor is: `a` is the start, `b` the end. */
 export type SelectionAnchorType = 'a' | 'b';
 
-/** Port of `PdfTextSelectionAnchor`. `rect` is in document coordinates. */
+/** An A/B selection anchor. `rect` is in document coordinates. */
 export interface SelectionAnchor {
   rect: Rect;
   direction: PdfTextDirection;
   type: SelectionAnchorType;
   page: PdfPageText;
-  /** Inclusive character index (see the Dart doc comment for the A/B convention). */
+  /** Inclusive character index. */
   index: number;
 }
 
-/** `PdfTextSelectionAnchor.anchorPoint` — the apex of the rect for handle placement. */
+/** The apex of the anchor's rect, used for handle placement. */
 export function anchorPoint(anchor: SelectionAnchor): Offset {
   const { rect, direction, type } = anchor;
   switch (direction) {
@@ -87,9 +84,9 @@ export interface SelectablePage {
 }
 
 /**
- * `_findTextAndIndexForPoint` — find the character nearest to a document
- * position. Exact hits win; otherwise the closest character within
- * `hitTestMargin` (document units) is used.
+ * Find the character nearest to a document position. Exact hits win;
+ * otherwise the closest character within `hitTestMargin` (document units) is
+ * used.
  */
 export function findTextAndIndexForPoint(
   point: Offset,
@@ -133,8 +130,8 @@ export interface SelectionAnchors {
 export type PageGeometryResolver = (pageNumber: number) => { page: PageGeometry; pageRect: Rect };
 
 /**
- * `_updateTextSelection` — compute the A/B anchors for the current selection
- * ends. Handles both same-page and cross-page selections.
+ * Compute the A/B anchors for the current selection ends. Handles both
+ * same-page and cross-page selections.
  */
 export function computeSelectionAnchors(
   selA: SelectionPoint,
@@ -197,8 +194,7 @@ export interface WordSelection {
 }
 
 /**
- * `selectWord` (the geometry part) — select the fragment (word) under the
- * given document position, if any.
+ * Select the fragment (word) under the given document position, if any.
  */
 export function selectWordAt(point: Offset, pages: readonly SelectablePage[]): WordSelection | null {
   for (const { page, pageRect, text } of pages) {

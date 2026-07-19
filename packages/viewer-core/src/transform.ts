@@ -1,12 +1,10 @@
 /**
  * View transform and viewport math.
  *
- * pdfrx stores the view state in a `Matrix4` that only ever contains uniform
- * scale + translation; this port replaces it with an explicit
- * `{zoom, xZoomed, yZoomed}` record. The accessors mirror `PdfMatrix4Ext`
- * (`pdfrx/lib/src/widgets/pdf_viewer.dart`).
+ * The view state is a uniform scale + translation, held as an explicit
+ * `{zoom, xZoomed, yZoomed}` record.
  *
- * Conventions (identical to pdfrx):
+ * Conventions:
  * - `xZoomed`/`yZoomed` are the translation applied *after* zoom; i.e. the
  *   view-space position of the document origin.
  * - Document coordinates are unzoomed, y-down, spanning the laid-out document.
@@ -24,8 +22,7 @@ import {
 } from './geometry.js';
 
 /**
- * The view state: uniform scale + translation. Port of the `Matrix4` that
- * pdfrx keeps in the viewer (accessed via `PdfMatrix4Ext`).
+ * The view state: uniform scale + translation.
  */
 export interface ViewTransform {
   /** Uniform scale factor (view pixels per document unit). */
@@ -36,7 +33,7 @@ export interface ViewTransform {
   yZoomed: number;
 }
 
-/** Boundary margins around the document. May contain `Infinity` for unbounded panning. Port of Flutter's `EdgeInsets`. */
+/** Boundary margins around the document. May contain `Infinity` for unbounded panning. */
 export interface EdgeInsets {
   left: number;
   top: number;
@@ -59,13 +56,13 @@ export const edgeInsetsAdd = (a: EdgeInsets, b: EdgeInsets): EdgeInsets => ({
   bottom: a.bottom + b.bottom,
 });
 
-/** Grow a size by the horizontal/vertical insets. Port of `EdgeInsets.inflateSize`. */
+/** Grow a size by the horizontal/vertical insets. */
 export const edgeInsetsInflateSize = (e: EdgeInsets, size: Size): Size => ({
   width: size.width + e.left + e.right,
   height: size.height + e.top + e.bottom,
 });
 
-/** Grow a rect outward by the insets. Port of `EdgeInsets.inflateRect`. */
+/** Grow a rect outward by the insets. */
 export const edgeInsetsInflateRect = (e: EdgeInsets, r: Rect): Rect => ({
   left: r.left - e.left,
   top: r.top - e.top,
@@ -73,7 +70,7 @@ export const edgeInsetsInflateRect = (e: EdgeInsets, r: Rect): Rect => ({
   bottom: r.bottom + e.bottom,
 });
 
-/** `inflateRectIfFinite` — infinite components inflate by 0. */
+/** Grow a rect outward by the insets, treating infinite components as 0. */
 export const edgeInsetsInflateRectIfFinite = (e: EdgeInsets, r: Rect): Rect => ({
   left: r.left - (isFinite(e.left) ? e.left : 0),
   top: r.top - (isFinite(e.top) ? e.top : 0),
@@ -82,12 +79,12 @@ export const edgeInsetsInflateRectIfFinite = (e: EdgeInsets, r: Rect): Rect => (
 });
 
 // ---------------------------------------------------------------------------
-// ViewTransform accessors (PdfMatrix4Ext port)
+// ViewTransform accessors
 // ---------------------------------------------------------------------------
 
-/** Document-space x of the view origin (top-left). Port of `PdfMatrix4Ext.x`. */
+/** Document-space x of the view origin (top-left). */
 export const transformX = (t: ViewTransform): number => t.xZoomed / t.zoom;
-/** Document-space y of the view origin (top-left). Port of `PdfMatrix4Ext.y`. */
+/** Document-space y of the view origin (top-left). */
 export const transformY = (t: ViewTransform): number => t.yZoomed / t.zoom;
 
 /** Document position currently shown at the view center. */
@@ -135,17 +132,17 @@ export const toCanvasTransform = (t: ViewTransform): [number, number, number, nu
 ];
 
 // ---------------------------------------------------------------------------
-// Transform construction — ports of _calcMatrixFor* in _PdfViewerState
+// Transform construction
 // ---------------------------------------------------------------------------
 
-/** `_calcMatrixFor` — center the given document position at the given zoom. */
+/** Center the given document position at the given zoom. */
 export const calcTransformFor = (position: Offset, zoom: number, viewSize: Size): ViewTransform => ({
   zoom,
   xZoomed: -position.x * zoom + viewSize.width / 2,
   yZoomed: -position.y * zoom + viewSize.height / 2,
 });
 
-/** `_calcMatrixForRect` — fit the given document rect into the view. */
+/** Fit the given document rect into the view. */
 export function calcTransformForRect(
   rect: Rect,
   viewSize: Size,
@@ -177,7 +174,7 @@ export type PdfPageAnchor =
   | 'bottomRight'
   | 'all';
 
-/** `_calcRectForArea` — the sub-rectangle of `rect` that should be brought into view. */
+/** The sub-rectangle of `rect` that should be brought into view. */
 export function calcRectForArea(rect: Rect, anchor: PdfPageAnchor, visibleSize: Size): Rect {
   const w = Math.min(rectWidth(rect), visibleSize.width);
   const h = Math.min(rectHeight(rect), visibleSize.height);
@@ -219,8 +216,7 @@ export function calcRectForArea(rect: Rect, anchor: PdfPageAnchor, visibleSize: 
 // ---------------------------------------------------------------------------
 
 /**
- * `_splitHorizontalBoundaryExtra` / `_splitVerticalBoundaryExtra` —
- * how underflow (document smaller than view) is distributed to each side.
+ * How underflow (document smaller than view) is distributed to each side.
  */
 const splitBoundaryExtra = (extra: number, leadingRatio: number): [number, number] => [
   extra * leadingRatio,
@@ -262,8 +258,8 @@ const verticalLeadingRatio = (anchor: PdfPageAnchor | undefined): number => {
 };
 
 /**
- * `_adjustBoundaryMargins` — expands the configured boundary margin so that a
- * document smaller than the view is aligned per `underflowAnchor`.
+ * Expands the configured boundary margin so that a document smaller than the
+ * view is aligned per `underflowAnchor`.
  */
 export function adjustBoundaryMargins(
   viewSize: Size,
@@ -286,8 +282,8 @@ export function adjustBoundaryMargins(
 }
 
 /**
- * `_calcOverscroll` — the document-space offset by which the visible rect
- * exceeds the allowed boundary. Zero when fully inside.
+ * The document-space offset by which the visible rect exceeds the allowed
+ * boundary. Zero when fully inside.
  */
 export function calcOverscroll(
   t: ViewTransform,
@@ -325,10 +321,9 @@ export function calcOverscroll(
 }
 
 /**
- * `_calcMatrixForClampedToNearestBoundary` — translate the candidate transform
- * back inside the allowed boundary. Overscroll is expressed in document
- * coordinates; the Dart code applies `translate(-dx, -dy)` on the matrix,
- * which post-multiplies the scaled space, i.e. `xZoomed -= zoom * dx`.
+ * Translate the candidate transform back inside the allowed boundary.
+ * Overscroll is expressed in document coordinates and applied to the scaled
+ * space, i.e. `xZoomed -= zoom * dx`.
  */
 export function clampToBoundary(
   candidate: ViewTransform,

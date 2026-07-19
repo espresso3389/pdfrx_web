@@ -1,17 +1,13 @@
 /**
- * Wire-level types of the pdfium_worker.js postMessage protocol.
- *
- * This mirrors the protocol implemented by pdfrx's `assets/pdfium_worker.js`
- * (the Dart-side counterpart is `pdfrx/lib/src/wasm/pdfrx_wasm.dart`).
- * Keep this file in lock-step with those two; it is the contract shared by
- * the Dart and TypeScript clients.
+ * Wire-level types of the `pdfium_worker.js` postMessage protocol — the
+ * contract between {@link WorkerCommunicator} and the rendering worker.
  */
 
 /** Rectangle on the wire: `[left, top, right, bottom]` in PDF page coordinates (y-up). */
 export type WireRect = [number, number, number, number];
 
-/** PDFium `FPDF_ERR_*` codes (worker's `_errorMappings`). */
-export const enum PdfiumErrorCode {
+/** Error codes reported by the worker when opening or reading a document. */
+export const enum PdfErrorCode {
   success = 0,
   unknown = 1,
   file = 2,
@@ -25,7 +21,7 @@ export const enum PdfiumErrorCode {
 
 /** Error-shaped result returned by document open commands. */
 export interface WireError {
-  /** Numeric {@link PdfiumErrorCode}. */
+  /** Numeric {@link PdfErrorCode}. */
   errorCode: number;
   /** Symbolic name of {@link errorCode} (e.g. `"password"`), if the worker provided one. */
   errorCodeStr?: string;
@@ -38,7 +34,7 @@ export function isWireError(result: unknown): result is WireError {
   return typeof result === 'object' && result !== null && typeof (result as WireError).errorCode === 'number';
 }
 
-/** Font query reported by the worker when pdfium hits a missing font. */
+/** Font query reported by the worker when the engine hits a missing font. */
 export interface WireFontQuery {
   face: string;
   weight: number;
@@ -70,14 +66,14 @@ export interface WirePageInfo {
 
 /** Document-level handles and metadata returned by the open/create commands. */
 export interface WireDocument {
-  /** Opaque handle to the pdfium `FPDF_DOCUMENT` (kept on the worker side). */
+  /** Opaque handle to the native document (kept on the worker side). */
   docHandle: number;
   /** Raw permission flags, or negative if the document is not encrypted. */
   permissions: number;
   /** Security-handler revision, or negative if the document is not encrypted. */
   securityHandlerRevision: number;
   pages: WirePageInfo[];
-  /** Opaque handle to the pdfium form-fill environment. */
+  /** Opaque handle to the form-fill environment. */
   formHandle: number;
   /** Opaque pointer bookkept alongside {@link formHandle}; passed back on close. */
   formInfo: number;
@@ -121,9 +117,9 @@ export interface WireLink {
 
 /**
  * Parameter/result shapes for every worker command, keyed by command name.
- * Used by {@link PdfiumWorkerCommunicator.sendCommand} to type each round-trip.
+ * Used by {@link WorkerCommunicator.sendCommand} to type each round-trip.
  */
-export interface PdfiumCommandMap {
+export interface WorkerCommandMap {
   /** Loads and initializes `pdfium.wasm`. Must complete before any other command runs. */
   init: {
     params: {
@@ -213,20 +209,20 @@ export interface PdfiumCommandMap {
     params: { docHandle: number };
     result: { outline: WireOutlineNode[] };
   };
-  /** Loads a single page and returns its pdfium page handle. */
+  /** Loads a single page and returns its native page handle. */
   loadPage: {
     params: { docHandle: number; pageIndex: number };
     result: { pageHandle: number };
   };
-  /** Closes a page handle previously obtained from {@link PdfiumCommandMap.loadPage | loadPage}. */
+  /** Closes a page handle previously obtained from {@link WorkerCommandMap.loadPage | loadPage}. */
   closePage: {
     params: { pageHandle: number };
     result: { message: string };
   };
   /**
-   * Renders (a region of) a page to an RGBA8888 bitmap. pdfium renders BGRA
-   * natively; the vendored worker swaps to RGBA on the way out (see
-   * `scripts/sync-assets.mjs`) so the result is Canvas/WebGL-ready.
+   * Renders (a region of) a page to an RGBA8888 bitmap. The engine renders BGRA
+   * natively; the vendored worker swaps to RGBA on the way out so the result is
+   * Canvas/WebGL-ready.
    */
   renderPage: {
     params: {
@@ -287,7 +283,7 @@ export interface PdfiumCommandMap {
     };
     result: Record<string, never>;
   };
-  /** Discards all font data previously registered via {@link PdfiumCommandMap.addFontData | addFontData}. */
+  /** Discards all font data previously registered via {@link WorkerCommandMap.addFontData | addFontData}. */
   clearAllFontData: {
     params: { dummy: true };
     result: Record<string, never>;
@@ -317,15 +313,15 @@ export interface PdfiumCommandMap {
   };
 }
 
-/** Union of all worker command names (the keys of {@link PdfiumCommandMap}). */
-export type PdfiumCommand = keyof PdfiumCommandMap;
+/** Union of all worker command names (the keys of {@link WorkerCommandMap}). */
+export type WorkerCommand = keyof WorkerCommandMap;
 
 /**
  * Messages posted by the worker back to the main thread.
  *
  * Variants tagged with `type` are unsolicited notifications (`ready`, `error`,
  * `callback`); the `id`-tagged variants are the reply to a specific command
- * request. Handled by {@link PdfiumWorkerCommunicator}.
+ * request. Handled by {@link WorkerCommunicator}.
  */
 export type WorkerMessage =
   | { type: 'ready' }

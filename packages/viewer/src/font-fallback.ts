@@ -1,18 +1,16 @@
 /**
- * Missing-font fallback via Google Fonts — port of the pdrfx example's
- * `CompositeGoogleFontsResolver` (google_fonts_resolver.dart).
+ * Missing-font fallback via Google Fonts.
  *
- * The pdfium WASM engine has no system fonts at all, so every non-embedded
- * font (including Arial/Times/Courier) surfaces as a `missingFonts` event.
- * This resolver maps each query to a downloadable substitute:
+ * The rendering engine has no system fonts, so every non-embedded font
+ * (including Arial/Times/Courier) surfaces as a `missingFonts` event. This
+ * resolver maps each query to a downloadable substitute:
  *
  * - PDF standard / Core fonts -> metric-compatible Arimo / Tinos / Cousine
  * - everything else -> a Noto family chosen by charset and style
  *
  * All files are fetched from fonts.gstatic.com, which serves
- * `access-control-allow-origin: *`. The big Noto CJK OTC collections used by
- * the Dart resolver on native platforms are skipped here (GitHub raw has no
- * CORS), matching the Dart `kIsWeb` behavior.
+ * `access-control-allow-origin: *`. The big Noto CJK OTC collections are
+ * skipped here because GitHub raw has no CORS.
  */
 
 import type { PdfFontQuery } from '@pdfrx/engine';
@@ -45,7 +43,7 @@ import {
   type WeightTable,
 } from './font-tables.js';
 
-/** PDFium charset ids (see PdfFontCharset in pdfrx_engine). */
+/** Windows charset ids, as reported in {@link PdfFontQuery.charset}. */
 const enum Charset {
   ansi = 0,
   default_ = 1,
@@ -68,11 +66,10 @@ const isRoman = (q: PdfFontQuery): boolean => (q.pitchFamily & 16) !== 0;
 
 /**
  * The outcome of resolving one missing-font query: which substitute file to
- * download and the family name it declares. Port of pdfrx's
- * `PdfFontResolution`.
+ * download and the family name it declares.
  */
 export interface FontResolution {
-  /** The font family name PDFium is expected to see inside the file. */
+  /** The font family name the engine is expected to see inside the file. */
   resolvedFace: string;
   /** URL of the substitute font file to fetch (must be CORS-accessible). */
   url: string;
@@ -82,9 +79,8 @@ export interface FontResolution {
 
 /**
  * Maps a missing-font query to a downloadable substitute, or `null` to leave it
- * unresolved. Port of pdfrx's `PdfFontResolver`; pass one as
- * {@link PdfrxViewerOptions.fontResolver} (the default is
- * {@link googleFontsResolver}).
+ * unresolved. Pass one as {@link PdfrxViewerOptions.fontResolver} (the default
+ * is {@link googleFontsResolver}).
  */
 export type FontResolver = (query: PdfFontQuery) => FontResolution | null;
 
@@ -93,7 +89,7 @@ const containsAny = (value: string, patterns: string[]): boolean => patterns.som
 const isItalicQuery = (query: PdfFontQuery, face: string): boolean =>
   query.isItalic || containsAny(face, ['italic', 'oblique']);
 
-/** Normalizes PDFium font weights and style hints to a Google Fonts weight. */
+/** Normalizes font weights and style hints to a Google Fonts weight. */
 function getFontWeight(query: PdfFontQuery, face: string): number {
   if (query.weight >= 100 && query.weight <= 900) return query.weight;
   if (containsAny(face, ['black', 'heavy'])) return 900;
@@ -242,8 +238,7 @@ const fileToResolution = (font: GoogleFontsFile): FontResolution => ({
  * The default {@link FontResolver}: tries metric-compatible substitutes for PDF
  * standard/Core fonts first (Arimo/Tinos/Cousine), then a Noto family chosen by
  * charset and style. All files are served from fonts.gstatic.com with
- * `access-control-allow-origin: *`. Port of the pdfrx example's
- * `CompositeGoogleFontsResolver`.
+ * `access-control-allow-origin: *`.
  *
  * @returns A {@link FontResolution}, or `null` when no substitute is known
  *   (e.g. symbol fonts).

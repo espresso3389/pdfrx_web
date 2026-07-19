@@ -1,14 +1,14 @@
 /**
  * Public model types of the engine API.
  *
- * Coordinate convention follows pdfrx: PDF page coordinates in points
+ * PDF page coordinates are in points
  * (1/72 inch), origin at the bottom-left corner, y-axis pointing up.
  * Rects are `{left, top, right, bottom}` with `top >= bottom`.
  */
 
 /**
  * An axis-aligned rectangle in PDF page coordinates (points, y-up), where
- * `top >= bottom` and `right >= left`. Counterpart of `PdfRect` in pdfrx.
+ * `top >= bottom` and `right >= left`.
  *
  * See {@link PdfRect} (the companion namespace-like value) for helpers that
  * operate on these rects.
@@ -33,23 +33,22 @@ export const PdfRect = {
     x >= r.left && x <= r.right && y >= r.bottom && y <= r.top,
 } as const;
 
-/** Page rotation in clockwise 90-degree steps. Counterpart of `PdfPageRotation` in pdfrx. */
+/** Page rotation in clockwise 90-degree steps. */
 export type PdfPageRotation = 0 | 90 | 180 | 270;
 
 /**
- * Converts a pdfium rotation index (0-3) to a {@link PdfPageRotation}.
+ * Converts a rotation index (0-3) to a {@link PdfPageRotation}.
  * The index is masked to 0-3, so out-of-range values wrap around.
  */
 export const pdfPageRotationFromIndex = (index: number): PdfPageRotation =>
   ((index & 3) * 90) as PdfPageRotation;
 
-/** Inverse of {@link pdfPageRotationFromIndex}: converts a rotation to a pdfium index (0-3). */
+/** Inverse of {@link pdfPageRotationFromIndex}: converts a rotation to an index (0-3). */
 export const pdfPageRotationToIndex = (rotation: PdfPageRotation): number => rotation / 90;
 
 /**
  * Encryption/permission information of a document. Present only for encrypted
- * documents; see {@link PdfDocument.permissions}. Counterpart of `PdfPermissions`
- * in pdfrx.
+ * documents; see {@link PdfDocument.permissions}.
  */
 export interface PdfPermissions {
   /** Raw permission flags from the PDF security handler. */
@@ -60,7 +59,7 @@ export interface PdfPermissions {
 
 /**
  * A navigation destination inside a document (e.g. the target of an outline
- * entry or a link). Counterpart of `PdfDest` in pdfrx.
+ * entry or a link).
  */
 export interface PdfDest {
   /** 1-based page number the destination points to. */
@@ -71,7 +70,7 @@ export interface PdfDest {
   readonly params: readonly (number | null)[];
 }
 
-/** A node of the document outline (a.k.a. bookmarks). Counterpart of `PdfOutlineNode` in pdfrx. */
+/** A node of the document outline (a.k.a. bookmarks). */
 export interface PdfOutlineNode {
   /** Human-readable label of the outline entry. */
   readonly title: string;
@@ -81,7 +80,7 @@ export interface PdfOutlineNode {
   readonly children: readonly PdfOutlineNode[];
 }
 
-/** Metadata of a link annotation. Counterpart of `PdfAnnotation` in pdfrx. */
+/** Metadata of a link annotation. */
 export interface PdfAnnotation {
   readonly title: string | null;
   readonly content: string | null;
@@ -94,7 +93,7 @@ export interface PdfAnnotation {
 
 /**
  * A link on a page, either an explicit link annotation or (when auto-detection
- * is enabled) a URL found in the page text. Counterpart of `PdfLink` in pdfrx.
+ * is enabled) a URL found in the page text.
  * See {@link PdfPage.loadLinks}.
  */
 export interface PdfLink {
@@ -110,7 +109,7 @@ export interface PdfLink {
 
 /**
  * Raw text of a page: full text plus one rect per UTF-16 code unit.
- * Counterpart of `PdfPageRawText` in pdfrx. See {@link PdfPage.loadText}.
+ * See {@link PdfPage.loadText}.
  */
 export interface PdfPageRawText {
   readonly fullText: string;
@@ -119,10 +118,9 @@ export interface PdfPageRawText {
 }
 
 /**
- * A font that pdfium could not find while loading or rendering a document.
+ * A font the engine could not find while loading or rendering a document.
  * Emitted via the {@link PdfDocumentEventMap.missingFonts | missingFonts} event;
- * supply a substitute with {@link PdfrxEngine.addFontData}. Counterpart of
- * `PdfFontQuery` in pdfrx.
+ * supply a substitute with {@link PdfrxEngine.addFontData}.
  */
 export interface PdfFontQuery {
   /** Requested typeface (family) name. */
@@ -130,16 +128,13 @@ export interface PdfFontQuery {
   /** Requested weight (e.g. 400 for regular, 700 for bold). */
   readonly weight: number;
   readonly isItalic: boolean;
-  /** pdfium/Windows charset id of the requested font. */
+  /** Windows charset id of the requested font. */
   readonly charset: number;
-  /** pdfium/Windows pitch-and-family byte of the requested font. */
+  /** Windows pitch-and-family byte of the requested font. */
   readonly pitchFamily: number;
 }
 
-/**
- * Whether/how annotations are drawn when rendering a page.
- * Counterpart of `PdfAnnotationRenderingMode` in pdfrx.
- */
+/** Whether/how annotations are drawn when rendering a page. */
 export type PdfAnnotationRenderingMode = 'none' | 'annotation' | 'annotationAndForms';
 
 /** Maps a {@link PdfAnnotationRenderingMode} to the numeric code used by the worker protocol. */
@@ -160,23 +155,21 @@ export const annotationRenderingModeToIndex = (mode: PdfAnnotationRenderingMode)
  * {@link PdfPasswordException}).
  *
  * It is called repeatedly on each failed attempt until it returns `null` or a
- * correct password, so it may prompt the user anew each time. Counterpart of
- * `PdfPasswordProvider` in pdfrx.
+ * correct password, so it may prompt the user anew each time.
  */
 export type PdfPasswordProvider = () => string | null | Promise<string | null>;
 
 /**
  * Callback invoked while a document is being downloaded (see
  * {@link PdfOpenUrlOptions.progressCallback}). `bytesTotal` is omitted when the
- * total size is unknown (e.g. no `Content-Length`). Counterpart of
- * `PdfDownloadProgressCallback` in pdfrx.
+ * total size is unknown (e.g. no `Content-Length`).
  */
 export type PdfDownloadProgressCallback = (bytesReceived: number, bytesTotal?: number) => void;
 
 /**
  * Thrown when opening an encrypted document fails due to a missing/wrong
  * password (i.e. the {@link PdfPasswordProvider} returned `null` or ran out of
- * passwords to try). Counterpart of `PdfPasswordException` in pdfrx.
+ * passwords to try).
  */
 export class PdfPasswordException extends Error {
   constructor(message: string) {
@@ -189,11 +182,9 @@ export class PdfPasswordException extends Error {
  * Result of rendering (a part of) a page: RGBA8888 pixels, ready for Canvas 2D
  * and WebGL without any channel conversion.
  *
- * pdfium renders in its native BGRA order, but the worker swaps channels while
+ * The engine renders in native BGRA order, but the worker swaps channels while
  * copying the bitmap out (effectively free), so {@link pixels} is already
- * RGBA — the only pixel format the web can consume directly. (This is where
- * the web port deliberately diverges from Flutter pdfrx, whose `PdfImage`
- * stays BGRA because Skia's `decodeImageFromPixels` takes BGRA natively.) See
+ * RGBA — the only pixel format the web can consume directly. See
  * {@link PdfPage.render}.
  */
 export class PdfImage {
@@ -225,15 +216,14 @@ export class PdfImage {
 
 /**
  * Payload types of the events emitted by {@link PdfDocument}, keyed by event
- * name. Subscribe with {@link PdfDocument.addEventListener}. Counterpart of the
- * `PdfDocumentEvent` hierarchy in pdfrx.
+ * name. Subscribe with {@link PdfDocument.addEventListener}.
  */
 export interface PdfDocumentEventMap {
   /** All pages are loaded (fired immediately for non-progressive loading). */
   loadComplete: Record<string, never>;
   /** Page objects were replaced (progressive load / reload). */
   pageStatusChanged: { pageNumbers: number[] };
-  /** pdfium reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
+  /** The engine reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
   missingFonts: { queries: PdfFontQuery[] };
 }
 

@@ -1,15 +1,16 @@
 # @pdfrx/engine
 
-A typed TypeScript client for the [pdfrx](https://github.com/espresso3389/pdfrx)
-pdfium WASM engine. It runs pdfium in a Web Worker and exposes a
-promise-based document API: open/render pages, extract text with
-per-character bounding boxes, links, outline, font registration, and PDF
-re-encoding. This is the engine layer underneath
-[`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use it
-directly when you only need rendering/extraction without the viewer UI.
+A typed TypeScript client for rendering PDF documents in the browser. It runs a
+WASM rendering engine in a Web Worker and exposes a promise-based document API:
+open/render pages, extract text with per-character bounding boxes, links,
+outline, font registration, and PDF re-encoding. This is the engine layer
+underneath [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use
+it directly when you only need rendering/extraction without the viewer UI.
 
-The pdfium WASM binaries (`assets/pdfium_worker.js`, `assets/pdfium.wasm`)
-are bundled in this package and are developed in the pdfrx repository.
+<sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
+
+The WASM binaries (`assets/pdfium_worker.js`, `assets/pdfium.wasm`) are bundled
+in this package.
 
 ## Installation
 
@@ -62,8 +63,7 @@ Each symbol links to its entry in the
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — serialize back to PDF bytes
 - Document events: [`pageStatusChanged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#pagestatuschanged), [`loadComplete`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#loadcomplete), [`missingFonts`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#missingfonts)
 
-The worker postMessage protocol is documented in `src/protocol.ts`; it is the
-shared contract with the Dart client in pdfrx.
+The worker postMessage protocol is documented in `src/protocol.ts`.
 
 ## License
 

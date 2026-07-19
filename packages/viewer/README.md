@@ -1,14 +1,15 @@
 # @pdfrx/viewer
 
-A canvas-based PDF viewer component for the browser — a web-native TypeScript
-port of the [pdfrx](https://github.com/espresso3389/pdfrx) Flutter viewer,
-built on the same pdfium WASM engine. Same rendering fidelity, same behavior,
-no Flutter runtime.
+A canvas-based PDF viewer component for the browser. It renders pages, text
+selection, links, and search highlights onto a single `<canvas>`, and ships as
+a framework-agnostic custom element or a plain class.
+
+<sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
 **[Live demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/)**
 
-- pdfium-quality rendering with zoomed sharp re-rendering
+- Sharp, high-quality rendering with re-rendering on zoom
 - Pan / wheel / pinch zoom with inertia, keyboard navigation
 - Canvas-painted text selection: mouse drag, double-click word selection,
   touch long-press with draggable handles and a magnifier lens
@@ -80,7 +81,7 @@ Each symbol links directly to its entry in the
 - [`print({ dpi? })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#print)
 - [`options.fontResolver`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#fontresolver) — missing-font fallback (defaults to Google Fonts; pass `null` to disable)
 - Page decoration: [`pageDropShadow`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagedropshadow) (soft shadow by default; `null` disables) and [`pageBorder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageborder) (off by default) draw a screen-space shadow/border around each page. For anything custom, [`pagePaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagepaintcallbacks) and [`pageBackgroundPaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagebackgroundpaintcallbacks) are `(ctx, pageRect, page)` painters that run in document coordinates on top of / behind each page
-- [`pageOverlaysBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageoverlaysbuilder) / [`setPageOverlaysBuilder(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpageoverlaysbuilder) — place **DOM elements** over each page that pan and zoom with it (like Flutter pdfrx's `pageOverlaysBuilder`). Position elements in page-point coordinates; the layer is click-through unless an element sets `pointerEvents: 'auto'`. Call [`refreshOverlays()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshoverlays) to rebuild
+- [`pageOverlaysBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageoverlaysbuilder) / [`setPageOverlaysBuilder(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpageoverlaysbuilder) — place **DOM elements** over each page that pan and zoom with it. Position elements in page-point coordinates; the layer is click-through unless an element sets `pointerEvents: 'auto'`. Call [`refreshOverlays()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshoverlays) to rebuild
 
 See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
 app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).
