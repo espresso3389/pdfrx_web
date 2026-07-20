@@ -1,6 +1,6 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { PdfSearchBox } from './search-box.js';
-import { IconMenu } from './icons.js';
+import { IconMenu, IconSearch } from './icons.js';
 import { joinClass, PdfLoadingBar, PdfPageIndicator, PdfPrintButton, PdfZoomControls } from './toolbar-parts.js';
 
 /** Props for {@link PdfToolbar}. */
@@ -30,6 +30,10 @@ export interface PdfToolbarProps {
  * {@link PdfZoomControls}, {@link PdfSearchBox}, {@link PdfPrintButton}) if you
  * would rather lay them out yourself.
  *
+ * On a narrow (phone) screen the inline search field is replaced by a search
+ * button; tapping it reveals the search field in a second row below the bar.
+ * This is purely responsive — on a wide screen the field is always inline.
+ *
  * @example
  * ```tsx
  * <PdfToolbar showSidebarToggle onToggleSidebar={() => setOpen((o) => !o)}>
@@ -48,20 +52,43 @@ export function PdfToolbar({
   showPrint = true,
   children,
 }: PdfToolbarProps): ReactNode {
+  // Only meaningful on a narrow screen: whether the collapsed search field is
+  // expanded. On a wide screen CSS shows the inline field and hides both the
+  // toggle button and this row, so the value is simply ignored there.
+  const [searchOpen, setSearchOpen] = useState(false);
+
   return (
-    <div className={joinClass('pdfrx-toolbar', className)} style={style}>
-      {showSidebarToggle && (
-        <button className="pdfrx-button" onClick={onToggleSidebar} title="Toggle sidebar" aria-label="Toggle sidebar">
-          <IconMenu />
-        </button>
+    <>
+      <div className={joinClass('pdfrx-toolbar', className)} style={style}>
+        {showSidebarToggle && (
+          <button className="pdfrx-button" onClick={onToggleSidebar} title="Toggle sidebar" aria-label="Toggle sidebar">
+            <IconMenu />
+          </button>
+        )}
+        {showPageIndicator && <PdfPageIndicator />}
+        {showZoomControls && <PdfZoomControls />}
+        <span className="pdfrx-toolbar-spacer" />
+        {showSearch && <PdfSearchBox className="pdfrx-toolbar-search" />}
+        {showSearch && (
+          <button
+            className={joinClass('pdfrx-button pdfrx-toolbar-search-toggle', searchOpen ? 'pdfrx-button-active' : undefined)}
+            onClick={() => setSearchOpen((open) => !open)}
+            title="Search"
+            aria-label="Search"
+            aria-expanded={searchOpen}
+          >
+            <IconSearch />
+          </button>
+        )}
+        {showPrint && <PdfPrintButton />}
+        {children}
+        <PdfLoadingBar />
+      </div>
+      {showSearch && searchOpen && (
+        <div className="pdfrx-toolbar-search-row">
+          <PdfSearchBox autoFocus />
+        </div>
       )}
-      {showPageIndicator && <PdfPageIndicator />}
-      {showZoomControls && <PdfZoomControls />}
-      <span className="pdfrx-toolbar-spacer" />
-      {showSearch && <PdfSearchBox className="pdfrx-toolbar-search" />}
-      {showPrint && <PdfPrintButton />}
-      {children}
-      <PdfLoadingBar />
-    </div>
+    </>
   );
 }

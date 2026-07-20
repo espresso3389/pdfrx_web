@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { usePdfSearch } from '../hooks/use-pdf-search.js';
 import { IconChevronDown, IconChevronUp, IconClose, IconSearch } from './icons.js';
 import { joinClass } from './toolbar-parts.js';
@@ -8,6 +8,8 @@ export interface PdfSearchBoxProps {
   className?: string;
   style?: CSSProperties;
   placeholder?: string;
+  /** Focus the input on mount — e.g. when the box appears from a collapsed toggle. */
+  autoFocus?: boolean;
 }
 
 /**
@@ -25,9 +27,13 @@ export interface PdfSearchBoxProps {
  * </PdfrxProvider>
  * ```
  */
-export function PdfSearchBox({ className, style, placeholder = 'Search' }: PdfSearchBoxProps): ReactNode {
+export function PdfSearchBox({ className, style, placeholder = 'Search', autoFocus = false }: PdfSearchBoxProps): ReactNode {
   const { query, setQuery, currentIndex, matchCount, isSearching, goToNext, goToPrevious, reset } = usePdfSearch();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   const hasQuery = query.length > 0;
   const status = hasQuery ? `${(currentIndex ?? -1) + 1} / ${matchCount}${isSearching ? '…' : ''}` : '';

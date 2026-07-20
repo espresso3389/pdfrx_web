@@ -99,6 +99,17 @@
   max-width: 280px;
 }
 
+/* Collapsed-search controls: hidden on a wide screen (see the media query
+   at the bottom of this file, which flips these for phones). The toggle needs
+   the `.pdfrx-toolbar` ancestor to outrank `.pdfrx-button`'s own `display`. */
+.pdfrx-toolbar .pdfrx-toolbar-search-toggle {
+  display: none;
+}
+
+.pdfrx-toolbar-search-row {
+  display: none;
+}
+
 .pdfrx-button {
   display: inline-flex;
   align-items: center;
@@ -121,6 +132,11 @@
 .pdfrx-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.pdfrx-button-active {
+  color: var(--pdfrx-accent);
+  background: var(--pdfrx-hover);
 }
 
 .pdfrx-button:focus-visible,
@@ -504,4 +520,29 @@
   font-size: 13px;
   color: var(--pdfrx-accent-contrast);
   background: var(--pdfrx-danger);
+}
+
+/* --- Phones: collapse the toolbar's inline search into a toggle + row ----- */
+
+@media (max-width: 640px) {
+  /* Hide the always-inline field... */
+  .pdfrx-toolbar-search {
+    display: none;
+  }
+
+  /* ...show the button that stands in for it... */
+  .pdfrx-toolbar .pdfrx-toolbar-search-toggle {
+    display: inline-flex;
+  }
+
+  /* ...and let its second row show when the toolbar renders one. */
+  .pdfrx-toolbar-search-row {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    background: var(--pdfrx-bg-subtle);
+    border-bottom: 1px solid var(--pdfrx-border);
+  }
 }
