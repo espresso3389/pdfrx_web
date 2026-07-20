@@ -2439,22 +2439,29 @@ export class PdfrxViewer {
   private showContextMenuNearSelection(): void {
     if (!this.anchors) return;
     const p = documentToView(this.transform, anchorPoint(this.anchors.b));
-    this.showContextMenu({ x: p.x + 8, y: p.y + 8 });
+    // On touch the finger is sitting on the selection end, so drop the menu
+    // below-left of it rather than under the fingertip.
+    if (this.lastPointerType === 'touch') this.showContextMenu({ x: p.x - 24, y: p.y + 28 });
+    else this.showContextMenu({ x: p.x + 8, y: p.y + 8 });
   }
 
   private showContextMenu(viewPos: Offset): void {
     this.hideContextMenu();
+    const touch = this.lastPointerType === 'touch';
     const menu = document.createElement('div');
     menu.style.cssText =
       'position:absolute;z-index:10;background:#fff;color:#111;border:1px solid #ccc;border-radius:6px;' +
-      'box-shadow:0 2px 10px rgba(0,0,0,0.25);font:13px system-ui,sans-serif;padding:4px;min-width:130px;' +
-      'display:flex;flex-direction:column;user-select:none;';
+      'box-shadow:0 2px 10px rgba(0,0,0,0.25);padding:4px;' +
+      `font:${touch ? 15 : 13}px system-ui,sans-serif;min-width:${touch ? 160 : 130}px;` +
+      'display:flex;flex-direction:column;user-select:none;touch-action:manipulation;';
     const addItem = (label: string, enabled: boolean, action: () => void): void => {
       const item = document.createElement('button');
       item.textContent = label;
       item.disabled = !enabled;
+      // Touch needs a target you can actually hit; a mouse does not.
       item.style.cssText =
-        'all:unset;padding:6px 12px;border-radius:4px;cursor:pointer;' +
+        `all:unset;padding:${touch ? '12px 16px' : '6px 12px'};border-radius:4px;cursor:pointer;` +
+        (touch ? 'min-height:22px;' : '') +
         (enabled ? '' : 'color:#aaa;cursor:default;');
       if (enabled) {
         item.addEventListener('mouseenter', () => (item.style.background = '#eee'));
