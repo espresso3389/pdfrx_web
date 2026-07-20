@@ -42,6 +42,15 @@ Before finishing any change, run `npm run build` and `npm test`. If you touched
 a viewer-visible behavior, verify it in `npm run dev:react` (or `dev`) with the
 browser tools — don't ask the user to check manually.
 
+The examples resolve `@pdfrx/*` to each package's `src/` via a Vite alias
+([examples/basic/vite-pdfrx-src.ts](examples/basic/vite-pdfrx-src.ts)), so
+`npm run dev`/`dev:react` need no prior package build and pick up source edits
+via HMR. (Before this, Vite served each package's `dist/`, and rebuilding a
+package under a live dev server let HMR read a half-written `dist/*.js` and
+throw `does not provide an export named …`.) Editing a package's source alone is
+enough for the examples; a full `npm run build` is still what CI and publishing
+use.
+
 ## TypeScript conventions
 
 Set in [tsconfig.base.json](tsconfig.base.json); the build will reject
