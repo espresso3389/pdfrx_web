@@ -1,7 +1,7 @@
 # pdfrx_web
 
 [![npm](https://img.shields.io/npm/v/@pdfrx/viewer)](https://www.npmjs.com/package/@pdfrx/viewer)
-[![Live demo](https://img.shields.io/badge/demo-live-brightgreen)](https://espresso3389.github.io/pdfrx_web/demo/)
+[![Live demo](https://img.shields.io/badge/demo-live-brightgreen)](https://espresso3389.github.io/pdfrx_web/demo-react/)
 [![API docs](https://img.shields.io/badge/API-docs-blue)](https://espresso3389.github.io/pdfrx_web/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -26,20 +26,38 @@ It renders pages, text selection, links, and search highlights onto a single
 
 ## Try the demo
 
-**[Live demo →](https://espresso3389.github.io/pdfrx_web/demo/)** — runs
-entirely in your browser.
+**[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
+React viewer, runs entirely in your browser.
 
-The demo has a search bar, thumbnails/outline sidebar, print button, and
-supports opening local files (button or drag & drop) and URLs. To run it
-locally:
+It has a search bar, thumbnails/outline sidebar, print button, page editing, and
+opening local files (button or drag & drop) — and switches between the three
+layers `@pdfrx/react` offers (all-in-one component, composed parts, headless
+hooks). To run it locally:
 
 ```sh
 git clone https://github.com/espresso3389/pdfrx_web.git
 cd pdfrx_web
 npm install
 npm run build
-npm run dev     # open http://localhost:5173
+npm run dev:react   # open http://localhost:5173
 ```
+
+There is also a **[framework-agnostic demo →](https://espresso3389.github.io/pdfrx_web/demo/)**
+built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
+`npm run dev`.
+
+## Which package?
+
+- **React app?** Use **[`@pdfrx/react`](packages/react)** — a ready-made viewer
+  component plus the thumbnails, outline and search UI as components and hooks.
+  It is built on `@pdfrx/viewer`, so you get everything below without wiring it
+  up yourself.
+- **Anything else** (vanilla JS, Vue, Svelte, Angular, a custom element) — use
+  **[`@pdfrx/viewer`](packages/viewer)** directly. It renders the PDF onto a
+  `<canvas>` and exposes the primitives (`loadOutline()`,
+  `renderPageThumbnail()`, `createTextSearcher()`), but the surrounding UI —
+  the thumbnail strip, the outline tree, the search box — is yours to build.
+  That extra UI is exactly what `@pdfrx/react` packages up for React.
 
 ## Installation
 
