@@ -60,7 +60,11 @@ Publishing is tag-driven and runs on GitHub Actions
 ([.github/workflows/release.yml](.github/workflows/release.yml)) via npm
 **trusted publishing** (OIDC — no npm token in the repo). Each package must name
 this workflow as its trusted publisher on npmjs.com; a brand-new package will
-not publish until that is configured.
+not publish until that is configured. **A package's first-ever version is
+therefore published manually** (`npm publish --workspace=@pdfrx/<name>` with a
+local npm login) with its automated publish step left out of release.yml, then
+added to CI once the trusted publisher exists. (`@pdfrx/react` 0.2.2 was the
+first such case.)
 
 **All four packages share one version, and it must equal the tag.** The workflow
 refuses to publish if any `packages/*/package.json` version disagrees with the
@@ -92,8 +96,13 @@ package version. (These drift silently because nothing type-checks a string in a
 markdown fence — that is exactly why this section exists.)
 
 **Inter-package dependency ranges** in package.json use `^` (e.g.
-`"@pdfrx/viewer": "^0.2.0"`), so patch/minor bumps need no change; widen them
-only on a breaking (major) release.
+`"@pdfrx/viewer": "^0.2.2"`). Raise a range's **minimum to the release version
+whenever a package starts calling an API added to a sibling in that same
+release** — even on a patch. (Concretely: `@pdfrx/react` calls
+`viewer.addTransformChangeListener()` / `pageCount`, added in 0.2.2, so its dep
+is `^0.2.2`, not `^0.2.0`. Left at `^0.2.0` a user could resolve `viewer@0.2.1`,
+which lacks those methods, and crash at runtime.) When unsure, keep all four
+ranges pinned to the current release version.
 
 **Adding a new package** means touching every place that enumerates packages —
 missing one produces a half-published or half-documented release:

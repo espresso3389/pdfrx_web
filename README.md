@@ -140,7 +140,7 @@ Both entry points need two things:
    simply use the jsDelivr CDN (any origin works):
 
    ```ts
-   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.2.1/assets/' }
+   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.2.2/assets/' }
    ```
 
 2. **CORS for remote PDFs.** [`openUrl`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) fetches the document, so PDFs on
