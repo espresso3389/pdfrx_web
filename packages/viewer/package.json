@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/viewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Canvas-based PDF viewer component built on @pdfrx/engine and @pdfrx/viewer-core",
   "type": "module",
   "main": "./dist/index.js",
