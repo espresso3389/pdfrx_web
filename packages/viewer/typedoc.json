@@ -1,4 +1,6 @@
 {
   "entryPoints": ["src/index.ts"],
-  "tsconfig": "tsconfig.json"
+  "tsconfig": "tsconfig.json",
+  "excludeInternal": true,
+  "excludePrivate": true
 }

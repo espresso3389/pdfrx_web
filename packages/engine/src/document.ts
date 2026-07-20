@@ -370,9 +370,16 @@ export class PdfDocument {
   }
 
   private readonly comm: WorkerCommunicator;
-  /** @internal */
+  /**
+   * Reserved for internal use only. Native handle of the document in the worker.
+   * @internal
+   */
   readonly docHandle: number;
-  /** @internal */
+  /**
+   * Reserved for internal use only. Native handle of the document's form
+   * environment in the worker.
+   * @internal
+   */
   readonly formHandle: number;
   private readonly formInfo: number;
   private readonly onDispose: (() => void) | null;
@@ -564,7 +571,11 @@ export class PdfDocument {
     }
   }
 
-  /** @internal */
+  /**
+   * Reserved for internal use only. Fires `loadComplete`; listen for the event
+   * with {@link addEventListener} instead.
+   * @internal
+   */
   notifyLoadComplete(): void {
     this.emit('loadComplete', {});
   }
@@ -573,7 +584,12 @@ export class PdfDocument {
   private readonly accumulatedFontQueries: PdfFontQuery[] = [];
   private readonly accumulatedFontKeys = new Set<string>();
 
-  /** @internal */
+  /**
+   * Reserved for internal use only. Records the fonts the worker reported as
+   * missing and fires `missingFonts`; listen for the event with
+   * {@link addEventListener} instead.
+   * @internal
+   */
   updateMissingFonts(missingFonts: WireFontQueries | undefined): void {
     if (!missingFonts) return;
     const entries = Object.values(missingFonts);
@@ -595,7 +611,11 @@ export class PdfDocument {
     this.emit('missingFonts', { queries });
   }
 
-  /** @internal */
+  /**
+   * Reserved for internal use only. Sends a raw worker command on behalf of this
+   * document, rejecting once it is disposed.
+   * @internal
+   */
   sendCommand: WorkerCommunicator['sendCommand'] = (command, parameters, transfer) => {
     if (this._isDisposed) {
       return Promise.reject(new Error(`Document ${this.sourceName} is disposed`));
@@ -604,6 +624,8 @@ export class PdfDocument {
   };
 
   /**
+   * Reserved for internal use only. Use {@link PdfPage.render} for normal purpose.
+   *
    * Queues a render on the worker's render queue (shared by every document the
    * engine opened, since the worker is the contended resource).
    * @internal
@@ -925,15 +947,15 @@ export class PdfPage {
   readonly width: number;
   /** Page height in points (1/72 inch), at {@link rotation}. */
   readonly height: number;
-  /** Effective page rotation (clockwise); differs from {@link sourceRotation} on a rotated proxy. */
+  /** Effective page rotation (clockwise); on a rotated proxy this differs from the rotation baked into the PDF. */
   readonly rotation: PdfPageRotation;
   /** False for pages not yet materialized during progressive loading. */
   readonly isLoaded: boolean;
   /** The real page this one stands in for, or `null` if this *is* a real page. */
   readonly basePage: PdfPage | null;
-  /** 0-based index of the physical page within {@link document}'s PDF. @internal */
+  /** Reserved for internal use only. 0-based index of the physical page within {@link document}'s PDF. @internal */
   readonly sourcePageIndex: number;
-  /** Rotation baked into the PDF for the physical page. @internal */
+  /** Reserved for internal use only. Rotation baked into the PDF for the physical page. @internal */
   readonly sourceRotation: PdfPageRotation;
   /** Left of the page's bounding box; text/link rects are shifted by it in {@link rectFromWire}. @internal */
   private readonly bbLeft: number;
@@ -1014,8 +1036,8 @@ export class PdfPage {
   }
 
   /**
-   * Re-points this page at a freshly loaded `base` (same physical page, new
-   * metadata) while keeping any proxy overrides.
+   * Reserved for internal use only. Re-points this page at a freshly loaded
+   * `base` (same physical page, new metadata) while keeping any proxy overrides.
    * @internal
    */
   rebasedOn(base: PdfPage): PdfPage {
@@ -1024,7 +1046,8 @@ export class PdfPage {
   }
 
   /**
-   * This page as a source for {@link PdfDocument.assemblePages}.
+   * Reserved for internal use only. This page as a source slot for
+   * {@link PdfDocument.assemblePages}.
    * @internal
    */
   toAssembleSource(): PdfAssembleSource {
