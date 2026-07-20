@@ -288,6 +288,12 @@
   border-inline-end: 1px solid var(--pdfrx-border);
 }
 
+/* Sidebar on the right: the divider moves to its inner (left) edge. */
+.pdfrx-app[data-sidebar-side='right'] .pdfrx-sidebar {
+  border-inline-end: 0;
+  border-inline-start: 1px solid var(--pdfrx-border);
+}
+
 .pdfrx-sidebar-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -487,9 +493,18 @@
   z-index: 2;
   inset-block: var(--pdfrx-toolbar-height) 0;
   inset-inline-start: 0;
+  /* Off-screen to the inline-start, so it slides in from the left. */
   transform: translateX(-100%);
   transition: transform 180ms ease;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Right-side drawer: anchored to the inline-end and slid off to the right. */
+.pdfrx-app-narrow[data-sidebar-side='right'] .pdfrx-sidebar {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  transform: translateX(100%);
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.25);
 }
 
 .pdfrx-app-narrow[data-sidebar-open='true'] .pdfrx-sidebar {

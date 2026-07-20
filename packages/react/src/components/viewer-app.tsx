@@ -21,6 +21,11 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   sidebarProps?: Omit<PdfSidebarProps, 'onNavigate' | 'renderPageActions'>;
   /** Sidebar width in CSS pixels. Defaults to `190`. */
   sidebarWidth?: number;
+  /**
+   * Which side the sidebar sits on. Defaults to `'left'`. On a narrow screen
+   * the drawer slides in from this side too.
+   */
+  sidebarSide?: 'left' | 'right';
   /** Add an "open file" button and accept dropped PDFs. Defaults to `false`. */
   enableFileOpen?: boolean;
   /**
@@ -76,6 +81,7 @@ export function PdfrxViewerApp({
   sidebar = true,
   sidebarProps,
   sidebarWidth = 190,
+  sidebarSide = 'left',
   enableFileOpen = false,
   enablePageEditing = false,
   showOpenButton,
@@ -93,6 +99,7 @@ export function PdfrxViewerApp({
         sidebar={sidebar}
         sidebarProps={sidebarProps}
         sidebarWidth={sidebarWidth}
+        sidebarSide={sidebarSide}
         enableFileOpen={enableFileOpen}
         enablePageEditing={enablePageEditing}
         // Each button follows its capability flag unless overridden.
@@ -114,6 +121,7 @@ type ChromeProps = Pick<
   | 'sidebar'
   | 'sidebarProps'
   | 'sidebarWidth'
+  | 'sidebarSide'
   | 'enableFileOpen'
   | 'enablePageEditing'
   | 'showOpenButton'
@@ -133,6 +141,7 @@ function PdfrxViewerAppChrome({
   sidebar,
   sidebarProps,
   sidebarWidth,
+  sidebarSide = 'left',
   enableFileOpen,
   enablePageEditing,
   showOpenButton,
@@ -179,6 +188,18 @@ function PdfrxViewerAppChrome({
     ? (pageNumber: number): ReactNode => <PageActions pageNumber={pageNumber} />
     : undefined;
 
+  const sidebarNode = sidebar ? (
+    <PdfSidebar
+      {...sidebarProps}
+      className={
+        isSidebarOpen || isNarrow ? sidebarProps?.className : `pdfrx-sidebar-hidden ${sidebarProps?.className ?? ''}`
+      }
+      style={{ width: sidebarWidth, ...sidebarProps?.style }}
+      onNavigate={closeDrawerIfNarrow}
+      renderPageActions={renderPageActions}
+    />
+  ) : null;
+
   return (
     <div
       className={
@@ -186,6 +207,7 @@ function PdfrxViewerAppChrome({
       }
       style={style}
       data-sidebar-open={isSidebarOpen}
+      data-sidebar-side={sidebarSide}
       onDragOver={enableFileOpen ? (e) => e.preventDefault() : undefined}
       onDrop={onDrop}
     >
@@ -226,22 +248,14 @@ function PdfrxViewerAppChrome({
       <div className="pdfrx-app-body">
         {/* Kept mounted while closed: the drawer animates out on narrow screens,
             and a `display: none` sidebar stops its thumbnails from rendering
-            anyway (a hidden element never intersects the viewport). */}
-        {sidebar && (
-          <PdfSidebar
-            {...sidebarProps}
-            className={
-              isSidebarOpen || isNarrow ? sidebarProps?.className : `pdfrx-sidebar-hidden ${sidebarProps?.className ?? ''}`
-            }
-            style={{ width: sidebarWidth, ...sidebarProps?.style }}
-            onNavigate={closeDrawerIfNarrow}
-            renderPageActions={renderPageActions}
-          />
-        )}
+            anyway (a hidden element never intersects the viewport). The sidebar
+            renders before or after the surface so it lands on the chosen side. */}
+        {sidebar && sidebarSide === 'left' && sidebarNode}
+        <PdfViewerSurface style={{ flex: 1 }} />
+        {sidebar && sidebarSide === 'right' && sidebarNode}
         {sidebar && isSidebarOpen && isNarrow && (
           <button className="pdfrx-scrim" aria-label="Close sidebar" onClick={() => setIsSidebarOpen(false)} />
         )}
-        <PdfViewerSurface style={{ flex: 1 }} />
       </div>
     </div>
   );
