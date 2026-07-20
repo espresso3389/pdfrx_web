@@ -1,4 +1,5 @@
 import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
+import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
   isWireError,
   PdfErrorCode,
@@ -88,6 +89,11 @@ export interface PdfPageRenderOptions {
   annotationRenderingMode?: PdfAnnotationRenderingMode;
   /** Advanced: low-level renderer flags (`FPDF_*`). */
   flags?: number;
+  /**
+   * Cancels the render while it is still queued, making it resolve to `null`.
+   * Create it with {@link PdfPage.createCancellationToken}.
+   */
+  cancellationToken?: PdfPageRenderCancellationToken;
 }
 
 /**
@@ -601,6 +607,16 @@ export class PdfDocument {
   };
 
   /**
+   * Queues a render on the worker's render queue (shared by every document the
+   * engine opened, since the worker is the contended resource).
+   * @internal
+   */
+  enqueueRender<T>(send: () => Promise<T>, token?: PdfPageRenderCancellationToken): Promise<T | null> {
+    if (this._isDisposed) return Promise.resolve(null);
+    return this.comm.enqueueRender(send, token);
+  }
+
+  /**
    * Closes the document and releases its native handles (and the form
    * environment). Idempotent; after disposal all page operations resolve to
    * `null`/empty or reject. Runs the `onDispose` hook supplied at open time.
@@ -1104,7 +1120,12 @@ export class PdfPage {
    * size in points, i.e. 72 dpi) and the `x`/`y`/`width`/`height` sub-region of
    * that scaled page is returned. Use {@link PdfImage.toImageData} /
    * {@link PdfImage.toImageBitmap} to draw the result. Returns `null` if the
-   * document is already disposed.
+   * document is already disposed, or if
+   * {@link PdfPageRenderOptions.cancellationToken} was cancelled.
+   *
+   * Renders are queued (one in the worker at a time by default) rather than all
+   * posted at once, so a render that is no longer wanted can be dropped before
+   * it starts — see {@link createCancellationToken}.
    */
   async render(options: PdfPageRenderOptions = {}): Promise<PdfImage | null> {
     if (this.document.isDisposed) return null;
@@ -1113,25 +1134,47 @@ export class PdfPage {
     const width = options.width ?? Math.floor(fullWidth);
     const height = options.height ?? Math.floor(fullHeight);
 
-    const result = await this.document.sendCommand('renderPage', {
-      docHandle: this.document.docHandle,
-      pageIndex: this.sourcePageIndex,
-      x: options.x ?? 0,
-      y: options.y ?? 0,
-      width,
-      height,
-      fullWidth,
-      fullHeight,
-      backgroundColor: options.backgroundColor ?? 0xffffffff,
-      // Relative to the rotation baked into the PDF, so a rotated proxy renders
-      // turned without the document having been rewritten.
-      rotation: (((options.rotationOverride ?? this.rotation) - this.sourceRotation) / 90 + 4) & 3,
-      annotationRenderingMode: annotationRenderingModeToIndex(options.annotationRenderingMode ?? 'annotationAndForms'),
-      flags: options.flags ?? 0,
-      formHandle: this.document.formHandle,
-    });
+    const result = await this.document.enqueueRender(
+      () =>
+        this.document.sendCommand('renderPage', {
+          docHandle: this.document.docHandle,
+          pageIndex: this.sourcePageIndex,
+          x: options.x ?? 0,
+          y: options.y ?? 0,
+          width,
+          height,
+          fullWidth,
+          fullHeight,
+          backgroundColor: options.backgroundColor ?? 0xffffffff,
+          // Relative to the rotation baked into the PDF, so a rotated proxy
+          // renders turned without the document having been rewritten.
+          rotation: (((options.rotationOverride ?? this.rotation) - this.sourceRotation) / 90 + 4) & 3,
+          annotationRenderingMode: annotationRenderingModeToIndex(
+            options.annotationRenderingMode ?? 'annotationAndForms',
+          ),
+          flags: options.flags ?? 0,
+          formHandle: this.document.formHandle,
+        }),
+      options.cancellationToken,
+    );
+    if (!result) return null; // cancelled
     this.document.updateMissingFonts(result.missingFonts);
     return new PdfImage(width, height, new Uint8Array(result.imageData));
+  }
+
+  /**
+   * Creates a token that cancels a {@link render} that has not started yet,
+   * making it resolve to `null`. Use one per render call.
+   *
+   * @example
+   * ```ts
+   * const token = page.createCancellationToken();
+   * scrolledAway.then(() => token.cancel());
+   * const image = await page.render({ fullWidth, fullHeight, cancellationToken: token });
+   * ```
+   */
+  createCancellationToken(): PdfPageRenderCancellationToken {
+    return new PdfPageRenderCancellationToken();
   }
 
   /**

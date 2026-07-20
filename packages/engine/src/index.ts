@@ -30,6 +30,7 @@ export {
   type PdfPageRenderOptions,
   type PdfrxEngineOptions,
 } from './document.js';
+export { PdfPageRenderCancellationToken } from './render-queue.js';
 export * from './types.js';
 export type {
   WorkerCommand,

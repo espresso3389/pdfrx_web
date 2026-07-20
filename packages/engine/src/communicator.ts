@@ -1,4 +1,5 @@
 import type { WorkerCommand, WorkerCommandMap, WorkerMessage } from './protocol.js';
+import { RenderQueue, type PdfPageRenderCancellationToken } from './render-queue.js';
 
 /** Options for constructing a {@link WorkerCommunicator}. */
 export interface WorkerCommunicatorOptions {
@@ -11,6 +12,13 @@ export interface WorkerCommunicatorOptions {
   headers?: Record<string, string>;
   /** Whether the worker's `pdfium.wasm` fetch includes credentials. */
   withCredentials?: boolean;
+  /**
+   * How many render commands may be in the worker at once. The worker runs them
+   * one at a time either way; the rest wait in a queue here, where they can
+   * still be cancelled. Raising this trades cancellable work for a little
+   * pipelining. Default: 1.
+   */
+  renderConcurrency?: number;
 }
 
 /**
@@ -35,6 +43,8 @@ export class WorkerCommunicator {
   private callbackId = 0;
   private readonly initPromise: Promise<void>;
   private disposed = false;
+  /** Renders are queued here rather than in the worker, so they stay cancellable. */
+  private readonly renderQueue: RenderQueue;
 
   /**
    * Spawns the worker (via a bootstrap blob) and kicks off engine
@@ -42,6 +52,7 @@ export class WorkerCommunicator {
    * {@link ready} before relying on it.
    */
   constructor(options: WorkerCommunicatorOptions) {
+    this.renderQueue = new RenderQueue(options.renderConcurrency ?? 1);
     const base = new URL(options.wasmModulesUrl, document.baseURI);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
@@ -151,6 +162,22 @@ export class WorkerCommunicator {
   }
 
   /**
+   * Runs `send` under the worker's render queue: it waits for a free slot and
+   * resolves to `null` if `token` is cancelled first. Used by
+   * {@link PdfPage.render} so a page that scrolls out of view can drop its
+   * pending render instead of blocking the pages now on screen.
+   * @internal
+   */
+  enqueueRender<T>(send: () => Promise<T>, token?: PdfPageRenderCancellationToken): Promise<T | null> {
+    return this.renderQueue.enqueue(send, token);
+  }
+
+  /** Renders waiting for a worker slot (not counting the one being rendered). */
+  get pendingRenderCount(): number {
+    return this.renderQueue.pending;
+  }
+
+  /**
    * Registers a callback the worker can invoke by id (e.g. download progress),
    * and returns that id to pass along in a command's parameters.
    * Remember to {@link unregisterCallback} it when done to avoid leaks.
@@ -170,6 +197,7 @@ export class WorkerCommunicator {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.renderQueue.dispose();
     this.worker.terminate();
     const error = new Error('WorkerCommunicator is disposed');
     for (const pending of this.pending.values()) {
