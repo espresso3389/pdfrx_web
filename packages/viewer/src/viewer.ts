@@ -2528,6 +2528,7 @@ export class PdfrxViewer {
 
     // Cache maintenance for visible pages
     const visiblePages = new Set<number>();
+    const visibleKeys = new Set<string>();
     const requiredScale = t.zoom * dpr;
     // Track the page covering the largest visible area for onPageChanged.
     let currentPage: number | null = null;
@@ -2537,6 +2538,8 @@ export class PdfrxViewer {
       if (!rectOverlaps(pageRect, visible)) continue;
       const pageNumber = i + 1;
       visiblePages.add(pageNumber);
+      const renderKey = this.doc.pages[i]?.renderKey;
+      if (renderKey !== undefined) visibleKeys.add(renderKey);
       const visibleOnPage = rectIntersect(pageRect, visible);
       const area = rectWidth(visibleOnPage) * rectHeight(visibleOnPage);
       if (area > currentPageArea) {
@@ -2553,6 +2556,9 @@ export class PdfrxViewer {
       }
     }
     this.cache.clearPatchesExcept(visiblePages);
+    // Pages that scrolled away give up their place in the render queue, so the
+    // pages now on screen are not stuck behind a backlog.
+    this.cache.cancelBasesExcept(visibleKeys);
     this.notifyPageChanged(currentPage);
 
     // Page drop shadows behind pages (screen space, before content)
