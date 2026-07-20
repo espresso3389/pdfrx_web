@@ -333,8 +333,9 @@ type Listener<E extends PdfDocumentEventName> = (event: PdfDocumentEventMap[E]) 
  * the underlying native handles.
  */
 /**
- * One page slot in a call to {@link PdfDocument.assemblePages}: which page to
+ * One page slot of an arrangement being written back to the PDF: which page to
  * place, from which document, at what rotation.
+ * @internal
  */
 export interface PdfAssembleSource {
   /**
@@ -415,7 +416,8 @@ export class PdfDocument {
   }
 
   /**
-   * Replaces the page arrangement — the cheap, synchronous counterpart to
+   * Replaces the page arrangement — the one way to reorder, rotate, remove,
+   * duplicate, and import pages, and the cheap, synchronous counterpart to
    * {@link assemblePages}.
    *
    * Nothing is sent to the worker and the PDF is not rebuilt: the pages are
@@ -434,7 +436,9 @@ export class PdfDocument {
    * @example
    * ```ts
    * const p = doc.pages;
-   * doc.setPages([p[2]!, p[0]!.rotatedCW90(), p[1]!]); // instant, no re-render
+   * doc.setPages([p[2]!, p[0]!.rotatedCW90(), p[1]!]); // reorder + rotate
+   * doc.setPages(doc.pages.filter((x) => x !== p[2])); // remove
+   * doc.setPages([...doc.pages, ...other.pages]);      // import from another doc
    * await doc.encodePdf();                             // now it becomes a PDF
    * ```
    * @throws if `pages` is empty, or a page belongs to a disposed document.
@@ -510,17 +514,6 @@ export class PdfDocument {
       if (page.document.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex) return i + 1;
     }
     return null;
-  }
-
-  /**
-   * Rewrites the PDF to match the current {@link pages} arrangement, turning
-   * proxies into real pages. Called automatically by {@link encodePdf}; use it
-   * directly only when you need the native document itself to be consistent
-   * (e.g. before {@link loadOutline} or a raw worker operation).
-   */
-  async materializePages(): Promise<void> {
-    if (!this.arrangementDirty) return;
-    await this.assemblePages(this._pages.map((p) => p.toAssembleSource()));
   }
 
   /**
@@ -631,7 +624,7 @@ export class PdfDocument {
       const names = [...this.borrowers].map((d) => d.sourceName).join(', ');
       console.warn(
         `pdfrx: disposing ${this.sourceName} while its pages are still placed in ${names} by setPages; ` +
-          `those pages will no longer render. Call encodePdf()/materializePages() on the borrowing ` +
+          `those pages will no longer render. Call encodePdf()/assemblePages() on the borrowing ` +
           `document first to copy them in.`,
       );
     }
@@ -783,22 +776,21 @@ export class PdfDocument {
   }
 
   /**
-   * Rearranges the document's pages to exactly the given sequence of
-   * {@link PdfAssembleSource | sources} — the low-level primitive behind
-   * {@link reorderPages}, {@link rotatePages}, {@link removePages},
-   * {@link duplicatePage}, and {@link importPages}.
+   * Rewrites the PDF to match the current {@link pages} arrangement, turning the
+   * proxies {@link setPages} / {@link setPage} left behind into real pages —
+   * pages of other documents are copied in, so the arrangement stops depending
+   * on them.
    *
-   * Each source names a 1-based `pageNumber` in a source `document` (defaults to
-   * this document) and an optional absolute `rotation`. The resulting document
-   * has one page per source, in order: omit a page to delete it, repeat one to
-   * duplicate it, and reference another {@link PdfDocument} to import its page.
-   * After the change the pages are reloaded and `pageStatusChanged` fires.
-   *
-   * @throws if `sources` is empty (a PDF must keep at least one page).
+   * Called automatically by {@link encodePdf}; use it directly only when you
+   * need the native document itself to be consistent (e.g. before
+   * {@link loadOutline} or a raw worker operation). A no-op when the arrangement
+   * is unmodified. After the rewrite the pages are reloaded and
+   * `pageStatusChanged` fires.
    */
-  async assemblePages(sources: PdfAssembleSource[]): Promise<void> {
+  async assemblePages(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    if (sources.length === 0) throw new Error('assemblePages requires at least one page');
+    if (!this.arrangementDirty) return;
+    const sources = this._pages.map((p) => p.toAssembleSource());
     await this.synchronized(async () => {
       const pageIndices: number[] = [];
       const rotations: (number | null)[] = [];
@@ -827,85 +819,12 @@ export class PdfDocument {
   }
 
   /**
-   * Reorders (and/or deletes/duplicates) pages by 1-based page number. The
-   * resulting document has the pages named in `order`, in that order — so
-   * `[3, 1, 2]` reverses-ish, omitting a number deletes that page, and repeating
-   * one duplicates it.
-   */
-  async reorderPages(order: number[]): Promise<void> {
-    await this.assemblePages(order.map((pageNumber) => this.assembleSourceAt(pageNumber)));
-  }
-
-  /**
-   * The {@link PdfAssembleSource} for the page currently at `pageNumber`, so the
-   * convenience methods below address positions in {@link pages} even when a
-   * {@link setPages} arrangement has not been materialized.
-   * @internal
-   */
-  private assembleSourceAt(pageNumber: number): PdfAssembleSource {
-    const page = this._pages[pageNumber - 1];
-    if (!page) throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this._pages.length})`);
-    return page.toAssembleSource();
-  }
-
-  /**
-   * Sets absolute rotations for specific pages (1-based → rotation), keeping all
-   * pages and their order. Pages not listed keep their current rotation.
-   */
-  async rotatePages(rotations: ReadonlyMap<number, PdfPageRotation> | Record<number, PdfPageRotation>): Promise<void> {
-    const map =
-      rotations instanceof Map
-        ? rotations
-        : new Map(Object.entries(rotations).map(([k, v]) => [Number(k), v] as const));
-    await this.assemblePages(
-      this._pages.map((p) => {
-        const rotation = map.get(p.pageNumber);
-        return { ...p.toAssembleSource(), ...(rotation === undefined ? {} : { rotation }) };
-      }),
-    );
-  }
-
-  /** Sets the absolute rotation of a single page (1-based), keeping order. */
-  async rotatePage(pageNumber: number, rotation: PdfPageRotation): Promise<void> {
-    await this.rotatePages(new Map([[pageNumber, rotation]]));
-  }
-
-  /** Deletes the given pages (1-based), keeping the rest in order. */
-  async removePages(pageNumbers: number[]): Promise<void> {
-    const remove = new Set(pageNumbers);
-    await this.reorderPages(this._pages.filter((p) => !remove.has(p.pageNumber)).map((p) => p.pageNumber));
-  }
-
-  /**
-   * Inserts a copy of `pageNumber` (1-based) after itself, or at `insertBefore`
-   * (1-based position in the new arrangement) when given.
-   */
-  async duplicatePage(pageNumber: number, insertBefore?: number): Promise<void> {
-    const order = this._pages.map((p) => p.pageNumber);
-    const at = insertBefore === undefined ? order.indexOf(pageNumber) + 1 : Math.max(0, Math.min(insertBefore - 1, order.length));
-    order.splice(at, 0, pageNumber);
-    await this.reorderPages(order);
-  }
-
-  /**
-   * Imports pages (1-based `pageNumbers`) from another {@link PdfDocument},
-   * inserting them at `insertBefore` (1-based position; defaults to the end).
-   * The source document must stay open until this resolves.
-   */
-  async importPages(from: PdfDocument, pageNumbers: number[], insertBefore?: number): Promise<void> {
-    const existing: PdfAssembleSource[] = this._pages.map((p) => p.toAssembleSource());
-    const imported: PdfAssembleSource[] = pageNumbers.map((pageNumber) => from.assembleSourceAt(pageNumber));
-    const at = insertBefore === undefined ? existing.length : Math.max(0, Math.min(insertBefore - 1, existing.length));
-    await this.assemblePages([...existing.slice(0, at), ...imported, ...existing.slice(at)]);
-  }
-
-  /**
-   * Serializes the document back to PDF bytes, reflecting any page
-   * manipulations ({@link setPages}, {@link assemblePages} and friends). A
-   * pending {@link setPages} arrangement is materialized first.
+   * Serializes the document back to PDF bytes, reflecting any page manipulation
+   * done with {@link setPages} / {@link setPage}; a pending arrangement is
+   * written back with {@link assemblePages} first.
    */
   async encodePdf(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
-    await this.materializePages();
+    await this.assemblePages();
     const result = await this.sendCommand('encodePdf', {
       docHandle: this.docHandle,
       incremental: options.incremental ?? false,

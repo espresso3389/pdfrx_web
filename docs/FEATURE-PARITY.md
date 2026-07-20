@@ -30,7 +30,7 @@ Upstream API names are given so you can find the reference implementation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.assemblePages(sources)` is the primitive (per-slot document + 1-based page + rotation), with `reorderPages`, `rotatePages` / `rotatePage`, `removePages`, `duplicatePage`, and `importPages(from, …)` conveniences. Pages reload and `pageStatusChanged` fires; `encodePdf()` reflects the edits (verified by re-opening the encoded bytes). |
+| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.setPages(pages)` / `setPage(n, page)` express every edit — reorder, rotate (`page.rotatedCW90()`), remove, duplicate, and import from another document — synchronously over proxy pages. `assemblePages()` writes the arrangement back into the PDF (pages reload, `pageStatusChanged` fires); `encodePdf()` calls it first, so it reflects the edits (verified by re-opening the encoded bytes). |
 | Custom random-access source | ❌ | Upstream `PdfDocument.openCustom({read, fileSize, …})` — supply bytes on demand via a read callback. pdfrx_web opens only via `openUrl` / `openData`. |
 | Render cancellation | ❌ | Upstream `page.render(cancellationToken:)` + `PdfPageRenderCancellationToken`. pdfrx_web renders are fire-and-forget (the viewer's cache mitigates this internally, but there is no public cancel). |
 | Permission helpers | ✅ | `PdfPermissions` now exposes `allowsCopying`, `allowsDocumentAssembly`, `allowsPrinting`, and `allowsModifyAnnotations`, using the same bit masks as upstream pdfrx so a document evaluates identically in both. |
@@ -162,8 +162,8 @@ web package replaces them with an imperative `PdfrxViewer` class and the
 The six highest-value, web-applicable gaps identified in the first pass have all
 been ported (see the ✅ rows above):
 
-1. ✅ **Page manipulation API** — `assemblePages` + reorder/rotate/remove/
-   duplicate/import, edit-aware `encodePdf`.
+1. ✅ **Page manipulation API** — `setPages`/`setPage` for reorder/rotate/remove/
+   duplicate/import, `assemblePages()` to write back, edit-aware `encodePdf`.
 2. ✅ **Horizontal / custom layouts** — `layoutDirection` + custom `layoutPages`.
 3. ✅ **Public coordinate conversion & page hit-testing** + **`onPageChanged`**.
 4. ✅ **Link tap handler** + **programmatic selection set/restore**.

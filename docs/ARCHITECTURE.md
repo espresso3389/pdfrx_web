@@ -20,8 +20,8 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 result shapes (18 commands: document open/close, progressive loading, page
 rendering with partial regions, text with per-character rects, links, outline,
 font management, `assemble`/`encodePdf`). `assemble` is surfaced on
-`PdfDocument` as `assemblePages()` (plus `reorderPages` / `rotatePages` /
-`removePages` / `duplicatePage` / `importPages`), and `encodePdf()` reflects
+`PdfDocument` as `assemblePages()`, which writes back the arrangement built with
+`setPages` / `setPage` — the only page-editing API — and `encodePdf()` reflects
 those edits. Notable client behaviors:
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
