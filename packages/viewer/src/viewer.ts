@@ -1615,14 +1615,26 @@ export class PdfrxViewer {
     const dpr = window.devicePixelRatio || 1;
     const changed = rect.width !== this.viewSize.width || rect.height !== this.viewSize.height;
     this.viewSize = { width: rect.width, height: rect.height };
-    this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    // Assigning canvas.width/height clears the bitmap, so only do it when the
+    // backing-store size actually changes — a sub-pixel layout shift that rounds
+    // to the same size must not blank the canvas.
+    const canvasW = Math.max(1, Math.round(rect.width * dpr));
+    const canvasH = Math.max(1, Math.round(rect.height * dpr));
+    const bitmapCleared = canvasW !== this.canvas.width || canvasH !== this.canvas.height;
+    if (bitmapCleared) {
+      this.canvas.width = canvasW;
+      this.canvas.height = canvasH;
+    }
     if (this.layout && this.transform.zoom === 1 && this.transform.xZoomed === 0 && this.transform.yZoomed === 0) {
       this.resetView();
     } else {
       this.setTransform(this.transform); // re-clamp
     }
     this.buildViewerOverlays(); // viewport-fixed overlays depend on view size
+    // When the bitmap was cleared, redraw in this same frame instead of waiting
+    // for the scheduled paint — otherwise an animated resize (e.g. the sidebar
+    // sliding open) flashes the empty canvas between the clear and the repaint.
+    if (bitmapCleared) this.paintNow();
     if (changed) {
       try {
         this.options.onViewSizeChanged?.({ width: rect.width, height: rect.height });
@@ -2642,6 +2654,24 @@ export class PdfrxViewer {
   // -------------------------------------------------------------------------
   // Render loop
   // -------------------------------------------------------------------------
+
+  /**
+   * Repaints synchronously, cancelling any scheduled paint. Used when a blank
+   * frame would be visible otherwise — notably right after resizing the canvas,
+   * which clears its bitmap (see {@link onResize}).
+   */
+  private paintNow(): void {
+    if (this.disposed) return;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.paintTimer !== null) {
+      clearTimeout(this.paintTimer);
+      this.paintTimer = null;
+    }
+    this.paint();
+  }
 
   private invalidate(): void {
     if (this.rafId !== null || this.paintTimer !== null || this.disposed) return;
