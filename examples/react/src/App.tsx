@@ -1,7 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PdfrxViewerApp } from '@pdfrx/react';
 import { ComposedDemo } from './ComposedDemo.js';
 import { HeadlessDemo } from './HeadlessDemo.js';
+
+/** Phone breakpoint: below this the nav sheds its label text. */
+const PHONE_MAX_WIDTH = 560;
+
+/** Tracks whether a CSS media query currently matches. */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    setMatches(mql.matches);
+    const onChange = (e: MediaQueryListEvent): void => setMatches(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
 
 /** The three layers @pdfrx/react offers, as three tabs. */
 const DEMOS = ['all-in-one', 'composed', 'headless'] as const;
@@ -15,11 +32,13 @@ const LABELS: Record<Demo, string> = {
 
 export function App() {
   const [demo, setDemo] = useState<Demo>('all-in-one');
+  const isPhone = useMediaQuery(`(max-width: ${PHONE_MAX_WIDTH}px)`);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', font: '13px system-ui, sans-serif' }}>
       <nav style={styles.nav}>
-        <strong style={{ marginInlineEnd: 8 }}>@pdfrx/react</strong>
+        {/* The brand takes room the tabs need on a phone; drop it there. */}
+        {!isPhone && <strong style={{ marginInlineEnd: 8 }}>@pdfrx/react</strong>}
         {DEMOS.map((id) => (
           <button
             key={id}
@@ -30,25 +49,28 @@ export function App() {
           </button>
         ))}
         <span style={{ flex: 1 }} />
+        {/* On a phone: a bare icon, no frame (the title/label still names it). */}
         <a
-          style={styles.link}
+          style={isPhone ? styles.iconLink : styles.link}
           href="https://github.com/espresso3389/pdfrx_web"
           target="_blank"
           rel="noreferrer"
           title="GitHub repository"
+          aria-label="GitHub repository"
         >
           <GitHubIcon />
-          <span>GitHub</span>
+          {!isPhone && <span>GitHub</span>}
         </a>
         <a
-          style={styles.link}
+          style={isPhone ? styles.iconLink : styles.link}
           href="https://www.npmjs.com/package/@pdfrx/react"
           target="_blank"
           rel="noreferrer"
           title="@pdfrx/react on npm"
+          aria-label="@pdfrx/react on npm"
         >
           <NpmIcon />
-          <span>npm</span>
+          {!isPhone && <span>npm</span>}
         </a>
       </nav>
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -119,5 +141,13 @@ const styles = {
     textDecoration: 'none',
     borderRadius: 6,
     border: '1px solid rgba(255,255,255,0.25)',
+  },
+  iconLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: 6,
+    color: 'inherit',
+    textDecoration: 'none',
+    border: 0,
   },
 } satisfies Record<string, React.CSSProperties>;
