@@ -154,11 +154,92 @@ export interface PdfFontQuery {
   /** Requested weight (e.g. 400 for regular, 700 for bold). */
   readonly weight: number;
   readonly isItalic: boolean;
-  /** Windows charset id of the requested font. */
+  /**
+   * PDFium charset id of the requested font (the LOGFONT `lfCharSet` value).
+   * Compare against the named ids in {@link PdfFontCharset} (e.g.
+   * `query.charset === PdfFontCharset.shiftJis`), or turn it into a label with
+   * {@link pdfFontCharsetName}. May be any value PDFium reports; the named set
+   * covers the ones it commonly emits.
+   */
   readonly charset: number;
-  /** Windows pitch-and-family byte of the requested font. */
+  /**
+   * PDFium pitch-and-family byte of the requested font (the LOGFONT
+   * `lfPitchAndFamily` value). This is a **bitfield**, not an enum — test it
+   * with {@link isFixedPitch} / {@link isRomanFamily} / {@link isScriptFamily}
+   * (or the {@link PdfFontPitchFamily} masks). See {@link PdfFontPitchFamily}
+   * for the bit meanings.
+   */
   readonly pitchFamily: number;
 }
+
+/**
+ * Named PDFium font charset ids (LOGFONT `lfCharSet` values), mirroring pdfrx's
+ * `PdfFontCharset` enum. Use these to interpret {@link PdfFontQuery.charset}:
+ *
+ * ```ts
+ * if (query.charset === PdfFontCharset.shiftJis) { … } // Japanese
+ * ```
+ */
+export const PdfFontCharset = {
+  /** Windows-1252 / Latin-1. */
+  ansi: 0,
+  /** System default charset. */
+  default: 1,
+  /** Symbol font charset. */
+  symbol: 2,
+  /** Japanese (Shift-JIS). */
+  shiftJis: 128,
+  /** Korean (Hangul). */
+  hangul: 129,
+  /** Chinese Simplified (GB2312). */
+  gb2312: 134,
+  /** Chinese Traditional (Big5). */
+  chineseBig5: 136,
+  greek: 161,
+  vietnamese: 163,
+  hebrew: 177,
+  arabic: 178,
+  cyrillic: 204,
+  thai: 222,
+  easternEuropean: 238,
+} as const;
+
+/** One of the named charset ids in {@link PdfFontCharset}. */
+export type PdfFontCharsetId = (typeof PdfFontCharset)[keyof typeof PdfFontCharset];
+
+const pdfFontCharsetNames = new Map<number, string>(
+  Object.entries(PdfFontCharset).map(([name, id]) => [id, name]),
+);
+
+/**
+ * Returns the {@link PdfFontCharset} name for a charset id (e.g. `128` →
+ * `'shiftJis'`), or `undefined` if the id is not one of the named charsets.
+ */
+export const pdfFontCharsetName = (charset: number): string | undefined => pdfFontCharsetNames.get(charset);
+
+/**
+ * Bit masks for the {@link PdfFontQuery.pitchFamily} bitfield (from the PDFium
+ * LOGFONT `lfPitchAndFamily` byte), mirroring pdfrx's `pitchFamily` flags. A
+ * value can combine several of these, so test with a bitwise AND (or the
+ * {@link isFixedPitch} / {@link isRomanFamily} / {@link isScriptFamily} helpers).
+ */
+export const PdfFontPitchFamily = {
+  /** Fixed-pitch (monospace) font. */
+  fixed: 1,
+  /** Roman (serif) font family. */
+  roman: 16,
+  /** Script (handwriting-style) font family. */
+  script: 64,
+} as const;
+
+/** Whether a {@link PdfFontQuery.pitchFamily} value has the fixed-pitch (monospace) bit set. */
+export const isFixedPitch = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.fixed) !== 0;
+
+/** Whether a {@link PdfFontQuery.pitchFamily} value has the Roman (serif) family bit set. */
+export const isRomanFamily = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.roman) !== 0;
+
+/** Whether a {@link PdfFontQuery.pitchFamily} value has the Script family bit set. */
+export const isScriptFamily = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.script) !== 0;
 
 /** Whether/how annotations are drawn when rendering a page. */
 export type PdfAnnotationRenderingMode = 'none' | 'annotation' | 'annotationAndForms';
