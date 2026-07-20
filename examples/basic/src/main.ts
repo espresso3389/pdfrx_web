@@ -216,6 +216,38 @@ function demoOverlaysBuilder({ pageNumber, pageSize }: { pageNumber: number; pag
   return [badge, btn];
 }
 
+// --- Narrow-screen chrome: sidebar drawer + collapsible toolbar ---
+//
+// Both are pure CSS class toggles; the media query in index.html decides
+// whether they mean anything.
+
+const main = document.getElementById('main')!;
+const header = document.querySelector('header')!;
+
+const isNarrow = (): boolean => window.matchMedia('(max-width: 780px)').matches;
+const setSidebarOpen = (open: boolean): void => {
+  main.classList.toggle('sidebar-open', open);
+};
+
+document.getElementById('menuBtn')!.addEventListener('click', () => {
+  setSidebarOpen(!main.classList.contains('sidebar-open'));
+});
+document.getElementById('moreBtn')!.addEventListener('click', () => header.classList.toggle('tools-open'));
+document.getElementById('scrim')!.addEventListener('click', () => setSidebarOpen(false));
+
+/** Closes the drawer after a navigation, so the page is visible right away. */
+function closeDrawerIfNarrow(): void {
+  if (isNarrow()) setSidebarOpen(false);
+}
+
+// Going back to a wide window must not leave the drawer state stuck on.
+window.matchMedia('(max-width: 780px)').addEventListener('change', (e) => {
+  if (!e.matches) {
+    setSidebarOpen(false);
+    header.classList.remove('tools-open');
+  }
+});
+
 // --- Sidebar tabs ---
 
 tabThumbs.addEventListener('click', () => selectTab('thumbs'));
@@ -269,7 +301,6 @@ async function buildThumbnails(): Promise<void> {
 
     const item = document.createElement('div');
     item.className = 'thumb-item';
-    item.draggable = true;
     item.dataset.pageNumber = `${pageNumber}`;
 
     // Copy of the cached render, so the same page can appear more than once.
@@ -279,7 +310,11 @@ async function buildThumbnails(): Promise<void> {
     canvas.height = source.height;
     canvas.style.width = `${THUMB_WIDTH}px`;
     canvas.getContext('2d')!.drawImage(source, 0, 0);
-    canvas.addEventListener('click', () => viewer.goToPage(pageNumber, 300));
+    canvas.addEventListener('click', () => {
+      if (dragJustEnded) return; // the click that trails a reorder drag
+      viewer.goToPage(pageNumber, 300);
+      closeDrawerIfNarrow();
+    });
 
     const label = document.createElement('div');
     label.className = 'thumb-label';
@@ -353,14 +388,30 @@ function movePage(from: number, before: number): void {
   doc.setPages(pages);
 }
 
-// --- Thumbnail drag & drop ---
+// --- Thumbnail reordering ---
+//
+// Pointer events rather than HTML5 drag & drop: `dragstart` never fires on
+// touch devices. A mouse drag starts as soon as the pointer moves; a touch
+// drag needs a long press, so that a plain swipe still scrolls the pane.
 
-let dragFrom: number | null = null;
-let dropBefore: number | null = null;
+const DRAG_HOLD_MS = 300;
+const DRAG_THRESHOLD = 5;
+const EDGE_SCROLL_ZONE = 40;
 
-function itemOf(target: EventTarget | null): HTMLElement | null {
-  return (target as HTMLElement | null)?.closest?.('.thumb-item') ?? null;
+interface ThumbDrag {
+  pointerId: number;
+  from: number;
+  item: HTMLElement;
+  startY: number;
+  active: boolean;
+  holdTimer: ReturnType<typeof setTimeout> | null;
+  ghost: HTMLElement | null;
+  dropBefore: number | null;
 }
+
+let drag: ThumbDrag | null = null;
+/** Set while the click that trails a completed drag is still to be delivered. */
+let dragJustEnded = false;
 
 function clearDropMarkers(): void {
   for (const item of thumbsPane.querySelectorAll('.thumb-item')) {
@@ -368,43 +419,133 @@ function clearDropMarkers(): void {
   }
 }
 
-thumbsPane.addEventListener('dragstart', (e) => {
-  const item = itemOf(e.target);
-  if (!item) return;
-  dragFrom = Number(item.dataset.pageNumber);
-  item.classList.add('dragging');
-  e.dataTransfer!.effectAllowed = 'move';
-  e.dataTransfer!.setData('text/plain', `${dragFrom}`); // Firefox needs some payload
-});
+/** The pointer may already be gone (or synthetic), which makes capture throw. */
+function capturePointer(pointerId: number): void {
+  try {
+    thumbsPane.setPointerCapture(pointerId);
+  } catch {
+    /* ignore */
+  }
+}
 
-thumbsPane.addEventListener('dragover', (e) => {
-  if (dragFrom === null) return;
-  e.preventDefault();
-  e.dataTransfer!.dropEffect = 'move';
+function beginDrag(d: ThumbDrag, clientX: number, clientY: number): void {
+  d.active = true;
+  d.item.classList.add('dragging');
+  const ghost = d.item.querySelector('canvas')!.cloneNode(true) as HTMLElement;
+  ghost.id = 'thumbGhost';
+  ghost.style.width = `${THUMB_WIDTH}px`;
+  document.body.appendChild(ghost);
+  d.ghost = ghost;
+  moveGhost(d, clientX, clientY);
+  navigator.vibrate?.(10);
+}
+
+function moveGhost(d: ThumbDrag, clientX: number, clientY: number): void {
+  if (!d.ghost) return;
+  d.ghost.style.left = `${clientX}px`;
+  d.ghost.style.top = `${clientY}px`;
+}
+
+/** Marks the insertion point under the pointer and records it on the drag. */
+function updateDropTarget(d: ThumbDrag, clientY: number): void {
   clearDropMarkers();
-  const item = itemOf(e.target);
-  if (!item) {
-    // Below the last thumbnail: append to the end.
-    dropBefore = (el.viewer?.document?.pages.length ?? 0) + 1;
+  const items = [...thumbsPane.querySelectorAll<HTMLElement>('.thumb-item')];
+  let target: HTMLElement | null = null;
+  let after = false;
+  for (const item of items) {
+    const rect = item.getBoundingClientRect();
+    if (clientY < rect.bottom) {
+      target = item;
+      after = clientY > rect.top + rect.height / 2;
+      break;
+    }
+  }
+  if (!target) {
+    // Past the last thumbnail: append to the end.
+    d.dropBefore = items.length + 1;
+    items[items.length - 1]?.classList.add('drop-after');
     return;
   }
-  const rect = item.getBoundingClientRect();
-  const after = e.clientY > rect.top + rect.height / 2;
-  item.classList.add(after ? 'drop-after' : 'drop-before');
-  dropBefore = Number(item.dataset.pageNumber) + (after ? 1 : 0);
+  target.classList.add(after ? 'drop-after' : 'drop-before');
+  d.dropBefore = Number(target.dataset.pageNumber) + (after ? 1 : 0);
+}
+
+/** Scrolls the pane when the pointer sits near its top or bottom edge. */
+function edgeScroll(clientY: number): void {
+  const rect = thumbsPane.getBoundingClientRect();
+  if (clientY < rect.top + EDGE_SCROLL_ZONE) thumbsPane.scrollTop -= 10;
+  else if (clientY > rect.bottom - EDGE_SCROLL_ZONE) thumbsPane.scrollTop += 10;
+}
+
+function endDrag(commit: boolean): void {
+  const d = drag;
+  drag = null;
+  if (!d) return;
+  if (d.holdTimer !== null) clearTimeout(d.holdTimer);
+  d.ghost?.remove();
+  d.item.classList.remove('dragging');
+  clearDropMarkers();
+  if (!d.active) return;
+  dragJustEnded = true;
+  setTimeout(() => (dragJustEnded = false), 0);
+  if (commit && d.dropBefore !== null) movePage(d.from, d.dropBefore);
+}
+
+thumbsPane.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement;
+  if (target.closest('.thumb-tools')) return; // rotate/delete are taps, not drags
+  const item = target.closest<HTMLElement>('.thumb-item');
+  if (!item) return;
+  const d: ThumbDrag = {
+    pointerId: e.pointerId,
+    from: Number(item.dataset.pageNumber),
+    item,
+    startY: e.clientY,
+    active: false,
+    holdTimer: null,
+    ghost: null,
+    dropBefore: null,
+  };
+  drag = d;
+  if (e.pointerType !== 'mouse') {
+    // Long press: a short swipe stays a scroll.
+    d.holdTimer = setTimeout(() => {
+      d.holdTimer = null;
+      if (drag === d) {
+        capturePointer(d.pointerId);
+        beginDrag(d, e.clientX, e.clientY);
+        updateDropTarget(d, e.clientY);
+      }
+    }, DRAG_HOLD_MS);
+  }
 });
 
-thumbsPane.addEventListener('drop', (e) => {
+thumbsPane.addEventListener('pointermove', (e) => {
+  const d = drag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  if (!d.active) {
+    const moved = Math.abs(e.clientY - d.startY);
+    if (d.holdTimer !== null) {
+      // Still waiting for the long press — treat real movement as a scroll.
+      if (moved > DRAG_THRESHOLD * 2) endDrag(false);
+      return;
+    }
+    if (e.pointerType !== 'mouse' || moved < DRAG_THRESHOLD) return;
+    capturePointer(d.pointerId);
+    beginDrag(d, e.clientX, e.clientY);
+  }
   e.preventDefault();
-  clearDropMarkers();
-  if (dragFrom !== null && dropBefore !== null) movePage(dragFrom, dropBefore);
-  dragFrom = dropBefore = null;
+  moveGhost(d, e.clientX, e.clientY);
+  edgeScroll(e.clientY);
+  updateDropTarget(d, e.clientY);
 });
 
-thumbsPane.addEventListener('dragend', () => {
-  clearDropMarkers();
-  for (const item of thumbsPane.querySelectorAll('.dragging')) item.classList.remove('dragging');
-  dragFrom = dropBefore = null;
+thumbsPane.addEventListener('pointerup', (e) => {
+  if (drag && e.pointerId === drag.pointerId) endDrag(true);
+});
+thumbsPane.addEventListener('pointercancel', (e) => {
+  if (drag && e.pointerId === drag.pointerId) endDrag(false);
 });
 
 // --- Save (download) ---
@@ -448,7 +589,10 @@ async function buildOutline(): Promise<void> {
       item.style.paddingLeft = `${depth * 12}px`;
       item.textContent = node.title;
       item.title = node.title;
-      item.addEventListener('click', () => viewer.goToDest(node.dest, 300));
+      item.addEventListener('click', () => {
+        viewer.goToDest(node.dest, 300);
+        closeDrawerIfNarrow();
+      });
       outlinePane.appendChild(item);
       addNodes(node.children, depth + 1);
     }

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>pdfrx-viewer example</title>
     <style>
       html,
@@ -12,6 +12,7 @@
         font-family: system-ui, sans-serif;
         display: flex;
         flex-direction: column;
+        overflow: hidden; /* the viewer scrolls itself; never scroll the page */
       }
       header {
         padding: 6px 12px;
@@ -22,6 +23,7 @@
         gap: 10px;
         align-items: center;
         flex: none;
+        flex-wrap: wrap;
       }
       header input {
         border: none;
@@ -29,6 +31,7 @@
         padding: 4px 8px;
         font-size: 13px;
         width: 180px;
+        min-width: 0;
       }
       header button {
         all: unset;
@@ -36,14 +39,28 @@
         padding: 3px 8px;
         border-radius: 4px;
         background: rgba(255, 255, 255, 0.12);
+        text-align: center;
       }
       header button:hover {
         background: rgba(255, 255, 255, 0.25);
+      }
+      /* Buttons that only make sense on a narrow (drawer) layout. */
+      #menuBtn,
+      #moreBtn {
+        display: none;
+      }
+      /* On wide screens the secondary tools just flow inline in the header. */
+      #toolGroup {
+        display: contents;
       }
       #main {
         flex: 1;
         display: flex;
         min-height: 0;
+        position: relative;
+      }
+      #scrim {
+        display: none;
       }
       #sidebar {
         width: 180px;
@@ -79,6 +96,19 @@
         width: 130px;
         margin: 0 auto 10px;
         padding: 3px 0;
+        /* Let the pane scroll vertically; a long press starts a reorder drag. */
+        touch-action: pan-y;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      /* The item that follows the pointer while reordering. */
+      #thumbGhost {
+        position: fixed;
+        z-index: 20;
+        pointer-events: none;
+        opacity: 0.85;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+        transform: translate(-50%, -50%);
       }
       .thumb-item.dragging {
         opacity: 0.4;
@@ -173,32 +203,122 @@
         margin: 4px 2px;
         background: rgba(255, 255, 255, 0.2);
       }
+
+      /* Touch devices have no hover, so the per-page tools must stay visible
+         and be large enough to hit. */
+      @media (hover: none) {
+        .thumb-tools {
+          opacity: 1;
+        }
+        .thumb-tools button {
+          width: 30px;
+          height: 30px;
+          line-height: 30px;
+          font-size: 15px;
+        }
+      }
+
+      /* --- Narrow layout: off-canvas sidebar + collapsible toolbar --- */
+      @media (max-width: 780px) {
+        header {
+          gap: 6px;
+          padding: 6px 8px;
+        }
+        header button {
+          padding: 8px 10px;
+          min-width: 24px;
+        }
+        #menuBtn,
+        #moreBtn {
+          display: block;
+          font-size: 16px;
+          padding: 8px 12px;
+        }
+        #brand,
+        #selStatus {
+          display: none;
+        }
+        #searchBox {
+          flex: 1;
+          width: auto;
+          padding: 8px;
+          /* < 16px makes iOS Safari zoom the page when the field is focused. */
+          font-size: 16px;
+        }
+        /* Secondary tools become a second row, revealed by the ⋯ button. */
+        #toolGroup {
+          display: none;
+          flex-basis: 100%;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding-top: 6px;
+          border-top: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        header.tools-open #toolGroup {
+          display: flex;
+        }
+        #toolGroup .sep {
+          display: none;
+        }
+        #sidebar {
+          position: absolute;
+          z-index: 5;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          width: 200px;
+          transform: translateX(-100%);
+          transition: transform 0.2s ease;
+          box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
+        }
+        #main.sidebar-open #sidebar {
+          transform: none;
+        }
+        #main.sidebar-open #scrim {
+          display: block;
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          background: rgba(0, 0, 0, 0.45);
+        }
+        #sidebar .tabs button {
+          padding: 12px 0;
+        }
+        .outline-item {
+          padding: 10px 0;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
-      <strong>pdfrx-viewer</strong>
-      <button id="openFileBtn" title="Open a local PDF file">Open File</button>
-      <button id="openUrlBtn" title="Open a PDF from a URL">Open URL</button>
+      <button id="menuBtn" title="Show pages / outline" aria-label="Toggle sidebar">☰</button>
+      <strong id="brand">pdfrx-viewer</strong>
       <input id="fileInput" type="file" accept="application/pdf,.pdf" style="display: none" />
       <input id="searchBox" type="search" placeholder="Search…" />
       <button id="searchPrev" title="Previous match">▲</button>
       <button id="searchNext" title="Next match">▼</button>
       <span id="searchStatus"></span>
-      <button id="printBtn" title="Print">Print</button>
-      <button id="saveBtn" title="Download the edited PDF">Save</button>
-      <span class="sep"></span>
-      <button id="fitPageBtn" title="Fit whole page">Fit Page</button>
-      <button id="fitWidthBtn" title="Fit page width">Fit Width</button>
-      <button id="fitHeightBtn" title="Fit page height">Fit Height</button>
-      <button id="zoomOutBtn" title="Zoom out">−</button>
-      <button id="zoomInBtn" title="Zoom in">+</button>
-      <button id="overlayBtn" title="Toggle demo page overlays">Overlay: off</button>
-      <button id="layoutBtn" title="Toggle scroll direction">Layout: vertical</button>
-      <span id="selStatus"></span>
       <span id="pageStatus"></span>
+      <button id="moreBtn" title="More tools" aria-label="More tools">⋯</button>
+      <div id="toolGroup">
+        <button id="openFileBtn" title="Open a local PDF file">Open File</button>
+        <button id="openUrlBtn" title="Open a PDF from a URL">Open URL</button>
+        <button id="printBtn" title="Print">Print</button>
+        <button id="saveBtn" title="Download the edited PDF">Save</button>
+        <span class="sep"></span>
+        <button id="fitPageBtn" title="Fit whole page">Fit Page</button>
+        <button id="fitWidthBtn" title="Fit page width">Fit Width</button>
+        <button id="fitHeightBtn" title="Fit page height">Fit Height</button>
+        <button id="zoomOutBtn" title="Zoom out">−</button>
+        <button id="zoomInBtn" title="Zoom in">+</button>
+        <button id="overlayBtn" title="Toggle demo page overlays">Overlay: off</button>
+        <button id="layoutBtn" title="Toggle scroll direction">Layout: vertical</button>
+      </div>
+      <span id="selStatus"></span>
     </header>
     <div id="main">
+      <div id="scrim"></div>
       <div id="sidebar">
         <div class="tabs">
           <button id="tabThumbs" class="active">Pages</button>
