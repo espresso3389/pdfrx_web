@@ -1,5 +1,13 @@
-import { PdfrxViewer, type PdfTextSearcher, type PdfrxViewerOptions, type StartTextSearchOptions } from '@pdfrx/viewer';
+import {
+  PdfrxViewer,
+  type ContextMenuContext,
+  type PdfTextSearcher,
+  type PdfrxViewerOptions,
+  type StartTextSearchOptions,
+} from '@pdfrx/viewer';
+import { buildDefaultContextMenu } from './context-menu.js';
 import { normalizeSource, sourceKey, toBytes, type NormalizedPdfSource, type PdfSource } from './source.js';
+import { defaultPdfrxStrings, type PdfrxStrings } from './strings.js';
 import { ThumbnailCache } from './thumbnail-cache.js';
 
 /**
@@ -34,6 +42,16 @@ export class PdfrxViewerStore {
    * without recreating the viewer (and its worker).
    */
   #options: PdfrxViewerOptions = {};
+
+  /** The active strings, so the default context menu can be localized. */
+  #strings: PdfrxStrings = defaultPdfrxStrings;
+  /**
+   * The default context-menu builder handed to the viewer: a localized Copy /
+   * Select All menu. Reads {@link #strings} and {@link #viewer} at menu-show
+   * time, so it stays current. A `contextMenuBuilder` passed via props wins.
+   */
+  #contextMenuBuilder = (context: ContextMenuContext): HTMLElement | null =>
+    this.#viewer ? buildDefaultContextMenu(this.#viewer, this.#strings, context) : null;
 
   #source: NormalizedPdfSource | null = null;
   #sourceKey: unknown = NO_SOURCE;
@@ -122,6 +140,8 @@ export class PdfrxViewerStore {
     this.#flushDispose();
     if (this.#viewer) return; // a surface is already attached
     this.#element = element;
+    // Install the localized menu unless the app supplied its own builder.
+    this.#options.contextMenuBuilder ??= this.#contextMenuBuilder;
     this.#viewer = new PdfrxViewer(element, this.#options);
     this.#searcher = this.#viewer.createTextSearcher();
     this.#unsubscribeDocumentChange = this.#viewer.addDocumentChangeListener(() => {
@@ -204,7 +224,18 @@ export class PdfrxViewerStore {
     }
     if (options.pageOverlaysBuilder !== previous.pageOverlaysBuilder) viewer.refreshOverlays();
     if (options.viewerOverlayBuilder !== previous.viewerOverlayBuilder) viewer.refreshViewerOverlays();
+    // Fall back to the localized menu if the app cleared its own builder.
+    this.#options.contextMenuBuilder ??= this.#contextMenuBuilder;
     viewer.invalidatePaint();
+  }
+
+  /**
+   * Sets the strings the default context menu is built from. Called by the
+   * provider; the menu reads the latest value when it opens, so no viewer
+   * rebuild is needed.
+   */
+  setStrings(strings: PdfrxStrings): void {
+    this.#strings = strings;
   }
 
   // ---------------------------------------------------------------------------

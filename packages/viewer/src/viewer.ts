@@ -185,6 +185,14 @@ export interface PdfrxViewerOptions {
    */
   onLinkTap?: LinkTapHandler;
   /**
+   * Replaces the built-in right-click / long-press context menu (which offers
+   * Copy and Select All in English). Return a menu element the viewer will
+   * position and dismiss, or `null`/`undefined` for no menu. This is the hook
+   * for localizing or fully customizing the menu — the viewer itself carries no
+   * translation machinery. See {@link ContextMenuBuilder}.
+   */
+  contextMenuBuilder?: ContextMenuBuilder;
+  /**
    * Default animation duration in milliseconds for navigation and zoom
    * (`goToPage`, `goToDest`, `fitTo*`, `setZoom`, `zoomUp`/`zoomDown`,
    * `zoomToggle`). `0` (the default) means jump instantly. Each of those methods
@@ -315,6 +323,30 @@ export type ViewerOverlayBuilder = (info: { viewSize: Size }) => HTMLElement | H
  * the tapped {@link PdfLink}; return value is ignored.
  */
 export type LinkTapHandler = (link: PdfLink) => void;
+
+/** What a {@link ContextMenuBuilder} is given when the context menu is requested. */
+export interface ContextMenuContext {
+  /** Where the menu was requested, view-space CSS pixels from the canvas top-left. */
+  readonly viewPoint: Offset;
+  /** Whether there is a non-empty text selection (for enabling a Copy item). */
+  readonly hasSelection: boolean;
+  /** Whether the document permits copying ({@link PdfrxViewer.isCopyAllowed}). */
+  readonly isCopyAllowed: boolean;
+  /** What triggered the menu (`'mouse'`, `'touch'`, `'pen'`), for sizing hit targets. */
+  readonly pointerType: string;
+  /** Dismisses the menu — call it from your item handlers. */
+  readonly close: () => void;
+}
+
+/**
+ * Builds the context menu shown on right-click / long-press (see
+ * {@link PdfrxViewerOptions.contextMenuBuilder}). Return a positioned-by-the-viewer
+ * element, or `null`/`undefined` to show no menu. Build items that call
+ * {@link PdfrxViewer.copySelection} / {@link PdfrxViewer.selectAll} etc. and then
+ * {@link ContextMenuContext.close}. Supplying this replaces the built-in menu
+ * entirely — the mechanism through which an app localizes or customizes it.
+ */
+export type ContextMenuBuilder = (context: ContextMenuContext) => HTMLElement | null | undefined;
 
 /**
  * How a page is scaled to fit the viewport.
@@ -663,7 +695,7 @@ export class PdfrxViewer {
   private mode: InteractionMode = { kind: 'none' };
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private lastPointerType = 'mouse';
-  private menuEl: HTMLDivElement | null = null;
+  private menuEl: HTMLElement | null = null;
   private pendingMenuOnUp = false;
   private searcher: PdfTextSearcher | null = null;
   private currentSource:
@@ -2606,10 +2638,35 @@ export class PdfrxViewer {
 
   private showContextMenu(viewPos: Offset): void {
     this.hideContextMenu();
+    const builder = this.options.contextMenuBuilder;
+    const menu = builder
+      ? builder({
+          viewPoint: viewPos,
+          hasSelection: !!(this.selA && this.selB),
+          isCopyAllowed: this.isCopyAllowed,
+          pointerType: this.lastPointerType,
+          close: () => this.hideContextMenu(),
+        })
+      : this.buildDefaultContextMenu();
+    if (!menu) return;
+    // The viewer owns placement and dismissal regardless of who built the menu.
+    menu.style.position = 'absolute';
+    this.container.appendChild(menu);
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    const x = Math.max(4, Math.min(viewPos.x, this.viewSize.width - mw - 4));
+    const y = Math.max(4, Math.min(viewPos.y, this.viewSize.height - mh - 4));
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    this.menuEl = menu;
+  }
+
+  /** The built-in Copy / Select All menu (English), used when no builder is set. */
+  private buildDefaultContextMenu(): HTMLElement {
     const touch = this.lastPointerType === 'touch';
     const menu = document.createElement('div');
     menu.style.cssText =
-      'position:absolute;z-index:10;background:#fff;color:#111;border:1px solid #ccc;border-radius:6px;' +
+      'z-index:10;background:#fff;color:#111;border:1px solid #ccc;border-radius:6px;' +
       'box-shadow:0 2px 10px rgba(0,0,0,0.25);padding:4px;' +
       `font:${touch ? 15 : 13}px system-ui,sans-serif;min-width:${touch ? 160 : 130}px;` +
       'display:flex;flex-direction:column;user-select:none;touch-action:manipulation;';
@@ -2636,14 +2693,7 @@ export class PdfrxViewer {
       this.hideContextMenu();
       void this.selectAll();
     });
-    this.container.appendChild(menu);
-    const mw = menu.offsetWidth;
-    const mh = menu.offsetHeight;
-    const x = Math.max(4, Math.min(viewPos.x, this.viewSize.width - mw - 4));
-    const y = Math.max(4, Math.min(viewPos.y, this.viewSize.height - mh - 4));
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    this.menuEl = menu;
+    return menu;
   }
 
   private hideContextMenu(): void {

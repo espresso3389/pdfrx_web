@@ -84,6 +84,9 @@ export function PdfrxProvider({
     return strings ? { ...base, ...strings } : base;
   }, [locale, strings]);
 
+  // Keep the store's copy current so the default context menu is localized too.
+  store.setStrings(mergedStrings);
+
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };
   }

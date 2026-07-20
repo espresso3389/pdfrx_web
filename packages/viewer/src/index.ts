@@ -35,6 +35,8 @@ export {
   type PdfPageHitTestResult,
   type PageChangeListener,
   type LinkTapHandler,
+  type ContextMenuBuilder,
+  type ContextMenuContext,
   type LayoutDirection,
   type LayoutPagesFn,
   type PdfViewerTapEvent,

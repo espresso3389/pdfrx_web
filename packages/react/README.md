@@ -120,7 +120,10 @@ Override individual strings, or add a language that isn't built in, with
 ```
 
 The full string set is the `PdfrxStrings` interface; `usePdfrxStrings()` gives
-your own components the active strings so they translate alongside the rest.
+your own components the active strings so they translate alongside the rest. The
+right-click / long-press **context menu** (Copy / Select All) is localized too —
+`@pdfrx/react` installs a themed menu on the viewer via its `contextMenuBuilder`
+option, which you can override with your own to add items.
 
 ## Theming
 

@@ -60,6 +60,10 @@ export interface PdfrxStrings {
   /** Thumbnail button aria-label. */
   goToPage: (pageNumber: number) => string;
 
+  // Context menu (right-click / long-press)
+  copy: string;
+  selectAll: string;
+
   // Viewer app chrome
   openFile: string;
   download: string;
@@ -97,6 +101,9 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   collapse: 'Collapse',
 
   goToPage: (pageNumber) => `Go to page ${pageNumber}`,
+
+  copy: 'Copy',
+  selectAll: 'Select All',
 
   openFile: 'Open a PDF file',
   download: 'Download',
