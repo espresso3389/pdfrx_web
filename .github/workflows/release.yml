@@ -46,7 +46,4 @@ jobs:
       - run: npm publish --workspace=@pdfrx/engine
       - run: npm publish --workspace=@pdfrx/viewer-core
       - run: npm publish --workspace=@pdfrx/viewer
-      # @pdfrx/react is published manually for its first release, until its
-      # trusted publisher is configured on npmjs.com. Once that is set up, add
-      #   - run: npm publish --workspace=@pdfrx/react
-      # back here (it stays in the version-check loop above meanwhile).
+      - run: npm publish --workspace=@pdfrx/react

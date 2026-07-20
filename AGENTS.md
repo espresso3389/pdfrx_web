@@ -72,8 +72,9 @@ this workflow as its trusted publisher on npmjs.com; a brand-new package will
 not publish until that is configured. **A package's first-ever version is
 therefore published manually** (`npm publish --workspace=@pdfrx/<name>` with a
 local npm login) with its automated publish step left out of release.yml, then
-added to CI once the trusted publisher exists. (`@pdfrx/react` 0.2.2 was the
-first such case.)
+added to CI once the trusted publisher exists. (`@pdfrx/react` 0.2.2 was
+published this way; from 0.3.0 its trusted publisher is set up and CI publishes
+all four.)
 
 **All four packages share one version, and it must equal the tag.** The workflow
 refuses to publish if any `packages/*/package.json` version disagrees with the
