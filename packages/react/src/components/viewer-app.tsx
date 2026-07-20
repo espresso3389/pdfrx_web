@@ -28,6 +28,19 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * that serializes the edited document. Defaults to `false`.
    */
   enablePageEditing?: boolean;
+  /**
+   * Show the toolbar's "open file" button. Independent of drag & drop, which
+   * {@link enableFileOpen} controls. Defaults to {@link enableFileOpen}, so
+   * set it to override just the button (e.g. `false` for drop-only, or `true`
+   * without `enableFileOpen` for a picker with no drag & drop).
+   */
+  showOpenButton?: boolean;
+  /**
+   * Show the toolbar's download button. Works with or without
+   * {@link enablePageEditing} (it serializes whatever the document currently
+   * is). Defaults to {@link enablePageEditing}.
+   */
+  showDownloadButton?: boolean;
   /** Extra toolbar controls, placed after the built-in ones. */
   children?: ReactNode;
 }
@@ -65,6 +78,8 @@ export function PdfrxViewerApp({
   sidebarWidth = 190,
   enableFileOpen = false,
   enablePageEditing = false,
+  showOpenButton,
+  showDownloadButton,
   children,
   ...providerProps
 }: PdfrxViewerAppProps): ReactNode {
@@ -80,6 +95,9 @@ export function PdfrxViewerApp({
         sidebarWidth={sidebarWidth}
         enableFileOpen={enableFileOpen}
         enablePageEditing={enablePageEditing}
+        // Each button follows its capability flag unless overridden.
+        showOpenButton={showOpenButton ?? enableFileOpen}
+        showDownloadButton={showDownloadButton ?? enablePageEditing}
       >
         {children}
       </PdfrxViewerAppChrome>
@@ -98,6 +116,8 @@ type ChromeProps = Pick<
   | 'sidebarWidth'
   | 'enableFileOpen'
   | 'enablePageEditing'
+  | 'showOpenButton'
+  | 'showDownloadButton'
   | 'children'
 >;
 
@@ -115,6 +135,8 @@ function PdfrxViewerAppChrome({
   sidebarWidth,
   enableFileOpen,
   enablePageEditing,
+  showOpenButton,
+  showDownloadButton,
   children,
 }: ChromeProps): ReactNode {
   const { open, error } = usePdfDocument();
@@ -173,9 +195,14 @@ function PdfrxViewerAppChrome({
           showSidebarToggle={sidebar}
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
         >
-          {enableFileOpen && (
+          {showOpenButton && (
             <>
-              <button className="pdfrx-button" onClick={() => fileInputRef.current?.click()} title="Open a PDF file">
+              <button
+                className="pdfrx-button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Open a PDF file"
+                aria-label="Open a PDF file"
+              >
                 <IconOpenFile />
               </button>
               <input
@@ -191,7 +218,7 @@ function PdfrxViewerAppChrome({
               />
             </>
           )}
-          {enablePageEditing && <SaveButton />}
+          {showDownloadButton && <SaveButton />}
           {children}
         </PdfToolbar>
       )}
