@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# id-token lets npm exchange a short-lived OIDC token for publish rights, so no
+# npm token lives in this repo. The packages must name this workflow as their
+# trusted publisher on npmjs.com.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1+, newer than what Node 22 bundles.
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      # The tag is the release: refuse to publish if it disagrees with what the
+      # packages say their version is, rather than publishing the wrong number.
+      - name: Check the tag matches the package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in engine viewer-core viewer; do
+            version=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error::@pdfrx/$pkg is $version but the tag says $tag"
+              exit 1
+            fi
+          done
+
+      # Dependency order: viewer depends on the other two.
+      - run: npm publish --workspace=@pdfrx/engine
+      - run: npm publish --workspace=@pdfrx/viewer-core
+      - run: npm publish --workspace=@pdfrx/viewer
