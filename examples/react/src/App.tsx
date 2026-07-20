@@ -1,7 +1,24 @@
 import { useEffect, useState } from 'react';
-import { PdfrxViewerApp } from '@pdfrx/react';
+import { buildDefaultContextMenu, PdfrxViewerApp, type PdfReactContextMenuBuilder } from '@pdfrx/react';
 import { ComposedDemo } from './ComposedDemo.js';
 import { HeadlessDemo } from './HeadlessDemo.js';
+
+/** Reuse the built-in localized menu and append a "Search the web" item. */
+const contextMenuBuilder: PdfReactContextMenuBuilder = (context, { viewer, strings }) => {
+  const menu = buildDefaultContextMenu(viewer, strings, context);
+  const item = document.createElement('button');
+  item.className = 'pdfrx-context-menu-item';
+  item.textContent = 'Search the web';
+  item.disabled = !context.hasSelection;
+  item.addEventListener('click', () => {
+    context.close();
+    void viewer.selection.getSelectedText().then((text) => {
+      if (text) window.open(`https://www.google.com/search?q=${encodeURIComponent(text)}`, '_blank', 'noopener');
+    });
+  });
+  menu.appendChild(item);
+  return menu;
+};
 
 /** Phone breakpoint: below this the nav sheds its label text. */
 const PHONE_MAX_WIDTH = 560;
@@ -111,6 +128,7 @@ export function App() {
             wasmModulesUrl="pdfium/"
             style={{ height: '100%' }}
             locale={locale}
+            contextMenuBuilder={contextMenuBuilder}
             enableFileOpen
             enablePageEditing
           />
