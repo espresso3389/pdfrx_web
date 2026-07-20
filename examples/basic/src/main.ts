@@ -1,4 +1,4 @@
-import type { PdfOutlineNode } from '@pdfrx/engine';
+import type { PdfOutlineNode, PdfPage } from '@pdfrx/engine';
 import { definePdfrxViewerElement, type PdfrxViewerElement, type PdfTextSearcher } from '@pdfrx/viewer';
 
 definePdfrxViewerElement();
@@ -67,7 +67,17 @@ function onDocumentLoaded(): void {
     for (const [n, img] of thumbElements) img.classList.toggle('current', n === page);
   });
 
+  // Editing pages renumbers them, so everything keyed by page number has to be
+  // rebuilt: thumbnails, the outline's destinations, and the page counter.
+  viewer.document!.addEventListener('pagesRearranged', () => {
+    void buildThumbnails();
+    void buildOutline();
+    const current = viewer.currentPageNumber;
+    pageStatus.textContent = current ? `p.${current} / ${viewer.document?.pages.length ?? 0}` : '';
+  });
+
   // --- Sidebar ---
+  thumbCache.clear();
   void buildThumbnails();
   void buildOutline();
 }
@@ -218,33 +228,208 @@ function selectTab(tab: 'thumbs' | 'outline'): void {
   outlinePane.style.display = tab === 'outline' ? '' : 'none';
 }
 
-// --- Thumbnails ---
+// --- Thumbnails (with drag & drop reordering, rotate and delete) ---
+
+const THUMB_WIDTH = 130;
 
 const thumbElements = new Map<number, HTMLCanvasElement>();
+/**
+ * Rendered thumbnails, keyed by `PdfPage.renderKey` (source page + rotation).
+ * Reordering pages with `setPages` does not change any renderKey, so a reorder
+ * repaints the sidebar without re-rendering a single page.
+ */
+const thumbCache = new Map<string, HTMLCanvasElement>();
+let buildToken = 0;
+
+async function thumbCanvasFor(page: PdfPage): Promise<HTMLCanvasElement | null> {
+  const cached = thumbCache.get(page.renderKey);
+  if (cached) return cached;
+  const bitmap = await el.viewer!.renderPageThumbnail(page.pageNumber, THUMB_WIDTH);
+  if (!bitmap) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  thumbCache.set(page.renderKey, canvas);
+  return canvas;
+}
 
 async function buildThumbnails(): Promise<void> {
   const viewer = el.viewer!;
   const doc = viewer.document!;
+  const token = ++buildToken;
   thumbsPane.textContent = '';
   thumbElements.clear();
   for (const page of doc.pages) {
-    const bitmap = await viewer.renderPageThumbnail(page.pageNumber, 130);
-    if (!bitmap) continue;
+    const source = await thumbCanvasFor(page);
+    if (token !== buildToken) return; // superseded by a newer build
+    if (!source) continue;
+    const pageNumber = page.pageNumber;
+
+    const item = document.createElement('div');
+    item.className = 'thumb-item';
+    item.draggable = true;
+    item.dataset.pageNumber = `${pageNumber}`;
+
+    // Copy of the cached render, so the same page can appear more than once.
     const canvas = document.createElement('canvas');
     canvas.className = 'thumb';
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    canvas.style.width = '130px';
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
-    bitmap.close();
-    canvas.addEventListener('click', () => viewer.goToPage(page.pageNumber, 300));
+    canvas.width = source.width;
+    canvas.height = source.height;
+    canvas.style.width = `${THUMB_WIDTH}px`;
+    canvas.getContext('2d')!.drawImage(source, 0, 0);
+    canvas.addEventListener('click', () => viewer.goToPage(pageNumber, 300));
+
     const label = document.createElement('div');
     label.className = 'thumb-label';
-    label.textContent = `${page.pageNumber}`;
-    thumbsPane.append(canvas, label);
-    thumbElements.set(page.pageNumber, canvas);
+    label.textContent = `${pageNumber}`;
+
+    const tools = document.createElement('div');
+    tools.className = 'thumb-tools';
+    tools.append(
+      toolButton('⟳', 'Rotate 90° clockwise', false, () => rotatePageCW90(pageNumber)),
+      toolButton('✕', 'Delete this page', true, () => deletePage(pageNumber)),
+    );
+
+    item.append(canvas, tools, label);
+    thumbsPane.appendChild(item);
+    thumbElements.set(pageNumber, canvas);
+  }
+  const current = viewer.currentPageNumber;
+  for (const [n, img] of thumbElements) img.classList.toggle('current', n === current);
+  pruneThumbCache();
+}
+
+function toolButton(text: string, title: string, danger: boolean, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.textContent = text;
+  btn.title = title;
+  if (danger) btn.className = 'danger';
+  btn.draggable = false;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't also navigate to the page
+    onClick();
+  });
+  return btn;
+}
+
+/** Drops cached renders no page refers to any more (e.g. the pre-rotation one). */
+function pruneThumbCache(): void {
+  const live = new Set((el.viewer?.document?.pages ?? []).map((p) => p.renderKey));
+  for (const key of [...thumbCache.keys()]) if (!live.has(key)) thumbCache.delete(key);
+}
+
+// --- Page editing ---
+//
+// Every edit is a synchronous `setPages` on the proxy page list: no worker
+// round-trip, no PDF rebuild. `encodePdf()` materializes the arrangement when
+// the user saves.
+
+function rotatePageCW90(pageNumber: number): void {
+  const doc = el.viewer?.document;
+  if (!doc) return;
+  doc.setPage(pageNumber, doc.pages[pageNumber - 1]!.rotatedCW90());
+}
+
+function deletePage(pageNumber: number): void {
+  const doc = el.viewer?.document;
+  if (!doc) return;
+  if (doc.pages.length <= 1) {
+    alert('A document must keep at least one page.');
+    return;
+  }
+  doc.setPages(doc.pages.filter((p) => p.pageNumber !== pageNumber));
+}
+
+/** Moves the page at `from` (1-based) so it lands before position `before`. */
+function movePage(from: number, before: number): void {
+  const doc = el.viewer?.document;
+  if (!doc) return;
+  if (before === from || before === from + 1) return; // no-op
+  const pages = [...doc.pages];
+  const [moved] = pages.splice(from - 1, 1);
+  pages.splice(before > from ? before - 2 : before - 1, 0, moved!);
+  doc.setPages(pages);
+}
+
+// --- Thumbnail drag & drop ---
+
+let dragFrom: number | null = null;
+let dropBefore: number | null = null;
+
+function itemOf(target: EventTarget | null): HTMLElement | null {
+  return (target as HTMLElement | null)?.closest?.('.thumb-item') ?? null;
+}
+
+function clearDropMarkers(): void {
+  for (const item of thumbsPane.querySelectorAll('.thumb-item')) {
+    item.classList.remove('drop-before', 'drop-after');
   }
 }
+
+thumbsPane.addEventListener('dragstart', (e) => {
+  const item = itemOf(e.target);
+  if (!item) return;
+  dragFrom = Number(item.dataset.pageNumber);
+  item.classList.add('dragging');
+  e.dataTransfer!.effectAllowed = 'move';
+  e.dataTransfer!.setData('text/plain', `${dragFrom}`); // Firefox needs some payload
+});
+
+thumbsPane.addEventListener('dragover', (e) => {
+  if (dragFrom === null) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = 'move';
+  clearDropMarkers();
+  const item = itemOf(e.target);
+  if (!item) {
+    // Below the last thumbnail: append to the end.
+    dropBefore = (el.viewer?.document?.pages.length ?? 0) + 1;
+    return;
+  }
+  const rect = item.getBoundingClientRect();
+  const after = e.clientY > rect.top + rect.height / 2;
+  item.classList.add(after ? 'drop-after' : 'drop-before');
+  dropBefore = Number(item.dataset.pageNumber) + (after ? 1 : 0);
+});
+
+thumbsPane.addEventListener('drop', (e) => {
+  e.preventDefault();
+  clearDropMarkers();
+  if (dragFrom !== null && dropBefore !== null) movePage(dragFrom, dropBefore);
+  dragFrom = dropBefore = null;
+});
+
+thumbsPane.addEventListener('dragend', () => {
+  clearDropMarkers();
+  for (const item of thumbsPane.querySelectorAll('.dragging')) item.classList.remove('dragging');
+  dragFrom = dropBefore = null;
+});
+
+// --- Save (download) ---
+
+document.getElementById('saveBtn')!.addEventListener('click', async () => {
+  const doc = el.viewer?.document;
+  if (!doc) return;
+  try {
+    // Materializes any proxy arrangement into the PDF, then serializes it.
+    const data = await doc.encodePdf();
+    // sourceName may be a URL ("uri%http://host/dir/file.pdf") or a file name.
+    const name = doc.sourceName.split(/[/\\]/).pop()!.split('?')[0]!.replace(/\.pdf$/i, '') || 'document';
+    const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}-edited.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+    alert(`Failed to save: ${err}`);
+  }
+  // Materializing replaces the PdfPage objects (and their renderKeys).
+  void buildThumbnails();
+});
 
 // --- Outline ---
 
