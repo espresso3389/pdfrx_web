@@ -62,15 +62,37 @@ built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
 ## Installation
 
 ```sh
-npm install @pdfrx/viewer
+npm install @pdfrx/react     # React apps
+# or
+npm install @pdfrx/viewer    # everything else
 ```
 
-This pulls in `@pdfrx/viewer-core` and `@pdfrx/engine` (which bundles the
-WASM engine assets) automatically.
+Either package pulls in `@pdfrx/viewer-core` and `@pdfrx/engine` (which bundles
+the WASM engine assets) automatically; `@pdfrx/react` also pulls in
+`@pdfrx/viewer`.
 
 ## Usage
 
-The easiest way is the `<pdfrx-viewer>` custom element:
+### React
+
+The whole viewer — toolbar, thumbnails/outline sidebar, search, print — in one
+component:
+
+```tsx
+import { PdfrxViewerApp } from '@pdfrx/react';
+import '@pdfrx/react/styles.css';
+
+<PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} />;
+```
+
+Or compose the parts yourself (`PdfrxProvider` + `PdfToolbar` + `PdfSidebar` +
+`PdfViewerSurface`), or go headless with hooks like `usePdfSearch()` and
+`usePdfOutline()` and write every pixel of the UI. See the
+[`@pdfrx/react` README](packages/react) for all three layers.
+
+### Framework-agnostic
+
+Without React, the easiest way is the `<pdfrx-viewer>` custom element:
 
 ```html
 <script type="module">
@@ -103,7 +125,14 @@ console.log(viewer.selectedText);
 await viewer.print();
 ```
 
-Two things your app must provide:
+Remember that the thumbnail strip, outline tree and search box are yours to
+build here (this is what `@pdfrx/react` packages up for React) — the viewer
+gives you the primitives: `loadOutline()`, `renderPageThumbnail()`,
+`createTextSearcher()`.
+
+### What your app must provide
+
+Both entry points need two things:
 
 1. **The engine's WASM assets.** Point [`wasmModulesUrl`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxEngineOptions.html#wasmmodulesurl) at a directory
    containing `pdfium_worker.js` and `pdfium.wasm`. Either copy them from
@@ -121,24 +150,6 @@ Documents opened from a `File`/`ArrayBuffer` use [`viewer.openData(data)`](https
 Password-protected files are supported by passing a
 [`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider):
 `openUrl(url, { passwordProvider: () => prompt('Password?') })`.
-
-## React
-
-[`@pdfrx/react`](packages/react) wraps all of the above in components and hooks,
-and adds the thumbnail, outline and search UI that `@pdfrx/viewer` leaves to the
-app. The whole viewer in one component:
-
-```tsx
-import { PdfrxViewerApp } from '@pdfrx/react';
-import '@pdfrx/react/styles.css';
-
-<PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} />;
-```
-
-Or compose the parts yourself (`PdfrxProvider` + `PdfToolbar` + `PdfSidebar` +
-`PdfViewerSurface`), or go headless with hooks like `usePdfSearch()` and
-`usePdfOutline()` and write every pixel of the UI. See the
-[package README](packages/react) for all three layers.
 
 ## Packages
 
