@@ -10,6 +10,13 @@ export interface PdfSearchBoxProps {
   placeholder?: string;
   /** Focus the input on mount — e.g. when the box appears from a collapsed toggle. */
   autoFocus?: boolean;
+  /**
+   * When set, the clear (✕) button dismisses the whole box instead of just
+   * clearing the query: it resets the search and then calls this. Used by
+   * {@link PdfToolbar} to close its collapsed mobile search row. The button is
+   * then always shown (so the box can be closed before anything is typed).
+   */
+  onClose?: () => void;
 }
 
 /**
@@ -27,13 +34,27 @@ export interface PdfSearchBoxProps {
  * </PdfrxProvider>
  * ```
  */
-export function PdfSearchBox({ className, style, placeholder = 'Search', autoFocus = false }: PdfSearchBoxProps): ReactNode {
+export function PdfSearchBox({
+  className,
+  style,
+  placeholder = 'Search',
+  autoFocus = false,
+  onClose,
+}: PdfSearchBoxProps): ReactNode {
   const { query, setQuery, currentIndex, matchCount, isSearching, goToNext, goToPrevious, reset } = usePdfSearch();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
+
+  // The ✕ button clears the query; when hosted in a dismissible container it
+  // also closes it (and Escape follows suit).
+  const clear = (): void => {
+    reset();
+    if (onClose) onClose();
+    else inputRef.current?.focus();
+  };
 
   const hasQuery = query.length > 0;
   const status = hasQuery ? `${(currentIndex ?? -1) + 1} / ${matchCount}${isSearching ? '…' : ''}` : '';
@@ -56,7 +77,7 @@ export function PdfSearchBox({ className, style, placeholder = 'Search', autoFoc
             e.preventDefault();
             void (e.shiftKey ? goToPrevious() : goToNext());
           } else if (e.key === 'Escape') {
-            reset();
+            clear();
           }
         }}
       />
@@ -81,14 +102,12 @@ export function PdfSearchBox({ className, style, placeholder = 'Search', autoFoc
       >
         <IconChevronDown />
       </button>
-      {hasQuery && (
+      {(hasQuery || onClose) && (
         <button
           className="pdfrx-button"
-          onClick={() => {
-            reset();
-            inputRef.current?.focus();
-          }}
-          title="Clear search (Escape)"
+          onClick={clear}
+          title={onClose ? 'Close search' : 'Clear search (Escape)'}
+          aria-label={onClose ? 'Close search' : 'Clear search'}
         >
           <IconClose />
         </button>

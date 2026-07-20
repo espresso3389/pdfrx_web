@@ -86,7 +86,7 @@ export function PdfToolbar({
       </div>
       {showSearch && searchOpen && (
         <div className="pdfrx-toolbar-search-row">
-          <PdfSearchBox autoFocus />
+          <PdfSearchBox autoFocus onClose={() => setSearchOpen(false)} />
         </div>
       )}
     </>
