@@ -204,6 +204,24 @@ export class PdfTextSearcher {
     if (notify) this.notify();
   }
 
+  /**
+   * @internal
+   * Re-runs the current search after the document's pages were rearranged.
+   * Matches are keyed by page number, so every one of them is stale; the pattern
+   * is kept and re-scanned rather than silently pointing at the wrong pages.
+   * The view is not moved, since the user was editing pages, not searching.
+   */
+  onPagesRearranged(): void {
+    const condition = this.lastSearchCondition;
+    this.doReset(true, true);
+    if (!condition || patternIsEmpty(condition.pattern)) return;
+    this.startTextSearch(condition.pattern, {
+      caseInsensitive: condition.caseInsensitive,
+      goToFirstMatch: false,
+      searchImmediately: true,
+    });
+  }
+
   /** @internal Cancels the debounce timer and invalidates the running session. */
   private cancelTextSearch(): void {
     if (this.searchTimer !== null) {

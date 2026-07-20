@@ -330,6 +330,13 @@ export interface PdfDocumentEventMap {
   loadComplete: Record<string, never>;
   /** Page objects were replaced (progressive load / reload). */
   pageStatusChanged: { pageNumbers: number[] };
+  /**
+   * The *arrangement* of pages changed — order, rotation, or count — via
+   * `PdfDocument.setPages` or `PdfDocument.assemblePages`. Always accompanied by
+   * `pageStatusChanged`; listen to this one to invalidate things keyed by page
+   * position, which a plain progressive-load update does not disturb.
+   */
+  pagesRearranged: { pageNumbers: number[] };
   /** The engine reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
   missingFonts: { queries: PdfFontQuery[] };
 }

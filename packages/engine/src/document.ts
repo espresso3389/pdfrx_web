@@ -354,6 +354,7 @@ export class PdfDocument {
     this.onDispose = onDispose;
     this.permissions = PdfDocument.parsePermissions(wire);
     this._pages = wire.pages.map((p) => new PdfPage(this, p));
+    this.nativePageCount = this._pages.length;
     this.updateMissingFonts(wire.missingFonts);
   }
 
@@ -366,6 +367,13 @@ export class PdfDocument {
   private readonly onDispose: (() => void) | null;
   private readonly listeners = new Map<PdfDocumentEventName, Set<Listener<PdfDocumentEventName>>>();
   private _pages: PdfPage[];
+  /** Number of pages in the underlying PDF, which {@link setPages} can make differ from `_pages.length`. */
+  private nativePageCount: number;
+  private arrangementDirty = false;
+  /** Documents whose pages appear in this one's arrangement (see {@link setPages}). */
+  private borrowedFrom = new Set<PdfDocument>();
+  /** Documents whose arrangement includes pages of this one; warned about on {@link dispose}. */
+  private readonly borrowers = new Set<PdfDocument>();
   private _isDisposed = false;
   private loadLock: Promise<void> = Promise.resolve();
 
@@ -385,6 +393,124 @@ export class PdfDocument {
   /** Pages of the document. With progressive loading, unloaded pages have `isLoaded === false`. */
   get pages(): readonly PdfPage[] {
     return this._pages;
+  }
+
+  /**
+   * Whether {@link pages} has been rearranged by {@link setPages} / {@link setPage}
+   * without the PDF having been rebuilt yet. {@link encodePdf} materializes the
+   * arrangement, clearing this.
+   */
+  get isPageArrangementModified(): boolean {
+    return this.arrangementDirty;
+  }
+
+  /**
+   * Replaces the page arrangement — the cheap, synchronous counterpart to
+   * {@link assemblePages}.
+   *
+   * Nothing is sent to the worker and the PDF is not rebuilt: the pages are
+   * proxies ({@link PdfPage.rotatedTo}, {@link PdfPage.withPageNumber}) over
+   * pages that stay loaded, so reordering and rotating are immediate and free,
+   * and undo is just setting the previous array back. This is what GUI page
+   * editing wants; call {@link encodePdf} (or {@link assemblePages}) when the
+   * arrangement finally has to become a real PDF.
+   *
+   * Pages may come from other documents — those must stay open for as long as
+   * they are referenced. Page numbers are reassigned to match the new order, so
+   * callers can pass pages in any arrangement.
+   *
+   * Fires `pageStatusChanged` for every slot.
+   *
+   * @example
+   * ```ts
+   * const p = doc.pages;
+   * doc.setPages([p[2]!, p[0]!.rotatedCW90(), p[1]!]); // instant, no re-render
+   * await doc.encodePdf();                             // now it becomes a PDF
+   * ```
+   * @throws if `pages` is empty, or a page belongs to a disposed document.
+   */
+  setPages(pages: readonly PdfPage[]): void {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    if (pages.length === 0) throw new Error('setPages requires at least one page');
+    const arranged = pages.map((page, index) => {
+      if (page.document.isDisposed) {
+        throw new Error(`Page ${index + 1} belongs to disposed document ${page.document.sourceName}`);
+      }
+      return page.withPageNumber(index + 1);
+    });
+    this.trackBorrowedDocuments(arranged);
+    this._pages = arranged;
+    this.arrangementDirty = true;
+    const pageNumbers = arranged.map((p) => p.pageNumber);
+    this.emit('pageStatusChanged', { pageNumbers });
+    this.emit('pagesRearranged', { pageNumbers });
+  }
+
+  /**
+   * Replaces a single slot (1-based), keeping every other page in place — the
+   * common case for GUI editing (`doc.setPage(3, doc.pages[2]!.rotatedCW90())`).
+   * Like {@link setPages}, this touches no PDF data.
+   */
+  setPage(pageNumber: number, page: PdfPage): void {
+    if (pageNumber < 1 || pageNumber > this._pages.length) {
+      throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this._pages.length})`);
+    }
+    const pages = this._pages.slice();
+    pages[pageNumber - 1] = page;
+    this.setPages(pages);
+  }
+
+  /**
+   * Updates the two-way record of which other documents this arrangement borrows
+   * pages from, so that disposing one of them can be reported instead of quietly
+   * turning those pages blank.
+   * @internal
+   */
+  private trackBorrowedDocuments(arranged: readonly PdfPage[]): void {
+    const lenders = new Set<PdfDocument>();
+    for (const page of arranged) {
+      if (page.document.docHandle !== this.docHandle) lenders.add(page.document);
+    }
+    for (const previous of this.borrowedFrom) {
+      if (!lenders.has(previous)) previous.borrowers.delete(this);
+    }
+    for (const lender of lenders) lender.borrowers.add(this);
+    this.borrowedFrom = lenders;
+  }
+
+  /**
+   * Position in {@link pages} (1-based) of the physical page at `sourcePageIndex`,
+   * or `null` if the current arrangement does not contain it.
+   *
+   * This is how destinations from the PDF itself — outline entries and internal
+   * links, which PDFium reports as physical page indices — are translated into
+   * page numbers callers can navigate to after {@link setPages}.
+   *
+   * Two caveats are inherent rather than fixable: a page placed twice can only
+   * resolve to one position (the first wins), and a page removed from the
+   * arrangement has no position at all, so destinations into it become `null`.
+   */
+  pageNumberOfSourceIndex(sourcePageIndex: number): number | null {
+    if (!this.arrangementDirty) {
+      // pages[i] is the physical page i, so the mapping is the identity.
+      return sourcePageIndex >= 0 && sourcePageIndex < this._pages.length ? sourcePageIndex + 1 : null;
+    }
+    for (let i = 0; i < this._pages.length; i++) {
+      const page = this._pages[i]!;
+      if (page.document.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex) return i + 1;
+    }
+    return null;
+  }
+
+  /**
+   * Rewrites the PDF to match the current {@link pages} arrangement, turning
+   * proxies into real pages. Called automatically by {@link encodePdf}; use it
+   * directly only when you need the native document itself to be consistent
+   * (e.g. before {@link loadOutline} or a raw worker operation).
+   */
+  async materializePages(): Promise<void> {
+    if (!this.arrangementDirty) return;
+    await this.assemblePages(this._pages.map((p) => p.toAssembleSource()));
   }
 
   /**
@@ -481,6 +607,17 @@ export class PdfDocument {
    */
   async dispose(): Promise<void> {
     if (this._isDisposed) return;
+    if (this.borrowers.size > 0) {
+      const names = [...this.borrowers].map((d) => d.sourceName).join(', ');
+      console.warn(
+        `pdfrx: disposing ${this.sourceName} while its pages are still placed in ${names} by setPages; ` +
+          `those pages will no longer render. Call encodePdf()/materializePages() on the borrowing ` +
+          `document first to copy them in.`,
+      );
+    }
+    for (const lender of this.borrowedFrom) lender.borrowers.delete(this);
+    this.borrowedFrom.clear();
+    this.borrowers.clear();
     const promise = this.comm.sendCommand('closeDocument', {
       docHandle: this.docHandle,
       formHandle: this.formHandle,
@@ -503,18 +640,19 @@ export class PdfDocument {
   /** Loads the document outline (bookmarks) as a tree of {@link PdfOutlineNode}. */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     const result = await this.sendCommand('loadOutline', { docHandle: this.docHandle });
-    return result.outline.map((node) => PdfDocument.outlineNodeFromWire(node));
+    return result.outline.map((node) => this.outlineNodeFromWire(node));
   }
 
   /**
-   * Recursively converts a wire outline node to the public {@link PdfOutlineNode}.
+   * Recursively converts a wire outline node to the public {@link PdfOutlineNode},
+   * mapping physical page indices onto the current arrangement.
    * @internal
    */
-  private static outlineNodeFromWire(node: WireOutlineNode): PdfOutlineNode {
+  private outlineNodeFromWire(node: WireOutlineNode): PdfOutlineNode {
     return {
       title: node.title,
-      dest: pdfDestFromWire(node.dest),
-      children: node.children.map((child) => PdfDocument.outlineNodeFromWire(child)),
+      dest: pdfDestFromWire(node.dest, this),
+      children: node.children.map((child) => this.outlineNodeFromWire(child)),
     };
   }
 
@@ -528,10 +666,12 @@ export class PdfDocument {
   ): Promise<void> {
     if (this._isDisposed) return;
     await this.synchronized(async () => {
-      let firstPageIndex = this._pages.findIndex((page) => !page.isLoaded);
-      if (firstPageIndex < 0) return;
+      // Indices here are physical, not positional: after setPages the two differ.
+      const unloaded = this._pages.filter((p) => !p.isLoaded && p.document.docHandle === this.docHandle);
+      if (unloaded.length === 0) return;
+      let firstPageIndex = Math.min(...unloaded.map((p) => p.sourcePageIndex));
 
-      while (firstPageIndex < this._pages.length) {
+      while (firstPageIndex < this.nativePageCount) {
         if (this._isDisposed) return;
         const result = await this.sendCommand('loadPagesProgressively', {
           docHandle: this.docHandle,
@@ -543,11 +683,11 @@ export class PdfDocument {
         firstPageIndex += loaded.length;
         this.updateMissingFonts(result.missingFonts);
 
-        if (onPageLoadProgress && !(await onPageLoadProgress(firstPageIndex, this._pages.length))) {
+        if (onPageLoadProgress && !(await onPageLoadProgress(firstPageIndex, this.nativePageCount))) {
           break;
         }
       }
-      if (firstPageIndex >= this._pages.length) {
+      if (firstPageIndex >= this.nativePageCount) {
         this.notifyLoadComplete();
       }
     });
@@ -559,8 +699,10 @@ export class PdfDocument {
     await this.synchronized(async () => {
       const result = await this.sendCommand('reloadPages', {
         docHandle: this.docHandle,
-        ...(pageNumbersToReload ? { pageIndices: pageNumbersToReload.map((n) => n - 1) } : {}),
-        currentPagesCount: this._pages.length,
+        ...(pageNumbersToReload
+          ? { pageIndices: pageNumbersToReload.map((n) => this._pages[n - 1]?.sourcePageIndex ?? n - 1) }
+          : {}),
+        currentPagesCount: this.nativePageCount,
       });
       this.replacePages(result.pages.map((p) => new PdfPage(this, p)));
       this.updateMissingFonts(result.missingFonts);
@@ -568,17 +710,29 @@ export class PdfDocument {
   }
 
   /**
-   * Replaces the given page slots in-place and emits `pageStatusChanged`.
+   * Merges freshly loaded page metadata into the current arrangement and emits
+   * `pageStatusChanged`.
+   *
+   * `updated` is keyed by physical page index, while {@link pages} is keyed by
+   * position, and {@link setPages} may have made the two disagree — so each slot
+   * is matched by its source page and re-based, preserving proxy overrides.
    * @internal
    */
   private replacePages(updated: PdfPage[]): void {
     if (updated.length === 0) return;
+    const bySourceIndex = new Map(updated.map((p) => [p.sourcePageIndex, p]));
     const pages = this._pages.slice();
     const pageNumbers: number[] = [];
-    for (const page of updated) {
-      pages[page.pageNumber - 1] = page;
-      pageNumbers.push(page.pageNumber);
+    for (let i = 0; i < pages.length; i++) {
+      const current = pages[i]!;
+      // Imported pages are reloaded by the document that owns them.
+      if (current.document.docHandle !== this.docHandle) continue;
+      const fresh = bySourceIndex.get(current.sourcePageIndex);
+      if (!fresh) continue;
+      pages[i] = current.rebasedOn(fresh).withPageNumber(i + 1);
+      pageNumbers.push(i + 1);
     }
+    if (pageNumbers.length === 0) return;
     this._pages = pages;
     this.emit('pageStatusChanged', { pageNumbers });
   }
@@ -592,13 +746,20 @@ export class PdfDocument {
   private async refreshAllPages(): Promise<void> {
     const result = await this.sendCommand('reloadPages', {
       docHandle: this.docHandle,
-      currentPagesCount: this._pages.length,
+      currentPagesCount: this.nativePageCount,
     });
     const pages = result.pages.map((p) => new PdfPage(this, p));
     pages.sort((a, b) => a.pageNumber - b.pageNumber);
     this._pages = pages;
+    this.nativePageCount = pages.length;
+    // The PDF now *is* the arrangement: no proxies are outstanding, and any
+    // imported pages have been copied in, so nothing is borrowed any more.
+    this.arrangementDirty = false;
+    this.trackBorrowedDocuments(pages);
     this.updateMissingFonts(result.missingFonts);
-    this.emit('pageStatusChanged', { pageNumbers: pages.map((p) => p.pageNumber) });
+    const pageNumbers = pages.map((p) => p.pageNumber);
+    this.emit('pageStatusChanged', { pageNumbers });
+    this.emit('pagesRearranged', { pageNumbers });
   }
 
   /**
@@ -652,7 +813,19 @@ export class PdfDocument {
    * one duplicates it.
    */
   async reorderPages(order: number[]): Promise<void> {
-    await this.assemblePages(order.map((pageNumber) => ({ pageNumber })));
+    await this.assemblePages(order.map((pageNumber) => this.assembleSourceAt(pageNumber)));
+  }
+
+  /**
+   * The {@link PdfAssembleSource} for the page currently at `pageNumber`, so the
+   * convenience methods below address positions in {@link pages} even when a
+   * {@link setPages} arrangement has not been materialized.
+   * @internal
+   */
+  private assembleSourceAt(pageNumber: number): PdfAssembleSource {
+    const page = this._pages[pageNumber - 1];
+    if (!page) throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this._pages.length})`);
+    return page.toAssembleSource();
   }
 
   /**
@@ -665,7 +838,10 @@ export class PdfDocument {
         ? rotations
         : new Map(Object.entries(rotations).map(([k, v]) => [Number(k), v] as const));
     await this.assemblePages(
-      this._pages.map((p) => ({ pageNumber: p.pageNumber, rotation: map.get(p.pageNumber) })),
+      this._pages.map((p) => {
+        const rotation = map.get(p.pageNumber);
+        return { ...p.toAssembleSource(), ...(rotation === undefined ? {} : { rotation }) };
+      }),
     );
   }
 
@@ -697,17 +873,19 @@ export class PdfDocument {
    * The source document must stay open until this resolves.
    */
   async importPages(from: PdfDocument, pageNumbers: number[], insertBefore?: number): Promise<void> {
-    const existing: PdfAssembleSource[] = this._pages.map((p) => ({ pageNumber: p.pageNumber }));
-    const imported: PdfAssembleSource[] = pageNumbers.map((pageNumber) => ({ document: from, pageNumber }));
+    const existing: PdfAssembleSource[] = this._pages.map((p) => p.toAssembleSource());
+    const imported: PdfAssembleSource[] = pageNumbers.map((pageNumber) => from.assembleSourceAt(pageNumber));
     const at = insertBefore === undefined ? existing.length : Math.max(0, Math.min(insertBefore - 1, existing.length));
     await this.assemblePages([...existing.slice(0, at), ...imported, ...existing.slice(at)]);
   }
 
   /**
    * Serializes the document back to PDF bytes, reflecting any page
-   * manipulations ({@link assemblePages} and friends).
+   * manipulations ({@link setPages}, {@link assemblePages} and friends). A
+   * pending {@link setPages} arrangement is materialized first.
    */
   async encodePdf(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
+    await this.materializePages();
     const result = await this.sendCommand('encodePdf', {
       docHandle: this.docHandle,
       incremental: options.incremental ?? false,
@@ -743,39 +921,180 @@ export class PdfDocument {
 }
 
 /**
+ * Spec for constructing a *proxy* page: a stand-in that presents a different
+ * page number and/or rotation for an existing page without touching the
+ * underlying PDF. Built by {@link PdfPage.rotatedTo} and friends.
+ * @internal
+ */
+export interface PdfPageProxySpec {
+  readonly basePage: PdfPage;
+  readonly pageNumber: number;
+  readonly rotation: PdfPageRotation;
+}
+
+/**
  * A page of a document. Obtain instances via {@link PdfDocument.pages}; do not
  * construct directly.
+ *
+ * A page has two identities that usually coincide but need not: where it sits
+ * in the document ({@link pageNumber}, {@link rotation}) and which physical page
+ * of which PDF it draws ({@link sourcePage}). {@link rotatedTo} /
+ * {@link withPageNumber} return *proxy* pages that change the former while
+ * sharing the latter, which is what makes {@link PdfDocument.setPages}
+ * rearrangement free — see {@link PdfDocument.setPages}.
  */
 export class PdfPage {
   /** @internal */
   constructor(
-    /** The document this page belongs to. */
+    /** The document holding the physical page this one draws. */
     readonly document: PdfDocument,
-    wire: WirePageInfo,
+    src: WirePageInfo | PdfPageProxySpec,
   ) {
-    this.pageNumber = wire.pageIndex + 1;
-    this.width = wire.width;
-    this.height = wire.height;
-    this.rotation = pdfPageRotationFromIndex(wire.rotation);
-    this.isLoaded = wire.isLoaded;
-    this.bbLeft = wire.bbLeft;
-    this.bbBottom = wire.bbBottom;
+    if ('basePage' in src) {
+      // Proxies are never nested: wrapping a proxy re-wraps its base instead, so
+      // `basePage` is always a real page and no unwrap-the-chain walk is needed.
+      const base = src.basePage.sourcePage;
+      this.basePage = base;
+      this.pageNumber = src.pageNumber;
+      this.rotation = src.rotation;
+      this.sourcePageIndex = base.sourcePageIndex;
+      this.sourceRotation = base.sourceRotation;
+      this.isLoaded = base.isLoaded;
+      this.bbLeft = base.bbLeft;
+      this.bbBottom = base.bbBottom;
+      // A quarter-turn away from the physical rotation swaps the page's extent.
+      const swapWH = ((((src.rotation - base.sourceRotation) / 90) | 0) & 1) === 1;
+      this.width = swapWH ? base.height : base.width;
+      this.height = swapWH ? base.width : base.height;
+    } else {
+      this.basePage = null;
+      this.pageNumber = src.pageIndex + 1;
+      this.rotation = pdfPageRotationFromIndex(src.rotation);
+      this.sourcePageIndex = src.pageIndex;
+      this.sourceRotation = this.rotation;
+      this.isLoaded = src.isLoaded;
+      this.bbLeft = src.bbLeft;
+      this.bbBottom = src.bbBottom;
+      this.width = src.width;
+      this.height = src.height;
+    }
   }
 
-  /** 1-based page number. */
+  /** 1-based page number — the position in {@link PdfDocument.pages}, not in the PDF. */
   readonly pageNumber: number;
-  /** Page width in points (1/72 inch). */
+  /** Page width in points (1/72 inch), at {@link rotation}. */
   readonly width: number;
-  /** Page height in points (1/72 inch). */
+  /** Page height in points (1/72 inch), at {@link rotation}. */
   readonly height: number;
-  /** Page rotation baked into the PDF (clockwise). */
+  /** Effective page rotation (clockwise); differs from {@link sourceRotation} on a rotated proxy. */
   readonly rotation: PdfPageRotation;
   /** False for pages not yet materialized during progressive loading. */
   readonly isLoaded: boolean;
+  /** The real page this one stands in for, or `null` if this *is* a real page. */
+  readonly basePage: PdfPage | null;
+  /** 0-based index of the physical page within {@link document}'s PDF. @internal */
+  readonly sourcePageIndex: number;
+  /** Rotation baked into the PDF for the physical page. @internal */
+  readonly sourceRotation: PdfPageRotation;
   /** Left of the page's bounding box; text/link rects are shifted by it in {@link rectFromWire}. @internal */
   private readonly bbLeft: number;
   /** Bottom of the page's bounding box; text/link rects are shifted by it in {@link rectFromWire}. @internal */
   private readonly bbBottom: number;
+
+  /** Whether this page is a proxy over {@link basePage} rather than a real page. */
+  get isProxy(): boolean {
+    return this.basePage !== null;
+  }
+
+  /** The real page backing this one; `this` when {@link isProxy} is false. */
+  get sourcePage(): PdfPage {
+    return this.basePage ?? this;
+  }
+
+  /**
+   * Whether `other` draws the same physical page of the same PDF, regardless of
+   * page number or rotation. Useful for keying caches by content.
+   */
+  hasSameSource(other: PdfPage): boolean {
+    return other.document.docHandle === this.document.docHandle && other.sourcePageIndex === this.sourcePageIndex;
+  }
+
+  /**
+   * Identity of the physical page, independent of where it sits in the document.
+   * Two pages with the same key produce the same text and links.
+   */
+  get sourceKey(): string {
+    return `${this.document.docHandle}:${this.sourcePageIndex}`;
+  }
+
+  /**
+   * Identity of what {@link render} draws — {@link sourceKey} plus rotation.
+   * Cache bitmaps under this and moving a page around costs nothing.
+   */
+  get renderKey(): string {
+    return `${this.sourceKey}:${this.rotation}`;
+  }
+
+  /**
+   * Returns a page identical to this one but at `pageNumber`, or `this` if it is
+   * already there. Nothing is rendered or reloaded — see {@link PdfDocument.setPages}.
+   */
+  withPageNumber(pageNumber: number): PdfPage {
+    if (pageNumber === this.pageNumber) return this;
+    return new PdfPage(this.document, { basePage: this, pageNumber, rotation: this.rotation });
+  }
+
+  /**
+   * Returns a page identical to this one but rotated to the absolute `rotation`,
+   * or `this` if it is already there. The PDF is untouched; only what the viewer
+   * draws changes. Chainable with {@link withPageNumber}.
+   */
+  rotatedTo(rotation: PdfPageRotation): PdfPage {
+    if (rotation === this.rotation) return this;
+    return new PdfPage(this.document, { basePage: this, pageNumber: this.pageNumber, rotation });
+  }
+
+  /** Returns this page rotated by `delta` clockwise, relative to its current {@link rotation}. */
+  rotatedBy(delta: PdfPageRotation): PdfPage {
+    return this.rotatedTo(pdfPageRotationFromIndex((this.rotation + delta) / 90));
+  }
+
+  /** Returns this page rotated 90° clockwise. */
+  rotatedCW90(): PdfPage {
+    return this.rotatedBy(90);
+  }
+
+  /** Returns this page rotated 90° counter-clockwise. */
+  rotatedCCW90(): PdfPage {
+    return this.rotatedBy(270);
+  }
+
+  /** Returns this page rotated 180°. */
+  rotated180(): PdfPage {
+    return this.rotatedBy(180);
+  }
+
+  /**
+   * Re-points this page at a freshly loaded `base` (same physical page, new
+   * metadata) while keeping any proxy overrides.
+   * @internal
+   */
+  rebasedOn(base: PdfPage): PdfPage {
+    if (this.basePage === null) return base;
+    return new PdfPage(base.document, { basePage: base, pageNumber: this.pageNumber, rotation: this.rotation });
+  }
+
+  /**
+   * This page as a source for {@link PdfDocument.assemblePages}.
+   * @internal
+   */
+  toAssembleSource(): PdfAssembleSource {
+    return {
+      document: this.document,
+      pageNumber: this.sourcePageIndex + 1,
+      ...(this.rotation === this.sourceRotation ? {} : { rotation: this.rotation }),
+    };
+  }
 
   /**
    * Renders (a part of) the page to a {@link PdfImage} of RGBA8888 pixels
@@ -796,7 +1115,7 @@ export class PdfPage {
 
     const result = await this.document.sendCommand('renderPage', {
       docHandle: this.document.docHandle,
-      pageIndex: this.pageNumber - 1,
+      pageIndex: this.sourcePageIndex,
       x: options.x ?? 0,
       y: options.y ?? 0,
       width,
@@ -804,10 +1123,9 @@ export class PdfPage {
       fullWidth,
       fullHeight,
       backgroundColor: options.backgroundColor ?? 0xffffffff,
-      rotation:
-        options.rotationOverride !== undefined
-          ? (options.rotationOverride / 90 - this.rotation / 90 + 4) & 3
-          : 0,
+      // Relative to the rotation baked into the PDF, so a rotated proxy renders
+      // turned without the document having been rewritten.
+      rotation: (((options.rotationOverride ?? this.rotation) - this.sourceRotation) / 90 + 4) & 3,
       annotationRenderingMode: annotationRenderingModeToIndex(options.annotationRenderingMode ?? 'annotationAndForms'),
       flags: options.flags ?? 0,
       formHandle: this.document.formHandle,
@@ -825,7 +1143,7 @@ export class PdfPage {
     if (this.document.isDisposed || !this.isLoaded) return null;
     const result = await this.document.sendCommand('loadText', {
       docHandle: this.document.docHandle,
-      pageIndex: this.pageNumber - 1,
+      pageIndex: this.sourcePageIndex,
     });
     this.document.updateMissingFonts(result.missingFonts);
     return {
@@ -844,13 +1162,17 @@ export class PdfPage {
     if (this.document.isDisposed || !this.isLoaded) return [];
     const result = await this.document.sendCommand('loadLinks', {
       docHandle: this.document.docHandle,
-      pageIndex: this.pageNumber - 1,
+      pageIndex: this.sourcePageIndex,
       enableAutoLinkDetection: options.enableAutoLinkDetection ?? true,
     });
     return result.links.map((link) => ({
       rects: link.rects.map((r) => this.rectFromWire(r)),
       url: link.url ?? null,
-      dest: pdfDestFromWire(link.dest),
+      // Resolved against the document the page physically lives in. For a page
+      // imported into another document, an internal link therefore names a
+      // position in its *source* document — the PDF has no destination for the
+      // host, so there is nothing better to report.
+      dest: pdfDestFromWire(link.dest, this.document),
       annotation: link.annotation
         ? {
             title: link.annotation.title ?? null,
@@ -879,13 +1201,17 @@ export class PdfPage {
 }
 
 /**
- * Converts a wire destination (0-based page index) to a public {@link PdfDest}
- * (1-based page number), or `null` if absent.
+ * Converts a wire destination (0-based *physical* page index) to a public
+ * {@link PdfDest}, whose `pageNumber` is a position in `doc.pages`. Returns
+ * `null` if the destination is absent or its page is not in the arrangement
+ * (e.g. it was removed by {@link PdfDocument.setPages}).
  */
-function pdfDestFromWire(dest: WireDest | null | undefined): PdfDest | null {
+function pdfDestFromWire(dest: WireDest | null | undefined, doc: PdfDocument): PdfDest | null {
   if (!dest) return null;
+  const pageNumber = doc.pageNumberOfSourceIndex(dest.pageIndex);
+  if (pageNumber === null) return null;
   return {
-    pageNumber: dest.pageIndex + 1,
+    pageNumber,
     command: dest.command,
     params: dest.params,
   };

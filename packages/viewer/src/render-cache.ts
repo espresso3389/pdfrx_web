@@ -50,16 +50,27 @@ export class PageRenderCache {
     private readonly onUpdate: () => void,
   ) {}
 
-  private readonly base = new Map<number, BaseBitmap>();
-  private readonly baseRendering = new Map<number, number>(); // pageNumber -> scale being rendered
+  // Base bitmaps are keyed by `PdfPage.renderKey` (source page + rotation), not
+  // by page number, so rearranging the document with `PdfDocument.setPages`
+  // keeps every rendered page — only pages whose rotation actually changed are
+  // re-rendered. Patches are transient and visible-region-only, so they stay
+  // keyed by page number and are dropped on rearrangement.
+  private readonly base = new Map<string, BaseBitmap>();
+  private readonly baseRendering = new Map<string, number>(); // renderKey -> scale being rendered
   private readonly patches = new Map<number, Patch>();
   private readonly patchRendering = new Set<number>();
   private patchTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
+  /** Render key of the page currently at `pageNumber`, or null if there is none. */
+  private keyOf(pageNumber: number): string | null {
+    return this.doc.pages[pageNumber - 1]?.renderKey ?? null;
+  }
+
   /** @internal Current base (whole-page) bitmap for a page, if rendered. */
   getBase(pageNumber: number): BaseBitmap | undefined {
-    return this.base.get(pageNumber);
+    const key = this.keyOf(pageNumber);
+    return key === null ? undefined : this.base.get(key);
   }
 
   /** @internal Current sharp patch for a page, if one has been rendered. */
@@ -76,19 +87,23 @@ export class PageRenderCache {
   /** @internal Ensure the base bitmap for a page approaches the required scale. */
   requestBase(pageNumber: number, requiredScale: number): void {
     if (this.disposed) return;
+    const key = this.keyOf(pageNumber);
+    if (key === null) return;
     const scale = Math.min(requiredScale, this.baseScaleCap(pageNumber));
-    const cached = this.base.get(pageNumber);
+    const cached = this.base.get(key);
     if (cached && cached.scale >= scale / SCALE_TOLERANCE) return;
-    const rendering = this.baseRendering.get(pageNumber);
+    const rendering = this.baseRendering.get(key);
     if (rendering !== undefined && rendering >= scale / SCALE_TOLERANCE) return;
 
-    this.baseRendering.set(pageNumber, scale);
-    void this.renderBase(pageNumber, scale);
+    this.baseRendering.set(key, scale);
+    void this.renderBase(pageNumber, key, scale);
   }
 
-  private async renderBase(pageNumber: number, scale: number): Promise<void> {
+  private async renderBase(pageNumber: number, key: string, scale: number): Promise<void> {
     try {
-      const page = this.doc.pages[pageNumber - 1]!;
+      const page = this.doc.pages[pageNumber - 1];
+      // The page may have been moved away from this slot while we waited.
+      if (!page || page.renderKey !== key) return;
       const image = await page.render({
         fullWidth: Math.ceil(page.width * scale),
         fullHeight: Math.ceil(page.height * scale),
@@ -99,13 +114,13 @@ export class PageRenderCache {
         bitmap.close();
         return;
       }
-      this.base.get(pageNumber)?.bitmap.close();
-      this.base.set(pageNumber, { scale, bitmap });
+      this.base.get(key)?.bitmap.close();
+      this.base.set(key, { scale, bitmap });
       this.onUpdate();
     } catch (e) {
       console.error(`Failed to render page ${pageNumber}:`, e);
     } finally {
-      this.baseRendering.delete(pageNumber);
+      this.baseRendering.delete(key);
     }
   }
 
@@ -164,7 +179,8 @@ export class PageRenderCache {
 
     this.patchRendering.add(pageNumber);
     try {
-      const page = this.doc.pages[pageNumber - 1]!;
+      const page = this.doc.pages[pageNumber - 1];
+      if (!page) return;
       const pageScaleX = rectWidth(pageRect) / page.width;
       const fullWidth = Math.ceil(page.width * pageScaleX * scale);
       const fullHeight = Math.ceil(page.height * pageScaleX * scale);
@@ -193,6 +209,26 @@ export class PageRenderCache {
       console.error(`Failed to render patch for page ${pageNumber}:`, e);
     } finally {
       this.patchRendering.delete(pageNumber);
+    }
+  }
+
+  /**
+   * @internal
+   * Called after the document's page arrangement changed. Base bitmaps survive —
+   * that is the point of keying them by content — but patches are tied to page
+   * positions, and bitmaps for pages that are no longer present are evicted.
+   */
+  onArrangementChanged(): void {
+    for (const { bitmap } of this.patches.values()) bitmap.close();
+    this.patches.clear();
+    this.patchRendering.clear();
+
+    const live = new Set(this.doc.pages.map((p) => p.renderKey));
+    for (const [key, { bitmap }] of this.base) {
+      if (!live.has(key)) {
+        bitmap.close();
+        this.base.delete(key);
+      }
     }
   }
 

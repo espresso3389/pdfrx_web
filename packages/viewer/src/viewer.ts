@@ -1394,6 +1394,8 @@ export class PdfrxViewer {
     this.pageLinks.clear();
     this.hoveredLink = null;
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
+    doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
+    doc.addEventListener('pagesRearranged', () => this.onPagesRearranged());
     this.resetView();
     this.buildViewerOverlays();
     for (const listener of this.documentChangeListeners) {
@@ -1408,6 +1410,34 @@ export class PdfrxViewer {
     } catch (e) {
       console.error('Error in onViewerReady:', e);
     }
+  }
+
+  /**
+   * Page metadata changed (progressive loading, reload). Page sizes may now be
+   * known, so the layout is rebuilt; nothing else is invalidated.
+   */
+  private onPageStatusChanged(): void {
+    if (!this.doc) return;
+    this.pageGeoms = this.doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
+    this.layout = this.computeLayout();
+    this.invalidate();
+  }
+
+  /**
+   * The page arrangement changed (`PdfDocument.setPages` / `assemblePages`).
+   * Anything keyed by page position is dropped; rendered page bitmaps are not,
+   * because {@link PageRenderCache} keys them by content — which is what makes
+   * reordering and rotating in a GUI instant.
+   */
+  private onPagesRearranged(): void {
+    if (!this.doc) return;
+    this.pageTexts.clear();
+    this.pageLinks.clear();
+    this.hoveredLink = null;
+    this.clearSelection();
+    this.cache?.onArrangementChanged();
+    this.searcher?.onPagesRearranged();
+    this.onPageStatusChanged();
   }
 
   /** Computes the page layout from the custom hook, or the direction built-ins. */
