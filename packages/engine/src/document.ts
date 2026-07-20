@@ -153,8 +153,12 @@ export class PdfrxEngine {
   /**
    * Opens a document from in-memory PDF bytes.
    *
-   * The bytes are copied into a fresh `ArrayBuffer` (transferred to the worker)
-   * unless `data` is already a full, offset-zero `ArrayBuffer`.
+   * A `Uint8Array` view over part of a buffer is copied into a fresh
+   * `ArrayBuffer` first. The bytes are then handed to the worker by
+   * `postMessage`, which copies them again — they are deliberately *not*
+   * transferred, because `data` must stay usable: a wrong-password retry
+   * re-sends it, and callers such as `PdfrxViewer` reopen from the same bytes
+   * after registering fallback fonts.
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<PdfDocument> {
     await this.init();
