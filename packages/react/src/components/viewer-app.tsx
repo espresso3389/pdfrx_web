@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Drag
 import { PdfrxProvider, type PdfrxProviderProps } from '../context.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
+import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
 import { IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
@@ -149,6 +150,7 @@ function PdfrxViewerAppChrome({
   children,
 }: ChromeProps): ReactNode {
   const { open, error } = usePdfDocument();
+  const strings = usePdfrxStrings();
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -227,8 +229,8 @@ function PdfrxViewerAppChrome({
               <button
                 className="pdfrx-button"
                 onClick={() => fileInputRef.current?.click()}
-                title="Open a PDF file"
-                aria-label="Open a PDF file"
+                title={strings.openFile}
+                aria-label={strings.openFile}
               >
                 <IconOpenFile />
               </button>
@@ -249,7 +251,7 @@ function PdfrxViewerAppChrome({
           {children}
         </PdfToolbar>
       )}
-      {error !== null && <div className="pdfrx-error">Failed to open the document: {describeError(error)}</div>}
+      {error !== null && <div className="pdfrx-error">{strings.failedToOpen(describeError(error))}</div>}
       <div className="pdfrx-app-body">
         {/* Kept mounted while closed: the drawer animates out on narrow screens,
             and a `display: none` sidebar stops its thumbnails from rendering
@@ -259,7 +261,7 @@ function PdfrxViewerAppChrome({
         <PdfViewerSurface style={{ flex: 1 }} />
         {sidebar && sidebarSide === 'right' && sidebarNode}
         {sidebar && isSidebarOpen && isNarrow && (
-          <button className="pdfrx-scrim" aria-label="Close sidebar" onClick={() => setIsSidebarOpen(false)} />
+          <button className="pdfrx-scrim" aria-label={strings.closeSidebar} onClick={() => setIsSidebarOpen(false)} />
         )}
       </div>
     </div>
@@ -269,6 +271,7 @@ function PdfrxViewerAppChrome({
 /** Rotate and delete buttons drawn over a thumbnail. */
 function PageActions({ pageNumber }: { pageNumber: number }): ReactNode {
   const viewer = usePdfrxViewer();
+  const strings = usePdfrxStrings();
 
   // Both edits are synchronous rearrangements of the page list: no worker
   // round-trip and no PDF rebuild until the document is encoded.
@@ -285,10 +288,10 @@ function PageActions({ pageNumber }: { pageNumber: number }): ReactNode {
 
   return (
     <>
-      <button className="pdfrx-button" onClick={rotate} title="Rotate 90° clockwise">
+      <button className="pdfrx-button" onClick={rotate} title={strings.rotatePage}>
         <IconRotate />
       </button>
-      <button className="pdfrx-button pdfrx-danger" onClick={remove} title="Delete this page">
+      <button className="pdfrx-button pdfrx-danger" onClick={remove} title={strings.deletePage}>
         <IconTrash />
       </button>
     </>
@@ -299,6 +302,7 @@ function PageActions({ pageNumber }: { pageNumber: number }): ReactNode {
 function SaveButton(): ReactNode {
   const viewer = usePdfrxViewer();
   const { pageCount, sourceName } = usePdfDocument();
+  const strings = usePdfrxStrings();
   const [isSaving, setIsSaving] = useState(false);
 
   const save = async (): Promise<void> => {
@@ -322,7 +326,12 @@ function SaveButton(): ReactNode {
   };
 
   return (
-    <button className="pdfrx-button" onClick={() => void save()} disabled={isSaving || pageCount === 0} title="Download">
+    <button
+      className="pdfrx-button"
+      onClick={() => void save()}
+      disabled={isSaving || pageCount === 0}
+      title={strings.download}
+    >
       <IconSave />
     </button>
   );

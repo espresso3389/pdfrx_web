@@ -18,9 +18,9 @@ import {
  * status bar sits at the bottom. That is the whole point of this layer: the
  * provider owns the viewer, and where each piece goes is up to the app.
  */
-export function ComposedDemo() {
+export function ComposedDemo({ locale }: { locale?: string }) {
   return (
-    <PdfrxProvider src="hello.pdf" wasmModulesUrl="pdfium/" initialFit="width">
+    <PdfrxProvider src="hello.pdf" wasmModulesUrl="pdfium/" initialFit="width" locale={locale}>
       <div className="pdfrx-app" style={{ height: '100%' }}>
         <div className="pdfrx-toolbar">
           <PdfPageIndicator />

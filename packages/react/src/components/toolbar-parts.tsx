@@ -3,6 +3,7 @@ import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfNavigation } from '../hooks/use-pdf-navigation.js';
 import { usePdfPrint } from '../hooks/use-pdf-print.js';
 import { usePdfZoom } from '../hooks/use-pdf-zoom.js';
+import { usePdfrxStrings } from '../strings.js';
 import { IconFitPage, IconFitWidth, IconPrint, IconZoomIn, IconZoomOut } from './icons.js';
 
 /** Props shared by the small toolbar pieces. */
@@ -24,6 +25,8 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
     setDraft(null);
   }, [currentPageNumber]);
 
+  const strings = usePdfrxStrings();
+
   const commit = (): void => {
     const parsed = Number(draft);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= pageCount) goToPage(parsed, 200);
@@ -37,7 +40,7 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
         className="pdfrx-page-input"
         type="text"
         inputMode="numeric"
-        aria-label="Page number"
+        aria-label={strings.pageNumber}
         value={draft ?? (currentPageNumber === null ? '' : String(currentPageNumber))}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -54,19 +57,20 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
 /** Zoom out / current percentage / zoom in, plus fit-page and fit-width buttons. */
 export function PdfZoomControls({ className, style }: PdfControlProps): ReactNode {
   const { zoom, zoomIn, zoomOut, canZoomIn, canZoomOut, fitToPage, fitToWidth } = usePdfZoom();
+  const strings = usePdfrxStrings();
   return (
     <span className={joinClass('pdfrx-zoom-controls', className)} style={style}>
-      <button className="pdfrx-button" onClick={() => zoomOut()} disabled={!canZoomOut} title="Zoom out">
+      <button className="pdfrx-button" onClick={() => zoomOut()} disabled={!canZoomOut} title={strings.zoomOut}>
         <IconZoomOut />
       </button>
       <span className="pdfrx-zoom-value">{Math.round(zoom * 100)}%</span>
-      <button className="pdfrx-button" onClick={() => zoomIn()} disabled={!canZoomIn} title="Zoom in">
+      <button className="pdfrx-button" onClick={() => zoomIn()} disabled={!canZoomIn} title={strings.zoomIn}>
         <IconZoomIn />
       </button>
-      <button className="pdfrx-button" onClick={() => fitToPage(undefined, 200)} title="Fit page">
+      <button className="pdfrx-button" onClick={() => fitToPage(undefined, 200)} title={strings.fitPage}>
         <IconFitPage />
       </button>
-      <button className="pdfrx-button" onClick={() => fitToWidth(undefined, 200)} title="Fit width">
+      <button className="pdfrx-button" onClick={() => fitToWidth(undefined, 200)} title={strings.fitWidth}>
         <IconFitWidth />
       </button>
     </span>
@@ -77,13 +81,14 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
 export function PdfPrintButton({ className, style }: PdfControlProps): ReactNode {
   const { print, isPrinting } = usePdfPrint();
   const { pageCount } = usePdfDocument();
+  const strings = usePdfrxStrings();
   return (
     <button
       className={joinClass('pdfrx-button', className)}
       style={style}
       onClick={() => void print()}
       disabled={isPrinting || pageCount === 0}
-      title={isPrinting ? 'Preparing pages…' : 'Print'}
+      title={isPrinting ? strings.preparingToPrint : strings.print}
     >
       <IconPrint />
     </button>

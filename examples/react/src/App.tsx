@@ -30,9 +30,24 @@ const LABELS: Record<Demo, string> = {
   headless: 'Headless hooks',
 };
 
+/** Language picker options: 'auto' means detect from the browser. */
+const LANGS: { value: string; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'zh-Hans', label: '简体中文' },
+  { value: 'zh-Hant', label: '繁體中文' },
+  { value: 'fr', label: 'Français' },
+  { value: 'de', label: 'Deutsch' },
+];
+
 export function App() {
   const [demo, setDemo] = useState<Demo>('all-in-one');
+  const [lang, setLang] = useState('auto');
   const isPhone = useMediaQuery(`(max-width: ${PHONE_MAX_WIDTH}px)`);
+
+  // 'auto' → undefined, which makes @pdfrx/react detect the browser locale.
+  const locale = lang === 'auto' ? undefined : lang;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', font: '13px system-ui, sans-serif' }}>
@@ -49,6 +64,19 @@ export function App() {
           </button>
         ))}
         <span style={{ flex: 1 }} />
+        <select
+          value={lang}
+          onChange={(e) => setLang(e.target.value)}
+          style={styles.select}
+          title="UI language"
+          aria-label="UI language"
+        >
+          {LANGS.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
         {/* On a phone: a bare icon, no frame (the title/label still names it). */}
         <a
           style={isPhone ? styles.iconLink : styles.link}
@@ -82,11 +110,12 @@ export function App() {
             src="hello.pdf"
             wasmModulesUrl="pdfium/"
             style={{ height: '100%' }}
+            locale={locale}
             enableFileOpen
             enablePageEditing
           />
         )}
-        {demo === 'composed' && <ComposedDemo key="composed" />}
+        {demo === 'composed' && <ComposedDemo key="composed" locale={locale} />}
         {demo === 'headless' && <HeadlessDemo key="headless" />}
       </div>
     </div>
@@ -131,6 +160,15 @@ const styles = {
   tabActive: {
     background: '#2196f3',
     borderColor: '#2196f3',
+  },
+  select: {
+    padding: '5px 6px',
+    font: 'inherit',
+    color: 'inherit',
+    background: '#37474f',
+    border: '1px solid rgba(255,255,255,0.25)',
+    borderRadius: 6,
+    cursor: 'pointer',
   },
   link: {
     display: 'inline-flex',

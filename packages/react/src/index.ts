@@ -45,6 +45,13 @@ export { PdfViewerSurface, type PdfViewerSurfaceProps } from './surface.js';
 export { PdfrxViewerStore } from './store.js';
 export { ThumbnailCache } from './thumbnail-cache.js';
 export { normalizeSource, type PdfSource, type NormalizedPdfSource } from './source.js';
+export { defaultPdfrxStrings, usePdfrxStrings, type PdfrxStrings } from './strings.js';
+export {
+  builtinPdfrxStrings,
+  builtinPdfrxLocales,
+  resolvePdfrxStrings,
+  type PdfrxLocale,
+} from './locales.js';
 
 // --- Components ---
 export { PdfrxViewerApp, type PdfrxViewerAppProps } from './components/viewer-app.js';

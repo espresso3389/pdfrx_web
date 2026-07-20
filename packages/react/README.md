@@ -91,6 +91,37 @@ function Toolbar() {
 2. **CORS for remote PDFs**, since the document is fetched like any other
    resource.
 
+## Localization
+
+The built-in components ship with English, Japanese, Simplified and Traditional
+Chinese, French and German. By default the language is auto-detected from the
+browser (`navigator.languages`); English is the fallback.
+
+```tsx
+// Auto-detect from the browser (default — no prop needed)
+<PdfrxViewerApp src="/manual.pdf" />
+
+// Force a language
+<PdfrxViewerApp src="/manual.pdf" locale="ja" />
+
+// Priority list; first supported wins, else English
+<PdfrxViewerApp src="/manual.pdf" locale={['fr-CA', 'fr', 'en']} />
+```
+
+Override individual strings, or add a language that isn't built in, with
+`strings` (applied on top of `locale`; anything you omit falls back to English):
+
+```tsx
+<PdfrxViewerApp
+  src="/manual.pdf"
+  locale="es"                          // not built in → English base
+  strings={{ search: 'Buscar', pagesTab: 'Páginas', print: 'Imprimir' }}
+/>
+```
+
+The full string set is the `PdfrxStrings` interface; `usePdfrxStrings()` gives
+your own components the active strings so they translate alongside the rest.
+
 ## Theming
 
 `styles.css` is driven by custom properties, so overriding a handful of

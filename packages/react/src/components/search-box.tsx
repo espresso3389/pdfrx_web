@@ -1,5 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { usePdfSearch } from '../hooks/use-pdf-search.js';
+import { usePdfrxStrings } from '../strings.js';
 import { IconChevronDown, IconChevronUp, IconClose, IconSearch } from './icons.js';
 import { joinClass } from './toolbar-parts.js';
 
@@ -34,14 +35,10 @@ export interface PdfSearchBoxProps {
  * </PdfrxProvider>
  * ```
  */
-export function PdfSearchBox({
-  className,
-  style,
-  placeholder = 'Search',
-  autoFocus = false,
-  onClose,
-}: PdfSearchBoxProps): ReactNode {
+export function PdfSearchBox({ className, style, placeholder, autoFocus = false, onClose }: PdfSearchBoxProps): ReactNode {
   const { query, setQuery, currentIndex, matchCount, isSearching, goToNext, goToPrevious, reset } = usePdfSearch();
+  const strings = usePdfrxStrings();
+  const label = placeholder ?? strings.searchPlaceholder;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -68,8 +65,8 @@ export function PdfSearchBox({
         ref={inputRef}
         className="pdfrx-search-input"
         type="search"
-        aria-label={placeholder}
-        placeholder={placeholder}
+        aria-label={label}
+        placeholder={label}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
@@ -90,7 +87,7 @@ export function PdfSearchBox({
         className="pdfrx-button"
         onClick={() => void goToPrevious()}
         disabled={matchCount === 0}
-        title="Previous match (Shift+Enter)"
+        title={strings.previousMatch}
       >
         <IconChevronUp />
       </button>
@@ -98,7 +95,7 @@ export function PdfSearchBox({
         className="pdfrx-button"
         onClick={() => void goToNext()}
         disabled={matchCount === 0}
-        title="Next match (Enter)"
+        title={strings.nextMatch}
       >
         <IconChevronDown />
       </button>
@@ -106,8 +103,8 @@ export function PdfSearchBox({
         <button
           className="pdfrx-button"
           onClick={clear}
-          title={onClose ? 'Close search' : 'Clear search (Escape)'}
-          aria-label={onClose ? 'Close search' : 'Clear search'}
+          title={onClose ? strings.closeSearch : strings.clearSearch}
+          aria-label={onClose ? strings.closeSearch : strings.clearSearchLabel}
         >
           <IconClose />
         </button>

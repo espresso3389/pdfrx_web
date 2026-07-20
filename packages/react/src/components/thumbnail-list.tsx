@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type R
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfNavigation } from '../hooks/use-pdf-navigation.js';
 import { usePdfPageThumbnail } from '../hooks/use-pdf-page-thumbnail.js';
+import { usePdfrxStrings } from '../strings.js';
 import { joinClass } from './toolbar-parts.js';
 
 /** Props for {@link PdfThumbnailList}. */
@@ -84,6 +85,7 @@ function PdfThumbnailItem({ pageNumber, width, isCurrent, onSelect, actions }: P
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isNearViewport = useNearViewport(itemRef);
   const { canvas } = usePdfPageThumbnail(isNearViewport ? pageNumber : null, width);
+  const strings = usePdfrxStrings();
 
   // The cached canvas belongs to the provider and the same page can appear in
   // more than one list, so copy it rather than reparenting it.
@@ -110,7 +112,7 @@ function PdfThumbnailItem({ pageNumber, width, isCurrent, onSelect, actions }: P
       className={isCurrent ? 'pdfrx-thumb-item pdfrx-thumb-current' : 'pdfrx-thumb-item'}
       data-page-number={pageNumber}
     >
-      <button className="pdfrx-thumb-button" onClick={onSelect} aria-label={`Go to page ${pageNumber}`}>
+      <button className="pdfrx-thumb-button" onClick={onSelect} aria-label={strings.goToPage(pageNumber)}>
         <canvas ref={canvasRef} className="pdfrx-thumb-canvas" style={{ width: `${width}px` }} />
       </button>
       {actions && (

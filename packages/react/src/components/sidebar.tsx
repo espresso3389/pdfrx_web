@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { usePdfrxStrings } from '../strings.js';
 import { PdfOutlineTree } from './outline-tree.js';
 import { PdfThumbnailList } from './thumbnail-list.js';
 import { joinClass } from './toolbar-parts.js';
@@ -44,6 +45,7 @@ export function PdfSidebar({
 }: PdfSidebarProps): ReactNode {
   const [active, setActive] = useState<PdfSidebarTab>(defaultTab ?? tabs[0] ?? 'thumbnails');
   const current = tabs.includes(active) ? active : (tabs[0] ?? 'thumbnails');
+  const strings = usePdfrxStrings();
 
   return (
     <div className={joinClass('pdfrx-sidebar', className)} style={style}>
@@ -57,7 +59,7 @@ export function PdfSidebar({
               className={tab === current ? 'pdfrx-sidebar-tab pdfrx-sidebar-tab-active' : 'pdfrx-sidebar-tab'}
               onClick={() => setActive(tab)}
             >
-              {tab === 'thumbnails' ? 'Pages' : 'Outline'}
+              {tab === 'thumbnails' ? strings.pagesTab : strings.outlineTab}
             </button>
           ))}
         </div>

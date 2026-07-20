@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { usePdfrxStrings } from '../strings.js';
 import { PdfSearchBox } from './search-box.js';
 import { IconMenu, IconSearch } from './icons.js';
 import { joinClass, PdfLoadingBar, PdfPageIndicator, PdfPrintButton, PdfZoomControls } from './toolbar-parts.js';
@@ -62,9 +63,10 @@ export function PdfToolbar({
   // expanded. On a wide screen CSS shows the inline field and hides both the
   // toggle button and this row, so the value is simply ignored there.
   const [searchOpen, setSearchOpen] = useState(false);
+  const strings = usePdfrxStrings();
 
   const sidebarToggle = showSidebarToggle ? (
-    <button className="pdfrx-button" onClick={onToggleSidebar} title="Toggle sidebar" aria-label="Toggle sidebar">
+    <button className="pdfrx-button" onClick={onToggleSidebar} title={strings.toggleSidebar} aria-label={strings.toggleSidebar}>
       <IconMenu />
     </button>
   ) : null;
@@ -81,8 +83,8 @@ export function PdfToolbar({
           <button
             className={joinClass('pdfrx-button pdfrx-toolbar-search-toggle', searchOpen ? 'pdfrx-button-active' : undefined)}
             onClick={() => setSearchOpen((open) => !open)}
-            title="Search"
-            aria-label="Search"
+            title={strings.search}
+            aria-label={strings.search}
             aria-expanded={searchOpen}
           >
             <IconSearch />

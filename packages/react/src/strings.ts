@@ -1,0 +1,118 @@
+import { createContext, useContext } from 'react';
+
+/**
+ * Every piece of user-facing text the built-in components render, so an app can
+ * translate the UI. Pass a partial override to {@link PdfrxProvider} /
+ * {@link PdfrxViewerApp} via their `strings` prop; anything you leave out falls
+ * back to {@link defaultPdfrxStrings} (English).
+ *
+ * @example
+ * ```tsx
+ * const ja: Partial<PdfrxStrings> = {
+ *   search: '検索',
+ *   pagesTab: 'ページ',
+ *   outlineTab: '目次',
+ *   goToPage: (n) => `${n} ページへ`,
+ * };
+ * <PdfrxViewerApp src="/manual.pdf" strings={ja} />
+ * ```
+ */
+export interface PdfrxStrings {
+  // Toolbar
+  /** Sidebar toggle button (title + aria-label). */
+  toggleSidebar: string;
+  /** Collapsed-search toggle button (title + aria-label). */
+  search: string;
+  /** Page-number input aria-label. */
+  pageNumber: string;
+  zoomOut: string;
+  zoomIn: string;
+  fitPage: string;
+  fitWidth: string;
+  /** Print button while idle. */
+  print: string;
+  /** Print button while pages are being rasterized. */
+  preparingToPrint: string;
+
+  // Search box
+  /** Default placeholder for the search field (overridable per box). */
+  searchPlaceholder: string;
+  previousMatch: string;
+  nextMatch: string;
+  /** ✕ button title when it only clears the query. */
+  clearSearch: string;
+  /** ✕ button aria-label when it only clears the query. */
+  clearSearchLabel: string;
+  /** ✕ button title + aria-label when it also dismisses the box. */
+  closeSearch: string;
+
+  // Sidebar
+  pagesTab: string;
+  outlineTab: string;
+
+  // Outline
+  /** Shown when the document has no outline (overridable per tree). */
+  noOutline: string;
+  expand: string;
+  collapse: string;
+
+  // Thumbnails
+  /** Thumbnail button aria-label. */
+  goToPage: (pageNumber: number) => string;
+
+  // Viewer app chrome
+  openFile: string;
+  download: string;
+  closeSidebar: string;
+  rotatePage: string;
+  deletePage: string;
+  /** Error banner text; receives the error message. */
+  failedToOpen: (message: string) => string;
+}
+
+/** The built-in English strings. Any field omitted from a `strings` override uses these. */
+export const defaultPdfrxStrings: PdfrxStrings = {
+  toggleSidebar: 'Toggle sidebar',
+  search: 'Search',
+  pageNumber: 'Page number',
+  zoomOut: 'Zoom out',
+  zoomIn: 'Zoom in',
+  fitPage: 'Fit page',
+  fitWidth: 'Fit width',
+  print: 'Print',
+  preparingToPrint: 'Preparing pages…',
+
+  searchPlaceholder: 'Search',
+  previousMatch: 'Previous match (Shift+Enter)',
+  nextMatch: 'Next match (Enter)',
+  clearSearch: 'Clear search (Escape)',
+  clearSearchLabel: 'Clear search',
+  closeSearch: 'Close search',
+
+  pagesTab: 'Pages',
+  outlineTab: 'Outline',
+
+  noOutline: 'No outline',
+  expand: 'Expand',
+  collapse: 'Collapse',
+
+  goToPage: (pageNumber) => `Go to page ${pageNumber}`,
+
+  openFile: 'Open a PDF file',
+  download: 'Download',
+  closeSidebar: 'Close sidebar',
+  rotatePage: 'Rotate 90° clockwise',
+  deletePage: 'Delete this page',
+  failedToOpen: (message) => `Failed to open the document: ${message}`,
+};
+
+/** Context carrying the active strings; defaults to English so components work standalone. */
+export const PdfrxStringsContext = createContext<PdfrxStrings>(defaultPdfrxStrings);
+
+/**
+ * The active {@link PdfrxStrings}. Read by every built-in component; use it in
+ * your own components too so they translate alongside the rest.
+ */
+export function usePdfrxStrings(): PdfrxStrings {
+  return useContext(PdfrxStringsContext);
+}

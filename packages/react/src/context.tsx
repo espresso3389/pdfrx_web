@@ -1,7 +1,9 @@
 import type { PdfrxViewerOptions } from '@pdfrx/viewer';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PdfSource } from './source.js';
 import { PdfrxViewerStore } from './store.js';
+import { PdfrxStringsContext, type PdfrxStrings } from './strings.js';
+import { resolvePdfrxStrings } from './locales.js';
 
 const StoreContext = createContext<PdfrxViewerStore | null>(null);
 
@@ -21,6 +23,21 @@ export interface PdfrxProviderProps extends PdfrxViewerOptions {
   wasmModulesUrl?: string;
   /** Called when opening `src` fails. The error is also available from `usePdfDocument()`. */
   onError?: (error: unknown) => void;
+  /**
+   * UI language for the built-in components. A BCP-47 tag (or a priority list),
+   * matched against the built-in languages (English, Japanese, Simplified and
+   * Traditional Chinese, French, German), with English as the fallback. Omit it
+   * to auto-detect from the browser (`navigator.languages`). See
+   * {@link resolvePdfrxStrings}.
+   */
+  locale?: string | readonly string[];
+  /**
+   * Per-string overrides applied on top of {@link locale} — for tweaking a few
+   * labels, or supplying a language the package doesn't ship (set `locale` to it
+   * and provide the strings here; anything omitted falls back to English). See
+   * {@link PdfrxStrings}. Pass a stable (module-level or memoized) object.
+   */
+  strings?: Partial<PdfrxStrings>;
   children?: ReactNode;
 }
 
@@ -48,8 +65,24 @@ export interface PdfrxProviderProps extends PdfrxViewerOptions {
  * </PdfrxProvider>
  * ```
  */
-export function PdfrxProvider({ src, wasmModulesUrl, onError, children, ...options }: PdfrxProviderProps): ReactNode {
+export function PdfrxProvider({
+  src,
+  wasmModulesUrl,
+  onError,
+  locale,
+  strings,
+  children,
+  ...options
+}: PdfrxProviderProps): ReactNode {
   const [store] = useState(() => new PdfrxViewerStore());
+
+  // Resolve the locale to a base set of strings, then apply per-string overrides
+  // on top. Keyed on locale + the override object, so a module-level/memoized
+  // `strings` prop keeps the context value stable.
+  const mergedStrings = useMemo(() => {
+    const base = resolvePdfrxStrings(locale);
+    return strings ? { ...base, ...strings } : base;
+  }, [locale, strings]);
 
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };
@@ -78,7 +111,11 @@ export function PdfrxProvider({ src, wasmModulesUrl, onError, children, ...optio
     });
   }, [store, onError]);
 
-  return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={store}>
+      <PdfrxStringsContext.Provider value={mergedStrings}>{children}</PdfrxStringsContext.Provider>
+    </StoreContext.Provider>
+  );
 }
 
 /**

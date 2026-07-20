@@ -2,6 +2,7 @@ import type { PdfDest, PdfOutlineNode } from '@pdfrx/engine';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { usePdfNavigation } from '../hooks/use-pdf-navigation.js';
 import { usePdfOutline } from '../hooks/use-pdf-outline.js';
+import { usePdfrxStrings } from '../strings.js';
 import { IconChevronDown, IconChevronRight } from './icons.js';
 import { joinClass } from './toolbar-parts.js';
 
@@ -13,7 +14,7 @@ export interface PdfOutlineTreeProps {
   defaultExpandedDepth?: number;
   /** Called after a node is activated — e.g. to close a drawer on a phone. */
   onNavigate?: (node: PdfOutlineNode) => void;
-  /** Shown when the document has no outline. */
+  /** Shown when the document has no outline. Defaults to the localized `noOutline` string. */
   emptyMessage?: ReactNode;
 }
 
@@ -35,10 +36,11 @@ export function PdfOutlineTree({
   style,
   defaultExpandedDepth = 1,
   onNavigate,
-  emptyMessage = 'No outline',
+  emptyMessage,
 }: PdfOutlineTreeProps): ReactNode {
   const { outline, isLoading } = usePdfOutline();
   const { goToDest } = usePdfNavigation();
+  const strings = usePdfrxStrings();
   // Only nodes the user has actually clicked are recorded; everything else
   // falls back to `defaultExpandedDepth`.
   const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(EMPTY_OVERRIDES);
@@ -47,7 +49,7 @@ export function PdfOutlineTree({
   if (!outline || outline.length === 0) {
     return (
       <div className={joinClass('pdfrx-outline pdfrx-outline-empty', className)} style={style}>
-        {emptyMessage}
+        {emptyMessage ?? strings.noOutline}
       </div>
     );
   }
@@ -72,7 +74,7 @@ export function PdfOutlineTree({
               <button
                 className="pdfrx-outline-toggle"
                 onClick={() => toggle(path, isExpanded)}
-                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                aria-label={isExpanded ? strings.collapse : strings.expand}
               >
                 {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
               </button>
