@@ -7,11 +7,10 @@
  * quickly through a long document and the pages now on screen wait behind a
  * backlog of pages that scrolled away long ago.
  *
- * So the queue is kept here instead. At most {@link RenderQueue.concurrency}
- * renders are handed to the worker at a time; the rest wait where they can
- * still be dropped. This mirrors pdfrx's `PdfPageRenderCancellationToken`,
- * which likewise cancels work that has not started rather than aborting a
- * render already in progress.
+ * So the queue is kept here instead. One render is handed to the worker at a
+ * time and the rest wait where they can still be dropped. This mirrors pdfrx's
+ * `PdfPageRenderCancellationToken`, which likewise cancels work that has not
+ * started rather than aborting a render already in progress.
  */
 
 /**
@@ -77,17 +76,15 @@ interface QueueEntry {
  * Serializes render commands so that queued work stays cancellable. Owned by
  * {@link WorkerCommunicator} — one queue per worker, shared by every document
  * it opened, because the worker is what is actually being contended for.
+ *
+ * Exactly one render is outstanding at a time. Posting a second one early
+ * would not make the worker any faster — it renders serially regardless — it
+ * would only move that render into the worker's queue, out of reach of
+ * cancellation, which is the opposite of the point.
  */
 export class RenderQueue {
-  /**
-   * @param concurrency - Renders allowed to be in the worker at once. The
-   *   worker runs them one at a time regardless; anything above 1 only buys a
-   *   little pipelining in exchange for that many uncancellable renders.
-   */
-  constructor(private readonly concurrency = 1) {}
-
   private readonly queue: QueueEntry[] = [];
-  private active = 0;
+  private active = false;
   private disposed = false;
 
   /** Number of renders waiting for a slot (excludes those already dispatched). */
@@ -123,19 +120,18 @@ export class RenderQueue {
   }
 
   private pump(): void {
-    while (this.active < this.concurrency && this.queue.length > 0) {
-      const entry = this.queue.shift()!;
-      entry.token?.detach();
-      this.active++;
-      entry
-        .run()
-        .then((result) => entry.settle(entry.token?.isCanceled ? null : result))
-        .catch(entry.fail)
-        .finally(() => {
-          this.active--;
-          this.pump();
-        });
-    }
+    if (this.active || this.queue.length === 0) return;
+    const entry = this.queue.shift()!;
+    entry.token?.detach(); // past this point cancelling only discards the result
+    this.active = true;
+    entry
+      .run()
+      .then((result) => entry.settle(entry.token?.isCanceled ? null : result))
+      .catch(entry.fail)
+      .finally(() => {
+        this.active = false;
+        this.pump();
+      });
   }
 
   /** Drops everything still queued; dispatched renders are left to settle. */

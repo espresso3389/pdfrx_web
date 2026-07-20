@@ -12,13 +12,6 @@ export interface WorkerCommunicatorOptions {
   headers?: Record<string, string>;
   /** Whether the worker's `pdfium.wasm` fetch includes credentials. */
   withCredentials?: boolean;
-  /**
-   * How many render commands may be in the worker at once. The worker runs them
-   * one at a time either way; the rest wait in a queue here, where they can
-   * still be cancelled. Raising this trades cancellable work for a little
-   * pipelining. Default: 1.
-   */
-  renderConcurrency?: number;
 }
 
 /**
@@ -44,7 +37,7 @@ export class WorkerCommunicator {
   private readonly initPromise: Promise<void>;
   private disposed = false;
   /** Renders are queued here rather than in the worker, so they stay cancellable. */
-  private readonly renderQueue: RenderQueue;
+  private readonly renderQueue = new RenderQueue();
 
   /**
    * Spawns the worker (via a bootstrap blob) and kicks off engine
@@ -52,7 +45,6 @@ export class WorkerCommunicator {
    * {@link ready} before relying on it.
    */
   constructor(options: WorkerCommunicatorOptions) {
-    this.renderQueue = new RenderQueue(options.renderConcurrency ?? 1);
     const base = new URL(options.wasmModulesUrl, document.baseURI);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
