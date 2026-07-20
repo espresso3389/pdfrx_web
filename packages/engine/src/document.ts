@@ -99,11 +99,12 @@ export interface PdfPageRenderOptions {
 /**
  * Entry point to the rendering engine.
  *
- * Construct one with the URL of the directory hosting the bundled WASM assets,
- * then open documents with {@link openUrl}, {@link openData},
- * {@link createNew}, or {@link createFromJpegData}. A single engine owns one
- * worker ({@link WorkerCommunicator}) shared by all documents it opens;
- * call {@link dispose} to tear it down.
+ * Construct one — in a browser, with the URL of the directory serving the
+ * bundled WASM assets; on Node, Bun or Deno, with nothing at all, since the
+ * assets ship inside this package — then open documents with {@link openUrl},
+ * {@link openData}, {@link createNew}, or {@link createFromJpegData}. A single
+ * engine owns one worker ({@link WorkerCommunicator}) shared by all documents it
+ * opens; call {@link dispose} to tear it down.
  *
  * @example
  * ```ts
@@ -123,7 +124,7 @@ export class PdfrxEngine {
   private communicator: WorkerCommunicator | null = null;
   private readonly options: PdfrxEngineOptions;
 
-  constructor(options: PdfrxEngineOptions) {
+  constructor(options: PdfrxEngineOptions = {}) {
     this.options = options;
   }
 

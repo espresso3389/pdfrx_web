@@ -1,14 +1,25 @@
 import type { WorkerCommand, WorkerCommandMap, WorkerMessage } from './protocol.js';
 import { RenderQueue, type PdfPageRenderCancellationToken } from './render-queue.js';
-import { createDefaultWorker, defaultBaseUrl, type PdfWorkerLike, type PdfWorkerUrls } from './worker-host.js';
+import {
+  createDefaultWorker,
+  defaultBaseUrl,
+  defaultWasmModulesUrl,
+  type PdfWorkerLike,
+  type PdfWorkerUrls,
+} from './worker-host.js';
 
 /** Options for constructing a {@link WorkerCommunicator}. */
 export interface WorkerCommunicatorOptions {
   /**
-   * Base URL of the directory that contains `pdfium_worker.js` and `pdfium.wasm`.
-   * Relative URLs are resolved against {@link baseUrl}.
+   * Base URL of the directory that contains `pdfium_worker.js` and `pdfium.wasm`,
+   * resolved against {@link baseUrl} when relative.
+   *
+   * Required in a browser, where those files have to be served. Everywhere else
+   * it defaults to the `assets/` directory shipped inside this package, so there
+   * is nothing to pass — unless the package's files are not on disk as published
+   * (a bundled server build, say), in which case point this at wherever they went.
    */
-  wasmModulesUrl: string;
+  wasmModulesUrl?: string;
   /**
    * What relative URLs — {@link wasmModulesUrl} and the ones passed to
    * `PdfrxEngine.openUrl` — resolve against. Defaults to `document.baseURI` in a
@@ -70,7 +81,7 @@ export class WorkerCommunicator {
    */
   constructor(options: WorkerCommunicatorOptions) {
     this.baseUrl = options.baseUrl ?? defaultBaseUrl();
-    const base = new URL(options.wasmModulesUrl, this.baseUrl);
+    const base = new URL(options.wasmModulesUrl ?? defaultWasmModulesUrl(), this.baseUrl);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
 

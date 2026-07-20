@@ -59,16 +59,16 @@ engine.dispose();
 
 ## Outside the browser (Node, Bun, Deno)
 
-Nothing extra to configure: the engine starts the worker the way the host runs
-workers (a Web Worker in a browser, a module worker on Bun and Deno, a
-`node:worker_threads` worker on Node), and relative URLs resolve against the
-current working directory instead of `document.baseURI`.
+Nothing to configure: the WASM assets are read from this package's own `assets/`
+directory, the worker is started the way the host runs workers (a module worker
+on Bun and Deno, a `node:worker_threads` worker on Node), and relative URLs
+resolve against the current working directory instead of `document.baseURI`.
 
 ```ts
 import { readFile } from 'node:fs/promises';
 import { PdfrxEngine } from '@pdfrx/engine';
 
-const engine = new PdfrxEngine({ wasmModulesUrl: 'node_modules/@pdfrx/engine/assets/' });
+const engine = new PdfrxEngine();
 const doc = await engine.openData(await readFile('manual.pdf'));
 
 const page = doc.pages[0];
@@ -85,9 +85,11 @@ because that uses IndexedDB, so `addFontData` has to be called per session. And
 `PdfImage.toImageData()` / `toImageBitmap()` need browser globals — use
 `image.pixels` instead.
 
-Pass `createWorker` if the engine's own worker startup does not suit you: an
-unrecognized host, a self-hosted copy of `pdfium_worker.js`, or a worker that
-needs options of its own. It receives `{ workerUrl, wasmUrl }` and returns
+Two escape hatches, if the automatic setup does not fit. `wasmModulesUrl` still
+overrides where the assets are read from — needed when the package's files are
+not on disk as published, e.g. a bundled server build. And `createWorker` takes
+over starting the worker: for a host the engine does not recognize, or a worker
+that needs options of its own. It receives `{ workerUrl, wasmUrl }` and returns
 anything Web-Worker-shaped (`postMessage`, `terminate`, `onmessage`, `onerror`),
 possibly as a promise.
 

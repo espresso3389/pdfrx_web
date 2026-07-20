@@ -41,6 +41,25 @@ function isBrowser(): boolean {
 }
 
 /**
+ * Where the engine's own `assets/` directory is, relative to this module — the
+ * two are shipped side by side in the package, so on a host that can read the
+ * package's files there is nothing for the caller to configure.
+ *
+ * A browser cannot: the assets have to be served, and a bundler will have
+ * rewritten `import.meta.url` to point at the bundle by then, so callers there
+ * say where they put them.
+ * @internal
+ */
+export function defaultWasmModulesUrl(): string {
+  if (isBrowser()) {
+    throw new Error(
+      'pdfrx: wasmModulesUrl is required in a browser — set it to the URL of the directory serving pdfium_worker.js and pdfium.wasm',
+    );
+  }
+  return new URL('../assets/', import.meta.url).toString();
+}
+
+/**
  * What relative URLs resolve against when the caller does not say: the document
  * base URL in a browser, the current directory on a server runtime.
  * @internal
