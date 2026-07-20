@@ -1,0 +1,64 @@
+{
+  "name": "@pdfrx/react",
+  "version": "0.2.1",
+  "description": "React components and hooks for the pdfrx canvas-based PDF viewer",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "files": [
+    "dist",
+    "styles.css",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pdfrx/viewer": "^0.2.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^26.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT",
+  "author": "Takashi Kawasaki <espresso3389@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espresso3389/pdfrx_web.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://espresso3389.github.io/pdfrx_web/",
+  "bugs": {
+    "url": "https://github.com/espresso3389/pdfrx_web/issues"
+  },
+  "keywords": [
+    "pdf",
+    "pdfium",
+    "viewer",
+    "react",
+    "pdf-viewer",
+    "pdfrx"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

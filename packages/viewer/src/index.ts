@@ -26,6 +26,7 @@ export {
   type PagePaintCallback,
   type PageOverlaysBuilder,
   type PageOverlayInfo,
+  type PdfLoadingProgress,
   type PdfTextSelection,
   type PdfTextSelectionPoint,
   type PdfTextSelectionRange,
@@ -41,7 +42,15 @@ export {
   type PanAxis,
   type ViewerOverlayBuilder,
 } from './viewer.js';
-export type { PdfRect, PdfPoint, Offset, PageGeometry, PageLayout, LayoutPagesOptions } from '@pdfrx/viewer-core';
+export type {
+  PdfRect,
+  PdfPoint,
+  Offset,
+  PageGeometry,
+  PageLayout,
+  LayoutPagesOptions,
+  ViewTransform,
+} from '@pdfrx/viewer-core';
 export { layoutPagesVertical, layoutPagesHorizontal } from '@pdfrx/viewer-core';
 export { definePdfrxViewerElement, PdfrxViewerElement } from './element.js';
 export { PdfTextSearcher, type SearchMatch, type StartTextSearchOptions } from './text-searcher.js';

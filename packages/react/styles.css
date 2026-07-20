@@ -1,0 +1,507 @@
+/*
+ * Default look for the @pdfrx/react components.
+ *
+ *   import '@pdfrx/react/styles.css';
+ *
+ * Everything is driven by the custom properties below, so themeing means
+ * overriding a few variables rather than fighting selectors:
+ *
+ *   .pdfrx-app { --pdfrx-accent: #7c3aed; --pdfrx-radius: 10px; }
+ *
+ * The dark palette follows the OS by default; force one by setting the
+ * variables yourself under your own light/dark class.
+ */
+
+.pdfrx-app,
+.pdfrx-toolbar,
+.pdfrx-sidebar,
+.pdfrx-search,
+.pdfrx-surface {
+  --pdfrx-accent: #2196f3;
+  --pdfrx-accent-contrast: #ffffff;
+  --pdfrx-fg: #1f2328;
+  --pdfrx-fg-muted: #656d76;
+  --pdfrx-bg: #ffffff;
+  --pdfrx-bg-subtle: #f6f8fa;
+  --pdfrx-border: #d0d7de;
+  --pdfrx-hover: rgba(0, 0, 0, 0.06);
+  --pdfrx-danger: #cf222e;
+  --pdfrx-radius: 6px;
+  --pdfrx-toolbar-height: 44px;
+  --pdfrx-thumb-width: 130px;
+  --pdfrx-font:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pdfrx-app,
+  .pdfrx-toolbar,
+  .pdfrx-sidebar,
+  .pdfrx-search,
+  .pdfrx-surface {
+    --pdfrx-fg: #e6edf3;
+    --pdfrx-fg-muted: #8b949e;
+    --pdfrx-bg: #0d1117;
+    --pdfrx-bg-subtle: #161b22;
+    --pdfrx-border: #30363d;
+    --pdfrx-hover: rgba(255, 255, 255, 0.08);
+    --pdfrx-danger: #f85149;
+  }
+}
+
+/* --- Layout -------------------------------------------------------------- */
+
+.pdfrx-app {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  font-family: var(--pdfrx-font);
+  color: var(--pdfrx-fg);
+  background: var(--pdfrx-bg);
+}
+
+.pdfrx-app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.pdfrx-surface {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* --- Toolbar ------------------------------------------------------------- */
+
+.pdfrx-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-height: var(--pdfrx-toolbar-height);
+  padding: 0 8px;
+  box-sizing: border-box;
+  font-family: var(--pdfrx-font);
+  font-size: 13px;
+  color: var(--pdfrx-fg);
+  background: var(--pdfrx-bg-subtle);
+  border-bottom: 1px solid var(--pdfrx-border);
+}
+
+.pdfrx-toolbar-spacer {
+  flex: 1;
+}
+
+.pdfrx-toolbar-search {
+  max-width: 280px;
+}
+
+.pdfrx-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: 0 0 auto;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--pdfrx-radius);
+  cursor: pointer;
+}
+
+.pdfrx-button:hover:not(:disabled) {
+  background: var(--pdfrx-hover);
+}
+
+.pdfrx-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pdfrx-button:focus-visible,
+.pdfrx-sidebar-tab:focus-visible,
+.pdfrx-outline-title:focus-visible,
+.pdfrx-thumb-button:focus-visible {
+  outline: 2px solid var(--pdfrx-accent);
+  outline-offset: -2px;
+}
+
+.pdfrx-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- Page indicator & zoom ----------------------------------------------- */
+
+.pdfrx-page-indicator,
+.pdfrx-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.pdfrx-page-input {
+  width: 3.5em;
+  padding: 3px 4px;
+  font: inherit;
+  text-align: center;
+  color: inherit;
+  background: var(--pdfrx-bg);
+  border: 1px solid var(--pdfrx-border);
+  border-radius: var(--pdfrx-radius);
+}
+
+.pdfrx-page-total,
+.pdfrx-zoom-value {
+  color: var(--pdfrx-fg-muted);
+  white-space: nowrap;
+}
+
+.pdfrx-zoom-value {
+  min-width: 4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Search -------------------------------------------------------------- */
+
+.pdfrx-search {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 2px 0 8px;
+  font-family: var(--pdfrx-font);
+  font-size: 13px;
+  color: var(--pdfrx-fg);
+  background: var(--pdfrx-bg);
+  border: 1px solid var(--pdfrx-border);
+  border-radius: var(--pdfrx-radius);
+}
+
+.pdfrx-search:focus-within {
+  border-color: var(--pdfrx-accent);
+}
+
+.pdfrx-search-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--pdfrx-fg-muted);
+}
+
+.pdfrx-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+  appearance: none;
+}
+
+.pdfrx-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.pdfrx-search-status {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: var(--pdfrx-fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- Loading bar --------------------------------------------------------- */
+
+.pdfrx-loading-bar {
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--pdfrx-hover);
+}
+
+.pdfrx-loading-fill {
+  height: 100%;
+  background: var(--pdfrx-accent);
+  transition: width 120ms linear;
+}
+
+.pdfrx-loading-indeterminate {
+  width: 40%;
+  animation: pdfrx-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes pdfrx-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfrx-loading-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* --- Sidebar ------------------------------------------------------------- */
+
+.pdfrx-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  font-family: var(--pdfrx-font);
+  font-size: 13px;
+  color: var(--pdfrx-fg);
+  background: var(--pdfrx-bg-subtle);
+  border-inline-end: 1px solid var(--pdfrx-border);
+}
+
+.pdfrx-sidebar-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--pdfrx-border);
+}
+
+.pdfrx-sidebar-tab {
+  flex: 1;
+  padding: 8px 4px;
+  font: inherit;
+  color: var(--pdfrx-fg-muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.pdfrx-sidebar-tab:hover {
+  background: var(--pdfrx-hover);
+}
+
+.pdfrx-sidebar-tab-active {
+  color: var(--pdfrx-fg);
+  border-bottom-color: var(--pdfrx-accent);
+}
+
+.pdfrx-sidebar-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* --- Thumbnails ---------------------------------------------------------- */
+
+.pdfrx-thumbnails {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.pdfrx-thumb-item {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pdfrx-thumb-button {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.pdfrx-thumb-canvas {
+  display: block;
+  height: auto;
+  min-height: 8px;
+  background: var(--pdfrx-bg);
+  border: 1px solid var(--pdfrx-border);
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.pdfrx-thumb-current .pdfrx-thumb-canvas {
+  border-color: var(--pdfrx-accent);
+  box-shadow: 0 0 0 2px var(--pdfrx-accent);
+}
+
+.pdfrx-thumb-label {
+  margin-top: 3px;
+  text-align: center;
+  color: var(--pdfrx-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfrx-thumb-current .pdfrx-thumb-label {
+  color: var(--pdfrx-fg);
+  font-weight: 600;
+}
+
+.pdfrx-thumb-actions {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.pdfrx-thumb-item:hover .pdfrx-thumb-actions,
+.pdfrx-thumb-actions:focus-within {
+  opacity: 1;
+}
+
+.pdfrx-thumb-actions .pdfrx-button {
+  width: 24px;
+  height: 24px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.pdfrx-thumb-actions .pdfrx-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.pdfrx-thumb-actions .pdfrx-button .pdfrx-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pdfrx-thumb-actions .pdfrx-danger:hover:not(:disabled) {
+  background: var(--pdfrx-danger);
+}
+
+/* --- Outline ------------------------------------------------------------- */
+
+.pdfrx-outline {
+  margin: 0;
+  padding: 6px 4px;
+  list-style: none;
+}
+
+.pdfrx-outline-empty {
+  padding: 16px;
+  color: var(--pdfrx-fg-muted);
+  text-align: center;
+}
+
+.pdfrx-outline-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfrx-outline-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pdfrx-outline-row:hover {
+  background: var(--pdfrx-hover);
+  border-radius: var(--pdfrx-radius);
+}
+
+.pdfrx-outline-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  color: var(--pdfrx-fg-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.pdfrx-outline-toggle .pdfrx-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pdfrx-outline-toggle-empty {
+  cursor: default;
+}
+
+.pdfrx-outline-title {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 4px;
+  font: inherit;
+  text-align: start;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--pdfrx-radius);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdfrx-sidebar-hidden {
+  display: none;
+}
+
+/* --- Narrow screens: the sidebar becomes a drawer ------------------------ */
+
+.pdfrx-app-narrow .pdfrx-sidebar {
+  position: absolute;
+  z-index: 2;
+  inset-block: var(--pdfrx-toolbar-height) 0;
+  inset-inline-start: 0;
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+}
+
+.pdfrx-app-narrow[data-sidebar-open='true'] .pdfrx-sidebar {
+  transform: none;
+}
+
+.pdfrx-scrim {
+  position: absolute;
+  z-index: 1;
+  inset-block: var(--pdfrx-toolbar-height) 0;
+  inset-inline: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border: 0;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfrx-app-narrow .pdfrx-sidebar {
+    transition: none;
+  }
+}
+
+/* --- Error banner -------------------------------------------------------- */
+
+.pdfrx-error {
+  padding: 8px 12px;
+  font-family: var(--pdfrx-font);
+  font-size: 13px;
+  color: var(--pdfrx-accent-contrast);
+  background: var(--pdfrx-danger);
+}

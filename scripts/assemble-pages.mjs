@@ -1,7 +1,7 @@
 // Assembles the GitHub Pages site: the TypeDoc output in docs-site/ plus the
-// built example app copied into docs-site/demo/.
+// built example apps copied in beside it.
 //
-// Run after `typedoc` and the example's `vite build`. Used by `npm run
+// Run after `typedoc` and the examples' `vite build`. Used by `npm run
 // build:pages` and the docs workflow.
 
 import { cpSync, existsSync, rmSync } from 'node:fs';
@@ -10,18 +10,28 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const docsSite = join(repoRoot, 'docs-site');
-const demoDist = join(repoRoot, 'examples', 'basic', 'dist');
-const demoOut = join(docsSite, 'demo');
+
+/** Each example, and the path it is served from under the Pages site. */
+const demos = [
+  { example: 'basic', out: 'demo' },
+  { example: 'react', out: 'demo-react' },
+];
 
 if (!existsSync(docsSite)) {
   console.error(`docs-site/ not found — run \`npm run docs\` (typedoc) first.`);
   process.exit(1);
 }
-if (!existsSync(demoDist)) {
-  console.error(`example build not found at ${demoDist} — run the example's \`vite build\` first.`);
-  process.exit(1);
+
+for (const { example, out } of demos) {
+  const dist = join(repoRoot, 'examples', example, 'dist');
+  if (!existsSync(dist)) {
+    console.error(`example build not found at ${dist} — run the example's \`vite build\` first.`);
+    process.exit(1);
+  }
+  const target = join(docsSite, out);
+  rmSync(target, { recursive: true, force: true });
+  cpSync(dist, target, { recursive: true });
+  console.log(`  ${out}/ <- ${dist}`);
 }
 
-rmSync(demoOut, { recursive: true, force: true });
-cpSync(demoDist, demoOut, { recursive: true });
-console.log(`Assembled Pages site: TypeDoc docs + demo/ (from ${demoDist})`);
+console.log(`Assembled Pages site: TypeDoc docs + ${demos.map((d) => `${d.out}/`).join(', ')}`);

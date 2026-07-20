@@ -677,10 +677,13 @@ export class PdfrxViewer {
   private readonly documentChangeListeners = new Set<() => void>();
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
+  private readonly transformChangeListeners = new Set<() => void>();
   /** Signature of the last-notified selection, so we don't fire on no-op updates. */
   private lastSelectionSig = 'empty';
   /** Last current-page value notified to {@link pageChangeListeners}. */
   private lastNotifiedPage: number | null = null;
+  /** Last transform notified to {@link transformChangeListeners}. */
+  private lastNotifiedTransform: ViewTransform | null = null;
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -860,6 +863,22 @@ export class PdfrxViewer {
     return () => this.pageChangeListeners.delete(listener);
   }
 
+  /**
+   * Registers a listener called whenever the view transform changes — every pan,
+   * zoom, fit, resize and animation frame that actually moves the view. The
+   * listener takes no argument; pull the new state from {@link currentTransform}
+   * or {@link zoom}.
+   *
+   * Like {@link addPageChangeListener} this is driven from the paint loop and is
+   * deduplicated, so it fires at most once per frame and never for a no-op.
+   *
+   * @returns An unsubscribe function.
+   */
+  addTransformChangeListener(listener: () => void): () => void {
+    this.transformChangeListeners.add(listener);
+    return () => this.transformChangeListeners.delete(listener);
+  }
+
   /** A snapshot of the current text selection. */
   get selection(): PdfTextSelection {
     return this.buildSelection();
@@ -908,6 +927,11 @@ export class PdfrxViewer {
   /** The currently open {@link PdfDocument}, or `null` before the first open. */
   get document(): PdfDocument | null {
     return this.doc;
+  }
+
+  /** Number of pages in the current document, or `0` when none is open. */
+  get pageCount(): number {
+    return this.doc?.pages.length ?? 0;
   }
 
   /**
@@ -1501,6 +1525,7 @@ export class PdfrxViewer {
     this.overlayRoot.replaceChildren();
     this.clearSelection();
     this.lastNotifiedPage = null;
+    this.lastNotifiedTransform = null;
 
     this.doc = doc;
     this.pageGeoms = doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
@@ -1963,6 +1988,20 @@ export class PdfrxViewer {
         listener(page);
       } catch (e) {
         console.error('Error in page change listener:', e);
+      }
+    }
+  }
+
+  /** Notifies transform-change listeners when the view actually moved. */
+  private notifyTransformChanged(t: ViewTransform): void {
+    const last = this.lastNotifiedTransform;
+    if (last && last.zoom === t.zoom && last.xZoomed === t.xZoomed && last.yZoomed === t.yZoomed) return;
+    this.lastNotifiedTransform = { ...t };
+    for (const listener of this.transformChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in transform change listener:', e);
       }
     }
   }
@@ -2719,6 +2758,7 @@ export class PdfrxViewer {
     // pages now on screen are not stuck behind a backlog.
     this.cache.cancelBasesExcept(visibleKeys);
     this.notifyPageChanged(currentPage);
+    this.notifyTransformChanged(t);
 
     // Page drop shadows behind pages (screen space, before content)
     this.paintPageShadows(dpr, t, visible);

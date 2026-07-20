@@ -104,10 +104,29 @@ Password-protected files are supported by passing a
 [`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider):
 `openUrl(url, { passwordProvider: () => prompt('Password?') })`.
 
+## React
+
+[`@pdfrx/react`](packages/react) wraps all of the above in components and hooks,
+and adds the thumbnail, outline and search UI that `@pdfrx/viewer` leaves to the
+app. The whole viewer in one component:
+
+```tsx
+import { PdfrxViewerApp } from '@pdfrx/react';
+import '@pdfrx/react/styles.css';
+
+<PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} />;
+```
+
+Or compose the parts yourself (`PdfrxProvider` + `PdfToolbar` + `PdfSidebar` +
+`PdfViewerSurface`), or go headless with hooks like `usePdfSearch()` and
+`usePdfOutline()` and write every pixel of the UI. See the
+[package README](packages/react) for all three layers.
+
 ## Packages
 
 | Package | npm | Description |
 |---|---|---|
+| [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks: [`<PdfrxViewerApp>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html), composable parts, and headless hooks. |
 | [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
 | [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker: open/render pages, text, links, outline, fonts. |
@@ -123,8 +142,9 @@ worker protocol contract, and coordinate conventions.
 ```sh
 npm install
 npm run build     # tsc for all packages
-npm test          # viewer-core unit tests (vitest)
-npm run dev       # example app (Vite)
+npm test          # viewer-core + react unit tests (vitest)
+npm run dev       # vanilla example app (Vite)
+npm run dev:react # React example app (Vite)
 ```
 
 The WASM engine assets (`packages/engine/assets/pdfium_worker.js`,

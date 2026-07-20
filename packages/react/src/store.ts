@@ -1,0 +1,302 @@
+import { PdfrxViewer, type PdfTextSearcher, type PdfrxViewerOptions, type StartTextSearchOptions } from '@pdfrx/viewer';
+import { normalizeSource, sourceKey, toBytes, type NormalizedPdfSource, type PdfSource } from './source.js';
+import { ThumbnailCache } from './thumbnail-cache.js';
+
+/**
+ * Owns one {@link PdfrxViewer} instance on behalf of a React tree.
+ *
+ * React cannot construct the viewer itself, because `new PdfrxViewer(container)`
+ * needs a DOM node that only exists once {@link PdfViewerSurface} has rendered —
+ * which is a *descendant* of the provider. So the provider creates this store,
+ * the surface calls {@link attach} with its `<div>`, and every hook subscribes
+ * here. The store is a plain object with no React dependency, which also makes
+ * it straightforward to test.
+ *
+ * Instances are created by `PdfrxProvider`; you normally reach one through
+ * `usePdfrxStore()` rather than constructing it.
+ */
+export class PdfrxViewerStore {
+  #viewer: PdfrxViewer | null = null;
+  #element: HTMLElement | null = null;
+  /**
+   * Set between `detach()` and the microtask that actually disposes. React's
+   * StrictMode mounts, unmounts and remounts every effect in development; if we
+   * disposed synchronously, every dev-mode mount would boot (and throw away) a
+   * whole pdfium worker + WASM instance. Deferring by a microtask lets the
+   * immediate remount reclaim the same viewer.
+   */
+  #pendingDispose: PdfrxViewer | null = null;
+  #listeners = new Set<() => void>();
+
+  /**
+   * The options object handed to the viewer. The viewer reads most fields live
+   * on every use, so mutating this in place is how prop changes take effect
+   * without recreating the viewer (and its worker).
+   */
+  #options: PdfrxViewerOptions = {};
+
+  #source: NormalizedPdfSource | null = null;
+  #sourceKey: unknown = NO_SOURCE;
+  #error: unknown = null;
+  /** Bumped per open, so a superseded open cannot report its result. */
+  #openToken = 0;
+  /** Bumped on every document change, so hooks can key per-document caches. */
+  #documentGeneration = 0;
+  /** Bumped when pages are rearranged within the current document. */
+  #pagesRevision = 0;
+
+  #unsubscribeDocumentChange: (() => void) | null = null;
+  #unsubscribePagesRearranged: (() => void) | null = null;
+
+  /** Shared by every `usePdfPageThumbnail` under this provider. */
+  readonly thumbnails = new ThumbnailCache();
+
+  /**
+   * The one searcher for this viewer. `createTextSearcher()` disposes whatever
+   * came before it and only the newest one is painted, so the store owns it
+   * rather than letting each `usePdfSearch()` call make its own.
+   */
+  #searcher: PdfTextSearcher | null = null;
+  #searchQuery = '';
+
+  // ---------------------------------------------------------------------------
+  // Subscription
+  // ---------------------------------------------------------------------------
+
+  /** Subscribes to viewer/error/document changes. Returns an unsubscribe function. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  };
+
+  /** The live viewer, or `null` before {@link PdfViewerSurface} has mounted. */
+  get viewer(): PdfrxViewer | null {
+    return this.#viewer;
+  }
+
+  /** The error thrown by the most recent open attempt, or `null`. */
+  get error(): unknown {
+    return this.#error;
+  }
+
+  /** Increments on every document change; useful as a cache key. */
+  get documentGeneration(): number {
+    return this.#documentGeneration;
+  }
+
+  /** Increments when pages are added, removed, rotated or reordered. */
+  get pagesRevision(): number {
+    return this.#pagesRevision;
+  }
+
+  /** Stable snapshot getters, bound for `useSyncExternalStore`. */
+  getViewer = (): PdfrxViewer | null => this.#viewer;
+  getError = (): unknown => this.#error;
+
+  #notify(): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in pdfrx store listener:', e);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Viewer lifecycle
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Creates the viewer inside `element`. Called by {@link PdfViewerSurface} on
+   * mount. Re-attaching the same element (StrictMode's remount) reuses the
+   * existing viewer instead of rebuilding the worker.
+   */
+  attach(element: HTMLElement): void {
+    if (this.#pendingDispose && this.#element === element) {
+      this.#pendingDispose = null; // StrictMode remount: keep what we have
+      return;
+    }
+    this.#flushDispose();
+    if (this.#viewer) return; // a surface is already attached
+    this.#element = element;
+    this.#viewer = new PdfrxViewer(element, this.#options);
+    this.#searcher = this.#viewer.createTextSearcher();
+    this.#unsubscribeDocumentChange = this.#viewer.addDocumentChangeListener(() => {
+      this.#documentGeneration++;
+      // Everything keyed to the old document is meaningless now: its searcher
+      // holds matches into pages that no longer exist, and thumbnail render
+      // keys embed the (recyclable) document handle.
+      this.#searchQuery = '';
+      this.#searcher = this.#viewer?.createTextSearcher() ?? null;
+      this.thumbnails.reset(this.#viewer?.document ?? null);
+      this.#bindPagesRearranged();
+      this.#notify();
+    });
+    this.#bindPagesRearranged();
+    this.#notify();
+    if (this.#source) void this.#openCurrent();
+  }
+
+  /** Tears the viewer down. Called by {@link PdfViewerSurface} on unmount. */
+  detach(): void {
+    if (!this.#viewer) return;
+    this.#pendingDispose = this.#viewer;
+    queueMicrotask(() => this.#flushDispose());
+  }
+
+  /**
+   * Watches the current document for page edits. `setPages`/`setPage` renumber
+   * pages without producing a new document, so nothing else would tell a
+   * thumbnail strip or an outline that its page numbers just moved.
+   */
+  #bindPagesRearranged(): void {
+    this.#unsubscribePagesRearranged?.();
+    this.#unsubscribePagesRearranged = null;
+    const document = this.#viewer?.document;
+    if (!document) return;
+    this.#unsubscribePagesRearranged = document.addEventListener('pagesRearranged', () => {
+      this.#pagesRevision++;
+      // Rotating a page changes its render key; drop the bitmap nothing uses now.
+      if (this.#viewer) this.thumbnails.prune(this.#viewer);
+      this.#notify();
+    });
+  }
+
+  #flushDispose(): void {
+    const viewer = this.#pendingDispose;
+    if (!viewer) return;
+    this.#pendingDispose = null;
+    this.#unsubscribeDocumentChange?.();
+    this.#unsubscribeDocumentChange = null;
+    this.#unsubscribePagesRearranged?.();
+    this.#unsubscribePagesRearranged = null;
+    this.#viewer = null;
+    this.#element = null;
+    this.#searcher = null; // viewer.dispose() disposes it for us
+    this.#searchQuery = '';
+    this.thumbnails.reset();
+    this.#openToken++; // abandon any in-flight open
+    viewer.dispose();
+    this.#notify();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Options
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Merges new option values into the object the viewer reads from. Most options
+   * take effect immediately; `engine`, `engineOptions` and `initialFit` are only
+   * consulted at construction, so changing those requires remounting the
+   * provider.
+   */
+  updateOptions(options: PdfrxViewerOptions): void {
+    const previous = this.#options;
+    Object.assign(this.#options, options);
+    const viewer = this.#viewer;
+    if (!viewer) return;
+    // A few options are cached by the viewer rather than read live.
+    if (options.layoutDirection && options.layoutDirection !== previous.layoutDirection) {
+      viewer.setLayoutDirection(options.layoutDirection);
+    }
+    if (options.pageOverlaysBuilder !== previous.pageOverlaysBuilder) viewer.refreshOverlays();
+    if (options.viewerOverlayBuilder !== previous.viewerOverlayBuilder) viewer.refreshViewerOverlays();
+    viewer.invalidatePaint();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text search
+  // ---------------------------------------------------------------------------
+
+  /** The searcher for the current viewer, or `null` before one is attached. */
+  get searcher(): PdfTextSearcher | null {
+    return this.#searcher;
+  }
+
+  /** The text currently in the search box. */
+  get searchQuery(): string {
+    return this.#searchQuery;
+  }
+
+  getSearcher = (): PdfTextSearcher | null => this.#searcher;
+  getSearchQuery = (): string => this.#searchQuery;
+
+  /**
+   * Sets the search text and starts (or clears) the search.
+   *
+   * `startTextSearch` ignores a pattern identical to the last one, so re-running
+   * the same query needs `resetTextSearch()` first — `force` does that for you.
+   */
+  setSearchQuery(query: string, options?: StartTextSearchOptions & { force?: boolean }): void {
+    if (query === this.#searchQuery && !options?.force) return;
+    this.#searchQuery = query;
+    const searcher = this.#searcher;
+    if (searcher) {
+      if (options?.force) searcher.resetTextSearch();
+      searcher.startTextSearch(query, options);
+    }
+    this.#notify();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Document source
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Declares which document should be shown. A no-op when the source is
+   * equivalent to the current one, so passing an inline `src` string on every
+   * render does not reopen the document.
+   */
+  setSource(src: PdfSource): void {
+    const normalized = normalizeSource(src);
+    const key = sourceKey(normalized);
+    if (this.#sourceKey !== NO_SOURCE && key === this.#sourceKey) return;
+    this.#sourceKey = key;
+    this.#source = normalized;
+    void this.#openCurrent();
+  }
+
+  /**
+   * Opens a document imperatively, bypassing the `src` prop. Rejects with the
+   * open error (which is also recorded on {@link error}).
+   */
+  async open(src: PdfSource): Promise<void> {
+    const normalized = normalizeSource(src);
+    this.#sourceKey = sourceKey(normalized);
+    this.#source = normalized;
+    const error = await this.#openCurrent();
+    if (error !== null) throw error;
+  }
+
+  /** Opens {@link #source}; records and returns the error rather than throwing. */
+  async #openCurrent(): Promise<unknown> {
+    const viewer = this.#viewer;
+    const source = this.#source;
+    const token = ++this.#openToken;
+    if (this.#error !== null) {
+      this.#error = null;
+      this.#notify();
+    }
+    // No viewer yet: attach() replays this once the surface mounts.
+    if (!viewer || !source) return null;
+    try {
+      if (source.kind === 'url') {
+        await viewer.openUrl(source.url, source.options);
+      } else {
+        await viewer.openData(await toBytes(source.data), source.options);
+      }
+      return null;
+    } catch (e) {
+      if (token !== this.#openToken) return null; // superseded or disposed
+      this.#error = e;
+      this.#notify();
+      return e;
+    }
+  }
+}
+
+/** Distinguishes "no source has ever been set" from "the source is `null`". */
+const NO_SOURCE = Symbol('no-source');

@@ -34,7 +34,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for pkg in engine viewer-core viewer; do
+          for pkg in engine viewer-core viewer react; do
             version=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::@pdfrx/$pkg is $version but the tag says $tag"
@@ -42,7 +42,8 @@ jobs:
             fi
           done
 
-      # Dependency order: viewer depends on the other two.
+      # Dependency order: viewer depends on the first two, react on viewer.
       - run: npm publish --workspace=@pdfrx/engine
       - run: npm publish --workspace=@pdfrx/viewer-core
       - run: npm publish --workspace=@pdfrx/viewer
+      - run: npm publish --workspace=@pdfrx/react

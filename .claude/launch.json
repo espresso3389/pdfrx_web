@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "dev", "--workspace", "@pdfrx/example-basic"],
       "port": 5200,
       "autoPort": true
+    },
+    {
+      "name": "pdfrx-react-example",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@pdfrx/example-react"],
+      "port": 5201,
+      "autoPort": true
     }
   ]
 }
