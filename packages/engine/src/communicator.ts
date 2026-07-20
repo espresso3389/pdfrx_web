@@ -5,13 +5,82 @@ import { RenderQueue, type PdfPageRenderCancellationToken } from './render-queue
 export interface WorkerCommunicatorOptions {
   /**
    * Base URL of the directory that contains `pdfium_worker.js` and `pdfium.wasm`.
-   * Relative URLs are resolved against `document.baseURI`.
+   * Relative URLs are resolved against {@link baseUrl}.
    */
   wasmModulesUrl: string;
+  /**
+   * What relative URLs — {@link wasmModulesUrl} and the ones passed to
+   * `PdfrxEngine.openUrl` — resolve against. Defaults to `document.baseURI`,
+   * which only exists in a browser: outside one (Node, Bun, Deno) this is
+   * required, and an absolute `file:`/`http:` URL of the directory the relative
+   * URLs should be read from is what to pass.
+   */
+  baseUrl?: string;
   /** Extra headers sent when the worker fetches `pdfium.wasm`. */
   headers?: Record<string, string>;
   /** Whether the worker's `pdfium.wasm` fetch includes credentials. */
   withCredentials?: boolean;
+  /**
+   * Spawns the worker that runs `pdfium_worker.js`. Defaults to a Web
+   * `Worker` started from a bootstrap blob, which is browser-only — supply this
+   * to run the engine anywhere else (see {@link PdfWorkerLike}).
+   */
+  createWorker?: (urls: PdfWorkerUrls) => PdfWorkerLike;
+}
+
+/** Where {@link WorkerCommunicatorOptions.createWorker} finds the engine's assets. */
+export interface PdfWorkerUrls {
+  /** Absolute URL of `pdfium_worker.js`, a classic worker script. */
+  workerUrl: string;
+  /**
+   * Absolute URL of `pdfium.wasm`. The worker script reads it from the global
+   * `pdfiumWasmUrl`, which must be set before the script runs.
+   */
+  wasmUrl: string;
+}
+
+/**
+ * The part of the Web Worker API this engine uses, so that
+ * {@link WorkerCommunicatorOptions.createWorker} can return something else —
+ * a `node:worker_threads` worker wrapped to look like this one, for instance.
+ * A browser `Worker` satisfies it as is.
+ */
+export interface PdfWorkerLike {
+  postMessage(message: unknown, transfer: Transferable[]): void;
+  terminate(): void;
+  onmessage: ((event: { data: WorkerMessage }) => void) | null;
+  onerror: ((event: { message?: string }) => void) | null;
+}
+
+/**
+ * Resolves what relative URLs are taken to be relative to, falling back to the
+ * document base URL in a browser.
+ * @internal
+ */
+function resolveBaseUrl(baseUrl: string | undefined): string {
+  if (baseUrl !== undefined) return baseUrl;
+  const base = (globalThis as { document?: { baseURI?: string } }).document?.baseURI;
+  if (base === undefined) {
+    throw new Error('No document.baseURI to resolve relative URLs against; pass the baseUrl option');
+  }
+  return base;
+}
+
+/**
+ * Starts `pdfium_worker.js` in a Web Worker, via a bootstrap blob that injects
+ * the wasm URL and `importScripts` the worker script. Going through a blob
+ * sidesteps the same-origin restriction on the `Worker` constructor, so the
+ * assets may live on any origin.
+ * @internal
+ */
+function createWebWorker({ workerUrl, wasmUrl }: PdfWorkerUrls): PdfWorkerLike {
+  const bootstrap = `const pdfiumWasmUrl=${JSON.stringify(wasmUrl)};importScripts(${JSON.stringify(workerUrl)});`;
+  const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }));
+  try {
+    return new Worker(blobUrl) as unknown as PdfWorkerLike;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
 }
 
 /**
@@ -24,12 +93,15 @@ interface PendingRequest {
 }
 
 /**
- * Owns the rendering worker and speaks its raw command protocol. The worker is
- * spawned via a small bootstrap blob so that the worker script and wasm can
- * live on any origin.
+ * Owns the rendering worker and speaks its raw command protocol. By default the
+ * worker is a Web Worker spawned via a small bootstrap blob, so that the worker
+ * script and wasm can live on any origin; supply
+ * {@link WorkerCommunicatorOptions.createWorker} to run it elsewhere.
  */
 export class WorkerCommunicator {
-  private readonly worker: Worker;
+  private readonly worker: PdfWorkerLike;
+  /** What relative URLs resolve against; see {@link WorkerCommunicatorOptions.baseUrl}. */
+  readonly baseUrl: string;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly callbacks = new Map<number, (...args: never[]) => void>();
   private requestId = 0;
@@ -40,26 +112,18 @@ export class WorkerCommunicator {
   private readonly renderQueue = new RenderQueue();
 
   /**
-   * Spawns the worker (via a bootstrap blob) and kicks off engine
-   * initialization. The worker starts fetching `pdfium.wasm` immediately; await
-   * {@link ready} before relying on it.
+   * Spawns the worker and kicks off engine initialization. The worker starts
+   * fetching `pdfium.wasm` immediately; await {@link ready} before relying on it.
    */
   constructor(options: WorkerCommunicatorOptions) {
-    const base = new URL(options.wasmModulesUrl, document.baseURI);
+    this.baseUrl = resolveBaseUrl(options.baseUrl);
+    const base = new URL(options.wasmModulesUrl, this.baseUrl);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
 
-    // Bootstrap blob: injects the wasm URL and pulls in the worker script.
-    // This sidesteps same-origin restrictions on the Worker constructor.
-    const bootstrap = `const pdfiumWasmUrl=${JSON.stringify(wasmUrl)};importScripts(${JSON.stringify(workerUrl)});`;
-    const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }));
-    try {
-      this.worker = new Worker(blobUrl);
-    } finally {
-      URL.revokeObjectURL(blobUrl);
-    }
+    this.worker = (options.createWorker ?? createWebWorker)({ workerUrl, wasmUrl });
 
-    this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => this.onMessage(event.data);
+    this.worker.onmessage = (event) => this.onMessage(event.data);
     this.worker.onerror = (event) => {
       const error = new Error(`worker error: ${event.message ?? 'unknown'}`);
       for (const pending of this.pending.values()) {

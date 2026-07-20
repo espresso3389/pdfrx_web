@@ -19,7 +19,12 @@
  * {@link WorkerCommandMap} — are also exported for advanced use.
  */
 
-export { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
+export {
+  WorkerCommunicator,
+  type PdfWorkerLike,
+  type PdfWorkerUrls,
+  type WorkerCommunicatorOptions,
+} from './communicator.js';
 export {
   PdfDocument,
   PdfPage,
@@ -34,6 +39,7 @@ export * from './types.js';
 export type {
   WorkerCommand,
   WorkerCommandMap,
+  WorkerMessage,
   WireAnnotation,
   WireDest,
   WireDocument,

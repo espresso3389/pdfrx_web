@@ -184,13 +184,15 @@ export class PdfrxEngine {
   /**
    * Opens a document by URL. The worker fetches the bytes, so the URL must be
    * reachable under the page's CORS policy; relative URLs are resolved against
-   * `document.baseURI`. Set {@link PdfOpenUrlOptions.preferRangeAccess} to stream
-   * the file via range requests.
+   * {@link WorkerCommunicatorOptions.baseUrl} (`document.baseURI` by default).
+   * Set {@link PdfOpenUrlOptions.preferRangeAccess} to stream the file via range
+   * requests.
    */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<PdfDocument> {
     await this.init();
-    // The worker runs on a blob: URL, so relative URLs must be resolved here.
-    const urlString = new URL(url, document.baseURI).toString();
+    // The worker has a base URL of its own (a blob: URL by default), so
+    // relative URLs must be resolved here.
+    const urlString = new URL(url, this.comm.baseUrl).toString();
 
     let progressCallbackId: number | undefined;
     const cleanup = () => {

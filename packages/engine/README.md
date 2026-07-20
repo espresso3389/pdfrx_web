@@ -53,6 +53,48 @@ await doc.dispose();
 engine.dispose();
 ```
 
+## Outside the browser (Node, Bun, Deno)
+
+The engine is browser-first — it resolves relative URLs against `document.baseURI`
+and starts a Web Worker — but both are injectable, so it also runs on a server
+runtime. Pass `baseUrl` for URL resolution and `createWorker` to start the worker
+however that runtime does it:
+
+```ts
+import { Worker as NodeWorker } from 'node:worker_threads';
+
+const engine = new PdfrxEngine({
+  wasmModulesUrl: 'node_modules/@pdfrx/engine/assets/',
+  baseUrl: new URL('./', import.meta.url).toString(),
+  createWorker: ({ workerUrl, wasmUrl }) => {
+    // bootstrap.mjs sets globalThis.pdfiumWasmUrl = wasmUrl, shims self/location
+    // and postMessage/onmessage over parentPort, then runs workerUrl's script.
+    const impl = new NodeWorker(new URL('./bootstrap.mjs', import.meta.url), {
+      workerData: { workerUrl, wasmUrl },
+    });
+    const worker = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (message, transfer) => impl.postMessage(message, transfer),
+      terminate: () => void impl.terminate(),
+    };
+    impl.on('message', (data) => worker.onmessage?.({ data }));
+    impl.on('error', (e) => worker.onerror?.({ message: e.message }));
+    return worker;
+  },
+});
+```
+
+Notes for a non-browser host: `pdfium_worker.js` is a classic worker script that
+reads `pdfiumWasmUrl` from the global scope, so the bootstrap must define it
+before running the script (Bun and Deno workers are ES modules with no
+`importScripts`, so `eval` the fetched source there). It fetches the wasm with
+`fetch`, which in Node does not accept `file:` URLs — serve the assets over HTTP
+or shim `fetch`. Font persistence quietly turns itself off without IndexedDB, so
+`addFontData` has to be called per session. `PdfImage.toImageData()` /
+`toImageBitmap()` need browser globals, but `image.pixels` (RGBA) is plain data
+you can hand to any encoder.
+
 ## API highlights
 
 Each symbol links to its entry in the
