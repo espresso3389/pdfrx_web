@@ -1,11 +1,14 @@
 /**
  * @packageDocumentation
- * `@pdfrx/engine` — a typed client for rendering PDF documents in the browser.
+ * `@pdfrx/engine` — a typed client for rendering PDF documents.
  *
- * The heavy work runs off the main thread in a dedicated Web Worker (a WASM
+ * The heavy work runs off the main thread in a dedicated worker (a WASM
  * rendering engine); this package speaks a `postMessage` command protocol to
  * that worker and exposes an idiomatic, `Promise`-based object model on top of
- * it.
+ * it. The defaults target the browser — a Web Worker, URLs resolved against
+ * `document.baseURI` — but {@link WorkerCommunicatorOptions.createWorker} and
+ * {@link WorkerCommunicatorOptions.baseUrl} replace both, so the engine also
+ * runs on Node, Bun, and Deno.
  *
  * The primary entry point is {@link PdfrxEngine}: construct one with the URL of
  * the directory that hosts the bundled WASM assets (`pdfium_worker.js` and

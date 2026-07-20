@@ -1,11 +1,15 @@
 # @pdfrx/engine
 
-A typed TypeScript client for rendering PDF documents in the browser. It runs a
-WASM rendering engine in a Web Worker and exposes a promise-based document API:
-open/render pages, extract text with per-character bounding boxes, links,
-outline, font registration, and PDF re-encoding. This is the engine layer
-underneath [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use
-it directly when you only need rendering/extraction without the viewer UI.
+A typed TypeScript client for rendering PDF documents. It runs a WASM rendering
+engine in a worker and exposes a promise-based document API: open/render pages,
+extract text with per-character bounding boxes, links, outline, font
+registration, and PDF re-encoding. This is the engine layer underneath
+[`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use it directly
+when you only need rendering/extraction without the viewer UI.
+
+The defaults target the browser (a Web Worker, URLs resolved against
+`document.baseURI`), but both are injectable, so it runs on Node, Bun, and Deno
+too — see [Outside the browser](#outside-the-browser-node-bun-deno).
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
