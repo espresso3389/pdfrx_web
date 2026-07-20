@@ -7,7 +7,7 @@ a framework-agnostic custom element or a plain class.
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
 **[Live demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
-**[API reference](https://espresso3389.github.io/pdfrx_web/)**
+**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html)**
 
 - Sharp, high-quality rendering with re-rendering on zoom
 - Pan / wheel / pinch zoom with inertia, keyboard navigation
@@ -91,6 +91,19 @@ Each symbol links directly to its entry in the
 
 See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
 app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).
+
+## The pdfrx_web family
+
+| Package | Role |
+|---|---|
+| [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks over `@pdfrx/viewer`. |
+| **`@pdfrx/viewer`** (this package) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
+| [`@pdfrx/viewer-core`](https://www.npmjs.com/package/@pdfrx/viewer-core) | DOM-free geometry / layout / selection logic. |
+| [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker. |
+
+Building a React app? [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
+wraps this package with a ready-made toolbar, thumbnails/outline sidebar and
+search UI.
 
 ## License
 

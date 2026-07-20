@@ -113,6 +113,19 @@ Each symbol links to its entry in the
 
 The worker postMessage protocol is documented in `src/protocol.ts`.
 
+## The pdfrx_web family
+
+| Package | Role |
+|---|---|
+| [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks over `@pdfrx/viewer`. |
+| [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
+| [`@pdfrx/viewer-core`](https://www.npmjs.com/package/@pdfrx/viewer-core) | DOM-free geometry / layout / selection logic. |
+| **`@pdfrx/engine`** (this package) | Typed client for the WASM rendering worker. |
+
+Full [API reference](https://espresso3389.github.io/pdfrx_web/) ·
+[repository](https://github.com/espresso3389/pdfrx_web) ·
+[architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
+
 ## License
 
 MIT. pdfium itself is licensed under the BSD-style

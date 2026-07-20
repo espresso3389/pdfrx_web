@@ -7,6 +7,9 @@ canvas-based PDF viewer for the browser.
 *component*, plus the thumbnail, outline and search UI that the class
 deliberately leaves to the app.
 
+**[Live demo](https://espresso3389.github.io/pdfrx_web/demo-react/)** ·
+**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_react.html)**
+
 ```sh
 npm install @pdfrx/react
 ```
@@ -117,6 +120,19 @@ The dark palette follows `prefers-color-scheme` by default.
   `layoutDirection` and friends applies to the running viewer. `engine`,
   `engineOptions` and `initialFit` are read once at construction, so changing
   those requires remounting the provider.
+
+## The pdfrx_web family
+
+| Package | Role |
+|---|---|
+| **`@pdfrx/react`** (this package) | React components and hooks over `@pdfrx/viewer`. |
+| [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
+| [`@pdfrx/viewer-core`](https://www.npmjs.com/package/@pdfrx/viewer-core) | DOM-free geometry / layout / selection logic. |
+| [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker. |
+
+Full [API reference](https://espresso3389.github.io/pdfrx_web/) ·
+[repository](https://github.com/espresso3389/pdfrx_web) ·
+[architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
 
 ## License
 

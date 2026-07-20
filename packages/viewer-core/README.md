@@ -8,6 +8,8 @@ custom gestures).
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
+**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer-core.html)**
+
 ## Installation
 
 ```sh
@@ -51,6 +53,19 @@ Coordinate conventions: PDF page space is points (1/72"), origin
 bottom-left, y-up; document space is y-down. See the
 [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
 for details.
+
+## The pdfrx_web family
+
+| Package | Role |
+|---|---|
+| [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks over `@pdfrx/viewer`. |
+| [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
+| **`@pdfrx/viewer-core`** (this package) | DOM-free geometry / layout / selection logic. |
+| [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker. |
+
+Full [API reference](https://espresso3389.github.io/pdfrx_web/) ·
+[repository](https://github.com/espresso3389/pdfrx_web) ·
+[architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
 
 ## License
 
