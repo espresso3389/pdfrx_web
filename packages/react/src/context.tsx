@@ -4,11 +4,12 @@ import type { PdfSource } from './source.js';
 import { PdfrxViewerStore } from './store.js';
 import { PdfrxStringsContext, type PdfrxStrings } from './strings.js';
 import { resolvePdfrxStrings } from './locales.js';
+import type { PdfReactContextMenuBuilder } from './context-menu.js';
 
 const StoreContext = createContext<PdfrxViewerStore | null>(null);
 
 /** Props for {@link PdfrxProvider}. */
-export interface PdfrxProviderProps extends PdfrxViewerOptions {
+export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMenuBuilder'> {
   /**
    * The document to show. A URL string is the common case; see
    * {@link PdfSource} for the byte-array, `File` and options-carrying forms.
@@ -38,6 +39,13 @@ export interface PdfrxProviderProps extends PdfrxViewerOptions {
    * {@link PdfrxStrings}. Pass a stable (module-level or memoized) object.
    */
   strings?: Partial<PdfrxStrings>;
+  /**
+   * Replaces the right-click / long-press context menu. Receives the viewer and
+   * active strings alongside the event context, so you can reuse
+   * {@link buildDefaultContextMenu} and add your own items. Omit it for the
+   * built-in localized Copy / Select All menu. See {@link PdfReactContextMenuBuilder}.
+   */
+  contextMenuBuilder?: PdfReactContextMenuBuilder;
   children?: ReactNode;
 }
 
@@ -71,6 +79,7 @@ export function PdfrxProvider({
   onError,
   locale,
   strings,
+  contextMenuBuilder,
   children,
   ...options
 }: PdfrxProviderProps): ReactNode {
@@ -84,8 +93,10 @@ export function PdfrxProvider({
     return strings ? { ...base, ...strings } : base;
   }, [locale, strings]);
 
-  // Keep the store's copy current so the default context menu is localized too.
+  // Keep the store's copies current so the context menu localizes and picks up
+  // the app's builder without a viewer rebuild.
   store.setStrings(mergedStrings);
+  store.setContextMenuBuilder(contextMenuBuilder);
 
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };

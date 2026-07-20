@@ -120,10 +120,43 @@ Override individual strings, or add a language that isn't built in, with
 ```
 
 The full string set is the `PdfrxStrings` interface; `usePdfrxStrings()` gives
-your own components the active strings so they translate alongside the rest. The
-right-click / long-press **context menu** (Copy / Select All) is localized too —
-`@pdfrx/react` installs a themed menu on the viewer via its `contextMenuBuilder`
-option, which you can override with your own to add items.
+your own components the active strings so they translate alongside the rest.
+
+## Context menu
+
+The right-click / long-press menu (Copy / Select All) is themed and localized
+out of the box. Pass `contextMenuBuilder` to customize it — it receives the
+event context plus `{ viewer, strings }`, so you can reuse the built-in
+`buildDefaultContextMenu` and append your own items:
+
+```tsx
+import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
+
+<PdfrxViewerApp
+  src="/manual.pdf"
+  contextMenuBuilder={(context, { viewer, strings }) => {
+    // Start from the default localized Copy / Select All menu…
+    const menu = buildDefaultContextMenu(viewer, strings, context);
+
+    // …then add your own item (reuse the built-in classes for the styling).
+    const item = document.createElement('button');
+    item.className = 'pdfrx-context-menu-item';
+    item.textContent = 'Search the web';
+    item.disabled = !context.hasSelection;
+    item.addEventListener('click', async () => {
+      context.close();
+      const text = await viewer.selection.getSelectedText();
+      if (text) window.open(`https://www.google.com/search?q=${encodeURIComponent(text)}`);
+    });
+    menu.appendChild(item);
+
+    return menu; // the viewer positions and dismisses it
+  }}
+/>;
+```
+
+Return `null` to suppress the menu entirely, or build a completely custom
+element instead of calling `buildDefaultContextMenu`.
 
 ## Theming
 

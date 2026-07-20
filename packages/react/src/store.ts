@@ -5,7 +5,7 @@ import {
   type PdfrxViewerOptions,
   type StartTextSearchOptions,
 } from '@pdfrx/viewer';
-import { buildDefaultContextMenu } from './context-menu.js';
+import { buildDefaultContextMenu, type PdfReactContextMenuBuilder } from './context-menu.js';
 import { normalizeSource, sourceKey, toBytes, type NormalizedPdfSource, type PdfSource } from './source.js';
 import { defaultPdfrxStrings, type PdfrxStrings } from './strings.js';
 import { ThumbnailCache } from './thumbnail-cache.js';
@@ -45,13 +45,20 @@ export class PdfrxViewerStore {
 
   /** The active strings, so the default context menu can be localized. */
   #strings: PdfrxStrings = defaultPdfrxStrings;
+  /** An app-supplied context-menu builder, or `null` for the localized default. */
+  #userContextMenuBuilder: PdfReactContextMenuBuilder | null = null;
   /**
-   * The default context-menu builder handed to the viewer: a localized Copy /
-   * Select All menu. Reads {@link #strings} and {@link #viewer} at menu-show
-   * time, so it stays current. A `contextMenuBuilder` passed via props wins.
+   * The builder handed to the viewer. It reads {@link #strings} and
+   * {@link #viewer} at menu-show time (so both stay current) and dispatches to
+   * the app's builder if one was provided, otherwise to the localized default.
    */
-  #contextMenuBuilder = (context: ContextMenuContext): HTMLElement | null =>
-    this.#viewer ? buildDefaultContextMenu(this.#viewer, this.#strings, context) : null;
+  #contextMenuBuilder = (context: ContextMenuContext): HTMLElement | null | undefined => {
+    const viewer = this.#viewer;
+    if (!viewer) return null;
+    return this.#userContextMenuBuilder
+      ? this.#userContextMenuBuilder(context, { viewer, strings: this.#strings })
+      : buildDefaultContextMenu(viewer, this.#strings, context);
+  };
 
   #source: NormalizedPdfSource | null = null;
   #sourceKey: unknown = NO_SOURCE;
@@ -140,8 +147,9 @@ export class PdfrxViewerStore {
     this.#flushDispose();
     if (this.#viewer) return; // a surface is already attached
     this.#element = element;
-    // Install the localized menu unless the app supplied its own builder.
-    this.#options.contextMenuBuilder ??= this.#contextMenuBuilder;
+    // React always owns the viewer's menu hook; app customization goes through
+    // #userContextMenuBuilder, which this dispatches to.
+    this.#options.contextMenuBuilder = this.#contextMenuBuilder;
     this.#viewer = new PdfrxViewer(element, this.#options);
     this.#searcher = this.#viewer.createTextSearcher();
     this.#unsubscribeDocumentChange = this.#viewer.addDocumentChangeListener(() => {
@@ -224,8 +232,6 @@ export class PdfrxViewerStore {
     }
     if (options.pageOverlaysBuilder !== previous.pageOverlaysBuilder) viewer.refreshOverlays();
     if (options.viewerOverlayBuilder !== previous.viewerOverlayBuilder) viewer.refreshViewerOverlays();
-    // Fall back to the localized menu if the app cleared its own builder.
-    this.#options.contextMenuBuilder ??= this.#contextMenuBuilder;
     viewer.invalidatePaint();
   }
 
@@ -236,6 +242,14 @@ export class PdfrxViewerStore {
    */
   setStrings(strings: PdfrxStrings): void {
     this.#strings = strings;
+  }
+
+  /**
+   * Sets the app's context-menu builder (or `null` for the localized default).
+   * Read at menu-show time, so no viewer rebuild is needed.
+   */
+  setContextMenuBuilder(builder: PdfReactContextMenuBuilder | null | undefined): void {
+    this.#userContextMenuBuilder = builder ?? null;
   }
 
   // ---------------------------------------------------------------------------

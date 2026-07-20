@@ -1,6 +1,27 @@
 import type { ContextMenuContext, PdfrxViewer } from '@pdfrx/viewer';
 import type { PdfrxStrings } from './strings.js';
 
+/** Extra arguments `@pdfrx/react` hands a {@link PdfReactContextMenuBuilder}. */
+export interface PdfContextMenuHelpers {
+  /** The live viewer — call `copySelection()` / `selectAll()` / `selection` etc. */
+  readonly viewer: PdfrxViewer;
+  /** The active (localized) strings, e.g. to label your own items. */
+  readonly strings: PdfrxStrings;
+}
+
+/**
+ * The `contextMenuBuilder` prop of {@link PdfrxProvider} / {@link PdfrxViewerApp}.
+ *
+ * Unlike the raw {@link ContextMenuBuilder} on the viewer, this also receives
+ * the viewer and the active strings, so you can reuse {@link buildDefaultContextMenu}
+ * and add your own items. Return the menu element (the viewer positions and
+ * dismisses it) or `null`/`undefined` for no menu.
+ */
+export type PdfReactContextMenuBuilder = (
+  context: ContextMenuContext,
+  helpers: PdfContextMenuHelpers,
+) => HTMLElement | null | undefined;
+
 /**
  * Builds the localized Copy / Select All context menu that `@pdfrx/react`
  * installs on the viewer by default (via {@link PdfrxViewerOptions.contextMenuBuilder}).

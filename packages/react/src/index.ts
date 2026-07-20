@@ -46,7 +46,11 @@ export { PdfrxViewerStore } from './store.js';
 export { ThumbnailCache } from './thumbnail-cache.js';
 export { normalizeSource, type PdfSource, type NormalizedPdfSource } from './source.js';
 export { defaultPdfrxStrings, usePdfrxStrings, type PdfrxStrings } from './strings.js';
-export { buildDefaultContextMenu } from './context-menu.js';
+export {
+  buildDefaultContextMenu,
+  type PdfReactContextMenuBuilder,
+  type PdfContextMenuHelpers,
+} from './context-menu.js';
 export {
   builtinPdfrxStrings,
   builtinPdfrxLocales,
