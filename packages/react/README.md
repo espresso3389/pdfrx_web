@@ -85,7 +85,7 @@ function Toolbar() {
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.3.0/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.4.0/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other
