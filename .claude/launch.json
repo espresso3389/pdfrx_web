@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pdfrx-web-example",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@pdfrx/example-basic"],
+      "port": 5199,
+      "autoPort": true
+    },
+    {
+      "name": "pdfrx-web-example-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@pdfrx/example-basic"],
+      "port": 5200,
+      "autoPort": true
+    }
+  ]
+}
