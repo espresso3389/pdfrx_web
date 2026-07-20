@@ -482,8 +482,31 @@
   text-overflow: ellipsis;
 }
 
-.pdfrx-sidebar-hidden {
-  display: none;
+/* Wraps the sidebar on a wide screen. Its width animates between the sidebar
+   width and 0 to reveal/collapse; overflow hides the fixed-width sidebar as it
+   shrinks (so the content never reflows). A right-hand sidebar is pinned to the
+   slot's end so it collapses toward its outer edge. */
+.pdfrx-sidebar-slot {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  transition: width 180ms ease;
+}
+
+.pdfrx-app[data-sidebar-side='right'] .pdfrx-sidebar-slot {
+  justify-content: flex-end;
+}
+
+/* In the drawer, the sidebar is absolutely positioned (out of the slot's flow),
+   so the slot takes no space and must not clip the drawer. */
+.pdfrx-app-narrow .pdfrx-sidebar-slot {
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfrx-sidebar-slot {
+    transition: none;
+  }
 }
 
 /* --- Narrow screens: the sidebar becomes a drawer ------------------------ */

@@ -14,7 +14,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   /** Show the toolbar. Defaults to `true`. */
   toolbar?: boolean;
   /** Extra props for the toolbar, e.g. to hide the print button. Pass extra controls as `children` instead. */
-  toolbarProps?: Omit<PdfToolbarProps, 'showSidebarToggle' | 'onToggleSidebar' | 'children'>;
+  toolbarProps?: Omit<PdfToolbarProps, 'showSidebarToggle' | 'onToggleSidebar' | 'sidebarTogglePosition' | 'children'>;
   /** Show the thumbnails/outline sidebar. Defaults to `true`. */
   sidebar?: boolean;
   /** Extra props for the sidebar, e.g. `defaultTab`. */
@@ -188,16 +188,19 @@ function PdfrxViewerAppChrome({
     ? (pageNumber: number): ReactNode => <PageActions pageNumber={pageNumber} />
     : undefined;
 
+  // On a wide screen the slot animates its width between `sidebarWidth` and 0
+  // to reveal/collapse the sidebar (whose own width stays fixed, so its content
+  // never reflows mid-animation). On a narrow screen the slot takes no space and
+  // the sidebar itself becomes the sliding drawer (see styles.css).
   const sidebarNode = sidebar ? (
-    <PdfSidebar
-      {...sidebarProps}
-      className={
-        isSidebarOpen || isNarrow ? sidebarProps?.className : `pdfrx-sidebar-hidden ${sidebarProps?.className ?? ''}`
-      }
-      style={{ width: sidebarWidth, ...sidebarProps?.style }}
-      onNavigate={closeDrawerIfNarrow}
-      renderPageActions={renderPageActions}
-    />
+    <div className="pdfrx-sidebar-slot" style={{ width: !isNarrow && isSidebarOpen ? sidebarWidth : 0 }}>
+      <PdfSidebar
+        {...sidebarProps}
+        style={{ width: sidebarWidth, ...sidebarProps?.style }}
+        onNavigate={closeDrawerIfNarrow}
+        renderPageActions={renderPageActions}
+      />
+    </div>
   ) : null;
 
   return (
@@ -216,6 +219,8 @@ function PdfrxViewerAppChrome({
           {...toolbarProps}
           showSidebarToggle={sidebar}
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
+          // Put the hamburger next to the sidebar it controls.
+          sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
         >
           {showOpenButton && (
             <>

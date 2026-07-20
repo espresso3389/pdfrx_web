@@ -10,6 +10,11 @@ export interface PdfToolbarProps {
   /** Show the sidebar toggle button. Supply {@link onToggleSidebar} to make it do something. */
   showSidebarToggle?: boolean;
   onToggleSidebar?: () => void;
+  /**
+   * Which end of the bar the sidebar toggle sits on. Defaults to `'start'`;
+   * pair it with a right-hand sidebar by passing `'end'`.
+   */
+  sidebarTogglePosition?: 'start' | 'end';
   /** Show the page number / total box. Defaults to `true`. */
   showPageIndicator?: boolean;
   /** Show the zoom and fit controls. Defaults to `true`. */
@@ -46,6 +51,7 @@ export function PdfToolbar({
   style,
   showSidebarToggle = false,
   onToggleSidebar,
+  sidebarTogglePosition = 'start',
   showPageIndicator = true,
   showZoomControls = true,
   showSearch = true,
@@ -57,14 +63,16 @@ export function PdfToolbar({
   // toggle button and this row, so the value is simply ignored there.
   const [searchOpen, setSearchOpen] = useState(false);
 
+  const sidebarToggle = showSidebarToggle ? (
+    <button className="pdfrx-button" onClick={onToggleSidebar} title="Toggle sidebar" aria-label="Toggle sidebar">
+      <IconMenu />
+    </button>
+  ) : null;
+
   return (
     <>
       <div className={joinClass('pdfrx-toolbar', className)} style={style}>
-        {showSidebarToggle && (
-          <button className="pdfrx-button" onClick={onToggleSidebar} title="Toggle sidebar" aria-label="Toggle sidebar">
-            <IconMenu />
-          </button>
-        )}
+        {sidebarTogglePosition === 'start' && sidebarToggle}
         {showPageIndicator && <PdfPageIndicator />}
         {showZoomControls && <PdfZoomControls />}
         <span className="pdfrx-toolbar-spacer" />
@@ -82,6 +90,7 @@ export function PdfToolbar({
         )}
         {showPrint && <PdfPrintButton />}
         {children}
+        {sidebarTogglePosition === 'end' && sidebarToggle}
         <PdfLoadingBar />
       </div>
       {showSearch && searchOpen && (
