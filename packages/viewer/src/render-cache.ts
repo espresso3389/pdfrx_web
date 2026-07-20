@@ -297,6 +297,17 @@ export class PageRenderCache {
     this.cancelPatchRenders();
   }
 
+  /**
+   * @internal
+   * Drops every queued render but keeps the bitmaps already rendered. Used when
+   * a new document starts opening, so the worker is not still chewing through
+   * renders for the document being replaced.
+   */
+  cancelAllPending(): void {
+    for (const { token } of this.baseRendering.values()) token.cancel();
+    this.cancelPatchRenders();
+  }
+
   private cancelPatchRenders(): void {
     for (const token of this.patchRendering.values()) token.cancel();
     this.patchRendering.clear();

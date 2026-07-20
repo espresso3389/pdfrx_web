@@ -62,6 +62,22 @@ export class PdfrxViewerElement extends HTMLElementBase {
     this.#viewer.addDocumentChangeListener(() => {
       this.dispatchEvent(new CustomEvent('load', { detail: { src: this.getAttribute('src') } }));
     });
+    // `loadingchange` fires on every isLoading/progress transition, so an app
+    // can disable its toolbar or show its own indicator while a PDF opens.
+    let wasLoading = false;
+    this.#viewer.addLoadingChangeListener(() => {
+      const viewer = this.#viewer;
+      if (!viewer) return;
+      this.dispatchEvent(
+        new CustomEvent('loadingchange', {
+          detail: { isLoading: viewer.isLoading, progress: viewer.loadingProgress },
+        }),
+      );
+      if (viewer.isLoading !== wasLoading) {
+        wasLoading = viewer.isLoading;
+        this.dispatchEvent(new CustomEvent(viewer.isLoading ? 'loadstart' : 'loadend'));
+      }
+    });
     const src = this.getAttribute('src');
     if (src) void this.#load(src);
   }

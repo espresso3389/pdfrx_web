@@ -266,6 +266,24 @@ export interface PdfrxViewerOptions {
    * {@link PdfrxViewer.refreshViewerOverlays} to rebuild on demand.
    */
   viewerOverlayBuilder?: ViewerOverlayBuilder;
+  /**
+   * Paint a spinner (and a progress bar, when the byte count is known) while a
+   * document is opening, instead of leaving the previous one on screen. Set to
+   * `false` to draw your own from {@link PdfrxViewer.isLoading} /
+   * {@link PdfrxViewer.addLoadingChangeListener} — the previous document is
+   * hidden either way. Default: `true`.
+   */
+  loadingIndicator?: boolean;
+  /** Color of the built-in loading indicator. Default: `'rgba(255, 255, 255, 0.85)'`. */
+  loadingIndicatorColor?: string;
+}
+
+/** Progress of the document being opened (see {@link PdfrxViewer.loadingProgress}). */
+export interface PdfLoadingProgress {
+  /** Bytes received so far. */
+  bytesReceived: number;
+  /** Total bytes, or `null` when the source did not report a length. */
+  bytesTotal: number | null;
 }
 
 /**
@@ -652,6 +670,10 @@ export class PdfrxViewer {
     | { kind: 'url'; url: string | URL; options: PdfOpenUrlOptions }
     | { kind: 'data'; data: Uint8Array | ArrayBuffer; options: PdfOpenOptions }
     | null = null;
+  /** Non-zero while a document is opening; a counter so overlapping opens nest. */
+  private loadingCount = 0;
+  private loadingProgressValue: PdfLoadingProgress | null = null;
+  private readonly loadingChangeListeners = new Set<() => void>();
   private readonly documentChangeListeners = new Set<() => void>();
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
@@ -695,9 +717,20 @@ export class PdfrxViewer {
    * fallbacks. For password-protected PDFs, supply a provider via `options`.
    */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<void> {
-    const doc = await this.engine.openUrl(url, options);
-    this.currentSource = { kind: 'url', url, options };
-    await this.setDocument(doc);
+    return await this.whileLoading(async () => {
+      // Report download progress without stealing the caller's callback.
+      const caller = options.progressCallback;
+      const doc = await this.engine.openUrl(url, {
+        ...options,
+        progressCallback: (bytesReceived, bytesTotal) => {
+          // bytesTotal is omitted when the response had no Content-Length.
+          this.setLoadingProgress({ bytesReceived, bytesTotal: bytesTotal ? bytesTotal : null });
+          caller?.(bytesReceived, bytesTotal);
+        },
+      });
+      this.currentSource = { kind: 'url', url, options };
+      await this.setDocument(doc);
+    });
   }
 
   /**
@@ -706,9 +739,84 @@ export class PdfrxViewer {
    * {@link openUrl}).
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
-    const doc = await this.engine.openData(data, options);
-    this.currentSource = { kind: 'data', data, options };
-    await this.setDocument(doc);
+    return await this.whileLoading(async () => {
+      const doc = await this.engine.openData(data, options);
+      this.currentSource = { kind: 'data', data, options };
+      await this.setDocument(doc);
+    });
+  }
+
+  /**
+   * Whether a document is currently opening. While this is true the previous
+   * document is not painted — parsing a large PDF takes seconds, and leaving
+   * the old one on screen makes the viewer look stuck.
+   */
+  get isLoading(): boolean {
+    return this.loadingCount > 0;
+  }
+
+  /**
+   * Download progress of the document being opened, or `null` when nothing is
+   * loading or the source reports no byte counts (e.g. {@link openData}).
+   */
+  get loadingProgress(): PdfLoadingProgress | null {
+    return this.loadingProgressValue;
+  }
+
+  /**
+   * Registers a listener called when {@link isLoading} or
+   * {@link loadingProgress} changes — for a custom loading UI, or to disable
+   * controls while a document opens.
+   *
+   * @returns An unsubscribe function.
+   */
+  addLoadingChangeListener(listener: () => void): () => void {
+    this.loadingChangeListeners.add(listener);
+    return () => this.loadingChangeListeners.delete(listener);
+  }
+
+  /**
+   * @internal
+   * Marks the viewer as loading for the duration of `open`, hiding the previous
+   * document and dropping its queued renders so the worker is free to parse.
+   */
+  private async whileLoading(open: () => Promise<void>): Promise<void> {
+    this.loadingCount++;
+    if (this.loadingCount === 1) {
+      // Renders for the document being replaced would otherwise sit ahead of
+      // the new document's work in the queue.
+      this.cache?.cancelAllPending();
+      this.loadingProgressValue = null;
+      this.notifyLoadingChanged();
+    }
+    this.invalidate();
+    try {
+      await open();
+    } finally {
+      this.loadingCount--;
+      if (this.loadingCount === 0) {
+        this.loadingProgressValue = null;
+        this.notifyLoadingChanged();
+      }
+      this.invalidate();
+    }
+  }
+
+  private setLoadingProgress(progress: PdfLoadingProgress): void {
+    if (this.loadingCount === 0) return;
+    this.loadingProgressValue = progress;
+    this.notifyLoadingChanged();
+    this.invalidate();
+  }
+
+  private notifyLoadingChanged(): void {
+    for (const listener of this.loadingChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in loading change listener:', e);
+      }
+    }
   }
 
   /**
@@ -2513,6 +2621,49 @@ export class PdfrxViewer {
     }
   }
 
+  /**
+   * Draws the built-in loading indicator: a rotating arc, plus a progress bar
+   * once the byte counts are known. Keeps repainting itself while loading.
+   */
+  private paintLoading(ctx: CanvasRenderingContext2D, dpr: number): void {
+    if (this.options.loadingIndicator !== false) {
+      const cx = (this.viewSize.width / 2) * dpr;
+      const cy = (this.viewSize.height / 2) * dpr;
+      const radius = 18 * dpr;
+      const color = this.options.loadingIndicatorColor ?? 'rgba(255, 255, 255, 0.85)';
+      const spin = (performance.now() / 700) * Math.PI * 2;
+
+      ctx.lineWidth = 3 * dpr;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, spin, spin + Math.PI * 0.6);
+      ctx.stroke();
+
+      const progress = this.loadingProgressValue;
+      if (progress && progress.bytesTotal) {
+        const width = Math.min(220 * dpr, this.canvas.width - 40 * dpr);
+        const height = 4 * dpr;
+        const left = cx - width / 2;
+        const top = cy + radius + 16 * dpr;
+        const ratio = Math.max(0, Math.min(1, progress.bytesReceived / progress.bytesTotal));
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = color;
+        ctx.fillRect(left, top, width, height);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(left, top, width * ratio, height);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Keep the animation going for as long as the load lasts.
+    this.invalidate();
+  }
+
   private paint(): void {
     const ctx = this.ctx;
     const dpr = window.devicePixelRatio || 1;
@@ -2521,6 +2672,14 @@ export class PdfrxViewer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = this.options.backgroundColor ?? '#808080';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // While opening, the previous document is deliberately not drawn: parsing
+    // can take seconds, and showing the old pages with no other feedback makes
+    // the viewer look frozen.
+    if (this.isLoading) {
+      this.paintLoading(ctx, dpr);
+      return;
+    }
 
     if (!this.layout || !this.doc || !this.cache) return;
 
