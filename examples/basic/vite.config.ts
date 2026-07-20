@@ -39,7 +39,15 @@ export default defineConfig({
   base: './',
   plugins: [pdfiumAssets()],
   server: {
-    // Allow access via Tailscale MagicDNS hostnames (e.g. <machine>.<tailnet>.ts.net)
+    // Listen on every interface, not just loopback, so the example can be
+    // opened on a phone over Tailscale — testing touch behaviour needs a real
+    // device. Without this `npm run dev` binds to localhost, the request never
+    // arrives, and allowedHosts below is never even consulted.
+    // Note that this exposes the dev server on every network the machine is
+    // on, not only the tailnet.
+    host: true,
+    // Accept the Host header of Tailscale MagicDNS names
+    // (e.g. <machine>.<tailnet>.ts.net); vite otherwise rejects them.
     allowedHosts: ['.ts.net'],
   },
 });
