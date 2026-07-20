@@ -614,6 +614,12 @@ export class PdfrxViewer {
   private cache: PageRenderCache | null = null;
   private readonly pageTexts = new Map<number, PdfPageText | Promise<PdfPageText>>();
   private readonly pageLinks = new Map<number, PdfLink[] | Promise<PdfLink[]>>();
+  /**
+   * Bumped whenever page positions stop meaning what they meant (new document,
+   * rearrangement). Text and links are cached by position, so a load that was
+   * in flight across the change must not write its result back.
+   */
+  private arrangementGeneration = 0;
   private hoveredLink: { link: PdfLink; rects: Rect[] } | null = null;
 
   private viewSize: Size = { width: 0, height: 0 };
@@ -1381,6 +1387,7 @@ export class PdfrxViewer {
   private async setDocument(doc: PdfDocument): Promise<void> {
     this.cache?.dispose();
     await this.doc?.dispose();
+    this.arrangementGeneration++;
     this.pageTexts.clear();
     this.overlayContainers.clear();
     this.overlayRoot.replaceChildren();
@@ -1431,6 +1438,7 @@ export class PdfrxViewer {
    */
   private onPagesRearranged(): void {
     if (!this.doc) return;
+    this.arrangementGeneration++;
     this.pageTexts.clear();
     this.pageLinks.clear();
     this.hoveredLink = null;
@@ -1587,14 +1595,19 @@ export class PdfrxViewer {
     if (!this.doc || this.pageTexts.has(pageNumber)) return;
     const page = this.doc.pages[pageNumber - 1];
     if (!page || !page.isLoaded) return;
+    const generation = this.arrangementGeneration;
     const promise = (async () => {
       const raw = await page.loadText();
       const text = formatText(
         raw ? { fullText: raw.fullText, charRects: [...raw.charRects] } : { fullText: '', charRects: [] },
         pageNumber,
       );
-      this.pageTexts.set(pageNumber, text);
-      this.invalidate();
+      // The pages moved while this was loading: `pageNumber` no longer refers to
+      // this page, so caching the result would pin stale text to that position.
+      if (generation === this.arrangementGeneration) {
+        this.pageTexts.set(pageNumber, text);
+        this.invalidate();
+      }
       return text;
     })();
     this.pageTexts.set(pageNumber, promise);
@@ -1680,9 +1693,13 @@ export class PdfrxViewer {
     if (!this.doc || this.pageLinks.has(pageNumber)) return;
     const page = this.doc.pages[pageNumber - 1];
     if (!page || !page.isLoaded) return;
+    const generation = this.arrangementGeneration;
     const promise = page.loadLinks().then((links) => {
-      this.pageLinks.set(pageNumber, links);
-      this.invalidate();
+      // See ensureText: a rearrangement in flight invalidates the position key.
+      if (generation === this.arrangementGeneration) {
+        this.pageLinks.set(pageNumber, links);
+        this.invalidate();
+      }
       return links;
     });
     this.pageLinks.set(pageNumber, promise);
