@@ -84,6 +84,33 @@ function onDocumentLoaded(): void {
 
 el.addEventListener('load', onDocumentLoaded);
 
+// While a PDF is opening the viewer paints a spinner instead of the previous
+// document; mirror that in the chrome so the toolbar and sidebar can't be used
+// on a document that is about to be replaced.
+el.addEventListener('loadingchange', (e) => {
+  const { isLoading, progress } = (e as CustomEvent).detail as {
+    isLoading: boolean;
+    progress: { bytesReceived: number; bytesTotal: number | null } | null;
+  };
+  document.body.classList.toggle('loading', isLoading);
+  if (!isLoading) {
+    pageStatus.textContent = '';
+    return;
+  }
+  pageStatus.textContent =
+    progress && progress.bytesTotal
+      ? `Loading… ${Math.round((progress.bytesReceived / progress.bytesTotal) * 100)}%`
+      : 'Loading…';
+});
+
+el.addEventListener('loadstart', () => {
+  // The old document's sidebar is about to be meaningless.
+  thumbsPane.textContent = '';
+  outlinePane.textContent = '';
+  thumbElements.clear();
+  thumbCache.clear();
+});
+
 el.addEventListener('error', (e) => {
   console.error('failed to load PDF:', (e as CustomEvent).detail);
 });

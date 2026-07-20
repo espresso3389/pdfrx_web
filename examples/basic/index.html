@@ -203,6 +203,14 @@
         margin: 4px 2px;
         background: rgba(255, 255, 255, 0.2);
       }
+      /* While a document opens, the chrome would act on a document that is
+         about to be replaced. The viewer paints its own spinner over the pages. */
+      body.loading header button,
+      body.loading #searchBox,
+      body.loading #sidebar {
+        opacity: 0.5;
+        pointer-events: none;
+      }
 
       /* Touch devices have no hover, so the per-page tools must stay visible
          and be large enough to hit. */
