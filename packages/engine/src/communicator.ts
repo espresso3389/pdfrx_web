@@ -1,5 +1,6 @@
 import type { WorkerCommand, WorkerCommandMap, WorkerMessage } from './protocol.js';
 import { RenderQueue, type PdfPageRenderCancellationToken } from './render-queue.js';
+import { createDefaultWorker, defaultBaseUrl, type PdfWorkerLike, type PdfWorkerUrls } from './worker-host.js';
 
 /** Options for constructing a {@link WorkerCommunicator}. */
 export interface WorkerCommunicatorOptions {
@@ -10,10 +11,8 @@ export interface WorkerCommunicatorOptions {
   wasmModulesUrl: string;
   /**
    * What relative URLs — {@link wasmModulesUrl} and the ones passed to
-   * `PdfrxEngine.openUrl` — resolve against. Defaults to `document.baseURI`,
-   * which only exists in a browser: outside one (Node, Bun, Deno) this is
-   * required, and an absolute `file:`/`http:` URL of the directory the relative
-   * URLs should be read from is what to pass.
+   * `PdfrxEngine.openUrl` — resolve against. Defaults to `document.baseURI` in a
+   * browser and to the current working directory elsewhere.
    */
   baseUrl?: string;
   /** Extra headers sent when the worker fetches `pdfium.wasm`. */
@@ -21,66 +20,13 @@ export interface WorkerCommunicatorOptions {
   /** Whether the worker's `pdfium.wasm` fetch includes credentials. */
   withCredentials?: boolean;
   /**
-   * Spawns the worker that runs `pdfium_worker.js`. Defaults to a Web
-   * `Worker` started from a bootstrap blob, which is browser-only — supply this
-   * to run the engine anywhere else (see {@link PdfWorkerLike}).
+   * Escape hatch for starting the worker yourself, for a host the engine does
+   * not already know (it handles browsers, Node, Bun and Deno on its own) or one
+   * that needs its worker configured — permissions, resource limits, a
+   * self-hosted copy of `pdfium_worker.js`. Return anything that behaves like a
+   * Web Worker; see {@link PdfWorkerLike} and {@link PdfWorkerUrls}.
    */
-  createWorker?: (urls: PdfWorkerUrls) => PdfWorkerLike;
-}
-
-/** Where {@link WorkerCommunicatorOptions.createWorker} finds the engine's assets. */
-export interface PdfWorkerUrls {
-  /** Absolute URL of `pdfium_worker.js`, a classic worker script. */
-  workerUrl: string;
-  /**
-   * Absolute URL of `pdfium.wasm`. The worker script reads it from the global
-   * `pdfiumWasmUrl`, which must be set before the script runs.
-   */
-  wasmUrl: string;
-}
-
-/**
- * The part of the Web Worker API this engine uses, so that
- * {@link WorkerCommunicatorOptions.createWorker} can return something else —
- * a `node:worker_threads` worker wrapped to look like this one, for instance.
- * A browser `Worker` satisfies it as is.
- */
-export interface PdfWorkerLike {
-  postMessage(message: unknown, transfer: Transferable[]): void;
-  terminate(): void;
-  onmessage: ((event: { data: WorkerMessage }) => void) | null;
-  onerror: ((event: { message?: string }) => void) | null;
-}
-
-/**
- * Resolves what relative URLs are taken to be relative to, falling back to the
- * document base URL in a browser.
- * @internal
- */
-function resolveBaseUrl(baseUrl: string | undefined): string {
-  if (baseUrl !== undefined) return baseUrl;
-  const base = (globalThis as { document?: { baseURI?: string } }).document?.baseURI;
-  if (base === undefined) {
-    throw new Error('No document.baseURI to resolve relative URLs against; pass the baseUrl option');
-  }
-  return base;
-}
-
-/**
- * Starts `pdfium_worker.js` in a Web Worker, via a bootstrap blob that injects
- * the wasm URL and `importScripts` the worker script. Going through a blob
- * sidesteps the same-origin restriction on the `Worker` constructor, so the
- * assets may live on any origin.
- * @internal
- */
-function createWebWorker({ workerUrl, wasmUrl }: PdfWorkerUrls): PdfWorkerLike {
-  const bootstrap = `const pdfiumWasmUrl=${JSON.stringify(wasmUrl)};importScripts(${JSON.stringify(workerUrl)});`;
-  const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }));
-  try {
-    return new Worker(blobUrl) as unknown as PdfWorkerLike;
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
+  createWorker?: (urls: PdfWorkerUrls) => PdfWorkerLike | Promise<PdfWorkerLike>;
 }
 
 /**
@@ -93,13 +39,20 @@ interface PendingRequest {
 }
 
 /**
- * Owns the rendering worker and speaks its raw command protocol. By default the
- * worker is a Web Worker spawned via a small bootstrap blob, so that the worker
- * script and wasm can live on any origin; supply
- * {@link WorkerCommunicatorOptions.createWorker} to run it elsewhere.
+ * Owns the rendering worker and speaks its raw command protocol. The worker is
+ * started the way the host runs workers — a Web Worker in a browser, the
+ * platform equivalent on Node, Bun and Deno — unless
+ * {@link WorkerCommunicatorOptions.createWorker} says otherwise.
  */
 export class WorkerCommunicator {
-  private readonly worker: PdfWorkerLike;
+  /**
+   * The worker, which some hosts can only produce asynchronously. Commands are
+   * posted from `.then` callbacks on it, which run in call order, so awaiting it
+   * per command does not reorder them.
+   */
+  private readonly workerPromise: Promise<PdfWorkerLike>;
+  /** The worker once it exists, so {@link dispose} can terminate it right away. */
+  private worker: PdfWorkerLike | null = null;
   /** What relative URLs resolve against; see {@link WorkerCommunicatorOptions.baseUrl}. */
   readonly baseUrl: string;
   private readonly pending = new Map<number, PendingRequest>();
@@ -116,21 +69,29 @@ export class WorkerCommunicator {
    * fetching `pdfium.wasm` immediately; await {@link ready} before relying on it.
    */
   constructor(options: WorkerCommunicatorOptions) {
-    this.baseUrl = resolveBaseUrl(options.baseUrl);
+    this.baseUrl = options.baseUrl ?? defaultBaseUrl();
     const base = new URL(options.wasmModulesUrl, this.baseUrl);
     const workerUrl = new URL('pdfium_worker.js', base).toString();
     const wasmUrl = new URL('pdfium.wasm', base).toString();
 
-    this.worker = (options.createWorker ?? createWebWorker)({ workerUrl, wasmUrl });
-
-    this.worker.onmessage = (event) => this.onMessage(event.data);
-    this.worker.onerror = (event) => {
-      const error = new Error(`worker error: ${event.message ?? 'unknown'}`);
-      for (const pending of this.pending.values()) {
-        pending.reject(error);
-      }
-      this.pending.clear();
-    };
+    this.workerPromise = Promise.resolve((options.createWorker ?? createDefaultWorker)({ workerUrl, wasmUrl })).then(
+      (worker) => {
+        if (this.disposed) {
+          worker.terminate();
+          throw new Error('WorkerCommunicator is disposed');
+        }
+        worker.onmessage = (event) => this.onMessage(event.data);
+        worker.onerror = (event) => {
+          const error = new Error(`worker error: ${event.message ?? 'unknown'}`);
+          for (const pending of this.pending.values()) {
+            pending.reject(error);
+          }
+          this.pending.clear();
+        };
+        this.worker = worker;
+        return worker;
+      },
+    );
 
     // The worker buffers commands until 'init' completes, so this can be sent
     // immediately; all subsequent commands are chained after it.
@@ -213,7 +174,13 @@ export class WorkerCommunicator {
     return new Promise((resolve, reject) => {
       const id = ++this.requestId;
       this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ id, command, parameters }, transfer ?? []);
+      this.workerPromise.then(
+        (worker) => worker.postMessage({ id, command, parameters }, transfer ?? []),
+        (error: Error) => {
+          this.pending.delete(id);
+          reject(error);
+        },
+      );
     });
   }
 
@@ -254,7 +221,8 @@ export class WorkerCommunicator {
     if (this.disposed) return;
     this.disposed = true;
     this.renderQueue.dispose();
-    this.worker.terminate();
+    // A worker still being started terminates itself once it arrives.
+    this.worker?.terminate();
     const error = new Error('WorkerCommunicator is disposed');
     for (const pending of this.pending.values()) {
       pending.reject(error);

@@ -7,9 +7,9 @@ registration, and PDF re-encoding. This is the engine layer underneath
 [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use it directly
 when you only need rendering/extraction without the viewer UI.
 
-The defaults target the browser (a Web Worker, URLs resolved against
-`document.baseURI`), but both are injectable, so it runs on Node, Bun, and Deno
-too — see [Outside the browser](#outside-the-browser-node-bun-deno).
+It is built for the browser but not confined to it: the same package runs on
+Node, Bun, and Deno with no extra configuration — see
+[Outside the browser](#outside-the-browser-node-bun-deno).
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
@@ -59,45 +59,37 @@ engine.dispose();
 
 ## Outside the browser (Node, Bun, Deno)
 
-The engine is browser-first — it resolves relative URLs against `document.baseURI`
-and starts a Web Worker — but both are injectable, so it also runs on a server
-runtime. Pass `baseUrl` for URL resolution and `createWorker` to start the worker
-however that runtime does it:
+Nothing extra to configure: the engine starts the worker the way the host runs
+workers (a Web Worker in a browser, a module worker on Bun and Deno, a
+`node:worker_threads` worker on Node), and relative URLs resolve against the
+current working directory instead of `document.baseURI`.
 
 ```ts
-import { Worker as NodeWorker } from 'node:worker_threads';
+import { readFile } from 'node:fs/promises';
+import { PdfrxEngine } from '@pdfrx/engine';
 
-const engine = new PdfrxEngine({
-  wasmModulesUrl: 'node_modules/@pdfrx/engine/assets/',
-  baseUrl: new URL('./', import.meta.url).toString(),
-  createWorker: ({ workerUrl, wasmUrl }) => {
-    // bootstrap.mjs sets globalThis.pdfiumWasmUrl = wasmUrl, shims self/location
-    // and postMessage/onmessage over parentPort, then runs workerUrl's script.
-    const impl = new NodeWorker(new URL('./bootstrap.mjs', import.meta.url), {
-      workerData: { workerUrl, wasmUrl },
-    });
-    const worker = {
-      onmessage: null,
-      onerror: null,
-      postMessage: (message, transfer) => impl.postMessage(message, transfer),
-      terminate: () => void impl.terminate(),
-    };
-    impl.on('message', (data) => worker.onmessage?.({ data }));
-    impl.on('error', (e) => worker.onerror?.({ message: e.message }));
-    return worker;
-  },
-});
+const engine = new PdfrxEngine({ wasmModulesUrl: 'node_modules/@pdfrx/engine/assets/' });
+const doc = await engine.openData(await readFile('manual.pdf'));
+
+const page = doc.pages[0];
+const image = await page.render({ fullWidth: page.width * 2, fullHeight: page.height * 2 });
+// image.pixels is plain RGBA — hand it to sharp, jimp, or whatever encodes for you
+console.log((await page.loadText()).fullText);
+
+await doc.dispose();
+engine.dispose(); // terminates the worker, which otherwise keeps the process alive
 ```
 
-Notes for a non-browser host: `pdfium_worker.js` is a classic worker script that
-reads `pdfiumWasmUrl` from the global scope, so the bootstrap must define it
-before running the script (Bun and Deno workers are ES modules with no
-`importScripts`, so `eval` the fetched source there). It fetches the wasm with
-`fetch`, which in Node does not accept `file:` URLs — serve the assets over HTTP
-or shim `fetch`. Font persistence quietly turns itself off without IndexedDB, so
-`addFontData` has to be called per session. `PdfImage.toImageData()` /
-`toImageBitmap()` need browser globals, but `image.pixels` (RGBA) is plain data
-you can hand to any encoder.
+Two behavioral differences are worth knowing. Font registrations do not persist,
+because that uses IndexedDB, so `addFontData` has to be called per session. And
+`PdfImage.toImageData()` / `toImageBitmap()` need browser globals — use
+`image.pixels` instead.
+
+Pass `createWorker` if the engine's own worker startup does not suit you: an
+unrecognized host, a self-hosted copy of `pdfium_worker.js`, or a worker that
+needs options of its own. It receives `{ workerUrl, wasmUrl }` and returns
+anything Web-Worker-shaped (`postMessage`, `terminate`, `onmessage`, `onerror`),
+possibly as a promise.
 
 ## API highlights
 
