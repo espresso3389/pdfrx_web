@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/viewer-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Platform-independent core logic of the pdfrx viewer: geometry, layout, viewport math, text flow analysis, and text selection",
   "type": "module",
   "main": "./dist/index.js",
