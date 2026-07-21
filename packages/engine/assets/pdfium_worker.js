@@ -3570,6 +3570,17 @@ function _generateAnnotId() {
 const ANNOT_COLOR_KEY = 'pdfrx:C';
 const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
 const ANNOT_FONT_FACE_KEY = 'pdfrx:FontFace';
+/** Bitmap backing stores retained until FPDFPage_GenerateContent consumes them. */
+let _pendingAnnotImageBitmaps = [];
+
+function _releasePendingAnnotImageBitmaps() {
+  const w = Pdfium.wasmExports;
+  for (const { bitmap, buffer } of _pendingAnnotImageBitmaps) {
+    w.FPDFBitmap_Destroy(bitmap);
+    w.free(buffer);
+  }
+  _pendingAnnotImageBitmaps = [];
+}
 
 /** Serializes an RGBA color to the private-key string form, or '' to clear it. */
 function _colorToKey(c) {
@@ -3733,6 +3744,16 @@ function _readAnnotationObject(annot, index) {
         return null;
       }
     })(),
+    appearanceRuns: (() => {
+      const value = _getAnnotField('pdfrx:FreeTextRuns', annot);
+      if (!value) return null;
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    })(),
     subject: content ? content.subject : null,
     modificationDate: content ? content.modificationDate : null,
     creationDate: content ? content.creationDate : null,
@@ -3816,6 +3837,12 @@ function _applyAnnotSpec(annot, spec, docHandle) {
   if (spec.author != null) _setAnnotStringKey(annot, 'T', spec.author);
   if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
   if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
+  if (spec.appearanceRuns) {
+    const persistedRuns = spec.appearanceRuns.map((line) =>
+      line.map((run) => ({ text: run.text, fontFace: run.fontFace, x: run.x })),
+    );
+    _setAnnotStringKey(annot, 'pdfrx:FreeTextRuns', JSON.stringify(persistedRuns));
+  }
   const g = spec.geometry;
   if (g && g.kind === 'ink') {
     for (const stroke of g.strokes) {
@@ -3838,7 +3865,7 @@ function _applyAnnotSpec(annot, spec, docHandle) {
 }
 
 /** Builds a FreeText appearance with independent fill, stroke, and embedded text. */
-function _appendFreeTextAppearance(docHandle, annot, spec) {
+function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
   const w = Pdfium.wasmExports;
   const rect = spec.rect;
   if (!rect) return;
@@ -3861,17 +3888,23 @@ function _appendFreeTextAppearance(docHandle, annot, spec) {
     }
   }
   if (!spec.contents) return;
-  let font = 0;
-  const cached = spec.fontFace ? pdfFontMapper?.cachedFontsByFace[spec.fontFace] : null;
-  if (cached?.data) {
+  const fonts = new Map();
+  const loadFont = (face) => {
+    if (!face) return 0;
+    if (fonts.has(face)) return fonts.get(face);
+    let font = 0;
+    const cached = pdfFontMapper?.cachedFontsByFace[face];
+    if (!cached?.data) return 0;
     const fontPtr = w.malloc(cached.data.byteLength);
     try {
       new Uint8Array(Pdfium.memory.buffer, fontPtr, cached.data.byteLength).set(cached.data);
-      font = w.FPDFText_LoadFont(docHandle, fontPtr, cached.data.byteLength, 1, 1);
+      font = w.FPDFText_LoadFont(docHandle, fontPtr, cached.data.byteLength, 1, face.includes('symbols') ? 0 : 1);
     } finally {
       w.free(fontPtr);
     }
-  }
+    fonts.set(face, font);
+    return font;
+  };
   try {
     const fontSize = 12;
     const lineHeight = fontSize * 1.2;
@@ -3879,33 +3912,105 @@ function _appendFreeTextAppearance(docHandle, annot, spec) {
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index];
       if (!line) continue;
-      let text = 0;
-      if (font) {
-        text = w.FPDFPageObj_CreateTextObj(docHandle, font, fontSize);
-      } else {
-        const name = StringUtils.allocateUTF8('Arial');
-        try {
-          text = w.FPDFPageObj_NewTextObj(docHandle, name, fontSize);
-        } finally {
-          StringUtils.freeUTF8(name);
-        }
-      }
-      if (!text) continue;
-      const value = StringUtils.allocateUTF16(line);
-      try {
-        if (!w.FPDFText_SetText(text, value)) {
-          w.FPDFPageObj_Destroy(text);
+      const runs = spec.appearanceRuns?.[index] ?? [{ text: line, fontFace: spec.fontFace ?? null, x: 0 }];
+      for (const run of runs) {
+        if (!run.text) continue;
+        if (run.image) {
+          _appendFreeTextImage(
+            docHandle,
+            pageHandle,
+            annot,
+            run.image,
+            left + borderWidth + 3 + (run.x ?? 0),
+            top - borderWidth - 3 - index * lineHeight,
+          );
           continue;
         }
-      } finally {
-        StringUtils.freeUTF8(value);
+        const font = loadFont(run.fontFace);
+        let text = 0;
+        if (font) {
+          text = w.FPDFPageObj_CreateTextObj(docHandle, font, fontSize);
+        } else {
+          const name = StringUtils.allocateUTF8('Arial');
+          try {
+            text = w.FPDFPageObj_NewTextObj(docHandle, name, fontSize);
+          } finally {
+            StringUtils.freeUTF8(name);
+          }
+        }
+        if (!text) continue;
+        const value = StringUtils.allocateUTF16(run.text);
+        try {
+          if (!w.FPDFText_SetText(text, value)) {
+            w.FPDFPageObj_Destroy(text);
+            continue;
+          }
+        } finally {
+          StringUtils.freeUTF8(value);
+        }
+        w.FPDFPageObj_SetFillColor(text, 0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255);
+        w.FPDFPageObj_Transform(
+          text,
+          1,
+          0,
+          0,
+          1,
+          left + borderWidth + 3 + (run.x ?? 0),
+          top - borderWidth - 3 - fontSize - index * lineHeight,
+        );
+        if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);
       }
-      w.FPDFPageObj_SetFillColor(text, 0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255);
-      w.FPDFPageObj_Transform(text, 1, 0, 0, 1, left + borderWidth + 3, top - borderWidth - 3 - fontSize - index * lineHeight);
-      if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);
     }
   } finally {
-    if (font) w.FPDFFont_Close(font);
+    for (const font of fonts.values()) if (font) w.FPDFFont_Close(font);
+  }
+}
+
+function _appendFreeTextImage(docHandle, pageHandle, annot, image, x, top) {
+  const w = Pdfium.wasmExports;
+  const stride = image.width * 4;
+  const buffer = w.malloc(stride * image.height);
+  const target = new Uint8Array(Pdfium.memory.buffer, buffer, stride * image.height);
+  // Canvas supplies RGBA; PDFium's bitmap format 4 is BGRA.
+  for (let i = 0; i < image.pixels.length; i += 4) {
+    target[i] = image.pixels[i + 2];
+    target[i + 1] = image.pixels[i + 1];
+    target[i + 2] = image.pixels[i];
+    target[i + 3] = image.pixels[i + 3];
+  }
+  const bitmap = w.FPDFBitmap_CreateEx(image.width, image.height, 4, buffer, stride);
+  if (!bitmap) {
+    w.free(buffer);
+    return;
+  }
+  const object = w.FPDFPageObj_NewImageObj(docHandle);
+  const pages = w.malloc(4);
+  let appended = false;
+  try {
+    new Int32Array(Pdfium.memory.buffer, pages, 1)[0] = pageHandle;
+    if (!object || !w.FPDFImageObj_SetBitmap(pages, 1, object, bitmap)) {
+      if (object) w.FPDFPageObj_Destroy(object);
+      return;
+    }
+    const scale = image.scale || 1;
+    const width = image.width / scale;
+    const height = image.height / scale;
+    const matrix = w.malloc(24);
+    try {
+      new Float32Array(Pdfium.memory.buffer, matrix, 6).set([width, 0, 0, height, x, top - height]);
+      w.FPDFPageObj_SetMatrix(object, matrix);
+    } finally {
+      w.free(matrix);
+    }
+    appended = !!w.FPDFAnnot_AppendObject(annot, object);
+    if (!appended) w.FPDFPageObj_Destroy(object);
+  } finally {
+    w.free(pages);
+    if (appended) _pendingAnnotImageBitmaps.push({ bitmap, buffer });
+    else {
+      w.FPDFBitmap_Destroy(bitmap);
+      w.free(buffer);
+    }
   }
 }
 
@@ -3982,7 +4087,7 @@ function _createAnnotOnPage(docHandle, pageHandle, spec, forcedId) {
           w.FPDFAnnot_SetRect(stamp, buf);
           w.free(buf);
         }
-        _appendFreeTextAppearance(docHandle, stamp, spec);
+        _appendFreeTextAppearance(docHandle, pageHandle, stamp, spec);
       } finally {
         w.FPDFPage_CloseAnnot(stamp);
       }
@@ -4009,8 +4114,10 @@ function addAnnotation(params) {
     const id = _createAnnotOnPage(docHandle, pageHandle, spec);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
+    _releasePendingAnnotImageBitmaps();
     return { id };
   } finally {
+    _releasePendingAnnotImageBitmaps();
     w.FPDF_ClosePage(pageHandle);
   }
 }
@@ -4033,8 +4140,10 @@ function updateAnnotation(params) {
     const newId = _createAnnotOnPage(docHandle, pageHandle, spec, spec.id || id);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
+    _releasePendingAnnotImageBitmaps();
     return { id: newId };
   } finally {
+    _releasePendingAnnotImageBitmaps();
     w.FPDF_ClosePage(pageHandle);
   }
 }

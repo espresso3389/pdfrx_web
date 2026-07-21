@@ -1638,6 +1638,7 @@ export class PdfPage {
       author: a.author,
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines,
+      appearanceRuns: a.appearanceRuns,
       subject: a.subject,
       modificationDate: a.modificationDate,
       creationDate: a.creationDate,
@@ -1684,6 +1685,7 @@ export class PdfPage {
       author: spec.author,
       fontFace: spec.fontFace,
       appearanceLines: spec.appearanceLines,
+      appearanceRuns: spec.appearanceRuns,
       geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
     };
   }

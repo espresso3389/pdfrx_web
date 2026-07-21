@@ -772,6 +772,7 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
     author: a.author,
     fontFace: a.fontFace,
     appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
+    appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
       geometry: a.geometry,
     },
     dx,
@@ -1044,8 +1045,12 @@ function cssColorToRgba(css: string, opacity = 1): { r: number; g: number; b: nu
   return { r, g, b, a: Math.round(Math.max(0, Math.min(1, opacity)) * 255) };
 }
 
-/** Selects the PDFium/Windows charset used by the configured font resolver. */
-function freeTextCharset(text: string): number | null {
+type FreeTextFontKind = number | 'symbols';
+type FreeTextRunKind = FreeTextFontKind | 'latin' | 'neutral';
+
+/** Selects the fallback font family needed by one grapheme cluster. */
+function freeTextRunKind(text: string): FreeTextRunKind {
+  if (/\p{Extended_Pictographic}|[\u2000-\u2bff\ufe0f]/u.test(text)) return 'symbols';
   // Prefer the more specific scripts before the shared Han ideograph range.
   if (/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(text)) return 128;
   if (/\p{Script=Hangul}/u.test(text)) return 129;
@@ -1055,13 +1060,37 @@ function freeTextCharset(text: string): number | null {
   if (/\p{Script=Thai}/u.test(text)) return 222;
   if (/\p{Script=Cyrillic}/u.test(text)) return 204;
   if (/\p{Script=Greek}/u.test(text)) return 161;
-  // Standard Helvetica covers basic Latin/Latin-1. Resolve a broad Unicode
-  // fallback for any other script or extended character.
-  return /[^\u0000-\u00ff]/u.test(text) ? 1 : null;
+  if (/\p{Script=Latin}|[\u0000-\u00ff]/u.test(text)) return 'latin';
+  if (/\p{Script=Common}|\p{Script=Inherited}/u.test(text)) return 'neutral';
+  return 1;
 }
 
 const FREE_TEXT_FONT_SIZE = 12;
 const FREE_TEXT_PADDING = 3;
+
+function renderFreeTextEmoji(text: string): { width: number; height: number; scale: number; pixels: Uint8Array } | undefined {
+  const scale = 3;
+  const canvas = document.createElement('canvas');
+  const measure = canvas.getContext('2d');
+  if (!measure) return undefined;
+  measure.font = `${FREE_TEXT_FONT_SIZE}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+  const logicalWidth = Math.max(FREE_TEXT_FONT_SIZE, Math.ceil(measure.measureText(text).width + 2));
+  const logicalHeight = Math.ceil(FREE_TEXT_FONT_SIZE * 1.35);
+  canvas.width = logicalWidth * scale;
+  canvas.height = logicalHeight * scale;
+  const context = canvas.getContext('2d');
+  if (!context) return undefined;
+  context.scale(scale, scale);
+  context.font = `${FREE_TEXT_FONT_SIZE}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+  context.textBaseline = 'top';
+  context.fillText(text, 1, 0);
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    scale,
+    pixels: new Uint8Array(context.getImageData(0, 0, canvas.width, canvas.height).data),
+  };
+}
 
 /** Wraps explicit paragraphs and long lines using the same 12pt UI font. */
 function wrapFreeText(text: string, width: number): string[] {
@@ -1113,6 +1142,7 @@ function refreshFreeTextLayout(spec: PdfAnnotationSpec): void {
     spec.contents,
     spec.rect.right - spec.rect.left - (spec.borderWidth ?? 0) * 2,
   );
+  spec.appearanceRuns = undefined;
 }
 
 const HANDLE_HIT_RADIUS = 24;
@@ -2465,6 +2495,8 @@ export class PdfrxViewer {
   private readonly attemptedFontKeys = new Set<string>();
   /** Download cache so several queries resolving to the same file fetch once. */
   private readonly fontDownloads = new Map<string, Promise<Uint8Array | null>>();
+  /** Registered fonts used by mixed-script FreeText appearances. */
+  private readonly freeTextFonts = new Map<FreeTextFontKind, Promise<string | null>>();
   /** Serializes fallback batches so reloadFonts is not called concurrently. */
   private fontWork: Promise<void> = Promise.resolve();
 
@@ -4525,6 +4557,7 @@ export class PdfrxViewer {
         if (!this.doc) return;
         for (const cmd of group) {
           const after = cmd.after!;
+          if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
           await this.doc.updateAnnotation(cmd.pageNumber, cmd.id, after);
           const snapshot = this.annotationSnapshots.get(cmd.id);
           if (snapshot) {
@@ -4945,9 +4978,11 @@ export class PdfrxViewer {
       const before = annotationToSpec(annotation);
       const after = lastSpec;
       refreshFreeTextLayout(after);
-      void this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after).then(() => {
+      void (async () => {
+        if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
+        await this.doc!.updateAnnotation(overlay.pageNumber, annotation.id, after);
         this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
-      });
+      })();
     };
     circle.addEventListener('pointermove', move);
     circle.addEventListener('pointerup', up);
@@ -5206,8 +5241,7 @@ export class PdfrxViewer {
       if (contents === null) return;
       spec.contents = contents;
       if (spec.subtype === 'freeText') {
-        spec.fontFace = await this.ensureFreeTextFont(contents);
-        if (spec.rect) spec.appearanceLines = wrapFreeText(contents, spec.rect.right - spec.rect.left - (spec.borderWidth ?? 0) * 2);
+        await this.prepareFreeTextAppearance(spec);
       }
     }
     const id = await this.doc.addAnnotation(s.pageNumber, spec);
@@ -5216,13 +5250,20 @@ export class PdfrxViewer {
     this.setSelectedAnnotation(id);
   }
 
-  private async ensureFreeTextFont(contents: string): Promise<string | null> {
-    const charset = freeTextCharset(contents);
-    if (charset === null) return null;
-    const face = `PdfrxFreeText-${charset}`;
+  private ensureFreeTextFont(kind: FreeTextFontKind): Promise<string | null> {
+    const existing = this.freeTextFonts.get(kind);
+    if (existing) return existing;
+    const pending = this.loadFreeTextFont(kind);
+    this.freeTextFonts.set(kind, pending);
+    return pending;
+  }
+
+  private async loadFreeTextFont(kind: FreeTextFontKind): Promise<string | null> {
+    // Emoji runs are rasterized by the browser and never reach this path.
+    if (kind === 'symbols') return null;
+    const face = `PdfrxFreeText-${kind}`;
     const resolver = this.options.fontResolver === undefined ? googleFontsResolver : this.options.fontResolver;
-    if (!resolver) return null;
-    const resolution = resolver({ face, weight: 400, isItalic: false, charset, pitchFamily: 0 });
+    const resolution = resolver?.({ face, weight: 400, isItalic: false, charset: kind, pitchFamily: 0 });
     if (!resolution) return null;
     let download = this.fontDownloads.get(resolution.url);
     if (!download) {
@@ -5241,6 +5282,61 @@ export class PdfrxViewer {
     if (!data) return null;
     await this.#engine.addFontData(face, data, resolution.resolvedFace);
     return face;
+  }
+
+  private async prepareFreeTextAppearance(spec: PdfAnnotationSpec): Promise<void> {
+    refreshFreeTextLayout(spec);
+    const lines = spec.appearanceLines ?? [''];
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context) context.font = `${FREE_TEXT_FONT_SIZE}px Arial, sans-serif`;
+    const graphemeSegmenter =
+      typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+    spec.appearanceRuns = [];
+    for (const line of lines) {
+      const graphemes = graphemeSegmenter ? [...graphemeSegmenter.segment(line)].map((part) => part.segment) : [...line];
+      const kinds = graphemes.map(freeTextRunKind);
+      // Common punctuation/whitespace belongs to the surrounding script. This
+      // keeps Japanese 、。 in the CJK font instead of a glyph-less Latin font.
+      for (let index = 0; index < kinds.length; index++) {
+        if (kinds[index] !== 'neutral') continue;
+        let previous: FreeTextRunKind | undefined;
+        for (let cursor = index - 1; cursor >= 0; cursor--) {
+          if (kinds[cursor] !== 'neutral') {
+            previous = kinds[cursor];
+            break;
+          }
+        }
+        const next = kinds.slice(index + 1).find((kind) => kind !== 'neutral');
+        kinds[index] = previous ?? next ?? 'latin';
+      }
+      const grouped: { text: string; kind: FreeTextRunKind }[] = [];
+      for (let index = 0; index < graphemes.length; index++) {
+        const grapheme = graphemes[index]!;
+        const kind = kinds[index]!;
+        const last = grouped[grouped.length - 1];
+        if (last?.kind === kind) last.text += grapheme;
+        else grouped.push({ text: grapheme, kind });
+      }
+      let x = 0;
+      const runs: {
+        text: string;
+        fontFace: string | null;
+        x: number;
+        image?: { width: number; height: number; scale: number; pixels: Uint8Array };
+      }[] = [];
+      for (const group of grouped) {
+        const fontFace =
+          group.kind === 'latin' || group.kind === 'neutral' || group.kind === 'symbols'
+            ? null
+            : await this.ensureFreeTextFont(group.kind);
+        const image = group.kind === 'symbols' ? renderFreeTextEmoji(group.text) : undefined;
+        runs.push({ text: group.text, fontFace, x, ...(image ? { image } : {}) });
+        x += context?.measureText(group.text).width ?? group.text.length * FREE_TEXT_FONT_SIZE * 0.6;
+      }
+      spec.appearanceRuns.push(runs);
+    }
+    spec.fontFace = spec.appearanceRuns.flat().find((run) => run.fontFace)?.fontFace ?? null;
   }
 
   private trackAnnotationTextEdit(operation: Promise<void>): void {
@@ -5333,8 +5429,7 @@ export class PdfrxViewer {
     const after = structuredClone(before);
     after.contents = contents;
     if (after.subtype === 'freeText') {
-      after.fontFace = await this.ensureFreeTextFont(contents);
-      if (after.rect) after.appearanceLines = wrapFreeText(contents, after.rect.right - after.rect.left - (after.borderWidth ?? 0) * 2);
+      await this.prepareFreeTextAppearance(after);
     }
     await this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after);
     this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
@@ -5791,6 +5886,7 @@ export class PdfrxViewer {
       const before = annotationToSpec(a);
       const after = makeSpec(a);
       refreshFreeTextLayout(after);
+      if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
       await this.doc.updateAnnotation(overlay.pageNumber, a.id, after);
       group.push({ pageNumber: overlay.pageNumber, id: a.id, before, after });
     }

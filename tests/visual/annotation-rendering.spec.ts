@@ -456,11 +456,12 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await expect(page.locator('svg[style*="crosshair"]')).toHaveCount(1);
   await page.mouse.move(40, 80);
   await page.mouse.down();
-  await page.mouse.move(200, 140, { steps: 3 });
+  await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
   const freeTextEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(freeTextEditor).toHaveCount(1);
-  const multilineText = '日本語テキスト ABC\nThis is a very long line that must wrap inside the text box.';
+  const multilineText =
+    'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji.';
   await freeTextEditor.fill(multilineText);
   // Saving while the editor still owns focus must first commit its contents;
   // otherwise encodePdf can race ahead and persist an empty Text Box.
@@ -472,13 +473,22 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await expect.poll(async () => (await read()).length).toBe(1);
   expect(await read()).toEqual([{ subtype: 'freeText', contents: multilineText, borderWidth: 7 }]);
   const renderedText = page.locator('g[data-annot-id] text');
-  await expect(renderedText.locator('tspan')).toHaveCount(4);
+  await expect(renderedText.locator('tspan').first()).toBeAttached();
+  expect(await renderedText.locator('tspan').count()).toBeGreaterThan(5);
   await expect(renderedText).toHaveAttribute('clip-path', /^url\(#pdfrx-free-text-/);
   const roundTrip = await page.evaluate(() => {
     const api = (
       window as unknown as {
         annotationVisualTest: {
-          inspectCurrentFreeTextRoundTrip(): Promise<{ contents: string | null; darkInteriorPixels: number }>;
+          inspectCurrentFreeTextRoundTrip(): Promise<{
+            contents: string | null;
+            darkInteriorPixels: number;
+            emojiPixels: number;
+            emojiPositionDelta: number;
+            emojiPosition: { actualX: number; actualY: number; expectedX: number; expectedY: number };
+            fontFaces: string[];
+            runs: { text: string; fontFace: string | null }[];
+          }>;
         };
       }
     ).annotationVisualTest;
@@ -486,6 +496,11 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   });
   expect(roundTrip.contents).toBe(multilineText);
   expect(roundTrip.darkInteriorPixels).toBeGreaterThan(100);
+  expect(roundTrip.emojiPixels, 'embedded emoji image should retain colored pixels').toBeGreaterThan(10);
+  expect(roundTrip.emojiPositionDelta, `emoji position ${JSON.stringify(roundTrip.emojiPosition)}`).toBeLessThanOrEqual(3);
+  expect(roundTrip.fontFaces).toContain('PdfrxFreeText-128');
+  expect(roundTrip.runs.some((run) => run.text.includes('、') && run.fontFace === 'PdfrxFreeText-128')).toBe(true);
+  expect(roundTrip.runs.some((run) => run.text.includes('。') && run.fontFace === 'PdfrxFreeText-128')).toBe(true);
 
   // The empty area inside the box is also a hit target; users should not have
   // to double-click directly on a glyph or the thin border to edit it.

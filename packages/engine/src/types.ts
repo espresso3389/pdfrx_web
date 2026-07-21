@@ -468,6 +468,12 @@ export interface PdfAnnotationObject {
   readonly author: string | null;
   readonly fontFace: string | null;
   readonly appearanceLines: readonly string[] | null;
+  readonly appearanceRuns: readonly (readonly {
+    text: string;
+    fontFace: string | null;
+    x: number;
+    image?: { width: number; height: number; scale: number; pixels: Uint8Array };
+  }[])[] | null;
   /** `/Subj` subject. */
   readonly subject: string | null;
   /** Raw PDF date string (`D:…`), if any. */
@@ -500,6 +506,13 @@ export interface PdfAnnotationSpec {
   fontFace?: string | null;
   /** Pre-wrapped lines used by the generated FreeText appearance. */
   appearanceLines?: string[];
+  /** Per-line font runs used for mixed-script FreeText. */
+  appearanceRuns?: {
+    text: string;
+    fontFace: string | null;
+    x: number;
+    image?: { width: number; height: number; scale: number; pixels: Uint8Array };
+  }[][];
   geometry?: PdfAnnotationGeometry;
 }
 

@@ -183,6 +183,12 @@ export interface WireAnnotationObject {
   author: string | null;
   fontFace: string | null;
   appearanceLines: string[] | null;
+  appearanceRuns: {
+    text: string;
+    fontFace: string | null;
+    x: number;
+    image?: { width: number; height: number; scale: number; pixels: Uint8Array };
+  }[][] | null;
   /** `/Subj` subject. */
   subject: string | null;
   modificationDate: string | null;
@@ -211,6 +217,13 @@ export interface WireAnnotationSpec {
   fontFace?: string | null;
   /** Pre-wrapped lines for the generated FreeText appearance. */
   appearanceLines?: string[];
+  /** Per-line font runs used for mixed-script FreeText. */
+  appearanceRuns?: {
+    text: string;
+    fontFace: string | null;
+    x: number;
+    image?: { width: number; height: number; scale: number; pixels: Uint8Array };
+  }[][];
   geometry?: WireAnnotationGeometry;
 }
 

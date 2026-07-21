@@ -319,11 +319,19 @@ async function runFreeTextRoundTrip(spec: PdfAnnotationSpec): Promise<{
   }
 }
 
-async function inspectCurrentFreeTextRoundTrip(): Promise<{ contents: string | null; darkInteriorPixels: number }> {
+async function inspectCurrentFreeTextRoundTrip(): Promise<{
+  contents: string | null;
+  darkInteriorPixels: number;
+  emojiPixels: number;
+  emojiPositionDelta: number;
+  emojiPosition: { actualX: number; actualY: number; expectedX: number; expectedY: number };
+  fontFaces: string[];
+  runs: { text: string; fontFace: string | null }[];
+}> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
   const current = (await doc.pages[0]!.loadAnnotations()).find((annotation) => annotation.subtype === 'freeText');
-  if (!current) return { contents: null, darkInteriorPixels: 0 };
+  if (!current) return { contents: null, darkInteriorPixels: 0, emojiPixels: 0, emojiPositionDelta: Infinity, emojiPosition: { actualX: 0, actualY: 0, expectedX: 0, expectedY: 0 }, fontFaces: [], runs: [] };
   const encoded = await doc.encodePdf();
   const reopened = await viewer.engine.openData(encoded);
   try {
@@ -347,7 +355,35 @@ async function inspectCurrentFreeTextRoundTrip(): Promise<{ contents: string | n
         if (pixels[i]! < 80 && pixels[i + 1]! < 80 && pixels[i + 2]! < 80) darkInteriorPixels++;
       }
     }
-    return { contents: annotation?.contents ?? null, darkInteriorPixels };
+    let emojiPixels = 0;
+    let emojiLeft = Infinity;
+    let emojiTop = Infinity;
+    const inset = Math.ceil(current.borderWidth + 3);
+    for (let y = Math.ceil(SIZE - current.rect.top) + inset; y < Math.floor(SIZE - current.rect.bottom) - inset; y++) {
+      for (let x = Math.ceil(current.rect.left) + inset; x < Math.floor(current.rect.right) - inset; x++) {
+        const i = (y * SIZE + x) * 4;
+        const r = pixels[i]!;
+        const g = pixels[i + 1]!;
+        const b = pixels[i + 2]!;
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 30 && Math.min(r, g, b) < 240) {
+          emojiPixels++;
+          emojiLeft = Math.min(emojiLeft, x);
+          emojiTop = Math.min(emojiTop, y);
+        }
+      }
+    }
+    const fontFaces = [...new Set((annotation?.appearanceRuns ?? []).flat().map((run) => run.fontFace).filter((face): face is string => !!face))];
+    const runs = (annotation?.appearanceRuns ?? []).flat().map((run) => ({ text: run.text, fontFace: run.fontFace }));
+    let expectedX = Infinity;
+    let expectedY = Infinity;
+    annotation?.appearanceRuns?.forEach((line, lineIndex) => {
+      const emoji = line.find((run) => /\p{Extended_Pictographic}/u.test(run.text));
+      if (!emoji) return;
+      expectedX = current.rect.left + current.borderWidth + 3 + emoji.x;
+      expectedY = SIZE - current.rect.top + current.borderWidth + 3 + lineIndex * 14.4;
+    });
+    const emojiPositionDelta = Math.max(Math.abs(emojiLeft - expectedX), Math.abs(emojiTop - expectedY));
+    return { contents: annotation?.contents ?? null, darkInteriorPixels, emojiPixels, emojiPositionDelta, emojiPosition: { actualX: emojiLeft, actualY: emojiTop, expectedX, expectedY }, fontFaces, runs };
   } finally {
     await reopened.dispose();
   }
