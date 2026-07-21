@@ -13,7 +13,7 @@
  * the directory that hosts the bundled WASM assets (`pdfium_worker.js` and
  * `pdfium.wasm`), then open documents with {@link PdfrxEngine.openUrl},
  * {@link PdfrxEngine.openData}, {@link PdfrxEngine.createNew}, or
- * {@link PdfrxEngine.createFromJpegData}. Opened documents are represented by
+ * {@link PdfrxEngine.createFromImages}. Opened documents are represented by
  * {@link PdfDocument}, their pages by {@link PdfPage}, and rendered bitmaps by
  * {@link PdfImage}.
  *
@@ -32,6 +32,15 @@ export {
   type PdfPageRenderOptions,
   type PdfrxEngineOptions,
 } from './document.js';
+export {
+  canDecodeImages,
+  isJpeg,
+  readJpegSize,
+  type PdfCreateFromImagesOptions,
+  type PdfImageDecoder,
+  type PdfImageSource,
+  type PdfRawImage,
+} from './image-source.js';
 export { PdfPageRenderCancellationToken } from './render-queue.js';
 export * from './types.js';
 export type {
@@ -44,9 +53,11 @@ export type {
   WireError,
   WireFontQueries,
   WireFontQuery,
+  WireImagePage,
   WireLink,
   WireOutlineNode,
   WirePageInfo,
+  WirePixelFormat,
   WireRect,
 } from './protocol.js';
 export { isWireError, PdfErrorCode } from './protocol.js';

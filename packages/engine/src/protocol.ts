@@ -115,6 +115,31 @@ export interface WireLink {
   annotation?: WireAnnotation | null;
 }
 
+/** Byte order of raw pixel data handed to the worker. */
+export type WirePixelFormat = 'rgba8888' | 'bgra8888';
+
+/**
+ * One page of a document built by {@link WorkerCommandMap.createDocumentFromImages}.
+ *
+ * `width`/`height` are the page dimensions in points (1/72 inch). A `jpeg` page
+ * carries the encoded bytes and lets PDFium decode them natively (works on every
+ * runtime); a `pixels` page carries already-decoded pixels for formats PDFium
+ * cannot read on its own. All `ArrayBuffer`s are transferred to the worker.
+ */
+export type WireImagePage =
+  | { kind: 'jpeg'; data: ArrayBuffer; width: number; height: number }
+  | {
+      kind: 'pixels';
+      pixels: ArrayBuffer;
+      /** Pixel width of the bitmap. */
+      pixelWidth: number;
+      /** Pixel height of the bitmap. */
+      pixelHeight: number;
+      format: WirePixelFormat;
+      width: number;
+      height: number;
+    };
+
 /**
  * Parameter/result shapes for every worker command, keyed by command name.
  * Used by {@link WorkerCommunicator.sendCommand} to type each round-trip.
@@ -159,14 +184,11 @@ export interface WorkerCommandMap {
     params: Record<string, never>;
     result: WireDocument | WireError;
   };
-  /** Creates a single-page document whose page shows the given JPEG image. */
-  createDocumentFromJpegData: {
+  /** Creates a document whose pages each display one image (one page per {@link WireImagePage}). */
+  createDocumentFromImages: {
     params: {
-      jpegData: ArrayBuffer;
-      /** Page width in points (1/72 inch). */
-      width: number;
-      /** Page height in points (1/72 inch). */
-      height: number;
+      /** One entry per page, in order. */
+      pages: WireImagePage[];
     };
     result: WireDocument | WireError;
   };

@@ -1,4 +1,9 @@
 import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
+import {
+  imageSourcesToWirePages,
+  type PdfCreateFromImagesOptions,
+  type PdfImageSource,
+} from './image-source.js';
 import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
   isWireError,
@@ -102,7 +107,7 @@ export interface PdfPageRenderOptions {
  * Construct one — in a browser, with the URL of the directory serving the
  * bundled WASM assets; on Node, Bun or Deno, with nothing at all, since the
  * assets ship inside this package — then open documents with {@link openUrl},
- * {@link openData}, {@link createNew}, or {@link createFromJpegData}. A single
+ * {@link openData}, {@link createNew}, or {@link createFromImages}. A single
  * engine owns one worker ({@link WorkerCommunicator}) shared by all documents it
  * opens; call {@link dispose} to tear it down.
  *
@@ -239,25 +244,38 @@ export class PdfrxEngine {
   }
 
   /**
-   * Creates a single-page document that displays the given JPEG image.
-   * `size.width`/`size.height` are the page dimensions in points (1/72 inch).
+   * Creates a document with one page per image, in order.
+   *
+   * Each image is either encoded bytes (a `Blob`, `Uint8Array`, or
+   * `ArrayBuffer`) or a {@link PdfRawImage} of already-decoded pixels. JPEG bytes
+   * are decoded natively by PDFium on every runtime; other formats are decoded
+   * on the calling thread via `createImageBitmap` + `OffscreenCanvas` where
+   * available (browsers, workers, Deno, Bun). On runtimes without that (Node),
+   * pass {@link PdfCreateFromImagesOptions.decode} or pre-decoded
+   * {@link PdfRawImage} pixels.
+   *
+   * Page size defaults to the image's pixel size at
+   * {@link PdfCreateFromImagesOptions.dpi} (72 by default); override it for all
+   * pages with {@link PdfCreateFromImagesOptions.pageSize}.
+   *
+   * @example
+   * ```ts
+   * // A PNG and a JPEG, one per page:
+   * const doc = await engine.createFromImages([pngBlob, jpegBytes]);
+   * ```
    */
-  async createFromJpegData(
-    jpegData: Uint8Array,
-    size: { width: number; height: number },
-    sourceName = 'jpeg',
+  async createFromImages(
+    images: PdfImageSource[],
+    options: PdfCreateFromImagesOptions = {},
   ): Promise<PdfDocument> {
+    if (images.length === 0) throw new Error('createFromImages requires at least one image');
     await this.init();
-    const buffer = jpegData.slice().buffer;
-    const result = await this.comm.sendCommand(
-      'createDocumentFromJpegData',
-      { jpegData: buffer, width: size.width, height: size.height },
-      [buffer],
-    );
+    const { pages, transfer } = await imageSourcesToWirePages(images, options);
+    const result = await this.comm.sendCommand('createDocumentFromImages', { pages }, transfer);
     if (isWireError(result)) {
-      throw new Error(`Failed to create document from JPEG data: ${result.errorCodeStr} (${result.errorCode})`);
+      throw new Error(`Failed to create document from images: ${result.errorCodeStr} (${result.errorCode})`);
     }
-    return new PdfDocument(this.comm, result, sourceName, null);
+    return new PdfDocument(this.comm, result, options.sourceName ?? 'images', null);
   }
 
   /** Registers font data used to substitute missing fonts, then re-render affected pages. */

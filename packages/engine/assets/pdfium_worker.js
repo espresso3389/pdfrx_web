@@ -2732,140 +2732,153 @@ function createNewDocument() {
 }
 
 /**
- * Create a PDF document from JPEG data
+ * Create a PDF document with one page per image.
  * @param {Object} params Parameters object
- * @param {ArrayBuffer} params.jpegData JPEG image data
- * @param {number} params.width Page width in PDF units
- * @param {number} params.height Page height in PDF units
+ * @param {Array<Object>} params.pages One entry per page. Each is either
+ *   `{ kind: 'jpeg', data: ArrayBuffer, width, height }` or
+ *   `{ kind: 'pixels', pixels: ArrayBuffer, pixelWidth, pixelHeight, format, width, height }`,
+ *   where `width`/`height` are page dimensions in PDF points and `format` is
+ *   `'rgba8888'` or `'bgra8888'`.
  * @returns {PdfDocument|PdfError}
  */
-function createDocumentFromJpegData(params) {
-  const { jpegData, width, height } = params;
-
-  if (!jpegData || !(jpegData instanceof ArrayBuffer)) {
-    return { errorCode: -1, errorCodeStr: 'Invalid JPEG data' };
-  }
-  if (typeof width !== 'number' || width <= 0) {
-    return { errorCode: -1, errorCodeStr: 'Invalid width' };
-  }
-  if (typeof height !== 'number' || height <= 0) {
-    return { errorCode: -1, errorCodeStr: 'Invalid height' };
+function createDocumentFromImages(params) {
+  const pages = params && params.pages;
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return { errorCode: -1, errorCodeStr: 'No image pages provided' };
   }
 
-  // Create a new PDF document
   const docHandle = Pdfium.wasmExports.FPDF_CreateNewDocument();
   if (!docHandle) {
     return { errorCode: -1, errorCodeStr: 'Failed to create PDF document' };
   }
 
-  // Create a new page
-  const pageHandle = Pdfium.wasmExports.FPDFPage_New(docHandle, 0, width, height);
-  if (!pageHandle) {
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      _addImagePage(docHandle, i, pages[i]);
+    }
+  } catch (e) {
     Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to create PDF page' };
+    return { errorCode: -1, errorCodeStr: e && e.message ? e.message : 'Failed to add image page' };
   }
 
-  // Create an image object
-  const imageObj = Pdfium.wasmExports.FPDFPageObj_NewImageObj(docHandle);
-  if (!imageObj) {
+  return _loadDocument(docHandle, false, () => {});
+}
+
+/**
+ * Adds one image page to a document at the given index. Throws on failure; the
+ * caller is responsible for closing the document.
+ * @param {number} docHandle Document handle
+ * @param {number} index 0-based page index
+ * @param {Object} page Page spec (see {@link createDocumentFromImages})
+ */
+function _addImagePage(docHandle, index, page) {
+  const width = page && page.width;
+  const height = page && page.height;
+  if (typeof width !== 'number' || width <= 0 || typeof height !== 'number' || height <= 0) {
+    throw new Error('Invalid page size');
+  }
+
+  const pageHandle = Pdfium.wasmExports.FPDFPage_New(docHandle, index, width, height);
+  if (!pageHandle) throw new Error('Failed to create PDF page');
+
+  try {
+    const imageObj = Pdfium.wasmExports.FPDFPageObj_NewImageObj(docHandle);
+    if (!imageObj) throw new Error('Failed to create image object');
+
+    if (page.kind === 'jpeg') {
+      _loadJpegIntoImageObj(pageHandle, imageObj, page.data);
+    } else if (page.kind === 'pixels') {
+      _setImageObjPixels(pageHandle, imageObj, page.pixels, page.pixelWidth, page.pixelHeight, page.format);
+    } else {
+      throw new Error('Unknown image page kind');
+    }
+
+    // Scale the unit image to fill the page.
+    const setMatrixResult = Pdfium.wasmExports.FPDFImageObj_SetMatrix(imageObj, width, 0, 0, height, 0, 0);
+    if (!setMatrixResult) throw new Error('Failed to set image matrix');
+
+    Pdfium.wasmExports.FPDFPage_InsertObject(pageHandle, imageObj);
+
+    if (!Pdfium.wasmExports.FPDFPage_GenerateContent(pageHandle)) {
+      throw new Error('Failed to generate page content');
+    }
+  } finally {
+    // Close the page (transfers ownership of its objects to the document).
     Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to create image object' };
   }
+}
 
-  // Create a FPDF_FILEACCESS structure in WASM memory
+/**
+ * Loads inline JPEG data into an image object via a temporary FPDF_FILEACCESS.
+ * @param {number} pageHandle Page the image belongs to
+ * @param {number} imageObj Image object handle
+ * @param {ArrayBuffer} jpegData JPEG image data
+ */
+function _loadJpegIntoImageObj(pageHandle, imageObj, jpegData) {
+  if (!(jpegData instanceof ArrayBuffer)) throw new Error('Invalid JPEG data');
+
   const fileAccessSize = 12; // sizeof(FPDF_FILEACCESS) - 3 pointers (each 4 bytes in wasm32)
   const fileAccessPtr = Pdfium.wasmExports.malloc(fileAccessSize);
-  if (!fileAccessPtr) {
-    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to allocate file access structure' };
-  }
+  if (!fileAccessPtr) throw new Error('Failed to allocate file access structure');
 
-  // Set up file access structure
-  const fa = new Uint32Array(Pdfium.memory.buffer, fileAccessPtr, fileAccessSize >> 2);
-  fa[0] = jpegData.byteLength; // m_FileLen
-  const getBlockCallback = (param, position, pBuf, size) => {
-    const toCopy = Math.min(size, jpegData.byteLength - position);
-    const src = new Uint8Array(jpegData, position, toCopy);
-    const dst = new Uint8Array(Pdfium.memory.buffer, pBuf, toCopy);
-    dst.set(src);
-    return toCopy;
-  };
-  const callbackIndex = Pdfium.addFunction(getBlockCallback, 'iiiii');
-  fa[1] = callbackIndex; // m_GetBlock function pointer
+  let callbackIndex = -1;
+  let pageArrayPtr = 0;
+  try {
+    const getBlockCallback = (param, position, pBuf, size) => {
+      const toCopy = Math.min(size, jpegData.byteLength - position);
+      const src = new Uint8Array(jpegData, position, toCopy);
+      const dst = new Uint8Array(Pdfium.memory.buffer, pBuf, toCopy);
+      dst.set(src);
+      return toCopy;
+    };
+    callbackIndex = Pdfium.addFunction(getBlockCallback, 'iiiii');
 
-  // Allocate page array (pointer to single page handle)
-  const pageArrayPtr = Pdfium.wasmExports.malloc(4);
-  if (!pageArrayPtr) {
-    Pdfium.removeFunction(callbackIndex);
+    // Re-view after addFunction, which may have grown (and detached) the memory.
+    const fa = new Uint32Array(Pdfium.memory.buffer, fileAccessPtr, fileAccessSize >> 2);
+    fa[0] = jpegData.byteLength; // m_FileLen
+    fa[1] = callbackIndex; // m_GetBlock function pointer
+
+    pageArrayPtr = Pdfium.wasmExports.malloc(4);
+    if (!pageArrayPtr) throw new Error('Failed to allocate page array');
+    new Int32Array(Pdfium.memory.buffer, pageArrayPtr, 1)[0] = pageHandle;
+
+    const loadResult = Pdfium.wasmExports.FPDFImageObj_LoadJpegFileInline(pageArrayPtr, 1, imageObj, fileAccessPtr);
+    if (!loadResult) throw new Error('Failed to load JPEG data into image object');
+  } finally {
+    if (pageArrayPtr) Pdfium.wasmExports.free(pageArrayPtr);
+    if (callbackIndex >= 0) Pdfium.removeFunction(callbackIndex);
     Pdfium.wasmExports.free(fileAccessPtr);
-    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to allocate page array' };
   }
-  new Int32Array(Pdfium.memory.buffer, pageArrayPtr, 1)[0] = pageHandle;
-
-  // Load JPEG data into the image object
-  const loadResult = Pdfium.wasmExports.FPDFImageObj_LoadJpegFileInline(pageArrayPtr, 1, imageObj, fileAccessPtr);
-  Pdfium.wasmExports.free(pageArrayPtr);
-  Pdfium.removeFunction(callbackIndex);
-  Pdfium.wasmExports.free(fileAccessPtr);
-
-  if (!loadResult) {
-    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to load JPEG data into image object' };
-  }
-
-  // Set image transformation matrix to fill the page
-  const setMatrixResult = Pdfium.wasmExports.FPDFImageObj_SetMatrix(
-    imageObj,
-    width,  // a (horizontal scaling)
-    0,      // b (horizontal skewing)
-    0,      // c (vertical skewing)
-    height, // d (vertical scaling)
-    0,      // e (horizontal translation)
-    0       // f (vertical translation)
-  );
-
-  if (!setMatrixResult) {
-    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to set image matrix' };
-  }
-
-  // Insert the image object into the page
-  Pdfium.wasmExports.FPDFPage_InsertObject(pageHandle, imageObj);
-
-  // Generate page content
-  const generateResult = Pdfium.wasmExports.FPDFPage_GenerateContent(pageHandle);
-  if (!generateResult) {
-    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: 'Failed to generate page content' };
-  }
-
-  // Close the page (transfers ownership to document)
-  Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
-
-  // Load and return the document
-  return _loadDocument(docHandle, false, () => {});
 }
 
 /**
  * Set pixel data for an image object
  * @param {number} pageHandle Page handle
  * @param {number} imageObj Image object handle
- * @param {ArrayBuffer} pixels BGRA8888 pixel data
+ * @param {ArrayBuffer} pixels Packed 32-bit pixel data
  * @param {number} pixelWidth Image width in pixels
  * @param {number} pixelHeight Image height in pixels
+ * @param {string} [format] 'rgba8888' or 'bgra8888' (default). PDFium bitmaps are
+ *   BGRA, so 'rgba8888' input has its R/B channels swapped while copying.
  * @returns {PdfDocument|PdfError}
  */
-function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeight) {
-  const pixelDataPtr = Pdfium.wasmExports.malloc(pixels.byteLength);
+function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeight, format) {
+  const src = new Uint8Array(pixels);
+  const expected = pixelWidth * pixelHeight * 4;
+  if (src.byteLength < expected) throw new Error('Pixel buffer smaller than width*height*4');
+  const pixelDataPtr = Pdfium.wasmExports.malloc(src.byteLength);
   if (!pixelDataPtr) throw new Error('Failed to allocate memory for image pixels');
-  new Uint8Array(Pdfium.memory.buffer, pixelDataPtr, pixels.byteLength).set(new Uint8Array(pixels));
+  const dst = new Uint8Array(Pdfium.memory.buffer, pixelDataPtr, src.byteLength);
+  if (format === 'rgba8888') {
+    for (let i = 0; i + 3 < src.byteLength; i += 4) {
+      dst[i] = src[i + 2]; // B
+      dst[i + 1] = src[i + 1]; // G
+      dst[i + 2] = src[i]; // R
+      dst[i + 3] = src[i + 3]; // A
+    }
+  } else {
+    dst.set(src);
+  }
   const FPDFBitmap_BGRA = 4;
   const bitmapHandle = Pdfium.wasmExports.FPDFBitmap_CreateEx(
     pixelWidth,
@@ -2896,7 +2909,7 @@ const functions = {
   loadDocumentFromUrl,
   loadDocumentFromData,
   createNewDocument,
-  createDocumentFromJpegData,
+  createDocumentFromImages,
   loadPagesProgressively,
   reloadPages,
   closeDocument,
