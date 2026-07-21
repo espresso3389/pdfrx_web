@@ -32,7 +32,7 @@ import { PdfrxEngine } from '@pdfrx/engine';
 
 const engine = new PdfrxEngine({
   // Directory containing pdfium_worker.js / pdfium.wasm; any origin works.
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.5.0/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.6.0/assets/',
 });
 
 const doc = await engine.openUrl('/documents/manual.pdf');
