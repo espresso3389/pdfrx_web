@@ -41,7 +41,9 @@ const ja: Partial<PdfrxStrings> = {
   rotatePage: '時計回りに 90 度回転',
   deletePage: 'このページを削除',
   addPages: 'ページを追加',
+  enterPassword: 'このドキュメントはパスワードで保護されています。\nパスワード:',
   failedToOpen: (m) => `ドキュメントを開けませんでした: ${m}`,
+  dismissError: '閉じる',
 };
 
 const zhHans: Partial<PdfrxStrings> = {
@@ -74,7 +76,9 @@ const zhHans: Partial<PdfrxStrings> = {
   rotatePage: '顺时针旋转 90 度',
   deletePage: '删除此页',
   addPages: '添加页面',
+  enterPassword: '此文档受密码保护。\n密码：',
   failedToOpen: (m) => `无法打开文档：${m}`,
+  dismissError: '关闭',
 };
 
 const zhHant: Partial<PdfrxStrings> = {
@@ -107,7 +111,9 @@ const zhHant: Partial<PdfrxStrings> = {
   rotatePage: '順時針旋轉 90 度',
   deletePage: '刪除此頁',
   addPages: '新增頁面',
+  enterPassword: '此文件受密碼保護。\n密碼：',
   failedToOpen: (m) => `無法開啟文件：${m}`,
+  dismissError: '關閉',
 };
 
 const fr: Partial<PdfrxStrings> = {
@@ -140,7 +146,9 @@ const fr: Partial<PdfrxStrings> = {
   rotatePage: 'Pivoter de 90° dans le sens horaire',
   deletePage: 'Supprimer cette page',
   addPages: 'Ajouter des pages',
+  enterPassword: 'Ce document est protégé par un mot de passe.\nMot de passe :',
   failedToOpen: (m) => `Échec de l'ouverture du document : ${m}`,
+  dismissError: 'Fermer',
 };
 
 const de: Partial<PdfrxStrings> = {
@@ -173,7 +181,9 @@ const de: Partial<PdfrxStrings> = {
   rotatePage: 'Um 90° im Uhrzeigersinn drehen',
   deletePage: 'Diese Seite löschen',
   addPages: 'Seiten hinzufügen',
+  enterPassword: 'Dieses Dokument ist passwortgeschützt.\nPasswort:',
   failedToOpen: (m) => `Dokument konnte nicht geöffnet werden: ${m}`,
+  dismissError: 'Schließen',
 };
 
 /**

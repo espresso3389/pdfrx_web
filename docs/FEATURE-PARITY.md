@@ -150,8 +150,10 @@ web package replaces them with an imperative `PdfrxViewer` class and the
   auto-disposing document references).
 - `PdfViewerController` as a `ValueListenable<Matrix4>` (pdfrx_web uses plain
   getters/methods + listeners instead).
-- Built-in password **dialog** widget (pdfrx_web takes a `passwordProvider`
-  callback; the UI is the app's responsibility — same as upstream in practice).
+- Built-in password **dialog** widget. pdfrx_web takes a `passwordProvider`
+  callback; `@pdfrx/react`'s `PdfrxViewerApp` ships a localized `window.prompt`
+  fallback (overridable via the `passwordProvider` prop), but there is no styled
+  in-viewer dialog — a custom prompt UI is the app's responsibility.
 - Dark / night mode color inversion (pdfrx_web has `backgroundColor` but no
   built-in page-color inversion).
 

@@ -106,4 +106,4 @@ export type {
   ContextMenuBuilder,
   ContextMenuContext,
 } from '@pdfrx/viewer';
-export type { PdfDocument, PdfPage, PdfOutlineNode, PdfDest, PdfLink } from '@pdfrx/engine';
+export type { PdfDocument, PdfPage, PdfOutlineNode, PdfDest, PdfLink, PdfPasswordProvider } from '@pdfrx/engine';

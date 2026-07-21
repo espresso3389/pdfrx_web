@@ -1,3 +1,4 @@
+import type { PdfPasswordProvider } from '@pdfrx/engine';
 import {
   PdfrxViewer,
   type ContextMenuContext,
@@ -64,6 +65,20 @@ export class PdfrxViewerStore {
   #source: NormalizedPdfSource | null = null;
   #sourceKey: unknown = NO_SOURCE;
   #error: unknown = null;
+
+  /**
+   * Default password provider applied to every built-in open (the `src` prop,
+   * the file-open button, drag & drop, page insertion) whose source does not
+   * carry its own. Set from the `passwordProvider` prop by `PdfrxProvider`.
+   */
+  #passwordProvider: PdfPasswordProvider | undefined;
+  /**
+   * Batteries-included fallback used only when {@link #passwordProvider} is
+   * unset — `PdfrxViewerApp` registers a localized `window.prompt` here so
+   * encrypted documents prompt out of the box, while bare `PdfrxProvider` stays
+   * opt-in.
+   */
+  #fallbackPasswordProvider: PdfPasswordProvider | undefined;
   /** Bumped per open, so a superseded open cannot report its result. */
   #openToken = 0;
   /** Bumped on every document change, so hooks can key per-document caches. */
@@ -105,6 +120,16 @@ export class PdfrxViewerStore {
   /** The error thrown by the most recent open attempt, or `null`. */
   get error(): unknown {
     return this.#error;
+  }
+
+  /**
+   * Clears {@link error} (e.g. when the user dismisses the error banner). A
+   * no-op when there is no error. The next open attempt also clears it.
+   */
+  clearError(): void {
+    if (this.#error === null) return;
+    this.#error = null;
+    this.#notify();
   }
 
   /** Increments on every document change; useful as a cache key. */
@@ -292,6 +317,26 @@ export class PdfrxViewerStore {
   // ---------------------------------------------------------------------------
 
   /**
+   * The effective default password provider: the app-supplied one, or the
+   * batteries-included fallback when none was supplied. Used by every built-in
+   * open path and read by callers that open outside the store (e.g. importing
+   * pages into the current document).
+   */
+  get passwordProvider(): PdfPasswordProvider | undefined {
+    return this.#passwordProvider ?? this.#fallbackPasswordProvider;
+  }
+
+  /** Sets the app-supplied default password provider (from the `passwordProvider` prop). */
+  setPasswordProvider(provider: PdfPasswordProvider | undefined): void {
+    this.#passwordProvider = provider;
+  }
+
+  /** Sets the fallback used only when no app provider was supplied (see {@link #fallbackPasswordProvider}). */
+  setFallbackPasswordProvider(provider: PdfPasswordProvider | undefined): void {
+    this.#fallbackPasswordProvider = provider;
+  }
+
+  /**
    * Declares which document should be shown. A no-op when the source is
    * equivalent to the current one, so passing an inline `src` string on every
    * render does not reopen the document.
@@ -328,19 +373,23 @@ export class PdfrxViewerStore {
     }
     // No viewer yet: attach() replays this once the surface mounts.
     if (!viewer || !source) return null;
+    // Apply the default password provider unless the source carries its own
+    // (spreading `source.options` last lets a per-source provider win).
+    const provider = this.passwordProvider;
     try {
       if (source.kind === 'url') {
-        await viewer.openUrl(source.url, source.options);
+        await viewer.openUrl(source.url, provider ? { passwordProvider: provider, ...source.options } : source.options);
       } else {
+        const options = provider ? { passwordProvider: provider, ...source.options } : source.options;
         const bytes = await toBytes(source.data);
         const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
         if (looksLikePdf(u8)) {
-          await viewer.openData(bytes, source.options);
+          await viewer.openData(bytes, options);
         } else {
           // Not a PDF — treat it as an image and show it as a one-page PDF. The
           // converted bytes become the viewer's source (so a font-fallback
           // reopen replays the PDF, not the image).
-          await viewer.openData(await imageBytesToPdf(viewer.engine, u8), source.options);
+          await viewer.openData(await imageBytesToPdf(viewer.engine, u8), options);
         }
       }
       return null;

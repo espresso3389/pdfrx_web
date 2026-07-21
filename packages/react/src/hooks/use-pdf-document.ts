@@ -23,6 +23,8 @@ export interface PdfDocumentState {
   isCopyAllowed: boolean;
   /** Opens a different document imperatively (file picker, drag & drop, …). */
   open: (src: PdfSource) => Promise<void>;
+  /** Clears {@link error} — e.g. when the user dismisses an error banner. */
+  clearError: () => void;
 }
 
 /**
@@ -43,6 +45,7 @@ export function usePdfDocument(): PdfDocumentState {
   const store = usePdfrxStore();
 
   const open = useCallback((src: PdfSource) => store.open(src), [store]);
+  const clearError = useCallback(() => store.clearError(), [store]);
 
   const state = useViewerSnapshot(
     (viewer, onChange) => {
@@ -65,5 +68,5 @@ export function usePdfDocument(): PdfDocumentState {
     shallowEqual,
   );
 
-  return useMemo(() => ({ ...state, open }), [state, open]);
+  return useMemo(() => ({ ...state, open, clearError }), [state, open, clearError]);
 }

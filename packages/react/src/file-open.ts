@@ -1,4 +1,4 @@
-import type { PdfDocument, PdfrxEngine } from '@pdfrx/engine';
+import type { PdfDocument, PdfPasswordProvider, PdfrxEngine } from '@pdfrx/engine';
 
 /** Image extensions used to classify typeless `File`s (e.g. from some drag sources). */
 const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico)$/i;
@@ -53,14 +53,21 @@ export async function imageBytesToPdf(engine: PdfrxEngine, bytes: Uint8Array | A
  *
  * The caller owns the returned document. When its pages are borrowed into
  * another document, keep it open for as long as they are referenced.
+ *
+ * `passwordProvider` is consulted when the file is an encrypted PDF; images
+ * never need it.
  */
-export async function openFileAsDocument(engine: PdfrxEngine, file: File): Promise<PdfDocument> {
+export async function openFileAsDocument(
+  engine: PdfrxEngine,
+  file: File,
+  options: { passwordProvider?: PdfPasswordProvider } = {},
+): Promise<PdfDocument> {
   if (isImageFile(file)) {
     return engine.createFromImages([file], { sourceName: file.name });
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (looksLikePdf(bytes)) {
-    return engine.openData(bytes, { sourceName: file.name });
+    return engine.openData(bytes, { sourceName: file.name, passwordProvider: options.passwordProvider });
   }
   // Typeless and not a PDF: try to decode it as an image (createImageBitmap
   // sniffs the format from the bytes, so a missing MIME type is fine).

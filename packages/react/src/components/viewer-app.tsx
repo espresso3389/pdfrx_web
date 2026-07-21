@@ -1,12 +1,12 @@
 import type { PdfPage } from '@pdfrx/engine';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
-import { PdfrxProvider, type PdfrxProviderProps } from '../context.js';
+import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
 import { isImageFile, isPdfFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
-import { IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
+import { IconClose, IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
 
@@ -157,12 +157,22 @@ function PdfrxViewerAppChrome({
   showDownloadButton,
   children,
 }: ChromeProps): ReactNode {
-  const { open, error } = usePdfDocument();
+  const { open, error, clearError } = usePdfDocument();
+  const store = usePdfrxStore();
   const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Batteries-included default: prompt for a password when a document is
+  // encrypted. Only a fallback — an app-supplied `passwordProvider` prop wins
+  // (see PdfrxViewerStore.passwordProvider). Re-registered on locale change so
+  // the prompt follows the active strings.
+  useEffect(() => {
+    store.setFallbackPasswordProvider(() => window.prompt(strings.enterPassword));
+    return () => store.setFallbackPasswordProvider(undefined);
+  }, [store, strings]);
 
   // On a phone the drawer would cover the document, so it starts closed there
   // and opens on a wide window. This also keeps a window that is resized across
@@ -201,7 +211,7 @@ function PdfrxViewerAppChrome({
       const inserted: PdfPage[] = [];
       for (const file of files) {
         try {
-          const doc = await openFileAsDocument(engine, file);
+          const doc = await openFileAsDocument(engine, file, { passwordProvider: store.passwordProvider });
           inserted.push(...doc.pages);
         } catch (e) {
           console.error(`Failed to open ${file.name} for insertion:`, e);
@@ -212,7 +222,7 @@ function PdfrxViewerAppChrome({
       const at = Math.max(0, Math.min(index, pages.length));
       document.setPages([...pages.slice(0, at), ...inserted, ...pages.slice(at)]);
     },
-    [viewer],
+    [viewer, store],
   );
 
   // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
@@ -305,7 +315,19 @@ function PdfrxViewerAppChrome({
           {children}
         </PdfToolbar>
       )}
-      {error !== null && <div className="pdfrx-error">{strings.failedToOpen(describeError(error))}</div>}
+      {error !== null && (
+        <div className="pdfrx-error" role="alert">
+          <span className="pdfrx-error-message">{strings.failedToOpen(describeError(error))}</span>
+          <button
+            className="pdfrx-button pdfrx-error-dismiss"
+            onClick={clearError}
+            title={strings.dismissError}
+            aria-label={strings.dismissError}
+          >
+            <IconClose />
+          </button>
+        </div>
+      )}
       <div className="pdfrx-app-body">
         {/* Kept mounted while closed: the drawer animates out on narrow screens,
             and a `display: none` sidebar stops its thumbnails from rendering

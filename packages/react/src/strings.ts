@@ -72,8 +72,16 @@ export interface PdfrxStrings {
   deletePage: string;
   /** "Add pages" button at the end of the thumbnail strip (label + aria-label). */
   addPages: string;
+  /**
+   * Message shown by the built-in `window.prompt` password provider when a
+   * document is encrypted (used by {@link PdfrxViewerApp} unless the app supplies
+   * its own `passwordProvider`).
+   */
+  enterPassword: string;
   /** Error banner text; receives the error message. */
   failedToOpen: (message: string) => string;
+  /** Error-banner dismiss button (title + aria-label). */
+  dismissError: string;
 }
 
 /** The built-in English strings. Any field omitted from a `strings` override uses these. */
@@ -113,7 +121,9 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   rotatePage: 'Rotate 90° clockwise',
   deletePage: 'Delete this page',
   addPages: 'Add pages',
+  enterPassword: 'This document is password protected.\nPassword:',
   failedToOpen: (message) => `Failed to open the document: ${message}`,
+  dismissError: 'Dismiss',
 };
 
 /** Context carrying the active strings; defaults to English so components work standalone. */

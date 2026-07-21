@@ -676,11 +676,32 @@
 /* --- Error banner -------------------------------------------------------- */
 
 .pdfrx-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   font-family: var(--pdfrx-font);
   font-size: 13px;
   color: var(--pdfrx-accent-contrast);
   background: var(--pdfrx-danger);
+}
+
+/* The message takes the row; the dismiss button sits at the far end. */
+.pdfrx-error-message {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-line;
+}
+
+/* Inherit the banner's contrast color and keep the hit target compact. */
+.pdfrx-error-dismiss {
+  flex: none;
+  color: inherit;
+}
+
+/* A translucent tint reads on the danger background whatever its color is. */
+.pdfrx-error-dismiss:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* --- Phones: collapse the toolbar's inline search into a toggle + row ----- */

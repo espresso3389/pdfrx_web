@@ -1,3 +1,4 @@
+import type { PdfPasswordProvider } from '@pdfrx/engine';
 import type { PdfrxViewerOptions } from '@pdfrx/viewer';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PdfSource } from './source.js';
@@ -24,6 +25,22 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
   wasmModulesUrl?: string;
   /** Called when opening `src` fails. The error is also available from `usePdfDocument()`. */
   onError?: (error: unknown) => void;
+  /**
+   * Supplies passwords for encrypted documents, applied to every built-in open
+   * (the `src` prop, the file-open button, drag & drop, page insertion) whose
+   * source does not carry its own. Called again on each wrong password until it
+   * returns a correct one or `null` (which aborts). See {@link PdfPasswordProvider}.
+   *
+   * `PdfrxProvider` has no default — omit it and encrypted documents fail to
+   * open. {@link PdfrxViewerApp} installs a localized `window.prompt` fallback
+   * unless you pass one here.
+   *
+   * @example
+   * ```tsx
+   * <PdfrxProvider src="/secret.pdf" passwordProvider={() => prompt('Password:')} />
+   * ```
+   */
+  passwordProvider?: PdfPasswordProvider;
   /**
    * UI language for the built-in components. A BCP-47 tag (or a priority list),
    * matched against the built-in languages (English, Japanese, Simplified and
@@ -80,6 +97,7 @@ export function PdfrxProvider({
   locale,
   strings,
   contextMenuBuilder,
+  passwordProvider,
   children,
   ...options
 }: PdfrxProviderProps): ReactNode {
@@ -97,6 +115,7 @@ export function PdfrxProvider({
   // the app's builder without a viewer rebuild.
   store.setStrings(mergedStrings);
   store.setContextMenuBuilder(contextMenuBuilder);
+  store.setPasswordProvider(passwordProvider);
 
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };

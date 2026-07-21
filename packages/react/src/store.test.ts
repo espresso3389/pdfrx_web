@@ -143,6 +143,25 @@ describe('PdfrxViewerStore', () => {
     expect(store.error).toBeNull();
   });
 
+  it('clears the error and notifies when dismissed', async () => {
+    const store = new PdfrxViewerStore();
+    store.attach(element);
+    const viewer = FakeViewer.instances[0]!;
+    viewer.openUrlError = new Error('boom');
+    await expect(store.open('missing.pdf')).rejects.toThrow('boom');
+    expect(store.error).not.toBeNull();
+
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.clearError();
+    expect(store.error).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A second dismiss is a no-op (nothing to clear, no notification).
+    store.clearError();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it('resets the search and the thumbnail cache on a document change', () => {
     const store = new PdfrxViewerStore();
     store.attach(element);
@@ -173,6 +192,53 @@ describe('PdfrxViewerStore', () => {
     const callsBefore = listener.mock.calls.length;
     store.setSearchQuery('hello');
     expect(listener.mock.calls).toHaveLength(callsBefore);
+  });
+
+  it('applies the default password provider to a source that carries none', async () => {
+    const store = new PdfrxViewerStore();
+    const passwordProvider = (): string => 'secret';
+    store.setPasswordProvider(passwordProvider);
+    store.attach(element);
+    await store.open('doc.pdf');
+
+    const { options } = FakeViewer.instances[0]!.openUrlCalls[0] as { options: { passwordProvider?: unknown } };
+    expect(options.passwordProvider).toBe(passwordProvider);
+  });
+
+  it("lets a per-source password provider win over the store's default", async () => {
+    const store = new PdfrxViewerStore();
+    const fallback = (): string => 'default';
+    const perSource = (): string => 'per-source';
+    store.setPasswordProvider(fallback);
+    store.attach(element);
+    await store.open({ url: 'doc.pdf', passwordProvider: perSource });
+
+    const { options } = FakeViewer.instances[0]!.openUrlCalls[0] as { options: { passwordProvider?: unknown } };
+    expect(options.passwordProvider).toBe(perSource);
+  });
+
+  it('prefers the app provider over the fallback, and uses the fallback otherwise', () => {
+    const store = new PdfrxViewerStore();
+    const app = (): string => 'app';
+    const fallback = (): string => 'fallback';
+
+    store.setFallbackPasswordProvider(fallback);
+    expect(store.passwordProvider).toBe(fallback);
+
+    store.setPasswordProvider(app);
+    expect(store.passwordProvider).toBe(app);
+
+    store.setPasswordProvider(undefined);
+    expect(store.passwordProvider).toBe(fallback);
+  });
+
+  it('leaves the source options untouched when no provider is set', async () => {
+    const store = new PdfrxViewerStore();
+    store.attach(element);
+    await store.open('doc.pdf');
+
+    const { options } = FakeViewer.instances[0]!.openUrlCalls[0] as { options: { passwordProvider?: unknown } };
+    expect(options.passwordProvider).toBeUndefined();
   });
 
   it('applies option changes to the live viewer instead of recreating it', () => {
