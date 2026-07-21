@@ -3158,8 +3158,9 @@ export class PdfrxViewer {
   /**
    * Builds the native control(s) for one field, positioned in the container's
    * point-space, and registers a reconciler in `controls` (keyed by field name).
-   * Read-only, unnamed, button and signature fields get no control — the canvas
-   * renders them.
+   * Read-only fields render as *disabled* controls (so calculated totals still
+   * display and reconcile); unnamed, push-button and signature fields get no
+   * control — the canvas renders them.
    */
   private buildFormControls(
     field: PdfFormField,
@@ -3167,8 +3168,17 @@ export class PdfrxViewer {
     pageSize: Size,
     controls: Map<string, (field: PdfFormField) => void>,
   ): HTMLElement[] {
-    if (!this.doc || field.flags.readOnly || !field.name) return [];
+    if (!this.doc || !field.name) return [];
     const doc = this.doc;
+    const readOnly = field.flags.readOnly;
+    /** Disables read-only controls (they display + reconcile but cannot be edited). */
+    const disable = (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void => {
+      if (readOnly) {
+        el.disabled = true;
+        el.style.background = '#f3f3f3';
+        el.style.color = '#333';
+      }
+    };
     const toPx = (r: PdfRect): Rect => pdfRectToRect(r, { page: pageGeom, scaledPageSize: pageSize });
     const place = (el: HTMLElement, box: Rect): void => {
       el.style.position = 'absolute';
@@ -3205,8 +3215,9 @@ export class PdfrxViewer {
         el.style.background = '#fff';
         el.style.color = '#000';
         if (el instanceof HTMLTextAreaElement) el.style.resize = 'none';
+        disable(el);
         // Commit on blur (change) so there is no per-keystroke worker round-trip.
-        el.addEventListener('change', () => commit(el.value));
+        if (!readOnly) el.addEventListener('change', () => commit(el.value));
         controls.set(field.name, (f) => {
           if (document.activeElement !== el) el.value = f.value;
         });
@@ -3217,7 +3228,8 @@ export class PdfrxViewer {
         el.type = 'checkbox';
         place(el, centeredSquare(box0));
         el.checked = !!field.isChecked;
-        el.addEventListener('change', () => commit(el.checked));
+        disable(el);
+        if (!readOnly) el.addEventListener('change', () => commit(el.checked));
         controls.set(field.name, (f) => {
           if (document.activeElement !== el) el.checked = !!f.isChecked;
         });
@@ -3231,9 +3243,11 @@ export class PdfrxViewer {
           el.name = `pdfrx-radio-${field.name}`;
           place(el, centeredSquare(toPx(field.rects[i] ?? field.rects[0]!)));
           el.checked = opt.selected;
-          el.addEventListener('change', () => {
-            if (el.checked) commit(opt.label);
-          });
+          disable(el);
+          if (!readOnly)
+            el.addEventListener('change', () => {
+              if (el.checked) commit(opt.label);
+            });
           inputs.push(el);
         });
         controls.set(field.name, (f) => {
@@ -3259,7 +3273,8 @@ export class PdfrxViewer {
           el.appendChild(o);
         }
         el.value = field.options?.find((o) => o.selected)?.label ?? field.value;
-        el.addEventListener('change', () => commit(el.value));
+        disable(el);
+        if (!readOnly) el.addEventListener('change', () => commit(el.value));
         controls.set(field.name, (f) => {
           if (document.activeElement !== el) el.value = f.options?.find((o) => o.selected)?.label ?? f.value;
         });
