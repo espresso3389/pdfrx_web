@@ -70,6 +70,8 @@ export interface PdfrxStrings {
   closeSidebar: string;
   rotatePage: string;
   deletePage: string;
+  /** "Add pages" button at the end of the thumbnail strip (label + aria-label). */
+  addPages: string;
   /** Error banner text; receives the error message. */
   failedToOpen: (message: string) => string;
 }
@@ -110,6 +112,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   closeSidebar: 'Close sidebar',
   rotatePage: 'Rotate 90° clockwise',
   deletePage: 'Delete this page',
+  addPages: 'Add pages',
   failedToOpen: (message) => `Failed to open the document: ${message}`,
 };
 

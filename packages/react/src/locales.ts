@@ -40,6 +40,7 @@ const ja: Partial<PdfrxStrings> = {
   closeSidebar: 'サイドバーを閉じる',
   rotatePage: '時計回りに 90 度回転',
   deletePage: 'このページを削除',
+  addPages: 'ページを追加',
   failedToOpen: (m) => `ドキュメントを開けませんでした: ${m}`,
 };
 
@@ -72,6 +73,7 @@ const zhHans: Partial<PdfrxStrings> = {
   closeSidebar: '关闭侧边栏',
   rotatePage: '顺时针旋转 90 度',
   deletePage: '删除此页',
+  addPages: '添加页面',
   failedToOpen: (m) => `无法打开文档：${m}`,
 };
 
@@ -104,6 +106,7 @@ const zhHant: Partial<PdfrxStrings> = {
   closeSidebar: '關閉側邊欄',
   rotatePage: '順時針旋轉 90 度',
   deletePage: '刪除此頁',
+  addPages: '新增頁面',
   failedToOpen: (m) => `無法開啟文件：${m}`,
 };
 
@@ -136,6 +139,7 @@ const fr: Partial<PdfrxStrings> = {
   closeSidebar: 'Fermer le panneau latéral',
   rotatePage: 'Pivoter de 90° dans le sens horaire',
   deletePage: 'Supprimer cette page',
+  addPages: 'Ajouter des pages',
   failedToOpen: (m) => `Échec de l'ouverture du document : ${m}`,
 };
 
@@ -168,6 +172,7 @@ const de: Partial<PdfrxStrings> = {
   closeSidebar: 'Seitenleiste schließen',
   rotatePage: 'Um 90° im Uhrzeigersinn drehen',
   deletePage: 'Diese Seite löschen',
+  addPages: 'Seiten hinzufügen',
   failedToOpen: (m) => `Dokument konnte nicht geöffnet werden: ${m}`,
 };
 

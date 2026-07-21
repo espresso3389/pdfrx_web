@@ -138,3 +138,10 @@ export const IconTrash = (): ReactNode => (
     <path d="M4 7h16M10 7V5h4v2M6 7l1 13h10l1-13" />
   </Icon>
 );
+
+/** @internal */
+export const IconPlus = (): ReactNode => (
+  <Icon>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);

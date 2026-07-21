@@ -356,6 +356,38 @@
   cursor: grabbing;
 }
 
+/* "Add pages" tile at the end of the strip (shown when file insert is enabled). */
+.pdfrx-thumb-add {
+  flex: 0 0 auto;
+}
+
+.pdfrx-thumb-add-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: var(--pdfrx-thumb-width, 130px);
+  min-height: 64px;
+  padding: 14px 8px;
+  color: var(--pdfrx-fg-muted);
+  font: inherit;
+  background: none;
+  border: 2px dashed var(--pdfrx-border);
+  border-radius: var(--pdfrx-radius);
+  cursor: pointer;
+}
+
+.pdfrx-thumb-add-button:hover {
+  color: var(--pdfrx-accent);
+  background: var(--pdfrx-hover);
+  border-color: var(--pdfrx-accent);
+}
+
+.pdfrx-thumb-add-label {
+  font-size: 12px;
+}
+
 /* The thumbnail copy that follows the pointer while reordering. */
 .pdfrx-thumb-ghost {
   position: fixed;

@@ -13,6 +13,7 @@ import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfNavigation } from '../hooks/use-pdf-navigation.js';
 import { usePdfPageThumbnail } from '../hooks/use-pdf-page-thumbnail.js';
 import { usePdfrxStrings } from '../strings.js';
+import { IconPlus } from './icons.js';
 import { joinClass } from './toolbar-parts.js';
 
 /** Props for {@link PdfThumbnailList}. */
@@ -134,7 +135,9 @@ export function PdfThumbnailList({
 }: PdfThumbnailListProps): ReactNode {
   const { pageCount } = usePdfDocument();
   const { currentPageNumber, goToPage } = usePdfNavigation();
+  const strings = usePdfrxStrings();
   const containerRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   // The page being reorder-dragged (1-based), for styling only.
   const [draggingPage, setDraggingPage] = useState<number | null>(null);
@@ -374,6 +377,32 @@ export function PdfThumbnailList({
           actions={renderPageActions?.(pageNumber)}
         />
       ))}
+      {onInsertFiles && (
+        <div className="pdfrx-thumb-add">
+          <button
+            type="button"
+            className="pdfrx-thumb-add-button"
+            onClick={() => addInputRef.current?.click()}
+            aria-label={strings.addPages}
+            title={strings.addPages}
+          >
+            <IconPlus />
+            <span className="pdfrx-thumb-add-label">{strings.addPages}</span>
+          </button>
+          <input
+            ref={addInputRef}
+            type="file"
+            accept="application/pdf,.pdf,image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = ''; // let the same files be picked again
+              if (files.length > 0) onInsertFiles(files, pageCount);
+            }}
+          />
+        </div>
+      )}
       {dropTarget && <div className="pdfrx-thumb-drop-indicator" style={{ top: dropTarget.top }} aria-hidden />}
     </div>
   );
