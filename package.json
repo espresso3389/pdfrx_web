@@ -8,6 +8,7 @@
   "scripts": {
     "build": "npm run build --workspace=@pdfrx/engine --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer --workspace=@pdfrx/react",
     "test": "npm run test --workspace=@pdfrx/viewer-core --workspace=@pdfrx/react",
+    "test:visual": "playwright test",
     "docs": "typedoc",
     "build:pages": "npm run build && npm run docs && npm run build --workspace=@pdfrx/example-basic --workspace=@pdfrx/example-react && node scripts/assemble-pages.mjs",
     "dev": "npm run dev --workspace=@pdfrx/example-basic",
@@ -15,6 +16,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "typedoc": "^0.28.20"
   }
 }

@@ -29,6 +29,7 @@ private (`"private": true`) and never published.
 npm install
 npm run build        # tsc for all four packages (no bundler)
 npm test             # vitest: viewer-core + react
+npm run test:visual  # Playwright: PDFium vs SVG annotation pixel diffs
 npm run dev          # examples/basic  (http://localhost:5173)
 npm run dev:react    # examples/react  (http://localhost:5173)
 npm run docs         # typedoc -> docs-site/
@@ -41,6 +42,10 @@ Per-package: `npm run build --workspace=@pdfrx/<name>` and
 Before finishing any change, run `npm run build` and `npm test`. If you touched
 a viewer-visible behavior, verify it in `npm run dev:react` (or `dev`) with the
 browser tools — don't ask the user to check manually.
+
+Annotation rendering changes should also run `npm run test:visual`. Install its
+browser once with `npx playwright install chromium`; failures attach the PDFium,
+SVG, and diff PNGs to the Playwright report.
 
 The examples resolve `@pdfrx/*` to each package's `src/` via a Vite alias
 ([examples/basic/vite-pdfrx-src.ts](examples/basic/vite-pdfrx-src.ts)), so

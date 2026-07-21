@@ -1121,6 +1121,10 @@ export class PdfrxViewer {
   private readonly annotationOverlays = new Map<number, AnnotationPageOverlay>();
   /** Per-page loaded annotations, keyed by page number (mirrors {@link pageFormFields}). */
   private readonly pageAnnotations = new Map<number, PdfAnnotationObject[] | Promise<PdfAnnotationObject[]>>();
+  /** Pages whose current SVG stays visible until freshly loaded data can replace it atomically. */
+  private readonly dirtyAnnotationOverlayPages = new Set<number>();
+  /** Invalidates annotation loads that were started before a document edit. */
+  private annotationReloadGeneration = 0;
   /** Last known objects by id; survives the brief gap while SVG overlays rebuild. */
   private readonly annotationSnapshots = new Map<string, { pageNumber: number; annotation: PdfAnnotationObject }>();
   /**
@@ -3853,8 +3857,9 @@ export class PdfrxViewer {
     const page = this.doc.pages[pageNumber - 1];
     if (!page || !page.isLoaded) return;
     const generation = this.arrangementGeneration;
+    const annotationGeneration = this.annotationReloadGeneration;
     const promise = page.loadAnnotations().then((annotations) => {
-      if (generation === this.arrangementGeneration) {
+      if (generation === this.arrangementGeneration && annotationGeneration === this.annotationReloadGeneration) {
         this.pageAnnotations.set(pageNumber, annotations);
         this.invalidate();
       }
@@ -3886,12 +3891,20 @@ export class PdfrxViewer {
       const onScreen = rectOverlaps(pageRect, visible);
       const pageNumber = i + 1;
       let overlay = this.annotationOverlays.get(pageNumber);
+      const annotations = onScreen ? this.getLoadedAnnotations(pageNumber) : null;
+      if (onScreen && overlay && annotations && this.dirtyAnnotationOverlayPages.has(pageNumber)) {
+        const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
+        overlay.container.replaceWith(replacement.container);
+        this.annotationOverlays.set(pageNumber, replacement);
+        this.dirtyAnnotationOverlayPages.delete(pageNumber);
+        overlay = replacement;
+      }
       if (onScreen && !overlay) {
-        const annotations = this.getLoadedAnnotations(pageNumber);
         if (annotations) {
           overlay = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
           this.annotationOverlays.set(pageNumber, overlay);
           this.annotationOverlayRoot.appendChild(overlay.container);
+          this.dirtyAnnotationOverlayPages.delete(pageNumber);
         }
       }
       if (!overlay) continue;
@@ -3935,6 +3948,9 @@ export class PdfrxViewer {
     pageGeom: PageGeometry,
     pageRect: Rect,
   ): AnnotationPageOverlay {
+    for (const [id, snapshot] of this.annotationSnapshots) {
+      if (snapshot.pageNumber === pageNumber) this.annotationSnapshots.delete(id);
+    }
     const pageSize: Size = { width: rectWidth(pageRect), height: rectHeight(pageRect) };
     const container = document.createElement('div');
     // Point-space container (origin at the page top-left); positioned with
@@ -4124,9 +4140,12 @@ export class PdfrxViewer {
 
   /** Reloads/repaints annotation overlays on the affected pages after a change. */
   private onAnnotationsChanged(): void {
-    // Drop cached annotations and overlays so the paint loop reloads them.
+    // Keep the current SVGs on screen while fresh annotation data is loaded.
+    // updateAnnotationOverlays replaces each affected page synchronously once
+    // its replacement is ready, avoiding an empty frame between old and new.
+    this.annotationReloadGeneration++;
     this.pageAnnotations.clear();
-    this.clearAnnotationOverlays();
+    for (const pageNumber of this.annotationOverlays.keys()) this.dirtyAnnotationOverlayPages.add(pageNumber);
     this.invalidate();
   }
 
@@ -4134,6 +4153,7 @@ export class PdfrxViewer {
   private clearAnnotationOverlays(): void {
     this.annotationOverlayRoot.replaceChildren();
     this.annotationOverlays.clear();
+    this.dirtyAnnotationOverlayPages.clear();
     this.drawState = null;
   }
 

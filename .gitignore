@@ -3,3 +3,5 @@ dist/
 *.tsbuildinfo
 .vscode/
 docs-site/
+test-results/
+playwright-report/
