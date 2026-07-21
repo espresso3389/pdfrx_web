@@ -192,13 +192,15 @@ function FormPanel() {
           );
         }
         if (f.type === 'textField') {
+          // Read-only fields (e.g. a calculated total) show disabled.
           return (
             <label key={f.name} style={styles.formRow}>
               <span style={styles.formLabel}>{f.name}</span>
               <input
                 value={f.value}
+                disabled={f.flags.readOnly}
                 onChange={(e) => void setValue(f.name, e.target.value)}
-                style={{ font: 'inherit', flex: 1, minWidth: 0 }}
+                style={{ font: 'inherit', flex: 1, minWidth: 0, background: f.flags.readOnly ? '#eee' : undefined }}
               />
             </label>
           );

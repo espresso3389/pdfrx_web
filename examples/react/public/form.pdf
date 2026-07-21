@@ -7,19 +7,22 @@ endobj
 << /Type /Pages /Kids [4 0 R] /Count 1 >>
 endobj
 3 0 obj
-<< /Fields [6 0 R 7 0 R 10 0 R 11 0 R] /DR << /Font << /Helv 20 0 R /ZaDb 21 0 R >> >> /DA (/Helv 0 Tf 0 g) /NeedAppearances true >>
+<< /Fields [6 0 R 7 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R] /CO [14 0 R] /DR << /Font << /Helv 20 0 R /ZaDb 21 0 R >> >> /DA (/Helv 0 Tf 0 g) /NeedAppearances true >>
 endobj
 4 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << /Font << /Helv 20 0 R >> >> /Contents 5 0 R /Annots [6 0 R 7 0 R 8 0 R 9 0 R 11 0 R] >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << /Font << /Helv 20 0 R >> >> /Contents 5 0 R /Annots [6 0 R 7 0 R 8 0 R 9 0 R 11 0 R 12 0 R 13 0 R 14 0 R] >>
 endobj
 5 0 obj
-<<  /Length 111 >>
+<<  /Length 178 >>
 stream
 BT /Helv 12 Tf 0 g
 20 462 Td (Name:) Tj
 0 -40 Td (Subscribe:) Tj
 0 -40 Td (Color:) Tj
 0 -40 Td (Country:) Tj
+0 -40 Td (Amount 1:) Tj
+0 -40 Td (Amount 2:) Tj
+0 -40 Td (Sum:) Tj
 ET
 endstream
 endobj
@@ -40,6 +43,15 @@ endobj
 endobj
 11 0 obj
 << /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (country) /Rect [120 310 380 332] /F 4 /P 4 0 R /DA (/Helv 12 Tf 0 g) /Opt [(Japan) (USA) (France)] /V (Japan) /MK << /BC [0 0 0] /BG [1 1 1] >> >>
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount1) /Rect [120 270 380 292] /F 4 /P 4 0 R /DA (/Helv 12 Tf 0 g) /V (2) /MK << /BC [0 0 0] /BG [1 1 1] >> >>
+endobj
+13 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount2) /Rect [120 230 380 252] /F 4 /P 4 0 R /DA (/Helv 12 Tf 0 g) /V (3) /MK << /BC [0 0 0] /BG [1 1 1] >> >>
+endobj
+14 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 1 /T (sum) /Rect [120 190 380 212] /F 4 /P 4 0 R /DA (/Helv 12 Tf 0 g) /V (5) /MK << /BC [0 0 0] /BG [0.9 0.9 0.9] >> /AA << /C << /S /JavaScript /JS (AFSimple_Calculate\("SUM", new Array \("amount1", "amount2"\)\);) >> >> >>
 endobj
 20 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
@@ -89,14 +101,24 @@ xref
 0000000015 00000 n 
 0000000080 00000 n 
 0000000137 00000 n 
-0000000285 00000 n 
-0000000455 00000 n 
-0000000618 00000 n 
-0000000797 00000 n 
-0000001033 00000 n 
-0000001231 00000 n 
-0000001430 00000 n 
-0000001531 00000 n 
+0000000319 00000 n 
+0000000510 00000 n 
+0000000740 00000 n 
+0000000919 00000 n 
+0000001155 00000 n 
+0000001353 00000 n 
+0000001552 00000 n 
+0000001653 00000 n 
+0000001872 00000 n 
+0000002046 00000 n 
+0000002220 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000002507 00000 n 
+0000002578 00000 n 
 0000000000 65535 f 
 0000000000 65535 f 
 0000000000 65535 f 
@@ -105,24 +127,14 @@ xref
 0000000000 65535 f 
 0000000000 65535 f 
 0000000000 65535 f 
-0000001750 00000 n 
-0000001821 00000 n 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000000000 65535 f 
-0000001895 00000 n 
-0000002071 00000 n 
-0000002211 00000 n 
-0000002387 00000 n 
-0000002527 00000 n 
-0000002703 00000 n 
+0000002652 00000 n 
+0000002828 00000 n 
+0000002968 00000 n 
+0000003144 00000 n 
+0000003284 00000 n 
+0000003460 00000 n 
 trailer
 << /Size 36 /Root 1 0 R >>
 startxref
-2843
+3600
 %%EOF
