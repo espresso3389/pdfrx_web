@@ -162,10 +162,103 @@ async function runAtomicUpdate(before: PdfAnnotationSpec, after: PdfAnnotationSp
   }
 }
 
-declare global {
-  interface Window {
-    annotationVisualTest: { run: typeof run; runAtomicUpdate: typeof runAtomicUpdate };
+interface ClipboardTestResult {
+  copyPaste: { count: number; selectedCount: number; dx: number; dy: number; countAfterUndo: number };
+  cutPaste: { countAfterCut: number; countAfterPaste: number; dx: number; dy: number; selectedCount: number };
+}
+
+async function clearAnnotations(): Promise<void> {
+  const doc = viewer.document;
+  if (!doc) return;
+  for (const annotation of await doc.loadAnnotations(1)) await doc.removeAnnotation(1, annotation.id);
+  viewer.setSelectedAnnotations([]);
+}
+
+async function runClipboardTest(spec: PdfAnnotationSpec): Promise<ClipboardTestResult> {
+  const doc = viewer.document;
+  if (!doc || !spec.rect) throw new Error('Test PDF is not open or spec has no rect');
+  await clearAnnotations();
+  try {
+    const originalId = await doc.addAnnotation(1, spec);
+    await waitForShape(originalId);
+    viewer.setSelectedAnnotation(originalId);
+    if (!viewer.copySelectedAnnotations()) throw new Error('Copy failed');
+    if (!(await viewer.pasteAnnotations())) throw new Error('Paste failed');
+    const copied = await doc.loadAnnotations(1);
+    const pasted = copied.find((annotation) => annotation.id !== originalId);
+    if (!pasted) throw new Error('Pasted annotation was not found');
+    const copyPaste = {
+      count: copied.length,
+      selectedCount: viewer.getSelectedAnnotationIds().length,
+      dx: pasted.rect.left - spec.rect.left,
+      dy: pasted.rect.top - spec.rect.top,
+      countAfterUndo: 0,
+    };
+    await viewer.undoAnnotation();
+    copyPaste.countAfterUndo = (await doc.loadAnnotations(1)).length;
+
+    viewer.setSelectedAnnotation(originalId);
+    if (!(await viewer.cutSelectedAnnotations())) throw new Error('Cut failed');
+    const countAfterCut = (await doc.loadAnnotations(1)).length;
+    if (!(await viewer.pasteAnnotations())) throw new Error('Paste after cut failed');
+    const cutResult = await doc.loadAnnotations(1);
+    const cutPasted = cutResult[0];
+    if (!cutPasted) throw new Error('Cut annotation was not pasted');
+    return {
+      copyPaste,
+      cutPaste: {
+        countAfterCut,
+        countAfterPaste: cutResult.length,
+        dx: cutPasted.rect.left - spec.rect.left,
+        dy: cutPasted.rect.top - spec.rect.top,
+        selectedCount: viewer.getSelectedAnnotationIds().length,
+      },
+    };
+  } finally {
+    await clearAnnotations();
   }
 }
 
-window.annotationVisualTest = { run, runAtomicUpdate };
+async function setupDuplicateGesture(spec: PdfAnnotationSpec): Promise<string> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  await clearAnnotations();
+  const id = await doc.addAnnotation(1, spec);
+  await waitForShape(id);
+  viewer.setAnnotationSelectMode(true);
+  viewer.setSelectedAnnotation(id);
+  return id;
+}
+
+async function readDuplicateState(): Promise<{
+  rects: { left: number; top: number; right: number; bottom: number }[];
+  selectedCount: number;
+}> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  const annotations = await doc.loadAnnotations(1);
+  return {
+    rects: annotations.map((annotation) => annotation.rect).sort((a, b) => a.left - b.left || b.top - a.top),
+    selectedCount: viewer.getSelectedAnnotationIds().length,
+  };
+}
+
+declare global {
+  interface Window {
+    annotationVisualTest: {
+      run: typeof run;
+      runAtomicUpdate: typeof runAtomicUpdate;
+      runClipboardTest: typeof runClipboardTest;
+      setupDuplicateGesture: typeof setupDuplicateGesture;
+      readDuplicateState: typeof readDuplicateState;
+    };
+  }
+}
+
+window.annotationVisualTest = {
+  run,
+  runAtomicUpdate,
+  runClipboardTest,
+  setupDuplicateGesture,
+  readDuplicateState,
+};

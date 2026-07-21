@@ -634,6 +634,20 @@ interface AnnotationCommand {
   after: PdfAnnotationSpec | null;
 }
 
+/** One object stored in the viewer-local annotation clipboard. */
+interface AnnotationClipboardEntry {
+  pageNumber: number;
+  spec: PdfAnnotationSpec;
+}
+
+/** State used by Ctrl/Cmd+D after a modifier-drag duplication. */
+interface AnnotationDuplicateRepeat {
+  entries: AnnotationClipboardEntry[];
+  selectedIds: string[];
+  dx: number;
+  dy: number;
+}
+
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
 export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'freeText';
 
@@ -706,40 +720,58 @@ function arrowInkStrokes(s: PdfPoint, e: PdfPoint): PdfPoint[][] {
   ];
 }
 
-/** Builds a spec from an existing annotation, translated by (dx, dy) in PDF points. */
-function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number): PdfAnnotationSpec {
+/** Returns a detached copy of a spec, translated by (dx, dy) in PDF points. */
+function translateSpec(spec: PdfAnnotationSpec, dx: number, dy: number): PdfAnnotationSpec {
   const tp = (p: PdfPoint): PdfPoint => ({ x: p.x + dx, y: p.y + dy });
-  const spec: PdfAnnotationSpec = {
-    subtype: a.subtype,
-    rect: { left: a.rect.left + dx, top: a.rect.top + dy, right: a.rect.right + dx, bottom: a.rect.bottom + dy },
-    color: a.color,
-    interiorColor: a.interiorColor,
-    borderWidth: a.borderWidth,
-    contents: a.contents,
-    author: a.author,
-  };
-  const g = a.geometry;
+  const translated = structuredClone(spec);
+  if (spec.rect) {
+    translated.rect = {
+      left: spec.rect.left + dx,
+      top: spec.rect.top + dy,
+      right: spec.rect.right + dx,
+      bottom: spec.rect.bottom + dy,
+    };
+  }
+  const g = spec.geometry;
+  if (!g) return translated;
   switch (g.kind) {
     case 'ink':
-      spec.geometry = { kind: 'ink', strokes: g.strokes.map((st) => st.map(tp)) };
+      translated.geometry = { kind: 'ink', strokes: g.strokes.map((st) => st.map(tp)) };
       break;
     case 'markup':
-      spec.geometry = {
+      translated.geometry = {
         kind: 'markup',
         quads: g.quads.map((q) => ({ topLeft: tp(q.topLeft), topRight: tp(q.topRight), bottomLeft: tp(q.bottomLeft), bottomRight: tp(q.bottomRight) })),
       };
       break;
     case 'line':
-      spec.geometry = { kind: 'line', start: tp(g.start), end: tp(g.end) };
+      translated.geometry = { kind: 'line', start: tp(g.start), end: tp(g.end) };
       break;
     case 'polygon':
     case 'polyline':
-      spec.geometry = { kind: g.kind, vertices: g.vertices.map(tp) };
+      translated.geometry = { kind: g.kind, vertices: g.vertices.map(tp) };
       break;
-    default:
-      spec.geometry = { kind: 'none' };
   }
-  return spec;
+  return translated;
+}
+
+/** Builds a spec from an existing annotation, translated by (dx, dy) in PDF points. */
+function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number): PdfAnnotationSpec {
+  return translateSpec(
+    {
+      subtype: a.subtype,
+      rect: a.rect,
+      color: a.color,
+      interiorColor: a.interiorColor,
+      borderWidth: a.borderWidth,
+      flags: a.flags,
+      contents: a.contents,
+      author: a.author,
+      geometry: a.geometry,
+    },
+    dx,
+    dy,
+  );
 }
 
 /** The full spec of an existing annotation (unchanged geometry). */
@@ -1141,6 +1173,18 @@ export class PdfrxViewer {
   };
   /** Ids of the currently selected annotations (empty when none). */
   private readonly selectedAnnotationIds = new Set<string>();
+  /** Viewer-local clipboard; avoids browser clipboard permission prompts for structured objects. */
+  private annotationClipboard: AnnotationClipboardEntry[] = [];
+  /** Number of times the current clipboard contents have been pasted. */
+  private annotationClipboardPasteCount = 0;
+  /** Cut pastes at the original position once; copies start with an offset. */
+  private annotationClipboardWasCut = false;
+  /** Serializes paste requests so rapid shortcuts cannot interleave history groups. */
+  private annotationPasteQueue: Promise<void> = Promise.resolve();
+  /** Last modifier-drag result, repeated at the same displacement by Ctrl/Cmd+D. */
+  private annotationDuplicateRepeat: AnnotationDuplicateRepeat | null = null;
+  /** Serializes modifier-drag commits and rapid Ctrl/Cmd+D repeats. */
+  private annotationDuplicateQueue: Promise<void> = Promise.resolve();
   /** In-progress drawing gesture, or null. */
   private drawState: DrawState | null = null;
   /**
@@ -3121,13 +3165,26 @@ export class PdfrxViewer {
         void this.redoAnnotation();
         return true;
       }
+      if (cmd && e.key.toLowerCase() === 'd' && this.canRepeatAnnotationDuplicate()) {
+        void this.repeatAnnotationDuplicate();
+        return true;
+      }
       // Delete/Backspace removes the selected annotation(s).
       if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedAnnotationIds.size) {
         void this.deleteSelectedAnnotation();
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'c') {
-        void this.copySelection();
+        if (this.selectedAnnotationIds.size) this.copySelectedAnnotations();
+        else void this.copySelection();
+        return true;
+      }
+      if (cmd && e.key.toLowerCase() === 'x' && this.selectedAnnotationIds.size) {
+        void this.cutSelectedAnnotations();
+        return true;
+      }
+      if (cmd && e.key.toLowerCase() === 'v' && this.annotationClipboard.length) {
+        void this.pasteAnnotations();
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'a') {
@@ -4378,6 +4435,62 @@ export class PdfrxViewer {
     return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
   }
 
+  /** Copies the selected annotations to the viewer-local object clipboard. */
+  copySelectedAnnotations(): boolean {
+    const entries = [...this.selectedAnnotationIds]
+      .map((id) => this.locateAnnotation(id))
+      .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null)
+      .map((t) => ({ pageNumber: t.pageNumber, spec: annotationToSpec(t.annotation) }));
+    if (entries.length === 0) return false;
+    this.annotationClipboard = entries;
+    this.annotationClipboardPasteCount = 0;
+    this.annotationClipboardWasCut = false;
+    return true;
+  }
+
+  /** Cuts the selected annotations as one undoable delete operation. */
+  async cutSelectedAnnotations(): Promise<boolean> {
+    if (!this.copySelectedAnnotations()) return false;
+    this.annotationClipboardWasCut = true;
+    await this.deleteSelectedAnnotation();
+    return true;
+  }
+
+  /**
+   * Pastes the object clipboard and selects the newly created annotations.
+   * Copy/paste offsets each generation by 10pt; the first paste after a cut
+   * retains the original position. A multi-object paste is one undo step.
+   */
+  async pasteAnnotations(): Promise<boolean> {
+    if (!this.doc || this.annotationClipboard.length === 0) return false;
+    let pasted = false;
+    const paste = async (): Promise<void> => {
+      if (!this.doc) return;
+      const nextCount = this.annotationClipboardPasteCount + 1;
+      const offsetSteps = this.annotationClipboardWasCut ? nextCount - 1 : nextCount;
+      const offset = offsetSteps * 10;
+      const group: AnnotationCommand[] = [];
+      const ids: string[] = [];
+      for (const entry of this.annotationClipboard) {
+        if (entry.pageNumber < 1 || entry.pageNumber > this.doc.pages.length) continue;
+        const spec = translateSpec(entry.spec, offset, -offset);
+        const id = await this.doc.addAnnotation(entry.pageNumber, spec);
+        group.push({ pageNumber: entry.pageNumber, id, before: null, after: spec });
+        ids.push(id);
+      }
+      if (group.length === 0) return;
+      this.annotationClipboardPasteCount = nextCount;
+      this.recordAnnotationCommandGroup(group);
+      this.setAnnotationSelectMode(true);
+      this.setSelectedAnnotations(ids);
+      pasted = true;
+    };
+    const pending = this.annotationPasteQueue.then(paste, paste);
+    this.annotationPasteQueue = pending.catch(() => undefined);
+    await pending;
+    return pasted;
+  }
+
   /** Removes every selected annotation as one undoable step. */
   async deleteSelectedAnnotation(): Promise<void> {
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
@@ -4738,10 +4851,26 @@ export class PdfrxViewer {
         // Dragging a member of a multi-selection moves the whole group; otherwise
         // select just this shape and move it.
         if (this.selectedAnnotationIds.size > 1 && this.selectedAnnotationIds.has(id)) {
-          this.beginGroupMove(overlay, this.selectedAnnotationsOn(overlay), start, e.pointerId);
+          this.beginGroupMove(
+            overlay,
+            this.selectedAnnotationsOn(overlay),
+            start,
+            e.pointerId,
+            e.shiftKey && (e.ctrlKey || e.metaKey),
+          );
         } else {
           this.setSelectedAnnotation(id);
-          this.beginMove(pageNumber, overlay, pageGeom, pageSize, g, id, start, e.pointerId);
+          this.beginMove(
+            pageNumber,
+            overlay,
+            pageGeom,
+            pageSize,
+            g,
+            id,
+            start,
+            e.pointerId,
+            e.shiftKey && (e.ctrlKey || e.metaKey),
+          );
         }
       });
     }
@@ -4946,6 +5075,7 @@ export class PdfrxViewer {
     id: string,
     start: Offset,
     pointerId: number,
+    duplicate: boolean,
   ): void {
     const annotation = overlay.annotations.get(id);
     if (!annotation) return;
@@ -4954,23 +5084,40 @@ export class PdfrxViewer {
     } catch {
       /* ignore */
     }
-    const move = (e: PointerEvent): void => {
+    const preview = duplicate ? (g.cloneNode(true) as SVGGElement) : g;
+    if (duplicate) {
+      preview.removeAttribute('data-annot-id');
+      preview.style.pointerEvents = 'none';
+      g.parentNode?.insertBefore(preview, g.nextSibling);
+    }
+    const displacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
-      const transform = `translate(${cur.x - start.x} ${cur.y - start.y})`;
-      g.setAttribute('transform', transform);
+      let dx = cur.x - start.x;
+      let dy = cur.y - start.y;
+      if (duplicate) {
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+      return { x: dx, y: dy };
+    };
+    const move = (e: PointerEvent): void => {
+      const delta = displacement(e);
+      const transform = `translate(${delta.x} ${delta.y})`;
+      preview.setAttribute('transform', transform);
       // Move the anchors + bounding box rigidly with the shape.
-      overlay.anchorLayer.setAttribute('transform', transform);
+      if (!duplicate) overlay.anchorLayer.setAttribute('transform', transform);
     };
     const up = (e: PointerEvent): void => {
       g.removeEventListener('pointermove', move);
       g.removeEventListener('pointerup', up);
       g.removeEventListener('pointercancel', up);
-      const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
-      const dxPx = cur.x - start.x;
-      const dyPx = cur.y - start.y;
+      const delta = displacement(e);
+      const dxPx = delta.x;
+      const dyPx = delta.y;
       if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
         // A click, not a move: undo the (tiny) live transform.
-        g.removeAttribute('transform');
+        preview.removeAttribute('transform');
+        if (duplicate) preview.remove();
         overlay.anchorLayer.removeAttribute('transform');
         return;
       }
@@ -4979,7 +5126,13 @@ export class PdfrxViewer {
       const scale = pageSize.height / pageGeom.height;
       const dx = dxPx / scale;
       const dy = -dyPx / scale;
-      void this.commitMove(pageNumber, annotation, dx, dy);
+      if (duplicate) {
+        // Keep the clone visible until the annotation-change reload atomically
+        // replaces this overlay; removing it now would flash an empty gap.
+        void this.commitDuplicate(pageNumber, [annotation], dx, dy).catch(() => preview.remove());
+      } else {
+        void this.commitMove(pageNumber, annotation, dx, dy);
+      }
     };
     g.addEventListener('pointermove', move);
     g.addEventListener('pointerup', up);
@@ -4992,6 +5145,79 @@ export class PdfrxViewer {
     const after = translateAnnotationSpec(a, dx, dy);
     await this.doc.updateAnnotation(pageNumber, a.id, after);
     this.recordAnnotationCommand({ pageNumber, id: a.id, before, after });
+  }
+
+  /** Commits a constrained modifier-drag as newly created annotations. */
+  private async commitDuplicate(
+    pageNumber: number,
+    annotations: readonly PdfAnnotationObject[],
+    dx: number,
+    dy: number,
+  ): Promise<void> {
+    if (!this.doc || annotations.length === 0) return;
+    const entries = annotations.map((annotation) => ({
+      pageNumber,
+      spec: translateAnnotationSpec(annotation, dx, dy),
+    }));
+    const create = (): Promise<void> => this.createDuplicateEntries(entries, dx, dy);
+    const pending = this.annotationDuplicateQueue.then(create, create);
+    this.annotationDuplicateQueue = pending.catch(() => undefined);
+    await pending;
+  }
+
+  /** Whether Ctrl/Cmd+D can repeat the immediately preceding drag duplication. */
+  canRepeatAnnotationDuplicate(): boolean {
+    const repeat = this.annotationDuplicateRepeat;
+    return (
+      repeat !== null &&
+      repeat.selectedIds.length === this.selectedAnnotationIds.size &&
+      repeat.selectedIds.every((id) => this.selectedAnnotationIds.has(id))
+    );
+  }
+
+  /** Repeats the last modifier-drag duplication using the same displacement. */
+  async repeatAnnotationDuplicate(): Promise<boolean> {
+    if (!this.annotationDuplicateRepeat) return false;
+    let duplicated = false;
+    const create = async (): Promise<void> => {
+      const repeat = this.annotationDuplicateRepeat;
+      if (!repeat || !this.canRepeatAnnotationDuplicate()) return;
+      const entries = repeat.entries.map((entry) => ({
+        pageNumber: entry.pageNumber,
+        spec: translateSpec(entry.spec, repeat.dx, repeat.dy),
+      }));
+      await this.createDuplicateEntries(entries, repeat.dx, repeat.dy);
+      duplicated = true;
+    };
+    const pending = this.annotationDuplicateQueue.then(create, create);
+    this.annotationDuplicateQueue = pending.catch(() => undefined);
+    await pending;
+    return duplicated;
+  }
+
+  /** Creates a duplicate group, selects it, and arms the next Ctrl/Cmd+D repeat. */
+  private async createDuplicateEntries(
+    entries: readonly AnnotationClipboardEntry[],
+    dx: number,
+    dy: number,
+  ): Promise<void> {
+    if (!this.doc) return;
+    const group: AnnotationCommand[] = [];
+    const ids: string[] = [];
+    const created: AnnotationClipboardEntry[] = [];
+    for (const entry of entries) {
+      if (entry.pageNumber < 1 || entry.pageNumber > this.doc.pages.length) continue;
+      const spec = structuredClone(entry.spec);
+      const id = await this.doc.addAnnotation(entry.pageNumber, spec);
+      group.push({ pageNumber: entry.pageNumber, id, before: null, after: spec });
+      ids.push(id);
+      created.push({ pageNumber: entry.pageNumber, spec });
+    }
+    if (group.length === 0) return;
+    this.recordAnnotationCommandGroup(group);
+    this.setAnnotationSelectMode(true);
+    this.setSelectedAnnotations(ids);
+    this.annotationDuplicateRepeat = { entries: created, selectedIds: ids, dx, dy };
   }
 
   // -------------------------------------------------------------------------
@@ -5055,40 +5281,76 @@ export class PdfrxViewer {
   }
 
   /** Drags the whole multi-selection rigidly, committing one grouped move. */
-  private beginGroupMove(overlay: AnnotationPageOverlay, sel: PdfAnnotationObject[], start: Offset, pointerId: number): void {
+  private beginGroupMove(
+    overlay: AnnotationPageOverlay,
+    sel: PdfAnnotationObject[],
+    start: Offset,
+    pointerId: number,
+    duplicate: boolean,
+  ): void {
     const svg = overlay.svg;
     const groups = new Map<string, SVGGElement>();
     for (const child of Array.from(svg.children)) {
       const g = child as SVGGElement;
       if (g.dataset.annotId && this.selectedAnnotationIds.has(g.dataset.annotId)) groups.set(g.dataset.annotId, g);
     }
+    const previews = duplicate
+      ? [...groups.values()].map((g) => {
+          const clone = g.cloneNode(true) as SVGGElement;
+          clone.removeAttribute('data-annot-id');
+          clone.style.pointerEvents = 'none';
+          g.parentNode?.insertBefore(clone, g.nextSibling);
+          return clone;
+        })
+      : [...groups.values()];
     try {
       svg.setPointerCapture(pointerId);
     } catch {
       /* best-effort */
     }
-    const move = (e: PointerEvent): void => {
+    const displacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
-      const transform = `translate(${cur.x - start.x} ${cur.y - start.y})`;
-      for (const g of groups.values()) g.setAttribute('transform', transform);
-      overlay.anchorLayer.setAttribute('transform', transform);
+      let dx = cur.x - start.x;
+      let dy = cur.y - start.y;
+      if (duplicate) {
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+      return { x: dx, y: dy };
+    };
+    const move = (e: PointerEvent): void => {
+      const delta = displacement(e);
+      const transform = `translate(${delta.x} ${delta.y})`;
+      for (const g of previews) g.setAttribute('transform', transform);
+      if (!duplicate) overlay.anchorLayer.setAttribute('transform', transform);
     };
     const up = (e: PointerEvent): void => {
       svg.removeEventListener('pointermove', move);
       svg.removeEventListener('pointerup', up);
       svg.removeEventListener('pointercancel', up);
-      const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
-      const dxPx = cur.x - start.x;
-      const dyPx = cur.y - start.y;
+      const delta = displacement(e);
+      const dxPx = delta.x;
+      const dyPx = delta.y;
       if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
-        for (const g of groups.values()) g.removeAttribute('transform');
+        for (const g of previews) {
+          if (duplicate) g.remove();
+          else g.removeAttribute('transform');
+        }
         overlay.anchorLayer.removeAttribute('transform');
         return;
       }
       const scale = overlay.pageSize.height / overlay.pageGeom.height;
       const dx = dxPx / scale;
       const dy = -dyPx / scale;
-      void this.commitGroupTransform(overlay, sel, (a) => translateAnnotationSpec(a, dx, dy));
+      if (duplicate) {
+        // Successful document writes replace the whole overlay and naturally
+        // discard these clones. Only clean them up directly if the write fails.
+        void this.commitDuplicate(overlay.pageNumber, sel, dx, dy).catch(() => {
+          for (const g of previews) g.remove();
+        });
+      } else {
+        void this.commitGroupTransform(overlay, sel, (a) => translateAnnotationSpec(a, dx, dy));
+      }
     };
     svg.addEventListener('pointermove', move);
     svg.addEventListener('pointerup', up);

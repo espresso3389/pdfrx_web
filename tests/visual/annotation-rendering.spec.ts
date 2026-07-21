@@ -135,3 +135,87 @@ test('annotation overlay is atomically replaced after move/resize', async ({ pag
   expect(result.frames).toBeGreaterThan(0);
   expect(result.missingFrames, 'the edited annotation disappeared for one or more animation frames').toBe(0);
 });
+
+test('selected annotations can be copied, cut, pasted and undone', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 160, bottom: 96 },
+    color: rgba(30, 136, 229),
+    interiorColor: rgba(67, 160, 71),
+    borderWidth: 8,
+  };
+  const result = await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: {
+          runClipboardTest(s: unknown): Promise<{
+            copyPaste: { count: number; selectedCount: number; dx: number; dy: number; countAfterUndo: number };
+            cutPaste: { countAfterCut: number; countAfterPaste: number; dx: number; dy: number; selectedCount: number };
+          }>;
+        };
+      }
+    ).annotationVisualTest;
+    return api.runClipboardTest(annotation);
+  }, spec);
+
+  expect(result.copyPaste).toEqual({ count: 2, selectedCount: 1, dx: 10, dy: -10, countAfterUndo: 1 });
+  expect(result.cutPaste).toEqual({ countAfterCut: 0, countAfterPaste: 1, dx: 0, dy: 0, selectedCount: 1 });
+});
+
+test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 40, top: 216, right: 88, bottom: 168 },
+    color: rgba(30, 136, 229),
+    interiorColor: rgba(67, 160, 71),
+    borderWidth: 4,
+  };
+  const id = await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    return api.setupDuplicateGesture(annotation);
+  }, spec);
+  const shape = page.locator(`g[data-annot-id="${id}"]`);
+  await expect(shape).toHaveCount(1);
+  const box = await shape.boundingBox();
+  if (!box) throw new Error('Source annotation is not visible');
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('Control');
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 64, start.y + 18, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up('Control');
+  await page.keyboard.up('Shift');
+  await expect(page.locator('g[data-annot-id]')).toHaveCount(2);
+  await page.locator('canvas').press('Control+d');
+  await expect(page.locator('g[data-annot-id]')).toHaveCount(3);
+
+  const state = await page.evaluate(async () => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: {
+          readDuplicateState(): Promise<{
+            rects: { left: number; top: number; right: number; bottom: number }[];
+            selectedCount: number;
+          }>;
+        };
+      }
+    ).annotationVisualTest;
+    return api.readDuplicateState();
+  });
+  expect(state.selectedCount).toBe(1);
+  expect(state.rects).toHaveLength(3);
+  expect(state.rects[1]!.top).toBeCloseTo(state.rects[0]!.top, 5);
+  expect(state.rects[2]!.top).toBeCloseTo(state.rects[1]!.top, 5);
+  expect(state.rects[1]!.left - state.rects[0]!.left).toBeCloseTo(64, 5);
+  expect(state.rects[2]!.left - state.rects[1]!.left).toBeCloseTo(64, 5);
+});
