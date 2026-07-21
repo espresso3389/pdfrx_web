@@ -1,4 +1,4 @@
-import type { AnnotationTool } from '@pdfrx/viewer';
+import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useAnnotations } from '../hooks/use-annotations.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
@@ -114,8 +114,15 @@ export function PdfAnnotationToolbar({
   // Start in text mode when the toolbar appears, and return to it when it
   // unmounts (so closing the toolbar restores normal text selection).
   useEffect(() => {
-    viewer?.setAnnotationTool(null);
-    return () => viewer?.setAnnotationTool(null);
+    if (!viewer) return;
+    const syncMode = (mode: AnnotationMode): void => setActive(mode ?? 'text');
+    viewer.setAnnotationTool(null);
+    syncMode(viewer.getAnnotationMode());
+    const unsubscribe = viewer.addAnnotationModeChangeListener(syncMode);
+    return () => {
+      unsubscribe();
+      viewer.setAnnotationTool(null);
+    };
   }, [viewer]);
 
   // Dismiss an open palette on outside pointerdown or Escape.

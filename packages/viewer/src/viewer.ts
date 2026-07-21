@@ -637,6 +637,9 @@ interface AnnotationCommand {
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
 export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'freeText';
 
+/** Current annotation interaction mode. `null` is normal text-selection viewing. */
+export type AnnotationMode = AnnotationTool | 'select' | null;
+
 /** Style applied to newly drawn annotations. */
 export interface AnnotationStyle {
   /** Stroke (outline) CSS color string (e.g. `#e53935`). */
@@ -1124,7 +1127,7 @@ export class PdfrxViewer {
    * Active annotation mode: a drawing tool, `'select'` (marquee/multi-select
    * editing), or null (normal viewing — pan/text-select, single-click select).
    */
-  private annotationMode: AnnotationTool | 'select' | null = null;
+  private annotationMode: AnnotationMode = null;
   /** Current style applied to newly drawn annotations. */
   private annotationStyle: AnnotationStyle = {
     color: '#e53935',
@@ -1208,6 +1211,7 @@ export class PdfrxViewer {
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
+  private readonly annotationModeChangeListeners = new Set<(mode: AnnotationMode) => void>();
   /** Signature of the last-notified selection, so we don't fire on no-op updates. */
   private lastSelectionSig = 'empty';
   /** Last current-page value notified to {@link pageChangeListeners}. */
@@ -3991,6 +3995,8 @@ export class PdfrxViewer {
     const g2 = a.geometry;
     switch (g2.kind) {
       case 'ink': {
+        const kind = inkStrokeKind(g2);
+        const rounded = kind === 'curve';
         for (const strokePts of g2.strokes) {
           if (strokePts.length < 2) continue;
           const pl = document.createElementNS(SVG_NS, 'polyline');
@@ -3998,8 +4004,10 @@ export class PdfrxViewer {
           pl.setAttribute('fill', 'none');
           pl.setAttribute('stroke', shapeStroke);
           pl.setAttribute('stroke-width', `${width}`);
-          pl.setAttribute('stroke-linejoin', 'round');
-          pl.setAttribute('stroke-linecap', 'round');
+          // PDFium renders authored straight lines/arrows with flat caps and a
+          // sharp mitered arrow tip. Keep round joins only for freehand ink.
+          pl.setAttribute('stroke-linejoin', rounded ? 'round' : 'miter');
+          pl.setAttribute('stroke-linecap', rounded ? 'round' : 'butt');
           add(pl);
         }
         break;
@@ -4139,9 +4147,8 @@ export class PdfrxViewer {
    * Setting a tool leaves select mode. Requires `interactiveAnnotations`.
    */
   setAnnotationTool(tool: AnnotationTool | null): void {
-    this.annotationMode = tool;
     if (tool) this.setSelectedAnnotations([]);
-    this.invalidate();
+    this.setAnnotationMode(tool);
   }
 
   /** The active drawing tool, or null (idle or select mode). */
@@ -4155,8 +4162,31 @@ export class PdfrxViewer {
    * be moved/resized as a group. Single-click selection works with or without it.
    */
   setAnnotationSelectMode(on: boolean): void {
-    this.annotationMode = on ? 'select' : null;
+    this.setAnnotationMode(on ? 'select' : null);
+  }
+
+  /** Current annotation interaction mode. */
+  getAnnotationMode(): AnnotationMode {
+    return this.annotationMode;
+  }
+
+  /** Subscribes to annotation interaction-mode changes. */
+  addAnnotationModeChangeListener(listener: (mode: AnnotationMode) => void): () => void {
+    this.annotationModeChangeListeners.add(listener);
+    return () => this.annotationModeChangeListeners.delete(listener);
+  }
+
+  private setAnnotationMode(mode: AnnotationMode): void {
+    if (mode === this.annotationMode) return;
+    this.annotationMode = mode;
     this.invalidate();
+    for (const listener of this.annotationModeChangeListeners) {
+      try {
+        listener(mode);
+      } catch (e) {
+        console.error('Error in annotation mode change listener:', e);
+      }
+    }
   }
 
   /** Whether annotation select mode is active. */
@@ -4732,8 +4762,8 @@ export class PdfrxViewer {
     preview.setAttribute('stroke', this.annotationStyle.strokeWidth > 0 ? this.annotationStyle.color : 'none');
     preview.setAttribute('stroke-opacity', `${this.annotationStyle.opacity}`);
     preview.setAttribute('stroke-width', `${this.annotationStyle.strokeWidth}`);
-    preview.setAttribute('stroke-linejoin', 'round');
-    preview.setAttribute('stroke-linecap', 'round');
+    preview.setAttribute('stroke-linejoin', tool === 'ink' ? 'round' : 'miter');
+    preview.setAttribute('stroke-linecap', tool === 'ink' ? 'round' : 'butt');
     overlay.svg.appendChild(preview);
     try {
       overlay.svg.setPointerCapture(pointerId);
@@ -4800,6 +4830,8 @@ export class PdfrxViewer {
     if (!spec) return;
     const id = await this.doc.addAnnotation(s.pageNumber, spec);
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
+    this.setAnnotationSelectMode(true);
+    this.setSelectedAnnotation(id);
   }
 
   /** Converts a completed drawing gesture into an annotation spec (PDF coords). */

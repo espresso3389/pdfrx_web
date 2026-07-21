@@ -693,12 +693,20 @@
 /* "No fill": a blank swatch crossed by a diagonal slash. */
 .pdfrx-annot-color-none {
   background:
-    linear-gradient(to top right, transparent 44%, var(--pdfrx-danger) 44%, var(--pdfrx-danger) 56%, transparent 56%),
+    linear-gradient(to top right, transparent 42%, var(--pdfrx-danger) 42%, var(--pdfrx-danger) 58%, transparent 58%),
     var(--pdfrx-bg);
 }
 
 .pdfrx-annot-color-ring.pdfrx-annot-color-none {
-  border-color: transparent;
+  border: 2px solid var(--pdfrx-fg-muted);
+  box-shadow:
+    inset 0 0 0 2px var(--pdfrx-bg),
+    0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.pdfrx-annot-color-dot.pdfrx-annot-color-none {
+  box-sizing: border-box;
+  border: 1px solid var(--pdfrx-fg-muted);
 }
 
 /* The popup palette, dropped just below its button. */

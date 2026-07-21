@@ -217,8 +217,9 @@ export const IconOpacity = (): ReactNode => (
 /** @internal Annotation stroke thickness. */
 export const IconThickness = (): ReactNode => (
   <Icon>
-    <path d="M5 7h14M5 12h14M5 17h14" />
-    <path d="M5 7v.5M5 12v1.5M5 17v3" />
+    <rect x="4" y="5" width="16" height="1" rx="0.5" fill="currentColor" stroke="none" />
+    <rect x="4" y="10" width="16" height="2" rx="1" fill="currentColor" stroke="none" />
+    <rect x="4" y="16" width="16" height="3" rx="1.5" fill="currentColor" stroke="none" />
   </Icon>
 );
 

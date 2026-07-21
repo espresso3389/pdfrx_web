@@ -21,6 +21,7 @@ export {
   PdfrxViewer,
   type PdfrxViewerOptions,
   type AnnotationTool,
+  type AnnotationMode,
   type AnnotationStyle,
   type FitMode,
   type PageDropShadow,

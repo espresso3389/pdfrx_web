@@ -96,6 +96,7 @@ export type {
   PdfrxViewer,
   PdfrxViewerOptions,
   AnnotationTool,
+  AnnotationMode,
   AnnotationStyle,
   FitMode,
   LayoutDirection,
