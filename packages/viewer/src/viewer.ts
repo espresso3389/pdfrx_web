@@ -12,6 +12,7 @@ import {
   type PdfDest,
   type PdfDocument,
   type PdfFontQuery,
+  type PdfFormField,
   type PdfLink,
   type PdfPage,
   type PdfOpenOptions,
@@ -39,6 +40,7 @@ import {
   layoutPagesHorizontal,
   layoutPagesVertical,
   offsetToPdfPointInDocument,
+  pdfRectToRect,
   pdfRectToRectInDocument,
   rangeBounds,
   rectCenter,
@@ -240,6 +242,12 @@ export interface PdfrxViewerOptions {
   scrollByMouseWheel?: boolean;
   /** Enables arrow-key / Page/Home/End scrolling. Default: `true`. */
   scrollByArrowKey?: boolean;
+  /**
+   * Overlays native HTML controls over AcroForm fields so the user can fill the
+   * form (text inputs, checkboxes, radios, dropdowns). Edits are written back to
+   * the PDF and reflected by `PdfDocument.encodePdf`. Default: `true`.
+   */
+  interactiveForms?: boolean;
   /**
    * Extra scrollable margin, in document units, added around the document so it
    * can be panned past its edges. Default: `0` (edges are hard boundaries).
@@ -562,6 +570,17 @@ type InteractionMode =
       startDocCenter: Offset;
     };
 
+/**
+ * One page's form-control overlay: a point-space container (transformed to
+ * follow the page) plus a per-field reconciler that refreshes a control's
+ * displayed value in place when the underlying field changes.
+ */
+interface FormPageOverlay {
+  container: HTMLDivElement;
+  /** Field name → update the control's displayed value from a fresh field. */
+  controls: Map<string, (field: PdfFormField) => void>;
+}
+
 const HANDLE_HIT_RADIUS = 24;
 const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
@@ -627,6 +646,13 @@ export class PdfrxViewer {
     this.overlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
     container.appendChild(this.overlayRoot);
 
+    // Form-field overlay layer: native HTML controls positioned over AcroForm
+    // widgets. Same click-through container as overlayRoot; the controls
+    // themselves opt into pointer-events so they capture their own input.
+    this.formOverlayRoot = document.createElement('div');
+    this.formOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    container.appendChild(this.formOverlayRoot);
+
     // Viewport-fixed overlay layer (does not pan/zoom); above the page overlays.
     this.viewerOverlayRoot = document.createElement('div');
     this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
@@ -653,9 +679,12 @@ export class PdfrxViewer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly overlayRoot: HTMLDivElement;
+  private readonly formOverlayRoot: HTMLDivElement;
   private readonly viewerOverlayRoot: HTMLDivElement;
   /** Per-page overlay containers, built lazily when a page first becomes visible. */
   private readonly overlayContainers = new Map<number, HTMLElement>();
+  /** Per-page form-control overlays (native HTML controls over AcroForm widgets). */
+  private readonly formOverlays = new Map<number, FormPageOverlay>();
   /** True while a pointer gesture is in progress (for onInteractionStart/End). */
   private interactionActive = false;
   private readonly resizeObserver: ResizeObserver;
@@ -667,6 +696,8 @@ export class PdfrxViewer {
   private cache: PageRenderCache | null = null;
   private readonly pageTexts = new Map<number, PdfPageText | Promise<PdfPageText>>();
   private readonly pageLinks = new Map<number, PdfLink[] | Promise<PdfLink[]>>();
+  /** Cached form fields per page position (parallel to {@link pageLinks}); feeds the form overlay. */
+  private readonly pageFormFields = new Map<number, PdfFormField[] | Promise<PdfFormField[]>>();
   /**
    * Bumped whenever page positions stop meaning what they meant (new document,
    * rearrangement). Text and links are cached by position, so a load that was
@@ -1530,10 +1561,12 @@ export class PdfrxViewer {
     this.resizeObserver.disconnect();
     this.hideContextMenu();
     this.searcher?.dispose();
+    this.clearFormOverlays();
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.#engine.dispose();
     this.overlayRoot.remove();
+    this.formOverlayRoot.remove();
     this.viewerOverlayRoot.remove();
     this.canvas.remove();
   }
@@ -1570,6 +1603,8 @@ export class PdfrxViewer {
     await this.doc?.dispose();
     this.arrangementGeneration++;
     this.pageTexts.clear();
+    this.pageFormFields.clear();
+    this.clearFormOverlays();
     this.overlayContainers.clear();
     this.overlayRoot.replaceChildren();
     this.clearSelection();
@@ -1585,6 +1620,7 @@ export class PdfrxViewer {
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
     doc.addEventListener('pagesRearranged', () => this.onPagesRearranged());
+    doc.addEventListener('formFieldsChanged', () => this.reconcileFormOverlays());
     this.resetView();
     this.buildViewerOverlays();
     for (const listener of this.documentChangeListeners) {
@@ -1623,6 +1659,8 @@ export class PdfrxViewer {
     this.arrangementGeneration++;
     this.pageTexts.clear();
     this.pageLinks.clear();
+    this.pageFormFields.clear();
+    this.clearFormOverlays();
     this.hoveredLink = null;
     this.clearSelection();
     this.cache?.onArrangementChanged();
@@ -1936,6 +1974,31 @@ export class PdfrxViewer {
     } else if (link.dest) {
       this.goToDest(link.dest);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Form fields (AcroForm) — feed the HTML overlay layer (see updateFormOverlays)
+  // -------------------------------------------------------------------------
+
+  /** Loads (once) the form fields of a page position; mirrors {@link ensureLinks}. */
+  private ensureFormFields(pageNumber: number): void {
+    if (!this.doc || !this.doc.formHandle || this.pageFormFields.has(pageNumber)) return;
+    const page = this.doc.pages[pageNumber - 1];
+    if (!page || !page.isLoaded) return;
+    const generation = this.arrangementGeneration;
+    const promise = page.loadFormFields().then((fields) => {
+      if (generation === this.arrangementGeneration) {
+        this.pageFormFields.set(pageNumber, fields);
+        this.invalidate();
+      }
+      return fields;
+    });
+    this.pageFormFields.set(pageNumber, promise);
+  }
+
+  private getLoadedFormFields(pageNumber: number): PdfFormField[] | null {
+    const fields = this.pageFormFields.get(pageNumber);
+    return fields instanceof Promise ? null : (fields ?? null);
   }
 
   private selectablePages(): SelectablePage[] {
@@ -2275,6 +2338,10 @@ export class PdfrxViewer {
       this.mode = { kind: 'dragHandle', pointerId: e.pointerId, part: handle, pointerType: e.pointerType };
       return;
     }
+
+    // Form fields are edited via HTML controls in the overlay layer (they sit
+    // above the canvas and capture their own pointer events), so the canvas
+    // pointer path does not special-case them.
 
     // 2) mouse: press on text starts a selection drag; otherwise pan.
     if (e.pointerType === 'mouse' && e.button === 0) {
@@ -2844,6 +2911,7 @@ export class PdfrxViewer {
       this.cache.requestBase(pageNumber, requiredScale);
       this.ensureText(pageNumber);
       this.ensureLinks(pageNumber);
+      this.ensureFormFields(pageNumber);
       if (requiredScale > this.cache.baseScaleCap(pageNumber) * 1.1) {
         if (!rectIsEmpty(visibleOnPage)) {
           this.cache.schedulePatch(pageNumber, visibleOnPage, pageRect, requiredScale);
@@ -2900,6 +2968,7 @@ export class PdfrxViewer {
 
     // Keep DOM page overlays in sync with the view transform.
     this.updateOverlays();
+    this.updateFormOverlays();
   }
 
   // -------------------------------------------------------------------------
@@ -3021,6 +3090,212 @@ export class PdfrxViewer {
       `width:${pageSize.width}px;height:${pageSize.height}px;`;
     for (const el of els) container.appendChild(el);
     return container;
+  }
+
+  // -------------------------------------------------------------------------
+  // Form overlay: native HTML controls laid over AcroForm widgets.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Positions/builds the per-page form-control overlays to follow the view
+   * transform. Mirrors {@link updateOverlays}; called from the paint loop.
+   */
+  private updateFormOverlays(): void {
+    if (this.options.interactiveForms === false || !this.layout || !this.doc || !this.doc.formHandle) {
+      if (this.formOverlays.size) this.clearFormOverlays();
+      return;
+    }
+    const t = this.transform;
+    const visible = calcVisibleRect(t, this.viewSize);
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      const onScreen = rectOverlaps(pageRect, visible);
+      const pageNumber = i + 1;
+      let overlay = this.formOverlays.get(pageNumber);
+      if (onScreen && !overlay) {
+        const fields = this.getLoadedFormFields(pageNumber);
+        if (fields && fields.length) {
+          const built = this.buildFormPageOverlay(fields, this.pageGeoms[i]!, pageRect);
+          if (built) {
+            overlay = built;
+            this.formOverlays.set(pageNumber, built);
+            this.formOverlayRoot.appendChild(built.container);
+          }
+        }
+      }
+      if (!overlay) continue;
+      if (onScreen) {
+        const vr = documentRectToView(t, pageRect);
+        overlay.container.style.display = '';
+        overlay.container.style.transform = `translate(${vr.left}px, ${vr.top}px) scale(${t.zoom})`;
+      } else {
+        overlay.container.style.display = 'none';
+      }
+    }
+  }
+
+  /** Builds one page's form overlay container from its fields, or null if empty. */
+  private buildFormPageOverlay(
+    fields: readonly PdfFormField[],
+    pageGeom: PageGeometry,
+    pageRect: Rect,
+  ): FormPageOverlay | null {
+    const pageSize: Size = { width: rectWidth(pageRect), height: rectHeight(pageRect) };
+    const container = document.createElement('div');
+    // Point-space container (origin at the page top-left); positioned with
+    // translate+scale(zoom) by updateFormOverlays. Click-through except controls.
+    container.style.cssText =
+      `position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;` +
+      `width:${pageSize.width}px;height:${pageSize.height}px;`;
+    const controls = new Map<string, (field: PdfFormField) => void>();
+    for (const field of fields) {
+      for (const el of this.buildFormControls(field, pageGeom, pageSize, controls)) container.appendChild(el);
+    }
+    if (container.childElementCount === 0) return null;
+    return { container, controls };
+  }
+
+  /**
+   * Builds the native control(s) for one field, positioned in the container's
+   * point-space, and registers a reconciler in `controls` (keyed by field name).
+   * Read-only, unnamed, button and signature fields get no control — the canvas
+   * renders them.
+   */
+  private buildFormControls(
+    field: PdfFormField,
+    pageGeom: PageGeometry,
+    pageSize: Size,
+    controls: Map<string, (field: PdfFormField) => void>,
+  ): HTMLElement[] {
+    if (!this.doc || field.flags.readOnly || !field.name) return [];
+    const doc = this.doc;
+    const toPx = (r: PdfRect): Rect => pdfRectToRect(r, { page: pageGeom, scaledPageSize: pageSize });
+    const place = (el: HTMLElement, box: Rect): void => {
+      el.style.position = 'absolute';
+      el.style.left = `${box.left}px`;
+      el.style.top = `${box.top}px`;
+      el.style.width = `${Math.max(rectWidth(box), 1)}px`;
+      el.style.height = `${Math.max(rectHeight(box), 1)}px`;
+      el.style.margin = '0';
+      el.style.boxSizing = 'border-box';
+      el.style.pointerEvents = 'auto';
+    };
+    // Native checkbox/radio glyphs don't stretch, so center them in a square.
+    const centeredSquare = (box: Rect): Rect => {
+      const side = Math.min(rectWidth(box), rectHeight(box));
+      const left = box.left + (rectWidth(box) - side) / 2;
+      const top = box.top + (rectHeight(box) - side) / 2;
+      return { left, top, right: left + side, bottom: top + side };
+    };
+    const fontPx = (box: Rect): string => `${Math.min(Math.max(rectHeight(box) * 0.62, 8), 24)}px sans-serif`;
+    const commit = (value: string | boolean): void => {
+      void doc.setFormFieldValue(field.name, value);
+    };
+    const box0 = toPx(field.rects[0]!);
+
+    switch (field.type) {
+      case 'textField': {
+        const el = field.multiline ? document.createElement('textarea') : document.createElement('input');
+        if (el instanceof HTMLInputElement) el.type = 'text';
+        place(el, box0);
+        el.value = field.value;
+        el.style.font = fontPx(box0);
+        el.style.padding = '0 2px';
+        el.style.border = '1px solid rgba(60, 90, 160, 0.6)';
+        el.style.background = '#fff';
+        el.style.color = '#000';
+        if (el instanceof HTMLTextAreaElement) el.style.resize = 'none';
+        // Commit on blur (change) so there is no per-keystroke worker round-trip.
+        el.addEventListener('change', () => commit(el.value));
+        controls.set(field.name, (f) => {
+          if (document.activeElement !== el) el.value = f.value;
+        });
+        return [el];
+      }
+      case 'checkBox': {
+        const el = document.createElement('input');
+        el.type = 'checkbox';
+        place(el, centeredSquare(box0));
+        el.checked = !!field.isChecked;
+        el.addEventListener('change', () => commit(el.checked));
+        controls.set(field.name, (f) => {
+          if (document.activeElement !== el) el.checked = !!f.isChecked;
+        });
+        return [el];
+      }
+      case 'radioButton': {
+        const inputs: HTMLInputElement[] = [];
+        (field.options ?? []).forEach((opt, i) => {
+          const el = document.createElement('input');
+          el.type = 'radio';
+          el.name = `pdfrx-radio-${field.name}`;
+          place(el, centeredSquare(toPx(field.rects[i] ?? field.rects[0]!)));
+          el.checked = opt.selected;
+          el.addEventListener('change', () => {
+            if (el.checked) commit(opt.label);
+          });
+          inputs.push(el);
+        });
+        controls.set(field.name, (f) => {
+          (f.options ?? []).forEach((opt, i) => {
+            const el = inputs[i];
+            if (el && document.activeElement !== el) el.checked = opt.selected;
+          });
+        });
+        return inputs;
+      }
+      case 'comboBox':
+      case 'listBox': {
+        const el = document.createElement('select');
+        place(el, box0);
+        el.style.font = fontPx(box0);
+        el.style.border = '1px solid rgba(60, 90, 160, 0.6)';
+        el.style.background = '#fff';
+        el.style.color = '#000';
+        for (const opt of field.options ?? []) {
+          const o = document.createElement('option');
+          o.value = opt.label;
+          o.textContent = opt.label;
+          el.appendChild(o);
+        }
+        el.value = field.options?.find((o) => o.selected)?.label ?? field.value;
+        el.addEventListener('change', () => commit(el.value));
+        controls.set(field.name, (f) => {
+          if (document.activeElement !== el) el.value = f.options?.find((o) => o.selected)?.label ?? f.value;
+        });
+        return [el];
+      }
+      default:
+        return [];
+    }
+  }
+
+  /** Refreshes overlay control values in place after a `formFieldsChanged` event. */
+  private reconcileFormOverlays(): void {
+    if (!this.doc || this.formOverlays.size === 0) return;
+    const generation = this.arrangementGeneration;
+    for (const [pageNumber, overlay] of this.formOverlays) {
+      const page = this.doc.pages[pageNumber - 1];
+      if (!page) continue;
+      void page
+        .loadFormFields()
+        .then((fields) => {
+          if (generation !== this.arrangementGeneration) return;
+          this.pageFormFields.set(pageNumber, fields);
+          const byName = new Map(fields.map((f) => [f.name, f] as const));
+          for (const [name, reconcile] of overlay.controls) {
+            const f = byName.get(name);
+            if (f) reconcile(f);
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  /** Removes all form-control overlays. */
+  private clearFormOverlays(): void {
+    this.formOverlayRoot.replaceChildren();
+    this.formOverlays.clear();
   }
 
   /**
