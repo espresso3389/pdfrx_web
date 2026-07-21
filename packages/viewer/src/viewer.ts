@@ -936,8 +936,11 @@ function inkStrokeKind(g: { strokes: PdfAnnotationPoint[][] }): 'line' | 'arrow'
 /** Whether a selected annotation shows the faint bounding-box guide. */
 function annotationShowsBoundingBox(a: PdfAnnotationObject): boolean {
   if (a.subtype === 'circle') return true; // ellipse
+  // A fill-only rectangle has no visible outline of its own, so retain the
+  // same dashed selection guide used for ellipses.
+  if (a.subtype === 'square' && (a.borderWidth <= 0 || a.color === null)) return true;
   if (a.geometry.kind === 'ink') return inkStrokeKind(a.geometry) === 'curve'; // freehand pen
-  return false; // rectangle, line/arrow, markup, free text, …
+  return false; // stroked rectangle, line/arrow, markup, free text, …
 }
 
 /**
@@ -3188,7 +3191,8 @@ export class PdfrxViewer {
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'a') {
-        void this.selectAll();
+        if (this.isAnnotationSelectMode()) void this.selectAllAnnotationsOnPage();
+        else void this.selectAll();
         return true;
       }
       switch (e.key) {
@@ -4395,6 +4399,17 @@ export class PdfrxViewer {
     this.selectedAnnotationIds.clear();
     for (const id of next) this.selectedAnnotationIds.add(id);
     this.refreshAnnotationSelectionAll();
+  }
+
+  /**
+   * Selects every annotation on one page. Defaults to the page occupying the
+   * largest visible area, matching {@link currentPageNumber}.
+   */
+  async selectAllAnnotationsOnPage(pageNumber: number | null = this.currentPageNumber): Promise<boolean> {
+    if (!this.doc || pageNumber === null || pageNumber < 1 || pageNumber > this.doc.pages.length) return false;
+    const annotations = await this.doc.pages[pageNumber - 1]!.loadAnnotations();
+    this.setSelectedAnnotations(annotations.map((annotation) => annotation.id));
+    return annotations.length > 0;
   }
 
   /**

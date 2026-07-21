@@ -243,6 +243,15 @@ async function readDuplicateState(): Promise<{
   };
 }
 
+async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  await clearAnnotations();
+  for (const spec of specs) await doc.addAnnotation(1, spec);
+  viewer.setAnnotationSelectMode(true);
+  viewer.setSelectedAnnotations([]);
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -251,6 +260,7 @@ declare global {
       runClipboardTest: typeof runClipboardTest;
       setupDuplicateGesture: typeof setupDuplicateGesture;
       readDuplicateState: typeof readDuplicateState;
+      setupSelectAllTest: typeof setupSelectAllTest;
     };
   }
 }
@@ -261,4 +271,5 @@ window.annotationVisualTest = {
   runClipboardTest,
   setupDuplicateGesture,
   readDuplicateState,
+  setupSelectAllTest,
 };

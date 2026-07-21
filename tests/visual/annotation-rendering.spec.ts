@@ -219,3 +219,69 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   expect(state.rects[1]!.left - state.rects[0]!.left).toBeCloseTo(64, 5);
   expect(state.rects[2]!.left - state.rects[1]!.left).toBeCloseTo(64, 5);
 });
+
+test('Ctrl+A selects every annotation on the current page in object-select mode', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const specs: AnnotationSpec[] = [
+    {
+      subtype: 'square',
+      rect: { left: 24, top: 232, right: 72, bottom: 184 },
+      color: rgba(30, 136, 229),
+      borderWidth: 4,
+    },
+    {
+      subtype: 'circle',
+      rect: { left: 104, top: 152, right: 168, bottom: 88 },
+      color: rgba(229, 57, 53),
+      borderWidth: 4,
+    },
+  ];
+  await page.evaluate(async (annotations) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupSelectAllTest(s: unknown[]): Promise<void> };
+      }
+    ).annotationVisualTest;
+    await api.setupSelectAllTest(annotations);
+  }, specs);
+  await expect(page.locator('g[data-annot-id]')).toHaveCount(2);
+  const canvas = page.locator('canvas');
+  await expect(canvas).toHaveCount(1);
+  await canvas.press('Control+a');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const api = (
+          window as unknown as {
+            annotationVisualTest: { readDuplicateState(): Promise<{ selectedCount: number }> };
+          }
+        ).annotationVisualTest;
+        return api.readDuplicateState().then((state) => state.selectedCount);
+      }),
+    )
+    .toBe(2);
+});
+
+test('a selected fill-only rectangle shows a dashed bounding box', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 176, bottom: 80 },
+    color: rgba(30, 136, 229),
+    interiorColor: rgba(67, 160, 71),
+    borderWidth: 0,
+  };
+  await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    await api.setupDuplicateGesture(annotation);
+  }, spec);
+  const guide = page.locator('.pdfrx-anchors > rect');
+  await expect(guide).toHaveCount(1);
+  await expect(guide).toHaveAttribute('stroke-dasharray', /\d/);
+});
