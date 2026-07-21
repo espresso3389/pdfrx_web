@@ -3197,6 +3197,41 @@ function loadFormFields(params) {
 }
 
 /**
+ * Reads the calculate-action (`/AA/C`) JavaScript of every named form field, so
+ * the client can run a JS-free calculation shim (this PDFium build has no JS
+ * engine). Deduped by field name.
+ * @param {{docHandle: number, formHandle: number, pageCount: number}} params
+ * @returns {{calculations: {name: string, js: string}[]}}
+ */
+function loadFormCalculations(params) {
+  const { docHandle, formHandle, pageCount } = params;
+  const w = Pdfium.wasmExports;
+  const FPDF_ANNOT_AACTION_CALCULATE = 15;
+  const seen = new Set();
+  const calculations = [];
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+    const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
+    if (!pageHandle) continue;
+    try {
+      _forEachWidget(pageHandle, (annot) => {
+        const name = _getFormString(w.FPDFAnnot_GetFormFieldName, formHandle, annot);
+        if (!name || seen.has(name)) return;
+        const js = _getFormString(w.FPDFAnnot_GetFormAdditionalActionJavaScript, formHandle, annot, [
+          FPDF_ANNOT_AACTION_CALCULATE,
+        ]);
+        if (js) {
+          seen.add(name);
+          calculations.push({ name, js });
+        }
+      });
+    } finally {
+      w.FPDF_ClosePage(pageHandle);
+    }
+  }
+  return { calculations };
+}
+
+/**
  * Runs `fn` with an interactive page handle for `pageIndex`, reusing an already
  * open one or opening (and closing) a temporary one bracketed by
  * FORM_OnAfterLoadPage / FORM_OnBeforeClosePage.
@@ -3495,6 +3530,7 @@ const functions = {
   encodePdf,
   // [pdfrx_web: form support]
   loadFormFields,
+  loadFormCalculations,
   setFormFieldValue,
   formOpenPage,
   formClosePage,

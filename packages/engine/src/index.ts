@@ -42,6 +42,13 @@ export {
   type PdfRawImage,
 } from './image-source.js';
 export { PdfPageRenderCancellationToken } from './render-queue.js';
+export {
+  parseCalcAction,
+  evaluateCalc,
+  parseFieldNumber,
+  type FormCalcOp,
+  type FormCalcSpec,
+} from './form-calc.js';
 export * from './types.js';
 export type {
   WorkerCommand,

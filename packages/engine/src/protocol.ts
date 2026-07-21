@@ -366,6 +366,11 @@ export interface WorkerCommandMap {
     params: { docHandle: number; formHandle: number; pageIndex: number };
     result: { fields: WireFormField[] };
   };
+  /** Reads every named field's calculate-action (`/AA/C`) JavaScript source. */
+  loadFormCalculations: {
+    params: { docHandle: number; formHandle: number; pageCount: number };
+    result: { calculations: { name: string; js: string }[] };
+  };
   /**
    * Sets a form field's value by fully-qualified name, routed through the
    * form-fill module so the widget appearance regenerates and `FFI_OnChange`

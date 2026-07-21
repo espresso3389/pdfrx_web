@@ -1,4 +1,5 @@
 import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
+import { evaluateCalc, parseCalcAction, type FormCalcSpec } from './form-calc.js';
 import {
   imageSourcesToWirePages,
   type PdfCreateFromImagesOptions,
@@ -480,6 +481,13 @@ export class PdfDocument {
   private readonly formInvalidateListeners = new Set<(pageNumber: number, rect: PdfRect) => void>();
   /** Cache of field name → physical page index, populated by {@link loadFormFields}. */
   private readonly formFieldSourceIndex = new Map<string, number>();
+  /** Lazily-loaded parsed `AFSimple_Calculate` specs (`null` until first needed). */
+  private calcSpecs: { name: string; spec: FormCalcSpec }[] | null = null;
+  /**
+   * Whether {@link setFormFieldValue} recomputes dependent calculated fields
+   * (`AFSimple_Calculate`) after a change. Default `true`.
+   */
+  formCalculationEnabled = true;
 
   /** Encryption/permission info, or `null` if the document is not encrypted. */
   readonly permissions: PdfPermissions | null;
@@ -985,12 +993,26 @@ export class PdfDocument {
   /**
    * Sets the value of the field identified by fully-qualified `name`, routed
    * through the form-fill module so the widget appearance regenerates and the
-   * change is visible on the next render. Fires `formFieldsChanged`
-   * (`source: 'api'`). The interpretation of `value` depends on the field type —
-   * see {@link PdfFormFieldValue}.
+   * change is visible on the next render. When {@link formCalculationEnabled} is
+   * set (the default), dependent calculated fields (`AFSimple_Calculate`) are
+   * recomputed afterwards. Fires `formFieldsChanged` (`source: 'api'`). The
+   * interpretation of `value` depends on the field type — see
+   * {@link PdfFormFieldValue}.
    */
   async setFormFieldValue(name: string, value: PdfFormFieldValue): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
+    await this.sendSetFormFieldValue(name, value);
+    if (this.formCalculationEnabled) await this.runFormCalculations();
+    this.emit('formFieldsChanged', { source: 'api' });
+  }
+
+  /**
+   * Sends one form-field write to the worker (find the field's page, dispatch
+   * the typed command). No calculation or event — the primitive shared by
+   * {@link setFormFieldValue} and {@link runFormCalculations}.
+   * @internal
+   */
+  private async sendSetFormFieldValue(name: string, value: PdfFormFieldValue): Promise<void> {
     let sourcePageIndex = this.formFieldSourceIndex.get(name);
     if (sourcePageIndex === undefined) {
       await this.loadFormFields(); // populate the cache
@@ -1010,11 +1032,55 @@ export class PdfDocument {
     else if (Array.isArray(value)) params.selectedLabels = value;
     else params.value = value;
     await this.sendCommand('setFormFieldValue', params);
-    const pageNumber = this.pageNumberOfSourceIndex(sourcePageIndex);
-    this.emit('formFieldsChanged', {
-      source: 'api',
-      ...(pageNumber !== null ? { pageNumbers: [pageNumber] } : {}),
+  }
+
+  /**
+   * Loads (once) and caches the document's parsed `AFSimple_Calculate` specs.
+   * @internal
+   */
+  private async ensureCalcSpecs(): Promise<{ name: string; spec: FormCalcSpec }[]> {
+    if (this.calcSpecs) return this.calcSpecs;
+    if (!this.formHandle) return (this.calcSpecs = []);
+    const result = await this.sendCommand('loadFormCalculations', {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      pageCount: this.nativePageCount,
     });
+    this.calcSpecs = result.calculations
+      .map((c) => ({ name: c.name, spec: parseCalcAction(c.js) }))
+      .filter((c): c is { name: string; spec: FormCalcSpec } => c.spec !== null);
+    return this.calcSpecs;
+  }
+
+  /**
+   * Recomputes calculated fields (`AFSimple_Calculate`) to a fixed point from the
+   * current field values and writes back the ones that changed. A JS-free stand-in
+   * for the calculate actions this PDFium build cannot run.
+   * @internal
+   */
+  private async runFormCalculations(): Promise<void> {
+    const specs = await this.ensureCalcSpecs();
+    if (specs.length === 0) return;
+    const fields = await this.loadFormFields();
+    const values = new Map(fields.map((f) => [f.name, f.value] as const));
+    const pdfValues = new Map(values);
+    for (let iter = 0; iter < 16; iter++) {
+      let changed = false;
+      for (const { name, spec } of specs) {
+        const result = evaluateCalc(spec, values);
+        if (result !== null && result !== values.get(name)) {
+          values.set(name, result);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    for (const { name } of specs) {
+      const v = values.get(name);
+      if (v !== undefined && v !== pdfValues.get(name)) {
+        await this.sendSetFormFieldValue(name, v);
+      }
+    }
   }
 
   /**
