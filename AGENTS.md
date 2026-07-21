@@ -82,7 +82,11 @@ tag (`v0.2.1` → every package must be `0.2.1`). To cut a release:
 
 1. Bump `version` in **all four** `packages/*/package.json` to the new number.
 2. Bump the hard-coded CDN version strings (see the checklist below) to match.
-3. Commit, then tag `vX.Y.Z` and push the tag. The workflow verifies and
+3. Add a `## [X.Y.Z]` section (with today's date) to [CHANGELOG.md](CHANGELOG.md)
+   summarizing the release, and add its `compare` link at the bottom. Derive the
+   entries from the commits since the last tag
+   (`git log --oneline vPREV..HEAD`).
+4. Commit, then tag `vX.Y.Z` and push the tag. The workflow verifies and
    publishes in dependency order.
 
 Pushing to `master` (no tag) does **not** publish; it only rebuilds and deploys
