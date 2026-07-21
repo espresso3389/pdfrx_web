@@ -17,9 +17,10 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 ### The worker protocol
 
 `packages/engine/src/protocol.ts` documents every command's parameter and
-result shapes (18 commands: document open/close, progressive loading, page
-rendering with partial regions, text with per-character rects, links, outline,
-font management, `assemble`/`encodePdf`). `assemble` is surfaced on
+result shapes (document open/close, progressive loading, page rendering with
+partial regions, text with per-character rects, links, outline, font management,
+`assemble`/`encodePdf`, and the AcroForm commands — see *Form filling* below).
+`assemble` is surfaced on
 `PdfDocument` as `assemblePages()`, which writes back the arrangement built with
 `setPages` / `setPage` — the only page-editing API — and `encodePdf()` reflects
 those edits. Notable client behaviors:
@@ -85,10 +86,55 @@ shell adds:
   the Google Fonts weight tables used by the resolver. See
   [FONT-FALLBACK.md](FONT-FALLBACK.md) for the full font-mapping reference.
 
+## Form filling (AcroForm)
+
+The worker inits a PDFium form-fill environment (`FPDFDOC_InitFormFillEnvironment`)
+at open and draws widgets via `FPDF_FFLDraw` in `renderPage`. On top of that:
+
+- The worker populates the `FPDF_FORMFILLINFO` callbacks (version 1) — done in
+  `_initFormFillInfo`, registered as fixed wasm function pointers via
+  `Pdfium.addFunction`. `FFI_Invalidate` and `FFI_OnChange` are relayed to the
+  main thread through the existing `type: 'callback'` channel (registered by the
+  `registerFormNotify` command). Without these, routing input through `FORM_On*`
+  would call null pointers and trap. Per-document state (open interactive pages,
+  the notify callback id) is keyed by the `formInfo` pointer, which PDFium hands
+  back as `pThis`.
+- Reads use `loadFormFields` (enumerate Widget annotations →
+  `FPDFAnnot_GetFormField*`). Writes and interactive edits go through the
+  form-fill module (`FORM_ReplaceSelection`, `FORM_SetIndexSelected`, or a
+  simulated `FORM_OnLButton*` click) so appearances regenerate — raw
+  `FPDFAnnot_SetStringValue` would leave a stale appearance stream. Interactive
+  input commands (`formOpenPage`/`formClosePage`/`formPointerEvent`/
+  `formKeyEvent`/`formKillFocus`) bracket an open page with
+  `FORM_OnAfterLoadPage`/`FORM_OnBeforeClosePage`.
+
+The engine surfaces this as `PdfPage.loadFormFields()`,
+`PdfDocument.loadFormFields()` / `getFormFieldValue()` / `setFormFieldValue()`,
+and a `formFieldsChanged` event; `@pdfrx/react` exposes the `useFormFields`
+hook. All new worker blocks are marked with a `[pdfrx_web: form support]`
+comment so the vendored-worker sync re-applies them (see the RGBA patch marker).
+
+**Interactive editing uses an HTML overlay, not the canvas.** `@pdfrx/viewer`
+lays native controls (`<input>` / `<textarea>` / checkbox / radio / `<select>`)
+over each editable widget in a dedicated `formOverlayRoot` layer, positioned in
+the page's point-space and transformed to follow pan/zoom exactly like the
+`pageOverlaysBuilder` overlays (`updateFormOverlays` mirrors `updateOverlays`).
+The controls are the interactive representation; the canvas keeps rendering the
+page underneath (the opaque controls hide the duplicate). Editing never
+re-renders the canvas — that avoids the flicker of a per-keystroke re-render and
+gives native focus, IME, mobile keyboards, dropdowns and accessibility for free.
+Edits are written back with `setFormFieldValue` (on `blur` for text, immediately
+for checkbox/radio/select); `formFieldsChanged` reconciles control values in
+place (skipping the focused element). Gated by the `interactiveForms` option
+(default on). The engine still exposes lower-level `FORM_On*` input commands
+(`formOpenPage` / `formPointerEvent` / `formKeyEvent` / …) for headless use, but
+the viewer no longer drives them.
+
 ## Known limitations
 
-- Form filling: requires exposing the engine's `FORM_On*` APIs from the worker
-  (protocol extension).
+- Form editing does not run field-level JavaScript actions, and the HTML-overlay
+  controls approximate rather than pixel-match the PDF's field styling (font,
+  border). Comb fields, rich text and editable combo boxes are not yet handled.
 - Scroll physics beyond exponential-decay fling (no platform-specific curves),
   annotation editing.
 

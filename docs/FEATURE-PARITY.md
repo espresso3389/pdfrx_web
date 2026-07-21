@@ -18,11 +18,16 @@ things pdfrx_web has that pdfrx lacks.
 
 Upstream API names are given so you can find the reference implementation.
 
-> Absent in **both** projects (so *not* pdfrx_web gaps): form-field
-> enumeration/filling, document metadata/info dictionary, page labels, embedded
-> file attachments, embedded JavaScript, digital signatures, annotation
-> creation/editing, and page-content editing / watermarking / flattening.
-> Annotation data is read-only and surfaced only through `PdfLink.annotation`.
+> Absent in **both** projects (so *not* pdfrx_web gaps): document metadata/info
+> dictionary, page labels, embedded file attachments, embedded JavaScript,
+> digital signatures, annotation creation/editing, and page-content editing /
+> watermarking / flattening. Non-form annotation data is read-only and surfaced
+> only through `PdfLink.annotation`.
+>
+> **pdfrx_web-only (not upstream):** AcroForm field enumeration, value get/set,
+> change notifications, and interactive in-viewer editing — `PdfPage.loadFormFields()`,
+> `PdfDocument.loadFormFields()` / `getFormFieldValue()` / `setFormFieldValue()`,
+> the `formFieldsChanged` event, and the React `useFormFields` hook.
 
 ---
 
