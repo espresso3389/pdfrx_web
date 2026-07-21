@@ -285,3 +285,43 @@ test('a selected fill-only rectangle shows a dashed bounding box', async ({ page
   await expect(guide).toHaveCount(1);
   await expect(guide).toHaveAttribute('stroke-dasharray', /\d/);
 });
+
+test('wheel scrolling and browser-safe zoom work while the annotation SVG captures object selection', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 176, bottom: 80 },
+    color: rgba(30, 136, 229),
+    interiorColor: rgba(67, 160, 71),
+    borderWidth: 4,
+  };
+  await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupSelectAllTest(s: unknown[]): Promise<void> };
+      }
+    ).annotationVisualTest;
+    await api.setupSelectAllTest([annotation]);
+  }, spec);
+  await expect(page.locator('g[data-annot-id]')).toHaveCount(1);
+  const transform = async (): Promise<{ yZoomed: number; zoom: number }> =>
+    page.evaluate(() => {
+      const api = (
+        window as unknown as {
+          annotationVisualTest: { readViewTransform(): { yZoomed: number; zoom: number } };
+        }
+      ).annotationVisualTest;
+      return api.readViewTransform();
+    });
+  const before = await transform();
+  await page.mouse.move(128, 128);
+  await page.mouse.wheel(0, 80);
+  await expect.poll(async () => (await transform()).yZoomed).toBeLessThan(before.yZoomed);
+
+  const beforeZoom = await transform();
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -80);
+  await page.keyboard.up('Control');
+  await expect.poll(async () => (await transform()).zoom).toBeGreaterThan(beforeZoom.zoom);
+});

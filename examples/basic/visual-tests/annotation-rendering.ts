@@ -21,7 +21,10 @@ const viewer = new PdfrxViewer(host, {
 });
 
 const white = new Uint8Array(SIZE * SIZE * 4).fill(255);
-const seed = await viewer.engine.createFromImages([{ pixels: white, width: SIZE, height: SIZE }]);
+const seed = await viewer.engine.createFromImages([
+  { pixels: white, width: SIZE, height: SIZE },
+  { pixels: white, width: SIZE, height: SIZE },
+]);
 const bytes = await seed.encodePdf();
 await seed.dispose();
 await viewer.openData(bytes);
@@ -252,6 +255,10 @@ async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
   viewer.setSelectedAnnotations([]);
 }
 
+function readViewTransform(): { xZoomed: number; yZoomed: number; zoom: number } {
+  return viewer.currentTransform;
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -261,6 +268,7 @@ declare global {
       setupDuplicateGesture: typeof setupDuplicateGesture;
       readDuplicateState: typeof readDuplicateState;
       setupSelectAllTest: typeof setupSelectAllTest;
+      readViewTransform: typeof readViewTransform;
     };
   }
 }
@@ -272,4 +280,5 @@ window.annotationVisualTest = {
   setupDuplicateGesture,
   readDuplicateState,
   setupSelectAllTest,
+  readViewTransform,
 };

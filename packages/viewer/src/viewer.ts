@@ -1133,7 +1133,11 @@ export class PdfrxViewer {
     this.canvas.addEventListener('pointerup', this.onPointerUp);
     this.canvas.addEventListener('pointercancel', this.onPointerUp);
     this.canvas.addEventListener('dblclick', this.onDoubleClick);
-    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    // Listen on the shared host rather than only the canvas. Annotation select
+    // and drawing modes put an interactive SVG above the canvas; wheel events
+    // originating there bubble to the host but can never reach the sibling
+    // canvas beneath it.
+    this.container.addEventListener('wheel', this.onWheel, { passive: false, capture: true });
     this.canvas.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
   }
@@ -2082,6 +2086,7 @@ export class PdfrxViewer {
     this.searcher?.dispose();
     this.clearFormOverlays();
     this.clearAnnotationOverlays();
+    this.container.removeEventListener('wheel', this.onWheel, { capture: true });
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.#engine.dispose();
