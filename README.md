@@ -21,7 +21,8 @@ It renders pages, text selection, links, and search highlights onto a single
 - Links (external URLs and internal destinations), context menu, clipboard
 - Printing
 - Automatic missing-font fallback via Google Fonts (Arimo/Tinos/Cousine for
-  standard fonts, Noto families for CJK and other scripts)
+  standard fonts, Noto families for CJK and other scripts) — see
+  [docs/FONT-FALLBACK.md](docs/FONT-FALLBACK.md)
 - Password-protected documents
 
 ## Try the demo

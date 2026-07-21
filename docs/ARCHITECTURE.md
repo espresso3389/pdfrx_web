@@ -82,7 +82,8 @@ shell adds:
   engine caches substituted fonts per document, so a mapper refresh alone is not
   enough. The worker persists registered fonts in IndexedDB (`pdfrx.fonts`), so
   later sessions resolve instantly. `packages/viewer/src/font-tables.ts` holds
-  the Google Fonts weight tables used by the resolver.
+  the Google Fonts weight tables used by the resolver. See
+  [FONT-FALLBACK.md](FONT-FALLBACK.md) for the full font-mapping reference.
 
 ## Known limitations
 

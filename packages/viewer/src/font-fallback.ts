@@ -67,6 +67,9 @@ const isRoman = (q: PdfFontQuery): boolean => (q.pitchFamily & 16) !== 0;
 /**
  * The outcome of resolving one missing-font query: which substitute file to
  * download and the family name it declares.
+ *
+ * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
+ *   — the full font-mapping reference.
  */
 export interface FontResolution {
   /** The font family name the engine is expected to see inside the file. */
@@ -81,6 +84,9 @@ export interface FontResolution {
  * Maps a missing-font query to a downloadable substitute, or `null` to leave it
  * unresolved. Pass one as {@link PdfrxViewerOptions.fontResolver} (the default
  * is {@link googleFontsResolver}).
+ *
+ * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
+ *   — the mechanism and the default font mapping.
  */
 export type FontResolver = (query: PdfFontQuery) => FontResolution | null;
 
@@ -242,6 +248,9 @@ const fileToResolution = (font: GoogleFontsFile): FontResolution => ({
  *
  * @returns A {@link FontResolution}, or `null` when no substitute is known
  *   (e.g. symbol fonts).
+ *
+ * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
+ *   — which font is used for which query (charset, weight, and style rules).
  */
 export const googleFontsResolver: FontResolver = (query) => {
   const standard = resolveStandardFont(query);

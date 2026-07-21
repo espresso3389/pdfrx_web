@@ -173,6 +173,9 @@ export interface PdfrxViewerOptions {
   /**
    * Resolver for fonts the PDF does not embed. Defaults to the Google Fonts
    * resolver (downloads from fonts.gstatic.com); pass `null` to disable.
+   *
+   * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
+   *   — how the default resolver picks substitutes, and how to customize it.
    */
   fontResolver?: FontResolver | null;
   /**

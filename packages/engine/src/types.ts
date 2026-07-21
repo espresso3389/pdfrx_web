@@ -147,6 +147,9 @@ export interface PdfPageRawText {
  * A font the engine could not find while loading or rendering a document.
  * Emitted via the {@link PdfDocumentEventMap.missingFonts | missingFonts} event;
  * supply a substitute with {@link PdfrxEngine.addFontData}.
+ *
+ * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
+ *   — how the default resolver maps these queries to downloadable fonts.
  */
 export interface PdfFontQuery {
   /** Requested typeface (family) name. */
