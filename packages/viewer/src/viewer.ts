@@ -1108,6 +1108,10 @@ export class PdfrxViewer {
   /**
    * Copies the current selection to the system clipboard.
    *
+   * Works in non-secure contexts too (a phone hitting a dev server by its LAN
+   * IP over plain HTTP has no `navigator.clipboard`); see
+   * {@link writeTextToClipboard}.
+   *
    * @returns `true` if there was text to copy (and the write was attempted),
    *   `false` if the selection was empty or the document forbids copying.
    */
@@ -1115,7 +1119,7 @@ export class PdfrxViewer {
     if (!this.isCopyAllowed) return false;
     const text = this.selectedText;
     if (!text) return false;
-    await navigator.clipboard.writeText(text);
+    await writeTextToClipboard(text);
     return true;
   }
 
@@ -3268,5 +3272,56 @@ export class PdfrxViewer {
     if (top + H + nm > view.height) top = view.height - H - nm;
     if (top < nm) top = nm;
     return { x: left, y: top };
+  }
+}
+
+/**
+ * Writes `text` to the system clipboard, in both secure and non-secure contexts.
+ *
+ * The async Clipboard API (`navigator.clipboard`) only exists in a *secure*
+ * context — HTTPS or `localhost`. A page served over plain HTTP, which is what
+ * a phone gets when it opens a dev server by its LAN IP (`http://192.168.x.x`),
+ * has no `navigator.clipboard` at all, so the direct `writeText` call throws and
+ * copy silently fails on mobile while working on a desktop `localhost`. When the
+ * API is unavailable we fall back to a hidden `<textarea>` and
+ * `document.execCommand('copy')`, which still works inside a user gesture.
+ *
+ * Call this synchronously from a user gesture (a click/tap handler).
+ */
+async function writeTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  legacyCopyText(text);
+}
+
+/**
+ * Clipboard fallback for non-secure contexts (and browsers without the async
+ * Clipboard API): select the text in a detached, off-screen `<textarea>` and
+ * `execCommand('copy')`. Handles iOS Safari, which ignores `textarea.select()`
+ * and needs an explicit range.
+ */
+function legacyCopyText(text: string): void {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  // `readonly` keeps the on-screen keyboard from popping up on mobile.
+  textarea.setAttribute('readonly', '');
+  textarea.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:none;opacity:0;';
+  document.body.appendChild(textarea);
+  try {
+    textarea.focus();
+    textarea.select();
+    // iOS Safari ignores textarea.select(); selecting the node's contents via a
+    // Range and then setting an explicit selection range is what works there.
+    const range = document.createRange();
+    range.selectNodeContents(textarea);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    textarea.setSelectionRange(0, text.length);
+    document.execCommand('copy');
+  } finally {
+    textarea.remove();
   }
 }
