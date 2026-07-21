@@ -49,6 +49,8 @@ export { isImageFile, isPdfFile, looksLikePdf, imageBytesToPdf, openFileAsDocume
 export { defaultPdfrxStrings, usePdfrxStrings, type PdfrxStrings } from './strings.js';
 export {
   buildDefaultContextMenu,
+  TEXT_HIGHLIGHT_COLORS,
+  TEXT_HIGHLIGHT_OPACITY,
   type PdfReactContextMenuBuilder,
   type PdfContextMenuHelpers,
 } from './context-menu.js';

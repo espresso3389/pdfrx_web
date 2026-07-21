@@ -4463,9 +4463,12 @@ export class PdfrxViewer {
    * undoable step, then clears the text selection. No-op without a selection.
    * `color` defaults to the current annotation drawing color.
    */
-  async highlightSelection(color: string = this.annotationStyle.color): Promise<void> {
+  async highlightSelection(
+    color: string = this.annotationStyle.color,
+    opacity: number = this.annotationStyle.opacity,
+  ): Promise<void> {
     if (!this.doc || !this.selA || !this.selB) return;
-    const rgba = cssColorToRgba(color, this.annotationStyle.opacity);
+    const rgba = cssColorToRgba(color, opacity);
     const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
     const group: AnnotationCommand[] = [];
     for (const range of ranges) {
