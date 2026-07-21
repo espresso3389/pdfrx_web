@@ -1,0 +1,128 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm 3 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Fields [6 0 R 7 0 R 10 0 R 11 0 R] /DR << /Font << /Helv 20 0 R /ZaDb 21 0 R >> >> /DA (/Helv 0 Tf 0 g) /NeedAppearances true >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << /Font << /Helv 20 0 R >> >> /Contents 5 0 R /Annots [6 0 R 7 0 R 8 0 R 9 0 R 11 0 R] >>
+endobj
+5 0 obj
+<<  /Length 111 >>
+stream
+BT /Helv 12 Tf 0 g
+20 462 Td (Name:) Tj
+0 -40 Td (Subscribe:) Tj
+0 -40 Td (Color:) Tj
+0 -40 Td (Country:) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [120 430 380 455] /F 4 /P 4 0 R /DA (/Helv 14 Tf 0 0 1 rg) /V (Alice) /MK << /BC [0 0 0] /BG [1 1 1] >> >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (subscribe) /Rect [120 390 142 412] /F 4 /P 4 0 R /V /Off /AS /Off /DA (/ZaDb 0 Tf 0 g) /MK << /BC [0 0 0] /BG [1 1 1] /CA (4) >> /AP << /N << /Yes 30 0 R /Off 31 0 R >> >> >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [120 350 142 372] /F 4 /P 4 0 R /AS /Off /MK << /BC [0 0 0] /BG [1 1 1] /CA (l) >> /AP << /N << /red 32 0 R /Off 33 0 R >> >> >>
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 10 0 R /Rect [200 350 222 372] /F 4 /P 4 0 R /AS /Off /MK << /BC [0 0 0] /BG [1 1 1] /CA (l) >> /AP << /N << /blue 34 0 R /Off 35 0 R >> >> >>
+endobj
+10 0 obj
+<< /FT /Btn /Ff 49152 /T (color) /V /Off /Kids [8 0 R 9 0 R] /DA (/ZaDb 0 Tf 0 g) >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (country) /Rect [120 310 380 332] /F 4 /P 4 0 R /DA (/Helv 12 Tf 0 g) /Opt [(Japan) (USA) (France)] /V (Japan) /MK << /BC [0 0 0] /BG [1 1 1] >> >>
+endobj
+20 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+21 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /ZapfDingbats >>
+endobj
+30 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 35 >>
+stream
+q BT /ZaDb 16 Tf 3 4 Td (4) Tj ET Q
+endstream
+endobj
+31 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 0 >>
+stream
+
+endstream
+endobj
+32 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 35 >>
+stream
+q BT /ZaDb 16 Tf 4 4 Td (l) Tj ET Q
+endstream
+endobj
+33 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 0 >>
+stream
+
+endstream
+endobj
+34 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 35 >>
+stream
+q BT /ZaDb 16 Tf 4 4 Td (l) Tj ET Q
+endstream
+endobj
+35 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 22 22] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 0 >>
+stream
+
+endstream
+endobj
+xref
+0 36
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000285 00000 n 
+0000000455 00000 n 
+0000000618 00000 n 
+0000000797 00000 n 
+0000001033 00000 n 
+0000001231 00000 n 
+0000001430 00000 n 
+0000001531 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000001750 00000 n 
+0000001821 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000001895 00000 n 
+0000002071 00000 n 
+0000002211 00000 n 
+0000002387 00000 n 
+0000002527 00000 n 
+0000002703 00000 n 
+trailer
+<< /Size 36 /Root 1 0 R >>
+startxref
+2843
+%%EOF
