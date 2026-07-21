@@ -45,6 +45,7 @@ export { PdfViewerSurface, type PdfViewerSurfaceProps } from './surface.js';
 export { PdfrxViewerStore } from './store.js';
 export { ThumbnailCache } from './thumbnail-cache.js';
 export { normalizeSource, type PdfSource, type NormalizedPdfSource } from './source.js';
+export { isImageFile, isPdfFile, looksLikePdf, imageBytesToPdf, openFileAsDocument } from './file-open.js';
 export { defaultPdfrxStrings, usePdfrxStrings, type PdfrxStrings } from './strings.js';
 export {
   buildDefaultContextMenu,

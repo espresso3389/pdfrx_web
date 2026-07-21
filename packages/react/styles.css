@@ -329,11 +329,56 @@
 /* --- Thumbnails ---------------------------------------------------------- */
 
 .pdfrx-thumbnails {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   padding: 10px;
+  /* Fill the scroll pane so the empty area past the last thumbnail is still a
+     valid drop target (drop-to-insert / reorder can append to the end). */
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+/* Reorderable thumbnails: let the pane scroll vertically, but a mouse drag or a
+   touch long-press starts a reorder (see PdfThumbnailList.onMovePage). */
+.pdfrx-thumb-item[data-reorderable] {
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grab;
+}
+
+/* The page being dragged to a new position. */
+.pdfrx-thumb-item-dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* The thumbnail copy that follows the pointer while reordering. */
+.pdfrx-thumb-ghost {
+  position: fixed;
+  z-index: 30;
+  height: auto;
+  pointer-events: none;
+  opacity: 0.85;
+  border-radius: 2px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+}
+
+/* Insertion line shown while dragging files or a page over the strip. */
+.pdfrx-thumb-drop-indicator {
+  position: absolute;
+  inset-inline: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--pdfrx-accent);
+  box-shadow: 0 0 0 1px var(--pdfrx-bg);
+  pointer-events: none;
+  transform: translateY(-50%);
+  z-index: 2;
 }
 
 .pdfrx-thumb-item {

@@ -6,6 +6,7 @@ import {
   type StartTextSearchOptions,
 } from '@pdfrx/viewer';
 import { buildDefaultContextMenu, type PdfReactContextMenuBuilder } from './context-menu.js';
+import { imageBytesToPdf, looksLikePdf } from './file-open.js';
 import { normalizeSource, sourceKey, toBytes, type NormalizedPdfSource, type PdfSource } from './source.js';
 import { defaultPdfrxStrings, type PdfrxStrings } from './strings.js';
 import { ThumbnailCache } from './thumbnail-cache.js';
@@ -331,7 +332,16 @@ export class PdfrxViewerStore {
       if (source.kind === 'url') {
         await viewer.openUrl(source.url, source.options);
       } else {
-        await viewer.openData(await toBytes(source.data), source.options);
+        const bytes = await toBytes(source.data);
+        const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        if (looksLikePdf(u8)) {
+          await viewer.openData(bytes, source.options);
+        } else {
+          // Not a PDF — treat it as an image and show it as a one-page PDF. The
+          // converted bytes become the viewer's source (so a font-fallback
+          // reopen replays the PDF, not the image).
+          await viewer.openData(await imageBytesToPdf(viewer.engine, u8), source.options);
+        }
       }
       return null;
     } catch (e) {

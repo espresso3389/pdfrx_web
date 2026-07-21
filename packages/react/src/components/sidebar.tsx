@@ -21,6 +21,10 @@ export interface PdfSidebarProps {
   onNavigate?: () => void;
   /** Extra controls drawn over each thumbnail. See {@link PdfThumbnailList}. */
   renderPageActions?: (pageNumber: number) => ReactNode;
+  /** Enables drop-to-insert on the thumbnail strip. See {@link PdfThumbnailList.onInsertFiles}. */
+  onInsertFiles?: (files: File[], index: number) => void;
+  /** Enables drag-to-reorder on the thumbnail strip. See {@link PdfThumbnailList.onMovePage}. */
+  onMovePage?: (fromPageNumber: number, toIndex: number) => void;
 }
 
 /**
@@ -42,6 +46,8 @@ export function PdfSidebar({
   thumbnailWidth,
   onNavigate,
   renderPageActions,
+  onInsertFiles,
+  onMovePage,
 }: PdfSidebarProps): ReactNode {
   const [active, setActive] = useState<PdfSidebarTab>(defaultTab ?? tabs[0] ?? 'thumbnails');
   const current = tabs.includes(active) ? active : (tabs[0] ?? 'thumbnails');
@@ -66,7 +72,13 @@ export function PdfSidebar({
       )}
       <div className="pdfrx-sidebar-pane">
         {current === 'thumbnails' ? (
-          <PdfThumbnailList width={thumbnailWidth} onNavigate={onNavigate} renderPageActions={renderPageActions} />
+          <PdfThumbnailList
+            width={thumbnailWidth}
+            onNavigate={onNavigate}
+            renderPageActions={renderPageActions}
+            onInsertFiles={onInsertFiles}
+            onMovePage={onMovePage}
+          />
         ) : (
           <PdfOutlineTree onNavigate={onNavigate} />
         )}

@@ -603,7 +603,7 @@ export class PdfrxViewer {
   constructor(container: HTMLElement, options: PdfrxViewerOptions = {}) {
     this.container = container;
     this.options = options;
-    this.engine = options.engine ?? new PdfrxEngine(options.engineOptions ?? { wasmModulesUrl: 'pdfium/' });
+    this.#engine = options.engine ?? new PdfrxEngine(options.engineOptions ?? { wasmModulesUrl: 'pdfium/' });
     this.ownsEngine = !options.engine;
     this.layoutDirectionValue = options.layoutDirection ?? 'vertical';
 
@@ -645,7 +645,7 @@ export class PdfrxViewer {
 
   private readonly container: HTMLElement;
   private readonly options: PdfrxViewerOptions;
-  private readonly engine: PdfrxEngine;
+  readonly #engine: PdfrxEngine;
   private readonly ownsEngine: boolean;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -755,7 +755,7 @@ export class PdfrxViewer {
     return await this.whileLoading(async () => {
       // Report download progress without stealing the caller's callback.
       const caller = options.progressCallback;
-      const doc = await this.engine.openUrl(url, {
+      const doc = await this.#engine.openUrl(url, {
         ...options,
         progressCallback: (bytesReceived, bytesTotal) => {
           // bytesTotal is omitted when the response had no Content-Length.
@@ -775,7 +775,7 @@ export class PdfrxViewer {
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
     return await this.whileLoading(async () => {
-      const doc = await this.engine.openData(data, options);
+      const doc = await this.#engine.openData(data, options);
       this.currentSource = { kind: 'data', data, options };
       await this.setDocument(doc);
     });
@@ -959,6 +959,16 @@ export class PdfrxViewer {
   /** The currently open {@link PdfDocument}, or `null` before the first open. */
   get document(): PdfDocument | null {
     return this.doc;
+  }
+
+  /**
+   * The engine backing this viewer. Use it to open other documents in the *same*
+   * worker — e.g. to convert an image to a PDF, or to import pages from a dropped
+   * file into {@link document} (cross-document page import only works within one
+   * engine). Shared if an {@link PdfrxViewerOptions.engine} was supplied.
+   */
+  get engine(): PdfrxEngine {
+    return this.#engine;
   }
 
   /** Number of pages in the current document, or `0` when none is open. */
@@ -1515,7 +1525,7 @@ export class PdfrxViewer {
     this.searcher?.dispose();
     this.cache?.dispose();
     void this.doc?.dispose();
-    if (this.ownsEngine) this.engine.dispose();
+    if (this.ownsEngine) this.#engine.dispose();
     this.overlayRoot.remove();
     this.viewerOverlayRoot.remove();
     this.canvas.remove();
@@ -1832,7 +1842,7 @@ export class PdfrxViewer {
         }
         const data = await download;
         if (!data) continue;
-        await this.engine.addFontData(query.face, data, resolution.resolvedFace);
+        await this.#engine.addFontData(query.face, data, resolution.resolvedFace);
         console.info(`pdfrx: font fallback "${query.face}" -> "${resolution.resolvedFace}" (${data.length} bytes)`);
         registered++;
       } catch (e) {
@@ -1841,7 +1851,7 @@ export class PdfrxViewer {
     }
     if (registered === 0 || this.disposed) return;
 
-    await this.engine.reloadFonts();
+    await this.#engine.reloadFonts();
     // Refreshing the mapper is not enough: the engine caches substituted fonts
     // per document, so the document must be reopened. Preserve the view state.
     const source = this.currentSource;
@@ -1854,9 +1864,9 @@ export class PdfrxViewer {
     try {
       const saved = this.transform;
       if (source.kind === 'url') {
-        await this.setDocument(await this.engine.openUrl(source.url, source.options));
+        await this.setDocument(await this.#engine.openUrl(source.url, source.options));
       } else {
-        await this.setDocument(await this.engine.openData(source.data, source.options));
+        await this.setDocument(await this.#engine.openData(source.data, source.options));
       }
       this.setTransform(saved);
     } catch (e) {

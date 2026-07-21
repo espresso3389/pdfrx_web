@@ -29,6 +29,11 @@ import '@pdfrx/react/styles.css';
 <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} enableFileOpen />;
 ```
 
+`enableFileOpen` accepts dropped (or picked) **images** too — PNG, JPEG, GIF,
+WebP and friends open as a one-page PDF. With `enablePageEditing`, dropping a PDF
+or image **between two thumbnails** inserts its pages at that spot, and
+thumbnails can be **dragged to reorder** the pages.
+
 ### 2. Composed parts
 
 `PdfrxProvider` owns the viewer; where each piece goes is up to you. The only

@@ -1,5 +1,7 @@
+import type { PdfPage } from '@pdfrx/engine';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { PdfrxProvider, type PdfrxProviderProps } from '../context.js';
+import { isImageFile, isPdfFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
@@ -19,7 +21,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   /** Show the thumbnails/outline sidebar. Defaults to `true`. */
   sidebar?: boolean;
   /** Extra props for the sidebar, e.g. `defaultTab`. */
-  sidebarProps?: Omit<PdfSidebarProps, 'onNavigate' | 'renderPageActions'>;
+  sidebarProps?: Omit<PdfSidebarProps, 'onNavigate' | 'renderPageActions' | 'onInsertFiles' | 'onMovePage'>;
   /** Sidebar width in CSS pixels. Defaults to `190`. */
   sidebarWidth?: number;
   /**
@@ -27,11 +29,17 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * the drawer slides in from this side too.
    */
   sidebarSide?: 'left' | 'right';
-  /** Add an "open file" button and accept dropped PDFs. Defaults to `false`. */
+  /**
+   * Add an "open file" button and accept dropped files. PDFs open directly;
+   * images (PNG, JPEG, GIF, WebP, …) are converted to a one-page PDF and shown.
+   * Defaults to `false`.
+   */
   enableFileOpen?: boolean;
   /**
-   * Add per-page rotate/delete controls to the sidebar and a download button
-   * that serializes the edited document. Defaults to `false`.
+   * Add per-page rotate/delete controls to the sidebar, a download button that
+   * serializes the edited document, drop-to-insert on the thumbnail strip (drop
+   * a PDF or image between two pages to insert its pages there), and
+   * drag-to-reorder of thumbnails. Defaults to `false`.
    */
   enablePageEditing?: boolean;
   /**
@@ -150,6 +158,7 @@ function PdfrxViewerAppChrome({
   children,
 }: ChromeProps): ReactNode {
   const { open, error } = usePdfDocument();
+  const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -172,14 +181,57 @@ function PdfrxViewerAppChrome({
   const onDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       if (!enableFileOpen) return;
-      const file = [...(e.dataTransfer.files ?? [])].find(
-        (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
-      );
+      const file = [...(e.dataTransfer.files ?? [])].find((f) => isPdfFile(f) || isImageFile(f));
       if (!file) return;
       e.preventDefault();
       openFile(file);
     },
     [enableFileOpen, openFile],
+  );
+
+  // Insert dropped files as pages at `index`. Each file is opened in the
+  // viewer's own engine (cross-document page import only works within one
+  // engine); the source documents stay open because the arrangement borrows
+  // their pages until the document is next replaced or serialized.
+  const insertFiles = useCallback(
+    async (files: File[], index: number): Promise<void> => {
+      const document = viewer?.document;
+      const engine = viewer?.engine;
+      if (!document || !engine) return;
+      const inserted: PdfPage[] = [];
+      for (const file of files) {
+        try {
+          const doc = await openFileAsDocument(engine, file);
+          inserted.push(...doc.pages);
+        } catch (e) {
+          console.error(`Failed to open ${file.name} for insertion:`, e);
+        }
+      }
+      if (inserted.length === 0) return;
+      const pages = document.pages;
+      const at = Math.max(0, Math.min(index, pages.length));
+      document.setPages([...pages.slice(0, at), ...inserted, ...pages.slice(at)]);
+    },
+    [viewer],
+  );
+
+  // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
+  // rearrangement — no worker round-trip until the document is serialized.
+  const movePage = useCallback(
+    (fromPageNumber: number, toIndex: number): void => {
+      const document = viewer?.document;
+      if (!document) return;
+      const from = fromPageNumber - 1;
+      // Dropping just before or after itself leaves the order unchanged.
+      if (toIndex === from || toIndex === from + 1) return;
+      const pages = document.pages.slice();
+      const moved = pages[from];
+      if (!moved) return;
+      pages.splice(from, 1);
+      pages.splice(toIndex > from ? toIndex - 1 : toIndex, 0, moved);
+      document.setPages(pages);
+    },
+    [viewer],
   );
 
   const closeDrawerIfNarrow = useCallback(() => {
@@ -201,6 +253,8 @@ function PdfrxViewerAppChrome({
         style={{ width: sidebarWidth, ...sidebarProps?.style }}
         onNavigate={closeDrawerIfNarrow}
         renderPageActions={renderPageActions}
+        onInsertFiles={enablePageEditing ? (files, index) => void insertFiles(files, index) : undefined}
+        onMovePage={enablePageEditing ? movePage : undefined}
       />
     </div>
   ) : null;
@@ -237,7 +291,7 @@ function PdfrxViewerAppChrome({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept="application/pdf,.pdf,image/*"
                 hidden
                 onChange={(e) => {
                   const file = e.target.files?.[0];
