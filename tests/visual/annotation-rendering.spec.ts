@@ -152,6 +152,27 @@ for (const visualCase of cases) {
   });
 }
 
+test('approved stamp preserves its label and standard outline', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const result = await page.evaluate((spec) =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          inspectStamp(s: unknown): Promise<{ label: string | null; stroke: string | null; fill: string | null; rx: string | null }>;
+        };
+      }
+    ).annotationVisualTest.inspectStamp(spec),
+  {
+    subtype: 'stamp',
+    rect: { left: 48, top: 164, right: 208, bottom: 116 },
+    color: rgba(229, 57, 53, 255),
+    contents: 'APPROVED',
+    geometry: { kind: 'none' },
+  });
+  expect(result).toEqual({ label: 'APPROVED', stroke: 'rgb(229, 57, 53)', fill: 'none', rx: '5' });
+});
+
 test('annotation overlay is atomically replaced after move/resize', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
@@ -437,10 +458,52 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await page.mouse.click(120, 80);
   const noteEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(noteEditor).toHaveCount(1);
-  await noteEditor.fill('Review this section');
+  await noteEditor.evaluate((element) => {
+    element.style.width = '80px';
+    element.style.height = '72px';
+  });
+  const noteEditorHost = page.locator('.pdfrx-annotation-text-editor');
+  await expect.poll(async () => Number(await noteEditorHost.getAttribute('width'))).toBe(80);
+  await expect.poll(async () => Number(await noteEditorHost.getAttribute('height'))).toBe(72);
+  const noteContents =
+    'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji. But I think emoji is not supported by PDF anyway.これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji. But I think emoji is not supported by PDF anyway.';
+  await noteEditor.fill(noteContents);
   await noteEditor.press('Control+Enter');
   await expect.poll(async () => (await read()).length).toBe(1);
-  expect(await read()).toEqual([{ subtype: 'text', contents: 'Review this section', borderWidth: 0 }]);
+  expect(await read()).toEqual([{ subtype: 'text', contents: noteContents, borderWidth: 0 }]);
+  const roundTrippedNotes = await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readTextAnnotationsRoundTrip(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]>;
+        };
+      }
+    ).annotationVisualTest.readTextAnnotationsRoundTrip(),
+  );
+  expect(roundTrippedNotes).toEqual([{ subtype: 'text', contents: noteContents, borderWidth: 0 }]);
+  await expect(page.locator('.pdfrx-anchors circle')).toHaveCount(0);
+
+  // Reopening a Note and clicking inside its editor must not move focus back
+  // to the canvas and commit/close the editor before caret placement or resize.
+  await page.locator('g[data-annot-id]').dblclick();
+  await expect(noteEditor).toHaveCount(1);
+  await expect(noteEditor).toHaveValue(noteContents);
+  await noteEditor.click({ position: { x: 20, y: 20 } });
+  await expect(noteEditor).toBeFocused();
+  await expect(noteEditor).toHaveCount(1);
+  const composedContents = `${noteContents} 変換中の追記`;
+  await noteEditor.evaluate((element, value) => {
+    element.dispatchEvent(new CompositionEvent('compositionstart', { data: '変換中' }));
+    element.value = value;
+    element.blur();
+  }, composedContents);
+  // A blur during IME conversion must not commit the pre-composition value.
+  await expect(noteEditor).toHaveCount(1);
+  await noteEditor.evaluate((element) => {
+    element.dispatchEvent(new CompositionEvent('compositionend', { data: '変換中の追記' }));
+  });
+  await expect(noteEditor).toHaveCount(0);
+  await expect.poll(async () => (await read())[0]?.contents).toBe(composedContents);
 
   // Exercise the second creation flow from a fresh document/viewer so the
   // previous tool's asynchronous overlay replacement cannot affect the drag.

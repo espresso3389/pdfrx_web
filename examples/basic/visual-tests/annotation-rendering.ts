@@ -137,6 +137,29 @@ async function run(spec: PdfAnnotationSpec): Promise<VisualDiffResult> {
   }
 }
 
+async function inspectStamp(spec: PdfAnnotationSpec): Promise<{
+  label: string | null;
+  stroke: string | null;
+  fill: string | null;
+  rx: string | null;
+}> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  const id = await doc.addAnnotation(1, spec);
+  try {
+    const shape = await waitForShape(id);
+    const rect = shape.querySelector('rect');
+    return {
+      label: shape.querySelector('text')?.textContent ?? null,
+      stroke: rect?.getAttribute('stroke') ?? null,
+      fill: rect?.getAttribute('fill') ?? null,
+      rx: rect?.getAttribute('rx') ?? null,
+    };
+  } finally {
+    await doc.removeAnnotation(1, id);
+  }
+}
+
 async function runAtomicUpdate(before: PdfAnnotationSpec, after: PdfAnnotationSpec): Promise<{ frames: number; missingFrames: number }> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
@@ -277,6 +300,22 @@ async function readTextAnnotations(): Promise<{ subtype: string; contents: strin
   }));
 }
 
+async function readTextAnnotationsRoundTrip(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]> {
+  const doc = viewer.document;
+  if (!doc) return [];
+  const encoded = await doc.encodePdf();
+  const reopened = await viewer.engine.openData(encoded);
+  try {
+    return (await reopened.pages[0]!.loadAnnotations()).map((annotation) => ({
+      subtype: annotation.subtype,
+      contents: annotation.contents,
+      borderWidth: annotation.borderWidth,
+    }));
+  } finally {
+    await reopened.dispose();
+  }
+}
+
 async function flushAnnotationTextEdit(): Promise<void> {
   await viewer.flushAnnotationTextEdit();
 }
@@ -393,6 +432,7 @@ declare global {
   interface Window {
     annotationVisualTest: {
       run: typeof run;
+      inspectStamp: typeof inspectStamp;
       runAtomicUpdate: typeof runAtomicUpdate;
       runClipboardTest: typeof runClipboardTest;
       setupDuplicateGesture: typeof setupDuplicateGesture;
@@ -401,6 +441,7 @@ declare global {
       readViewTransform: typeof readViewTransform;
       setupTextTool: typeof setupTextTool;
       readTextAnnotations: typeof readTextAnnotations;
+      readTextAnnotationsRoundTrip: typeof readTextAnnotationsRoundTrip;
       flushAnnotationTextEdit: typeof flushAnnotationTextEdit;
       runFreeTextRoundTrip: typeof runFreeTextRoundTrip;
       inspectCurrentFreeTextRoundTrip: typeof inspectCurrentFreeTextRoundTrip;
@@ -410,6 +451,7 @@ declare global {
 
 window.annotationVisualTest = {
   run,
+  inspectStamp,
   runAtomicUpdate,
   runClipboardTest,
   setupDuplicateGesture,
@@ -418,6 +460,7 @@ window.annotationVisualTest = {
   readViewTransform,
   setupTextTool,
   readTextAnnotations,
+  readTextAnnotationsRoundTrip,
   flushAnnotationTextEdit,
   runFreeTextRoundTrip,
   inspectCurrentFreeTextRoundTrip,

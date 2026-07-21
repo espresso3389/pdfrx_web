@@ -2181,10 +2181,13 @@ function _getAnnotField(fieldName, annot) {
     const length = Pdfium.wasmExports.FPDFAnnot_GetStringValue(annot, key, null, 0);
     if (length <= 0) return null;
 
-    const buffer = Pdfium.wasmExports.malloc(length * 2);
+    // FPDFAnnot_GetStringValue reports a byte count (including the UTF-16 NUL),
+    // not a count of UTF-16 code units. Reading twice that size makes the
+    // decoder scan uninitialised heap data beyond the returned PDF string.
+    const buffer = Pdfium.wasmExports.malloc(length);
     try {
       Pdfium.wasmExports.FPDFAnnot_GetStringValue(annot, key, buffer, length);
-      const value = StringUtils.utf16BytesToString(new Uint8Array(Pdfium.memory.buffer, buffer, length * 2));
+      const value = StringUtils.utf16BytesToString(new Uint8Array(Pdfium.memory.buffer, buffer, length));
       return value && value.trim() !== '' ? value : null;
     } finally {
       Pdfium.wasmExports.free(buffer);
@@ -3688,6 +3691,95 @@ function _getAnnotLine(annot) {
   }
 }
 
+function _getPageObjectColor(object, getter) {
+  const w = Pdfium.wasmExports;
+  const buf = w.malloc(16);
+  try {
+    if (!getter(object, buf, buf + 4, buf + 8, buf + 12)) return null;
+    return Array.from(new Uint32Array(Pdfium.memory.buffer, buf, 4));
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Extracts vector path objects from an annotation's normal appearance. */
+function _getAnnotAppearancePaths(annot) {
+  const w = Pdfium.wasmExports;
+  const paths = [];
+  const objectCount = w.FPDFAnnot_GetObjectCount(annot);
+  for (let objectIndex = 0; objectIndex < objectCount; objectIndex++) {
+    const object = w.FPDFAnnot_GetObject(annot, objectIndex);
+    if (!object || w.FPDFPageObj_GetType(object) !== 2) continue; // FPDF_PAGEOBJ_PATH
+    const matrixPtr = w.malloc(24);
+    const pointPtr = w.malloc(8);
+    const modePtr = w.malloc(8);
+    const widthPtr = w.malloc(4);
+    try {
+      const matrix = w.FPDFPageObj_GetMatrix(object, matrixPtr)
+        ? Array.from(new Float32Array(Pdfium.memory.buffer, matrixPtr, 6))
+        : [1, 0, 0, 1, 0, 0];
+      const [a, b, c, d, e, f] = matrix;
+      const segments = [];
+      const count = w.FPDFPath_CountSegments(object);
+      for (let i = 0; i < count; i++) {
+        const segment = w.FPDFPath_GetPathSegment(object, i);
+        if (!segment || !w.FPDFPathSegment_GetPoint(segment, pointPtr, pointPtr + 4)) continue;
+        const point = new Float32Array(Pdfium.memory.buffer, pointPtr, 2);
+        segments.push([
+          w.FPDFPathSegment_GetType(segment),
+          a * point[0] + c * point[1] + e,
+          b * point[0] + d * point[1] + f,
+          w.FPDFPathSegment_GetClose(segment) ? 1 : 0,
+        ]);
+      }
+      new Int32Array(Pdfium.memory.buffer, modePtr, 2).fill(0);
+      w.FPDFPath_GetDrawMode(object, modePtr, modePtr + 4);
+      w.FPDFPageObj_GetStrokeWidth(object, widthPtr);
+      paths.push({
+        segments,
+        fillColor: _getPageObjectColor(object, w.FPDFPageObj_GetFillColor),
+        strokeColor: _getPageObjectColor(object, w.FPDFPageObj_GetStrokeColor),
+        strokeWidth: new Float32Array(Pdfium.memory.buffer, widthPtr, 1)[0],
+        fillMode: new Int32Array(Pdfium.memory.buffer, modePtr, 2)[0],
+        stroke: !!new Int32Array(Pdfium.memory.buffer, modePtr, 2)[1],
+        lineCap: w.FPDFPageObj_GetLineCap(object),
+        lineJoin: w.FPDFPageObj_GetLineJoin(object),
+      });
+    } finally {
+      w.free(matrixPtr);
+      w.free(pointPtr);
+      w.free(modePtr);
+      w.free(widthPtr);
+    }
+  }
+  return paths;
+}
+
+function _getAnnotAppearanceTextStyles(annot) {
+  const w = Pdfium.wasmExports;
+  const styles = [];
+  const objectCount = w.FPDFAnnot_GetObjectCount(annot);
+  for (let objectIndex = 0; objectIndex < objectCount; objectIndex++) {
+    const object = w.FPDFAnnot_GetObject(annot, objectIndex);
+    if (!object || w.FPDFPageObj_GetType(object) !== 1) continue; // FPDF_PAGEOBJ_TEXT
+    const matrixPtr = w.malloc(24);
+    try {
+      const matrix = w.FPDFPageObj_GetMatrix(object, matrixPtr)
+        ? new Float32Array(Pdfium.memory.buffer, matrixPtr, 6)
+        : null;
+      styles.push({
+        x: matrix?.[4] ?? 0,
+        y: matrix?.[5] ?? 0,
+        fontSize: w.FPDFTextObj_GetFontSize(object),
+        fillColor: _getPageObjectColor(object, w.FPDFPageObj_GetFillColor),
+      });
+    } finally {
+      w.free(matrixPtr);
+    }
+  }
+  return styles;
+}
+
 /** Subtype-specific geometry object for the wire. */
 function _getAnnotGeometry(annot, subtypeName) {
   switch (subtypeName) {
@@ -3754,6 +3846,8 @@ function _readAnnotationObject(annot, index) {
         return null;
       }
     })(),
+    appearancePaths: _getAnnotAppearancePaths(annot),
+    appearanceTextStyles: _getAnnotAppearanceTextStyles(annot),
     subject: content ? content.subject : null,
     modificationDate: content ? content.modificationDate : null,
     creationDate: content ? content.creationDate : null,

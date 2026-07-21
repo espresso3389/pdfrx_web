@@ -958,6 +958,9 @@ function annotationShowsBoundingBox(a: PdfAnnotationObject): boolean {
  *   bounding-box handles and drag = uniform scale.
  */
 function annotationAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
+  // A Text annotation is a fixed-size note icon. Its associated popup/editor
+  // may be resized independently, but scaling the icon itself is not meaningful.
+  if (a.subtype === 'text') return [];
   const base = annotationToSpec(a);
   const clone = (): PdfAnnotationSpec => structuredClone(base);
   const g = a.geometry;
@@ -1093,12 +1096,12 @@ function renderFreeTextEmoji(text: string): { width: number; height: number; sca
 }
 
 /** Wraps explicit paragraphs and long lines using the same 12pt UI font. */
-function wrapFreeText(text: string, width: number): string[] {
+function wrapFreeText(text: string, width: number, fontSize = FREE_TEXT_FONT_SIZE): string[] {
   const maxWidth = Math.max(1, width - FREE_TEXT_PADDING * 2);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (!context) return text.replace(/\r\n?/g, '\n').split('\n');
-  context.font = `${FREE_TEXT_FONT_SIZE}px Arial, sans-serif`;
+  context.font = `${fontSize}px Arial, sans-serif`;
   const result: string[] = [];
   const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
   const fits = (value: string): boolean => context.measureText(value).width <= maxWidth;
@@ -4218,8 +4221,47 @@ export class PdfrxViewer {
     const annotationAlpha = a.color?.a ?? a.interiorColor?.a ?? 255;
     g.setAttribute('opacity', `${annotationAlpha / 255}`);
     const add = (el: SVGElement): void => void g.appendChild(el);
+    const addAppearancePaths = (): boolean => {
+      if (!a.appearancePaths.length) return false;
+      // Appearance object colors already carry their own alpha. Applying the
+      // annotation alpha to the containing group would attenuate them twice.
+      g.setAttribute('opacity', '1');
+      for (const appearance of a.appearancePaths) {
+        let pathData = '';
+        for (let i = 0; i < appearance.segments.length; i++) {
+          const segment = appearance.segments[i]!;
+          const p = toPx(segment.point);
+          if (segment.type === 'move') pathData += `M ${p.x} ${p.y} `;
+          else if (segment.type === 'line') pathData += `L ${p.x} ${p.y} `;
+          else {
+            const control2 = appearance.segments[i + 1];
+            const end = appearance.segments[i + 2];
+            if (control2?.type !== 'bezier' || end?.type !== 'bezier') continue;
+            const p2 = toPx(control2.point);
+            const p3 = toPx(end.point);
+            pathData += `C ${p.x} ${p.y} ${p2.x} ${p2.y} ${p3.x} ${p3.y} `;
+            if (end.close) pathData += 'Z ';
+            i += 2;
+            continue;
+          }
+          if (segment.close) pathData += 'Z ';
+        }
+        if (!pathData) continue;
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', pathData.trim());
+        path.setAttribute('fill', appearance.fillMode ? (colorCss(appearance.fillColor, 'none') ?? 'none') : 'none');
+        path.setAttribute('fill-rule', appearance.fillMode === 1 ? 'evenodd' : 'nonzero');
+        path.setAttribute('stroke', appearance.stroke ? (colorCss(appearance.strokeColor, 'none') ?? 'none') : 'none');
+        path.setAttribute('stroke-width', `${appearance.strokeWidth}`);
+        path.setAttribute('stroke-linecap', ['butt', 'round', 'square'][appearance.lineCap] ?? 'butt');
+        path.setAttribute('stroke-linejoin', ['miter', 'round', 'bevel'][appearance.lineJoin] ?? 'miter');
+        add(path);
+      }
+      return g.childElementCount > 0;
+    };
 
     const g2 = a.geometry;
+    if ((a.subtype === 'ink' || a.subtype === 'polygon' || a.subtype === 'polyline') && addAppearancePaths()) return g;
     switch (g2.kind) {
       case 'ink': {
         const kind = inkStrokeKind(g2);
@@ -4314,6 +4356,7 @@ export class PdfrxViewer {
           ell.setAttribute('stroke-width', `${width}`);
           add(ell);
         } else if (a.subtype === 'text') {
+          if (addAppearancePaths()) break;
           // PDFium's default Text-annotation appearance is a fixed yellow note
           // icon anchored four points below the annotation rect's top-left. It
           // ignores /C for the icon itself and adds a short downward tail.
@@ -4345,20 +4388,60 @@ export class PdfrxViewer {
             line.setAttribute('stroke-width', '1');
             add(line);
           }
+        } else if (a.subtype === 'stamp') {
+          // Standard text stamps (Approved, Draft, …) are a rounded outline
+          // with their /Contents label. A generic empty rectangle loses the
+          // stamp's essential meaning when an existing PDF is loaded.
+          if (!addAppearancePaths()) {
+            const stampWidth = Math.max(width, 2);
+            const inset = stampWidth / 2;
+            const rect = document.createElementNS(SVG_NS, 'rect');
+            rect.setAttribute('x', `${box.left + inset}`);
+            rect.setAttribute('y', `${box.top + inset}`);
+            rect.setAttribute('width', `${Math.max(0, rectWidth(box) - stampWidth)}`);
+            rect.setAttribute('height', `${Math.max(0, rectHeight(box) - stampWidth)}`);
+            rect.setAttribute('rx', `${Math.min(5, rectHeight(box) / 8)}`);
+            rect.setAttribute('fill', 'none');
+            rect.setAttribute('stroke', stroke);
+            rect.setAttribute('stroke-width', `${stampWidth}`);
+            add(rect);
+          }
+          if (a.contents) {
+            const text = document.createElementNS(SVG_NS, 'text');
+            text.setAttribute('x', `${(box.left + box.right) / 2}`);
+            text.setAttribute('y', `${(box.top + box.bottom) / 2}`);
+            text.setAttribute('fill', stroke);
+            text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
+            text.setAttribute('font-size', `${Math.max(8, rectHeight(box) * 0.5)}`);
+            text.setAttribute('font-weight', '700');
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'central');
+            text.textContent = a.contents;
+            add(text);
+          }
         } else if (a.subtype === 'freeText') {
           // FreeText uses the normal shape style: /C is the border and /IC is
           // the box background. The worker builds the same custom /AP.
-          const rect = document.createElementNS(SVG_NS, 'rect');
-          const inset = width / 2;
-          rect.setAttribute('x', `${box.left + inset}`);
-          rect.setAttribute('y', `${box.top + inset}`);
-          rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - width)}`);
-          rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - width)}`);
-          rect.setAttribute('fill', fill ?? 'none');
-          rect.setAttribute('stroke', shapeStroke);
-          rect.setAttribute('stroke-width', `${width}`);
-          add(rect);
+          // PDFium's ordinary FreeText appearance contains the fill and border
+          // as two paths. A callout adds leader/arrow paths; keep those instead
+          // of degrading the annotation to a plain text box.
+          const hasCalloutAppearance = !a.appearanceLines && a.appearancePaths.length > 2;
+          if (!hasCalloutAppearance || !addAppearancePaths()) {
+            const rect = document.createElementNS(SVG_NS, 'rect');
+            const inset = width / 2;
+            rect.setAttribute('x', `${box.left + inset}`);
+            rect.setAttribute('y', `${box.top + inset}`);
+            rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - width)}`);
+            rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - width)}`);
+            rect.setAttribute('fill', fill ?? 'none');
+            rect.setAttribute('stroke', shapeStroke);
+            rect.setAttribute('stroke-width', `${width}`);
+            add(rect);
+          }
           if (a.contents) {
+            const appearanceText = hasCalloutAppearance ? a.appearanceTextStyles[0] : undefined;
+            const appearanceOrigin = appearanceText ? toPx(appearanceText.origin) : null;
+            const fontSize = appearanceText?.fontSize || FREE_TEXT_FONT_SIZE;
             const clipId = `pdfrx-free-text-${a.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
             const clipPath = document.createElementNS(SVG_NS, 'clipPath');
             clipPath.setAttribute('id', clipId);
@@ -4370,19 +4453,19 @@ export class PdfrxViewer {
             clipPath.appendChild(clipRect);
             add(clipPath);
             const text = document.createElementNS(SVG_NS, 'text');
-            const textX = box.left + width + FREE_TEXT_PADDING;
-            const textY = box.top + width + FREE_TEXT_PADDING + FREE_TEXT_FONT_SIZE;
+            const textX = appearanceOrigin?.x ?? box.left + width + FREE_TEXT_PADDING;
+            const textY = appearanceOrigin?.y ?? box.top + width + FREE_TEXT_PADDING + fontSize;
             text.setAttribute('x', `${textX}`);
             text.setAttribute('y', `${textY}`);
-            text.setAttribute('fill', '#000');
+            text.setAttribute('fill', colorCss(appearanceText?.fillColor ?? null, '#000') ?? '#000');
             text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
-            text.setAttribute('font-size', `${FREE_TEXT_FONT_SIZE}`);
+            text.setAttribute('font-size', `${fontSize}`);
             text.setAttribute('clip-path', `url(#${clipId})`);
-            const lines = a.appearanceLines ?? wrapFreeText(a.contents, rectWidth(box) - width * 2);
+            const lines = a.appearanceLines ?? wrapFreeText(a.contents, rectWidth(box) - width * 2, fontSize);
             lines.forEach((line, index) => {
               const tspan = document.createElementNS(SVG_NS, 'tspan');
               tspan.setAttribute('x', `${textX}`);
-              tspan.setAttribute('y', `${textY + index * (FREE_TEXT_FONT_SIZE * 1.2)}`);
+              tspan.setAttribute('y', `${textY + index * (fontSize * 1.2)}`);
               tspan.textContent = line || '\u00a0';
               text.appendChild(tspan);
             });
@@ -5055,7 +5138,18 @@ export class PdfrxViewer {
     // canvas so its keyboard shortcuts (Delete to remove the selection, undo/redo)
     // work — the shapes' stopPropagation otherwise keeps focus away in capture-off
     // handlers, so this runs in the capture phase, before them.
-    svg.addEventListener('pointerdown', () => this.canvas.focus({ preventScroll: true }), true);
+    svg.addEventListener(
+      'pointerdown',
+      (event) => {
+        // The inline Text/FreeText editor lives inside this SVG. Its own
+        // pointerdown handler cannot prevent a capture-phase focus change here,
+        // and focusing the canvas blurs (and therefore closes) the editor before
+        // the user can place the caret or drag its resize handle.
+        if (event.target instanceof Element && event.target.closest('.pdfrx-annotation-text-editor')) return;
+        this.canvas.focus({ preventScroll: true });
+      },
+      true,
+    );
     // On the SVG surface (empty page area, since shapes stop propagation): draw
     // when a tool is active, rubber-band-select in select mode.
     svg.addEventListener('pointerdown', (e) => {
@@ -5374,10 +5468,12 @@ export class PdfrxViewer {
     const height = isNote ? 96 : Math.max(28, rectHeight(box));
     const x = isNote ? Math.min(box.right + 6, overlay.pageSize.width - width - 4) : box.left;
     const y = Math.min(box.top, overlay.pageSize.height - height - 4);
+    const editorX = Math.max(4, x);
+    const editorY = Math.max(4, y);
     const foreign = document.createElementNS(SVG_NS, 'foreignObject');
     foreign.setAttribute('class', 'pdfrx-annotation-text-editor');
-    foreign.setAttribute('x', `${Math.max(4, x)}`);
-    foreign.setAttribute('y', `${Math.max(4, y)}`);
+    foreign.setAttribute('x', `${editorX}`);
+    foreign.setAttribute('y', `${editorY}`);
     foreign.setAttribute('width', `${width}`);
     foreign.setAttribute('height', `${height}`);
     foreign.style.pointerEvents = 'auto';
@@ -5385,12 +5481,21 @@ export class PdfrxViewer {
     textarea.value = spec.contents ?? '';
     textarea.placeholder = isNote ? 'Note' : 'Text';
     textarea.style.cssText =
-      'box-sizing:border-box;width:100%;height:100%;resize:none;padding:5px;' +
+      `box-sizing:border-box;width:100%;height:100%;resize:both;min-width:40px;min-height:28px;` +
+      `max-width:${Math.max(40, overlay.pageSize.width - editorX)}px;` +
+      `max-height:${Math.max(28, overlay.pageSize.height - editorY)}px;padding:5px;` +
       'font:12px Arial,Helvetica,sans-serif;color:#111;background:rgba(255,255,255,.96);' +
       'border:1px solid #2196f3;border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);';
     textarea.addEventListener('pointerdown', (event) => event.stopPropagation());
     foreign.appendChild(textarea);
     overlay.svg.appendChild(foreign);
+    const resizeObserver = new ResizeObserver(() => {
+      const nextWidth = Math.min(overlay.pageSize.width - editorX, Math.max(40, textarea.offsetWidth));
+      const nextHeight = Math.min(overlay.pageSize.height - editorY, Math.max(28, textarea.offsetHeight));
+      foreign.setAttribute('width', `${nextWidth}`);
+      foreign.setAttribute('height', `${nextHeight}`);
+    });
+    resizeObserver.observe(textarea);
     // Pointerup is followed by the browser's click/focus default action. Focus
     // on the next frame so that action cannot immediately blur and commit an
     // empty FreeText editor after a drag.
@@ -5401,14 +5506,36 @@ export class PdfrxViewer {
     });
     return new Promise((resolve) => {
       let finished = false;
+      let composing = false;
+      let finishAfterComposition = false;
       const finish = (value: string | null): void => {
         if (finished) return;
         finished = true;
+        resizeObserver.disconnect();
         foreign.remove();
         resolve(value);
       };
-      textarea.addEventListener('blur', () => finish(textarea.value));
+      textarea.addEventListener('compositionstart', () => {
+        composing = true;
+      });
+      textarea.addEventListener('compositionend', () => {
+        composing = false;
+        if (finishAfterComposition) {
+          finishAfterComposition = false;
+          // The browser updates textarea.value as part of compositionend. Read
+          // it in a microtask after that default processing has completed.
+          queueMicrotask(() => finish(textarea.value));
+        }
+      });
+      textarea.addEventListener('blur', () => {
+        if (composing) {
+          finishAfterComposition = true;
+          return;
+        }
+        finish(textarea.value);
+      });
       textarea.addEventListener('keydown', (event) => {
+        if (event.isComposing || composing) return;
         if (event.key === 'Escape') {
           event.preventDefault();
           finish(null);

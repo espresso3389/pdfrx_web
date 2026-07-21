@@ -1639,6 +1639,22 @@ export class PdfPage {
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines,
       appearanceRuns: a.appearanceRuns,
+      appearancePaths: a.appearancePaths.map((path) => ({
+        ...path,
+        fillColor: colorFromWire(path.fillColor),
+        strokeColor: colorFromWire(path.strokeColor),
+        segments: path.segments.map(([type, x, y, close]) => ({
+          // FPDF_PATHSEGMENT_* values: LINETO=0, BEZIERTO=1, MOVETO=2.
+          type: type === 2 ? 'move' as const : type === 1 ? 'bezier' as const : 'line' as const,
+          point: this.pointFromWire(x, y),
+          close: !!close,
+        })),
+      })),
+      appearanceTextStyles: a.appearanceTextStyles.map((style) => ({
+        origin: this.pointFromWire(style.x, style.y),
+        fontSize: style.fontSize,
+        fillColor: colorFromWire(style.fillColor),
+      })),
       subject: a.subject,
       modificationDate: a.modificationDate,
       creationDate: a.creationDate,

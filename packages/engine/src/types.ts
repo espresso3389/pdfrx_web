@@ -474,6 +474,27 @@ export interface PdfAnnotationObject {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[])[] | null;
+  /** Vector paths extracted from the annotation's normal appearance stream. */
+  readonly appearancePaths: readonly {
+    readonly segments: readonly {
+      readonly type: 'move' | 'line' | 'bezier';
+      readonly point: PdfAnnotationPoint;
+      readonly close: boolean;
+    }[];
+    readonly fillColor: PdfAnnotationColor | null;
+    readonly strokeColor: PdfAnnotationColor | null;
+    readonly strokeWidth: number;
+    readonly fillMode: number;
+    readonly stroke: boolean;
+    readonly lineCap: number;
+    readonly lineJoin: number;
+  }[];
+  /** Text placement/style extracted from the normal appearance stream. */
+  readonly appearanceTextStyles: readonly {
+    readonly origin: PdfAnnotationPoint;
+    readonly fontSize: number;
+    readonly fillColor: PdfAnnotationColor | null;
+  }[];
   /** `/Subj` subject. */
   readonly subject: string | null;
   /** Raw PDF date string (`D:…`), if any. */

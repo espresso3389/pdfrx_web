@@ -189,6 +189,22 @@ export interface WireAnnotationObject {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[][] | null;
+  appearancePaths: {
+    segments: [number, number, number, number][];
+    fillColor: WireColor | null;
+    strokeColor: WireColor | null;
+    strokeWidth: number;
+    fillMode: number;
+    stroke: boolean;
+    lineCap: number;
+    lineJoin: number;
+  }[];
+  appearanceTextStyles: {
+    x: number;
+    y: number;
+    fontSize: number;
+    fillColor: WireColor | null;
+  }[];
   /** `/Subj` subject. */
   subject: string | null;
   modificationDate: string | null;
