@@ -342,8 +342,172 @@ export const isRomanFamily = (pitchFamily: number): boolean => (pitchFamily & Pd
 /** Whether a {@link PdfFontQuery.pitchFamily} value has the Script family bit set. */
 export const isScriptFamily = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.script) !== 0;
 
-/** Whether/how annotations are drawn when rendering a page. */
-export type PdfAnnotationRenderingMode = 'none' | 'annotation' | 'annotationAndForms';
+/**
+ * A point in bounding-box-relative PDF page coordinates (points, y-up) — the
+ * same space as {@link PdfRect} and {@link PdfFormField} rects.
+ */
+export interface PdfAnnotationPoint {
+  x: number;
+  y: number;
+}
+
+/** A text-markup quadrilateral (one highlighted run) in page coordinates. */
+export interface PdfAnnotationQuad {
+  topLeft: PdfAnnotationPoint;
+  topRight: PdfAnnotationPoint;
+  bottomLeft: PdfAnnotationPoint;
+  bottomRight: PdfAnnotationPoint;
+}
+
+/** An RGBA color, each channel 0-255. */
+export interface PdfAnnotationColor {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/**
+ * Subtype-specific geometry of an annotation, in bounding-box-relative page
+ * coordinates. `none` covers subtypes whose shape is fully described by
+ * {@link PdfAnnotationObject.rect} (square, circle, freeText, text, …).
+ */
+export type PdfAnnotationGeometry =
+  | { kind: 'none' }
+  | { kind: 'ink'; strokes: PdfAnnotationPoint[][] }
+  | { kind: 'markup'; quads: PdfAnnotationQuad[] }
+  | { kind: 'line'; start: PdfAnnotationPoint; end: PdfAnnotationPoint }
+  | { kind: 'polygon'; vertices: PdfAnnotationPoint[] }
+  | { kind: 'polyline'; vertices: PdfAnnotationPoint[] };
+
+/** PDF annotation subtype (`/Subtype`), lowercased; `unknown` for unmapped types. */
+export type PdfAnnotationSubtype =
+  | 'text'
+  | 'freeText'
+  | 'line'
+  | 'square'
+  | 'circle'
+  | 'polygon'
+  | 'polyline'
+  | 'highlight'
+  | 'underline'
+  | 'squiggly'
+  | 'strikeout'
+  | 'stamp'
+  | 'caret'
+  | 'ink'
+  | 'unknown';
+
+/** Subtypes surfaced as their own {@link PdfAnnotationSubtype}; others fold to `unknown`. */
+const pdfAnnotationSubtypeNames: ReadonlySet<string> = new Set<PdfAnnotationSubtype>([
+  'text',
+  'freeText',
+  'line',
+  'square',
+  'circle',
+  'polygon',
+  'polyline',
+  'highlight',
+  'underline',
+  'squiggly',
+  'strikeout',
+  'stamp',
+  'caret',
+  'ink',
+]);
+
+/**
+ * Maps a wire subtype string (lowercased `/Subtype`) to a
+ * {@link PdfAnnotationSubtype}, falling back to `unknown` for anything not
+ * surfaced (widgets, links, popups, and rarer types).
+ */
+export const pdfAnnotationSubtypeFromName = (name: string): PdfAnnotationSubtype =>
+  (pdfAnnotationSubtypeNames.has(name) ? name : 'unknown') as PdfAnnotationSubtype;
+
+/**
+ * Bit masks for {@link PdfAnnotationObject.flags} (`/F`), matching PDFium's
+ * `FPDF_ANNOT_FLAG_*`.
+ */
+export const PdfAnnotationFlag = {
+  invisible: 1,
+  hidden: 2,
+  print: 4,
+  noZoom: 8,
+  noRotate: 16,
+  noView: 32,
+  readOnly: 64,
+  locked: 128,
+  toggleNoView: 256,
+  lockedContents: 512,
+} as const;
+
+/**
+ * A content annotation on a page (not a widget/link/popup), as read by
+ * {@link PdfPage.loadAnnotations} / {@link PdfDocument.loadAnnotations}. Rects and
+ * geometry are in bounding-box-relative page coordinates (y-up).
+ */
+export interface PdfAnnotationObject {
+  /** Stable id (`/NM` key, or `@<index>` for annotations that lack one). */
+  readonly id: string;
+  /** 1-based page number the annotation belongs to. */
+  readonly pageNumber: number;
+  readonly subtype: PdfAnnotationSubtype;
+  /** Bounding rectangle in page coordinates. */
+  readonly rect: PdfRect;
+  /** Stroke/primary color, or null when unset. */
+  readonly color: PdfAnnotationColor | null;
+  /** Interior (fill) color, or null when unset. */
+  readonly interiorColor: PdfAnnotationColor | null;
+  /** Border width in points. */
+  readonly borderWidth: number;
+  /** Raw `FPDF_ANNOT_FLAG_*` bits (see {@link PdfAnnotationFlag}). */
+  readonly flags: number;
+  /** `/Contents` text (e.g. a note body or free-text content). */
+  readonly contents: string | null;
+  /** `/T` author/title. */
+  readonly author: string | null;
+  /** `/Subj` subject. */
+  readonly subject: string | null;
+  /** Raw PDF date string (`D:…`), if any. */
+  readonly modificationDate: string | null;
+  /** Raw PDF date string, if any. */
+  readonly creationDate: string | null;
+  /** Subtype-specific geometry. */
+  readonly geometry: PdfAnnotationGeometry;
+}
+
+/**
+ * Parameters to create or replace an annotation via
+ * {@link PdfDocument.addAnnotation} / {@link PdfDocument.updateAnnotation}.
+ *
+ * Only these geometries are honored by the engine: `ink` (freehand; also how the
+ * viewer realizes line/arrow), `markup` quads (highlight/underline/squiggly/
+ * strikeout), and rect-defined `square`/`circle`. `freeText`/`text` use `rect` +
+ * `contents`. Coordinates are bounding-box-relative page coordinates (y-up).
+ */
+export interface PdfAnnotationSpec {
+  subtype: PdfAnnotationSubtype;
+  rect?: PdfRect;
+  color?: PdfAnnotationColor | null;
+  interiorColor?: PdfAnnotationColor | null;
+  borderWidth?: number;
+  flags?: number;
+  contents?: string | null;
+  author?: string | null;
+  geometry?: PdfAnnotationGeometry;
+}
+
+/**
+ * Whether/how annotations are drawn when rendering a page.
+ *
+ * - `none` — draw neither annotations nor form widgets.
+ * - `annotation` — draw annotations (and static widget appearances).
+ * - `annotationAndForms` — draw annotations plus interactive form widgets.
+ * - `formsOnly` — draw interactive form widgets but *not* other annotations;
+ *   used by the viewer when annotations are shown through the SVG overlay
+ *   instead of the canvas.
+ */
+export type PdfAnnotationRenderingMode = 'none' | 'annotation' | 'annotationAndForms' | 'formsOnly';
 
 /** Maps a {@link PdfAnnotationRenderingMode} to the numeric code used by the worker protocol. */
 export const annotationRenderingModeToIndex = (mode: PdfAnnotationRenderingMode): number => {
@@ -354,6 +518,8 @@ export const annotationRenderingModeToIndex = (mode: PdfAnnotationRenderingMode)
       return 1;
     case 'annotationAndForms':
       return 2;
+    case 'formsOnly':
+      return 3;
   }
 };
 
@@ -447,6 +613,14 @@ export interface PdfDocumentEventMap {
    * {@link PdfDocument.loadFormFields} when this fires.
    */
   formFieldsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
+  /**
+   * Annotations were added, updated or removed. `source` is `'api'` for
+   * {@link PdfDocument.addAnnotation} / {@link PdfDocument.updateAnnotation} /
+   * {@link PdfDocument.removeAnnotation} and `'user'` for interactive edits in
+   * the viewer. `pageNumbers` lists the affected pages when known. Reload with
+   * {@link PdfDocument.loadAnnotations} when this fires.
+   */
+  annotationsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
 }
 
 /** Union of the event names in {@link PdfDocumentEventMap}. */

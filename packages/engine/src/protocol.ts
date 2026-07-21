@@ -143,6 +143,71 @@ export interface WireFormField {
   options?: WireFormFieldOption[];
 }
 
+/** An RGBA color (0-255 per channel) on the wire. */
+export type WireColor = [number, number, number, number];
+
+/**
+ * Subtype-specific geometry of an annotation on the wire, in **raw page
+ * coordinates** (y-up, not yet bounding-box adjusted). Point lists are flat
+ * `[x0, y0, x1, y1, ...]`; quads follow PDFium's `FS_QUADPOINTSF` ordering.
+ */
+export type WireAnnotationGeometry =
+  | { kind: 'none' }
+  | { kind: 'ink'; strokes: number[][] }
+  | { kind: 'markup'; quads: number[][] }
+  | { kind: 'line'; line: [number, number, number, number] }
+  | { kind: 'polygon'; vertices: number[] }
+  | { kind: 'polyline'; vertices: number[] };
+
+/** A content annotation on the wire (one per non-widget/link/popup annotation). */
+export interface WireAnnotationObject {
+  /** Stable id from the `/NM` key, or `@<index>` for annotations that lack one. */
+  id: string;
+  /** Lowercased subtype name (`ink`, `highlight`, `square`, …); `unknown` if unmapped. */
+  subtype: string;
+  /** Page-local annotation index at read time (not stable across removals). */
+  index: number;
+  /** Bounding rectangle in raw page coordinates. */
+  rect: WireRect;
+  /** Stroke/primary color, or null when unset. */
+  color: WireColor | null;
+  /** Interior (fill) color, or null when unset. */
+  interiorColor: WireColor | null;
+  /** Border width in points. */
+  borderWidth: number;
+  /** Raw `FPDF_ANNOT_FLAG_*` bits. */
+  flags: number;
+  /** `/Contents` text. */
+  contents: string | null;
+  /** `/T` author/title. */
+  author: string | null;
+  /** `/Subj` subject. */
+  subject: string | null;
+  modificationDate: string | null;
+  creationDate: string | null;
+  geometry: WireAnnotationGeometry;
+}
+
+/**
+ * Parameters to create (or replace) an annotation, in **raw page coordinates**.
+ * Only ink / markup / rect-defined square & circle / freeText / text geometries
+ * are honored by the worker (see `_applyAnnotSpec`); other fields apply to all.
+ */
+export interface WireAnnotationSpec {
+  /** Creatable subtype: `ink`, `highlight`, `underline`, `squiggly`, `strikeout`, `square`, `circle`, `freeText`, `text`. */
+  subtype: string;
+  /** Preserve a specific `/NM` id (used by replace); a fresh id is generated otherwise. */
+  id?: string;
+  rect?: WireRect;
+  color?: WireColor | null;
+  interiorColor?: WireColor | null;
+  borderWidth?: number;
+  flags?: number;
+  contents?: string | null;
+  author?: string | null;
+  geometry?: WireAnnotationGeometry;
+}
+
 /** Byte order of raw pixel data handed to the worker. */
 export type WirePixelFormat = 'rgba8888' | 'bgra8888';
 
@@ -439,6 +504,29 @@ export interface WorkerCommandMap {
   registerFormNotify: {
     params: { docHandle: number; callbackId: number };
     result: { message: string };
+  };
+  /** Enumerates the content annotations (skipping widgets/links/popups) on one page. */
+  loadAnnotations: {
+    params: { docHandle: number; pageIndex: number };
+    result: { annotations: WireAnnotationObject[] };
+  };
+  /**
+   * Creates an annotation from `spec`, generates its appearance stream so it
+   * persists through `encodePdf`, and returns its `/NM` id.
+   */
+  addAnnotation: {
+    params: { docHandle: number; pageIndex: number; spec: WireAnnotationSpec };
+    result: { id: string };
+  };
+  /** Replaces the annotation identified by `id` with a fresh one built from `spec` (same id). */
+  updateAnnotation: {
+    params: { docHandle: number; pageIndex: number; id: string; spec: WireAnnotationSpec };
+    result: { id: string };
+  };
+  /** Removes the annotation identified by `id` (its `/NM` key, or `@<index>`). */
+  removeAnnotation: {
+    params: { docHandle: number; pageIndex: number; id: string };
+    result: { ok: boolean };
   };
 }
 

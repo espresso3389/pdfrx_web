@@ -7,6 +7,66 @@ The four packages (`@pdfrx/engine`, `@pdfrx/viewer-core`, `@pdfrx/viewer`,
 workspace. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Annotation support.** Read, create, edit, and export PDF annotations —
+  freehand ink, shapes (rectangle/ellipse/line/arrow), text markup (highlight/
+  underline/strikeout), and notes/free text — through a new engine API
+  (`PdfDocument.loadAnnotations()` / `addAnnotation()` / `updateAnnotation()` /
+  `removeAnnotation()` / `importAnnotations()`, the `annotationsChanged` event),
+  an SVG overlay in the viewer with drawing/selection tools
+  (`interactiveAnnotations`, `setAnnotationTool()`), and React bindings (the
+  `useAnnotations` hook plus `PdfAnnotationToolbar`). Created annotations get a
+  generated appearance stream, so they persist through `encodePdf` and render in
+  other PDF viewers.
+- Annotation editing gained **unlimited undo/redo** (`PdfrxViewer.undoAnnotation()`
+  / `redoAnnotation()`, Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z, `useAnnotations().undo` /
+  `redo` / `canUndo` / `canRedo`, and toolbar buttons), and **draggable anchor
+  handles** on a selected annotation (a constant 8px on-screen, the sole
+  selection indicator): pen/rectangle/ellipse show eight bounding-box handles and
+  drag to scale the whole shape, while free-form lines/polygons keep
+  per-vertex handles; dragging the body still moves the whole annotation.
+- **Marquee multi-selection** (`PdfrxViewer.setAnnotationSelectMode`): in select
+  mode, drag empty page area to rubber-band-select every overlapping annotation,
+  then move or resize the whole group together via a single group bounding box.
+  Undo/redo now batches a multi-object edit (move/resize/delete of a selection)
+  into one atomic step.
+- Picking a color or stroke width in the toolbar now also **restyles every
+  selected annotation** (`PdfrxViewer.applyStyleToSelection`), as one undo step.
+- **Separate stroke and fill colors.** `AnnotationStyle` gained `fillColor`
+  (null = no fill), applied to rectangles/ellipses on draw and through
+  `applyStyleToSelection` (tri-state: leave / clear / set). The toolbar's inline
+  swatch row was replaced by two popup palette buttons — a stroke ring and a
+  fill dot indicator — each opening a custom palette below the button (the fill
+  palette includes "No fill"); dismissed by pick, outside click, or Escape.
+- **Text highlight is now a text-markup action**, not a drawing tool: select text
+  and choose *Highlight* from the right-click menu to add a proper `Highlight`
+  annotation snapped to the text lines (`PdfrxViewer.highlightSelection` /
+  `canHighlightSelection`; a `highlight` context-menu string in all locales). The
+  old rectangle-drag Highlight tool was removed from the toolbar.
+- The React `PdfAnnotationToolbar` is now a set of **mutually-exclusive mode
+  toggles** — Text (normal selection), Select (objects), and each drawing tool —
+  and takes an `onClose` prop; it restores text-selection mode when it unmounts.
+  `PdfrxViewerApp` gained an **Annotate** toolbar button (right of search, set
+  apart from print/open/download) that reveals the annotation toolbar — the
+  `enableAnnotations` prop (default on); `PdfToolbar` gained an `afterSearch`
+  slot. The composed demo shows the same pattern with its own button. The whole
+  bar is restyled to match the built-in design system: the shared stroke-icon
+  set (no emoji), `pdfrx-button` sizing/hover/active states, and CSS variables
+  (dark-mode aware) via new `pdfrx-annot-*` / `pdfrx-toolbar-separator` classes
+  in `styles.css`.
+- A reusable `PdfSaveButton` React component that serializes the current
+  document (annotation and page edits included) with `encodePdf` and downloads
+  it, usable in composed layouts (not just the all-in-one app).
+
+### Changed
+
+- The viewer paints annotations through the SVG overlay instead of the canvas by
+  default (a new `'formsOnly'` render mode keeps form widgets on the canvas), so
+  annotation edits never re-render the page.
+
 ## [0.7.0] - 2026-07-21
 
 ### Added
@@ -124,6 +184,7 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.7.0...HEAD
 [0.7.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.4.0...v0.5.0

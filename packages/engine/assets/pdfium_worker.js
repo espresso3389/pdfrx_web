@@ -1925,14 +1925,25 @@ async function renderPage(params) {
 
     const FPDF_ANNOT = 1;
     const PdfAnnotationRenderingMode_none = 0;
+    const PdfAnnotationRenderingMode_annotation = 1;
     const PdfAnnotationRenderingMode_annotationAndForms = 2;
+    // [pdfrx_web: annotation support] formsOnly (3): draw form widgets via
+    // FPDF_FFLDraw but omit the FPDF_ANNOT flag, so non-widget annotations are
+    // left for the viewer's SVG overlay to paint (avoids canvas/overlay double-draw).
+    const PdfAnnotationRenderingMode_formsOnly = 3;
     const premultipliedAlpha = 0x80000000;
 
-    const pdfiumFlags =
-      (flags & 0xffff) | (annotationRenderingMode !== PdfAnnotationRenderingMode_none ? FPDF_ANNOT : 0);
+    const drawAnnots =
+      annotationRenderingMode === PdfAnnotationRenderingMode_annotation ||
+      annotationRenderingMode === PdfAnnotationRenderingMode_annotationAndForms;
+    const drawForms =
+      annotationRenderingMode === PdfAnnotationRenderingMode_annotationAndForms ||
+      annotationRenderingMode === PdfAnnotationRenderingMode_formsOnly;
+
+    const pdfiumFlags = (flags & 0xffff) | (drawAnnots ? FPDF_ANNOT : 0);
     Pdfium.wasmExports.FPDF_RenderPageBitmap(bitmap, pageHandle, -x, -y, fullWidth, fullHeight, rotation, pdfiumFlags);
 
-    if (formHandle && annotationRenderingMode == PdfAnnotationRenderingMode_annotationAndForms) {
+    if (formHandle && drawForms) {
       Pdfium.wasmExports.FPDF_FFLDraw(formHandle, bitmap, pageHandle, -x, -y, fullWidth, fullHeight, rotation, flags);
     }
     // pdfium renders BGRA; emit RGBA so the result is directly Canvas/WebGL-ready
@@ -3506,6 +3517,434 @@ function registerFormNotify(params) {
 }
 // [pdfrx_web: form support] }
 
+// [pdfrx_web: annotation support — reapplied by scripts/sync-assets.mjs] {
+
+// FPDF_ANNOTATION_SUBTYPE codes -> lowercase wire names.
+const ANNOT_SUBTYPE_NAMES = {
+  0: 'unknown',
+  1: 'text',
+  2: 'link',
+  3: 'freeText',
+  4: 'line',
+  5: 'square',
+  6: 'circle',
+  7: 'polygon',
+  8: 'polyline',
+  9: 'highlight',
+  10: 'underline',
+  11: 'squiggly',
+  12: 'strikeout',
+  13: 'stamp',
+  14: 'caret',
+  15: 'ink',
+  16: 'popup',
+  17: 'fileAttachment',
+  18: 'sound',
+  19: 'movie',
+  20: 'widget',
+  21: 'screen',
+  22: 'printerMark',
+  23: 'trapNet',
+  24: 'watermark',
+  25: 'threeD',
+  26: 'richMedia',
+  27: 'xfaWidget',
+  28: 'redact',
+};
+const ANNOT_SUBTYPE_CODES = Object.fromEntries(Object.entries(ANNOT_SUBTYPE_NAMES).map(([k, v]) => [v, Number(k)]));
+
+const FPDFANNOT_COLORTYPE_Color = 0;
+const FPDFANNOT_COLORTYPE_InteriorColor = 1;
+const FPDF_ANNOT_SUBTYPE_LINK = 2;
+const FPDF_ANNOT_SUBTYPE_POPUP = 16;
+
+let _annotIdCounter = 0;
+/** Generates a document-unique id stored in the annotation's /NM key. */
+function _generateAnnotId() {
+  return `pdfrx-${Date.now().toString(36)}-${(_annotIdCounter++).toString(36)}`;
+}
+
+// Private dict keys mirroring /C and /IC. FPDFAnnot_GetColor refuses to report a
+// color once the annotation has an appearance stream (which we always generate),
+// so we persist the authored colors here to keep them readable for the overlay.
+const ANNOT_COLOR_KEY = 'pdfrx:C';
+const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
+
+/** Serializes an RGBA color to the private-key string form, or '' to clear it. */
+function _colorToKey(c) {
+  return c ? `${c[0]},${c[1]},${c[2]},${c[3] ?? 255}` : '';
+}
+
+/** Parses a private-key color string back to [r,g,b,a], or null. */
+function _colorFromKey(str) {
+  if (!str) return null;
+  const parts = str.split(',').map((n) => parseInt(n, 10));
+  if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return [parts[0], parts[1], parts[2], parts.length >= 4 ? parts[3] : 255];
+}
+
+/**
+ * Reads FPDFAnnot_GetColor into [r,g,b,a] (0-255), or null when the color is unset.
+ * @param {number} annot
+ * @param {number} colorType FPDFANNOT_COLORTYPE_*
+ * @returns {[number, number, number, number] | null}
+ */
+function _getAnnotColor(annot, colorType) {
+  const w = Pdfium.wasmExports;
+  const buf = w.malloc(16); // 4 x unsigned int (R, G, B, A)
+  try {
+    if (!w.FPDFAnnot_GetColor(annot, colorType, buf, buf + 4, buf + 8, buf + 12)) return null;
+    const v = new Uint32Array(Pdfium.memory.buffer, buf, 4);
+    return [v[0], v[1], v[2], v[3]];
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Border width in points from FPDFAnnot_GetBorder, or 0 when unset. */
+function _getAnnotBorderWidth(annot) {
+  const w = Pdfium.wasmExports;
+  const buf = w.malloc(12); // horizontal radius, vertical radius, border width (floats)
+  try {
+    if (!w.FPDFAnnot_GetBorder(annot, buf, buf + 4, buf + 8)) return 0;
+    return new Float32Array(Pdfium.memory.buffer, buf, 3)[2];
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Ink annotation strokes: an array of flat point lists `[x0, y0, x1, y1, ...]` (raw page coords). */
+function _getAnnotInk(annot) {
+  const w = Pdfium.wasmExports;
+  const pathCount = w.FPDFAnnot_GetInkListCount(annot);
+  const strokes = [];
+  for (let p = 0; p < pathCount; p++) {
+    const n = w.FPDFAnnot_GetInkListPath(annot, p, 0, 0);
+    if (n <= 0) continue;
+    const buf = w.malloc(n * 8); // n x FS_POINTF
+    try {
+      w.FPDFAnnot_GetInkListPath(annot, p, buf, n);
+      strokes.push(Array.from(new Float32Array(Pdfium.memory.buffer, buf, n * 2)));
+    } finally {
+      w.free(buf);
+    }
+  }
+  return strokes;
+}
+
+/** Text-markup attachment points: an array of 8-number quads (raw page coords). */
+function _getAnnotQuads(annot) {
+  const w = Pdfium.wasmExports;
+  const count = w.FPDFAnnot_CountAttachmentPoints(annot);
+  const quads = [];
+  const buf = w.malloc(32); // FS_QUADPOINTSF (8 floats)
+  try {
+    for (let q = 0; q < count; q++) {
+      if (!w.FPDFAnnot_GetAttachmentPoints(annot, q, buf)) continue;
+      quads.push(Array.from(new Float32Array(Pdfium.memory.buffer, buf, 8)));
+    }
+  } finally {
+    w.free(buf);
+  }
+  return quads;
+}
+
+/** Polygon/polyline vertices as a flat `[x0, y0, x1, y1, ...]` list (raw page coords). */
+function _getAnnotVertices(annot) {
+  const w = Pdfium.wasmExports;
+  const n = w.FPDFAnnot_GetVertices(annot, 0, 0);
+  if (n <= 0) return [];
+  const buf = w.malloc(n * 8); // n x FS_POINTF
+  try {
+    w.FPDFAnnot_GetVertices(annot, buf, n);
+    return Array.from(new Float32Array(Pdfium.memory.buffer, buf, n * 2));
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Line endpoints `[x1, y1, x2, y2]` (raw page coords), or null when unset. */
+function _getAnnotLine(annot) {
+  const w = Pdfium.wasmExports;
+  const buf = w.malloc(16); // two FS_POINTF
+  try {
+    if (!w.FPDFAnnot_GetLine(annot, buf, buf + 8)) return null;
+    const f = new Float32Array(Pdfium.memory.buffer, buf, 4);
+    return [f[0], f[1], f[2], f[3]];
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Subtype-specific geometry object for the wire. */
+function _getAnnotGeometry(annot, subtypeName) {
+  switch (subtypeName) {
+    case 'ink':
+      return { kind: 'ink', strokes: _getAnnotInk(annot) };
+    case 'highlight':
+    case 'underline':
+    case 'squiggly':
+    case 'strikeout':
+      return { kind: 'markup', quads: _getAnnotQuads(annot) };
+    case 'line': {
+      const line = _getAnnotLine(annot);
+      return line ? { kind: 'line', line } : { kind: 'none' };
+    }
+    case 'polygon':
+    case 'polyline':
+      return { kind: subtypeName, vertices: _getAnnotVertices(annot) };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/**
+ * @param {number} annot
+ * @param {number} index page-local annotation index (used for the fallback id)
+ * @returns {object} WireAnnotationObject
+ */
+function _readAnnotationObject(annot, index) {
+  const w = Pdfium.wasmExports;
+  const subtype = ANNOT_SUBTYPE_NAMES[w.FPDFAnnot_GetSubtype(annot)] ?? 'unknown';
+  const content = _getAnnotationContent(annot);
+  const nm = _getAnnotField('NM', annot);
+  return {
+    id: nm || `@${index}`,
+    subtype,
+    index,
+    rect: _getWidgetRect(annot),
+    color: _colorFromKey(_getAnnotField(ANNOT_COLOR_KEY, annot)) ?? _getAnnotColor(annot, FPDFANNOT_COLORTYPE_Color),
+    interiorColor:
+      _colorFromKey(_getAnnotField(ANNOT_INTERIOR_COLOR_KEY, annot)) ??
+      _getAnnotColor(annot, FPDFANNOT_COLORTYPE_InteriorColor),
+    borderWidth: _getAnnotBorderWidth(annot),
+    flags: w.FPDFAnnot_GetFlags(annot),
+    contents: content ? content.content : null,
+    author: content ? content.title : null,
+    subject: content ? content.subject : null,
+    modificationDate: content ? content.modificationDate : null,
+    creationDate: content ? content.creationDate : null,
+    geometry: _getAnnotGeometry(annot, subtype),
+  };
+}
+
+/**
+ * Enumerates the content annotations on one page (skips widgets, links and
+ * popups — those are surfaced through the form and link paths).
+ * @param {{docHandle: number, pageIndex: number}} params
+ * @returns {{annotations: object[]}}
+ */
+function loadAnnotations(params) {
+  const { docHandle, pageIndex } = params;
+  const w = Pdfium.wasmExports;
+  const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
+  if (!pageHandle) return { annotations: [] };
+  try {
+    const count = w.FPDFPage_GetAnnotCount(pageHandle);
+    const annotations = [];
+    for (let i = 0; i < count; i++) {
+      const annot = w.FPDFPage_GetAnnot(pageHandle, i);
+      if (!annot) continue;
+      try {
+        const subtype = w.FPDFAnnot_GetSubtype(annot);
+        if (subtype === FPDF_ANNOT_WIDGET || subtype === FPDF_ANNOT_SUBTYPE_LINK || subtype === FPDF_ANNOT_SUBTYPE_POPUP)
+          continue;
+        annotations.push(_readAnnotationObject(annot, i));
+      } finally {
+        w.FPDFPage_CloseAnnot(annot);
+      }
+    }
+    return { annotations };
+  } finally {
+    w.FPDF_ClosePage(pageHandle);
+  }
+}
+
+/** Sets a UTF-16 string dict value on an annotation (e.g. Contents, T, NM). */
+function _setAnnotStringKey(annot, key, value) {
+  const w = Pdfium.wasmExports;
+  const keyPtr = StringUtils.allocateUTF8(key);
+  const valPtr = StringUtils.allocateUTF16(value ?? '');
+  try {
+    w.FPDFAnnot_SetStringValue(annot, keyPtr, valPtr);
+  } finally {
+    StringUtils.freeUTF8(keyPtr);
+    StringUtils.freeUTF8(valPtr);
+  }
+}
+
+/**
+ * Writes an annotation spec's attributes/geometry onto a freshly created annot.
+ * Only the natively-creatable geometries are honored: `ink` (also how the viewer
+ * realizes line/arrow), `markup` (attachment points) and rect-defined
+ * square/circle. Colors/border/flags/text apply to every subtype.
+ */
+function _applyAnnotSpec(annot, spec) {
+  const w = Pdfium.wasmExports;
+  if (spec.rect) {
+    const buf = w.malloc(16);
+    new Float32Array(Pdfium.memory.buffer, buf, 4).set(spec.rect);
+    w.FPDFAnnot_SetRect(annot, buf);
+    w.free(buf);
+  }
+  if (spec.color) {
+    const c = spec.color;
+    w.FPDFAnnot_SetColor(annot, FPDFANNOT_COLORTYPE_Color, c[0], c[1], c[2], c[3] ?? 255);
+    _setAnnotStringKey(annot, ANNOT_COLOR_KEY, _colorToKey(c));
+  }
+  if (spec.interiorColor) {
+    const c = spec.interiorColor;
+    w.FPDFAnnot_SetColor(annot, FPDFANNOT_COLORTYPE_InteriorColor, c[0], c[1], c[2], c[3] ?? 255);
+    _setAnnotStringKey(annot, ANNOT_INTERIOR_COLOR_KEY, _colorToKey(c));
+  }
+  if (typeof spec.borderWidth === 'number') w.FPDFAnnot_SetBorder(annot, 0, 0, spec.borderWidth);
+  if (typeof spec.flags === 'number') w.FPDFAnnot_SetFlags(annot, spec.flags);
+  if (spec.contents != null) _setAnnotStringKey(annot, 'Contents', spec.contents);
+  if (spec.author != null) _setAnnotStringKey(annot, 'T', spec.author);
+  const g = spec.geometry;
+  if (g && g.kind === 'ink') {
+    for (const stroke of g.strokes) {
+      if (!stroke || stroke.length < 4) continue;
+      const n = stroke.length / 2;
+      const buf = w.malloc(n * 8);
+      new Float32Array(Pdfium.memory.buffer, buf, n * 2).set(stroke);
+      w.FPDFAnnot_AddInkStroke(annot, buf, n);
+      w.free(buf);
+    }
+  } else if (g && g.kind === 'markup') {
+    for (const q of g.quads) {
+      if (!q || q.length < 8) continue;
+      const buf = w.malloc(32);
+      new Float32Array(Pdfium.memory.buffer, buf, 8).set(q);
+      w.FPDFAnnot_AppendAttachmentPoints(annot, buf);
+      w.free(buf);
+    }
+  }
+}
+
+/**
+ * Forces PDFium to generate (and persist into the annotation dicts) the /AP
+ * appearance streams for any annotations on the page that lack them, by drawing
+ * the page once into a 1x1 FPDF_ANNOT bitmap. This is what makes freshly created
+ * annotations render in third-party viewers after encodePdf (FPDF_SaveAsCopy).
+ */
+function _forceAnnotAppearances(pageHandle) {
+  const w = Pdfium.wasmExports;
+  const buf = w.malloc(4);
+  try {
+    const FPDFBitmap_BGRA = 4;
+    const bmp = w.FPDFBitmap_CreateEx(1, 1, FPDFBitmap_BGRA, buf, 4);
+    if (bmp) {
+      const FPDF_ANNOT = 1;
+      w.FPDF_RenderPageBitmap(bmp, pageHandle, 0, 0, 1, 1, 0, FPDF_ANNOT);
+      w.FPDFBitmap_Destroy(bmp);
+    }
+  } finally {
+    w.free(buf);
+  }
+}
+
+/** Page-local index of the annotation with the given id (NM key, or `@<index>`), or -1. */
+function _findAnnotIndexById(pageHandle, id) {
+  const w = Pdfium.wasmExports;
+  if (id && id[0] === '@') {
+    const idx = parseInt(id.slice(1), 10);
+    return Number.isFinite(idx) ? idx : -1;
+  }
+  const count = w.FPDFPage_GetAnnotCount(pageHandle);
+  for (let i = 0; i < count; i++) {
+    const annot = w.FPDFPage_GetAnnot(pageHandle, i);
+    if (!annot) continue;
+    try {
+      if (_getAnnotField('NM', annot) === id) return i;
+    } finally {
+      w.FPDFPage_CloseAnnot(annot);
+    }
+  }
+  return -1;
+}
+
+/** Creates an annotation from `spec` on a live page handle and returns its id. */
+function _createAnnotOnPage(pageHandle, spec, forcedId) {
+  const w = Pdfium.wasmExports;
+  const code = ANNOT_SUBTYPE_CODES[spec.subtype];
+  if (code == null) throw new Error(`Unsupported annotation subtype: ${spec.subtype}`);
+  const annot = w.FPDFPage_CreateAnnot(pageHandle, code);
+  if (!annot) throw new Error('FPDFPage_CreateAnnot failed');
+  const id = forcedId || spec.id || _generateAnnotId();
+  try {
+    _setAnnotStringKey(annot, 'NM', id);
+    _applyAnnotSpec(annot, spec);
+  } finally {
+    w.FPDFPage_CloseAnnot(annot);
+  }
+  return id;
+}
+
+/**
+ * @param {{docHandle: number, pageIndex: number, spec: object}} params
+ * @returns {{id: string}}
+ */
+function addAnnotation(params) {
+  const { docHandle, pageIndex, spec } = params;
+  const w = Pdfium.wasmExports;
+  const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
+  if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+  try {
+    const id = _createAnnotOnPage(pageHandle, spec);
+    _forceAnnotAppearances(pageHandle);
+    w.FPDFPage_GenerateContent(pageHandle);
+    return { id };
+  } finally {
+    w.FPDF_ClosePage(pageHandle);
+  }
+}
+
+/**
+ * Replaces the annotation identified by `id` with a fresh one built from `spec`
+ * (keeping the same id). Geometry has no in-place PDFium setter, so edit =
+ * remove + recreate; the client sends the full new spec.
+ * @param {{docHandle: number, pageIndex: number, id: string, spec: object}} params
+ * @returns {{id: string}}
+ */
+function updateAnnotation(params) {
+  const { docHandle, pageIndex, id, spec } = params;
+  const w = Pdfium.wasmExports;
+  const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
+  if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+  try {
+    const idx = _findAnnotIndexById(pageHandle, id);
+    if (idx >= 0) w.FPDFPage_RemoveAnnot(pageHandle, idx);
+    const newId = _createAnnotOnPage(pageHandle, spec, spec.id || id);
+    _forceAnnotAppearances(pageHandle);
+    w.FPDFPage_GenerateContent(pageHandle);
+    return { id: newId };
+  } finally {
+    w.FPDF_ClosePage(pageHandle);
+  }
+}
+
+/**
+ * @param {{docHandle: number, pageIndex: number, id: string}} params
+ * @returns {{ok: boolean}}
+ */
+function removeAnnotation(params) {
+  const { docHandle, pageIndex, id } = params;
+  const w = Pdfium.wasmExports;
+  const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
+  if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+  try {
+    const idx = _findAnnotIndexById(pageHandle, id);
+    if (idx < 0) return { ok: false };
+    const ok = !!w.FPDFPage_RemoveAnnot(pageHandle, idx);
+    w.FPDFPage_GenerateContent(pageHandle);
+    return { ok };
+  } finally {
+    w.FPDF_ClosePage(pageHandle);
+  }
+}
+// [pdfrx_web: annotation support] }
+
 /**
  * Functions that can be called from the main thread
  */
@@ -3538,6 +3977,11 @@ const functions = {
   formKeyEvent,
   formKillFocus,
   registerFormNotify,
+  // [pdfrx_web: annotation support]
+  loadAnnotations,
+  addAnnotation,
+  updateAnnotation,
+  removeAnnotation,
 };
 
 /**

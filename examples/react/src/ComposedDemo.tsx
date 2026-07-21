@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import {
+  PdfAnnotationToolbar,
   PdfOutlineTree,
   PdfPageIndicator,
   PdfPrintButton,
+  PdfSaveButton,
   PdfSearchBox,
   PdfThumbnailList,
   PdfViewerSurface,
@@ -19,6 +22,9 @@ import {
  * provider owns the viewer, and where each piece goes is up to the app.
  */
 export function ComposedDemo({ locale }: { locale?: string }) {
+  // The annotation toolbar is revealed by the "Annotate" button; closing it
+  // returns to normal text-selection mode (the toolbar resets the viewer on unmount).
+  const [annotating, setAnnotating] = useState(false);
   return (
     <PdfrxProvider src="hello.pdf" wasmModulesUrl="pdfium/" initialFit="width" locale={locale}>
       <div className="pdfrx-app" style={{ height: '100%' }}>
@@ -27,8 +33,39 @@ export function ComposedDemo({ locale }: { locale?: string }) {
           <PdfZoomControls />
           <span className="pdfrx-toolbar-spacer" />
           <PdfSearchBox className="pdfrx-toolbar-search" placeholder="Find in document" />
+          <span className="pdfrx-toolbar-gap" aria-hidden />
+          <button
+            type="button"
+            className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
+            aria-pressed={annotating}
+            onClick={() => setAnnotating((v) => !v)}
+            title="Annotate"
+            aria-label="Annotate"
+          >
+            {/* Same stroke style as the package icon set (freehand scribble). */}
+            <svg
+              className="pdfrx-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3 16C5 7 7.5 6 9.5 9c2 3 1.5 8 4 8s2-9 4.5-9c2 0 2.5 4 3 6" />
+            </svg>
+          </button>
+          <span className="pdfrx-toolbar-gap" aria-hidden />
           <PdfPrintButton />
+          <PdfSaveButton />
         </div>
+
+        {annotating && (
+          <div className="pdfrx-toolbar pdfrx-toolbar-annot">
+            <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+          </div>
+        )}
 
         <div className="pdfrx-app-body">
           {/* Both panes at once, instead of the tabbed <PdfSidebar>. */}

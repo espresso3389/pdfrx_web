@@ -20,16 +20,20 @@ Upstream API names are given so you can find the reference implementation.
 
 > Absent in **both** projects (so *not* pdfrx_web gaps): document metadata/info
 > dictionary, page labels, embedded file attachments, embedded JavaScript,
-> digital signatures, annotation creation/editing, and page-content editing /
-> watermarking / flattening. Non-form annotation data is read-only and surfaced
-> only through `PdfLink.annotation`.
+> digital signatures, and page-content editing / watermarking / flattening.
 >
 > **pdfrx_web-only (not upstream):** AcroForm field enumeration, value get/set,
 > change notifications, interactive in-viewer editing via an HTML overlay, and a
 > JS-free `AFSimple_Calculate` engine for calculating forms —
 > `PdfPage.loadFormFields()`, `PdfDocument.loadFormFields()` /
 > `getFormFieldValue()` / `setFormFieldValue()`, the `formFieldsChanged` event,
-> `formCalculationEnabled`, and the React `useFormFields` hook.
+> `formCalculationEnabled`, and the React `useFormFields` hook. Also **annotation
+> read / create / edit / export** through an SVG overlay —
+> `PdfPage.loadAnnotations()`, `PdfDocument.loadAnnotations()` /
+> `addAnnotation()` / `updateAnnotation()` / `removeAnnotation()` /
+> `importAnnotations()`, the `annotationsChanged` event, the `interactiveAnnotations`
+> viewer option with `setAnnotationTool()`, and the React `useAnnotations` hook +
+> `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text).
 
 ---
 

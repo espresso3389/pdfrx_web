@@ -62,11 +62,13 @@ export interface PdfrxStrings {
 
   // Context menu (right-click / long-press)
   copy: string;
+  highlight: string;
   selectAll: string;
 
   // Viewer app chrome
   openFile: string;
   download: string;
+  annotate: string;
   closeSidebar: string;
   rotatePage: string;
   deletePage: string;
@@ -113,10 +115,12 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   goToPage: (pageNumber) => `Go to page ${pageNumber}`,
 
   copy: 'Copy',
+  highlight: 'Highlight',
   selectAll: 'Select All',
 
   openFile: 'Open a PDF file',
   download: 'Download',
+  annotate: 'Annotate',
   closeSidebar: 'Close sidebar',
   rotatePage: 'Rotate 90° clockwise',
   deletePage: 'Delete this page',

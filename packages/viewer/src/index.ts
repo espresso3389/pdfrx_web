@@ -20,6 +20,8 @@
 export {
   PdfrxViewer,
   type PdfrxViewerOptions,
+  type AnnotationTool,
+  type AnnotationStyle,
   type FitMode,
   type PageDropShadow,
   type PageBorder,

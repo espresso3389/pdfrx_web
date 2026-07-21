@@ -66,6 +66,8 @@ export { PdfSidebar, type PdfSidebarProps, type PdfSidebarTab } from './componen
 export { PdfThumbnailList, type PdfThumbnailListProps } from './components/thumbnail-list.js';
 export { PdfOutlineTree, type PdfOutlineTreeProps } from './components/outline-tree.js';
 export { PdfSearchBox, type PdfSearchBoxProps } from './components/search-box.js';
+export { PdfAnnotationToolbar, type PdfAnnotationToolbarProps } from './components/annotation-toolbar.js';
+export { PdfSaveButton, type PdfSaveButtonProps } from './components/save-button.js';
 export {
   PdfPageIndicator,
   PdfZoomControls,
@@ -82,6 +84,7 @@ export { usePdfNavigation, type PdfNavigation } from './hooks/use-pdf-navigation
 export { usePdfZoom, type PdfZoom } from './hooks/use-pdf-zoom.js';
 export { usePdfOutline, type PdfOutlineState } from './hooks/use-pdf-outline.js';
 export { useFormFields, type PdfFormFieldsState } from './hooks/use-form-fields.js';
+export { useAnnotations, type PdfAnnotationsState } from './hooks/use-annotations.js';
 export { usePdfSearch, type PdfSearch } from './hooks/use-pdf-search.js';
 export { usePdfSelection, type PdfSelection } from './hooks/use-pdf-selection.js';
 export { usePdfPageThumbnail, type PdfPageThumbnail } from './hooks/use-pdf-page-thumbnail.js';
@@ -92,6 +95,8 @@ export { useViewerSnapshot, shallowEqual, type ViewerSubscribe } from './hooks/u
 export type {
   PdfrxViewer,
   PdfrxViewerOptions,
+  AnnotationTool,
+  AnnotationStyle,
   FitMode,
   LayoutDirection,
   PanAxis,

@@ -6,7 +6,8 @@ import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
-import { IconClose, IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
+import { PdfAnnotationToolbar } from './annotation-toolbar.js';
+import { IconAnnotate, IconClose, IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
 
@@ -55,6 +56,12 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * is). Defaults to {@link enablePageEditing}.
    */
   showDownloadButton?: boolean;
+  /**
+   * Show the toolbar's *Annotate* button (right of search), which reveals the
+   * annotation toolbar; closing it returns to text selection. Requires the
+   * viewer's `interactiveAnnotations` (on by default). Defaults to `true`.
+   */
+  enableAnnotations?: boolean;
   /** Extra toolbar controls, placed after the built-in ones. */
   children?: ReactNode;
 }
@@ -95,6 +102,7 @@ export function PdfrxViewerApp({
   enablePageEditing = false,
   showOpenButton,
   showDownloadButton,
+  enableAnnotations = true,
   children,
   ...providerProps
 }: PdfrxViewerAppProps): ReactNode {
@@ -114,6 +122,7 @@ export function PdfrxViewerApp({
         // Each button follows its capability flag unless overridden.
         showOpenButton={showOpenButton ?? enableFileOpen}
         showDownloadButton={showDownloadButton ?? enablePageEditing}
+        enableAnnotations={enableAnnotations}
       >
         {children}
       </PdfrxViewerAppChrome>
@@ -135,6 +144,7 @@ type ChromeProps = Pick<
   | 'enablePageEditing'
   | 'showOpenButton'
   | 'showDownloadButton'
+  | 'enableAnnotations'
   | 'children'
 >;
 
@@ -155,6 +165,7 @@ function PdfrxViewerAppChrome({
   enablePageEditing,
   showOpenButton,
   showDownloadButton,
+  enableAnnotations,
   children,
 }: ChromeProps): ReactNode {
   const { open, error, clearError } = usePdfDocument();
@@ -163,6 +174,7 @@ function PdfrxViewerAppChrome({
   const strings = usePdfrxStrings();
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [annotating, setAnnotating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Batteries-included default: prompt for a password when a document is
@@ -287,6 +299,19 @@ function PdfrxViewerAppChrome({
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
           // Put the hamburger next to the sidebar it controls.
           sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
+          afterSearch={
+            enableAnnotations ? (
+              <button
+                className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
+                aria-pressed={annotating}
+                onClick={() => setAnnotating((v) => !v)}
+                title={strings.annotate}
+                aria-label={strings.annotate}
+              >
+                <IconAnnotate />
+              </button>
+            ) : undefined
+          }
         >
           {showOpenButton && (
             <>
@@ -314,6 +339,11 @@ function PdfrxViewerAppChrome({
           {showDownloadButton && <SaveButton />}
           {children}
         </PdfToolbar>
+      )}
+      {enableAnnotations && annotating && (
+        <div className="pdfrx-toolbar pdfrx-toolbar-annot">
+          <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+        </div>
       )}
       {error !== null && (
         <div className="pdfrx-error" role="alert">

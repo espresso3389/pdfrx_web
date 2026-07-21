@@ -11,7 +11,7 @@
  *   the correct position — it is merely lower resolution until replaced.
  */
 
-import type { PdfDocument, PdfPageRenderCancellationToken } from '@pdfrx/engine';
+import type { PdfAnnotationRenderingMode, PdfDocument, PdfPageRenderCancellationToken } from '@pdfrx/engine';
 import { rectHeight, rectWidth, type Rect } from '@pdfrx/viewer-core';
 
 interface BaseBitmap {
@@ -50,10 +50,15 @@ export class PageRenderCache {
   /**
    * @param doc - The open document to render pages from.
    * @param onUpdate - Called after a bitmap finishes, to request a repaint.
+   * @param annotationRenderingMode - Returns the annotation-rendering mode for
+   *   canvas renders. The viewer passes `'formsOnly'` while it paints
+   *   annotations through the SVG overlay, so they are not drawn twice; returns
+   *   `undefined` to keep the engine default (`'annotationAndForms'`).
    */
   constructor(
     private readonly doc: PdfDocument,
     private readonly onUpdate: () => void,
+    private readonly annotationRenderingMode: () => PdfAnnotationRenderingMode | undefined = () => undefined,
   ) {}
 
   // Base bitmaps are keyed by `PdfPage.renderKey` (source page + rotation), not
@@ -138,6 +143,7 @@ export class PageRenderCache {
       const image = await page.render({
         fullWidth: Math.ceil(page.width * scale),
         fullHeight: Math.ceil(page.height * scale),
+        annotationRenderingMode: this.annotationRenderingMode(),
         cancellationToken: token,
       });
       if (!image || this.disposed) return; // null when cancelled
@@ -237,7 +243,16 @@ export class PageRenderCache {
       const y = Math.floor((rect.top - pageRect.top) * scale);
       const width = Math.ceil(rectWidth(rect) * scale);
       const height = Math.ceil(rectHeight(rect) * scale);
-      const image = await page.render({ x, y, width, height, fullWidth, fullHeight, cancellationToken: token });
+      const image = await page.render({
+        x,
+        y,
+        width,
+        height,
+        fullWidth,
+        fullHeight,
+        annotationRenderingMode: this.annotationRenderingMode(),
+        cancellationToken: token,
+      });
       if (!image || this.disposed) return; // null when cancelled
       const bitmap = await image.toImageBitmap();
       if (this.disposed) {

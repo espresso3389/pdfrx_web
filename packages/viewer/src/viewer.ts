@@ -9,6 +9,11 @@
 
 import {
   PdfrxEngine,
+  type PdfAnnotationObject,
+  type PdfAnnotationPoint,
+  type PdfAnnotationQuad,
+  type PdfAnnotationRenderingMode,
+  type PdfAnnotationSpec,
   type PdfDest,
   type PdfDocument,
   type PdfFontQuery,
@@ -39,7 +44,9 @@ import {
   getSelectedRanges,
   layoutPagesHorizontal,
   layoutPagesVertical,
+  offsetToPdfPoint,
   offsetToPdfPointInDocument,
+  pdfPointToOffset,
   pdfRectToRect,
   pdfRectToRectInDocument,
   rangeBounds,
@@ -248,6 +255,15 @@ export interface PdfrxViewerOptions {
    * the PDF and reflected by `PdfDocument.encodePdf`. Default: `true`.
    */
   interactiveForms?: boolean;
+  /**
+   * Paints page annotations (ink, shapes, text markup, notes) through an SVG
+   * overlay instead of the canvas, and enables in-viewer annotation editing via
+   * {@link PdfrxViewer.setAnnotationTool}. While on, the canvas renders form
+   * widgets but not annotations (they come from the overlay), so per-edit updates
+   * never re-render the page — no flicker. Edits are written back to the PDF and
+   * reflected by `PdfDocument.encodePdf`. Default: `true`.
+   */
+  interactiveAnnotations?: boolean;
   /**
    * Extra scrollable margin, in document units, added around the document so it
    * can be panned past its edges. Default: `0` (edges are hard boundaries).
@@ -581,6 +597,410 @@ interface FormPageOverlay {
   controls: Map<string, (field: PdfFormField) => void>;
 }
 
+/**
+ * One page's annotation overlay: a point-space `<svg>` (transformed to follow
+ * the page) that paints the page's annotations and hosts editing.
+ */
+interface AnnotationPageOverlay {
+  pageNumber: number;
+  pageGeom: PageGeometry;
+  pageSize: Size;
+  container: HTMLDivElement;
+  svg: SVGSVGElement;
+  /** A `<g>` above the shapes holding the selected annotation's drag anchors. */
+  anchorLayer: SVGGElement;
+  /** Annotations currently painted, keyed by id (for hit-testing / reconcile). */
+  annotations: Map<string, PdfAnnotationObject>;
+}
+
+/** A draggable control point of an annotation (endpoint / vertex / corner). */
+interface AnnotationAnchor {
+  /** Current position in bounding-box-relative PDF page coordinates. */
+  point: PdfAnnotationPoint;
+  /** Produces the full updated spec when this anchor is dragged to `to`. */
+  reshape: (to: PdfAnnotationPoint) => PdfAnnotationSpec;
+}
+
+/**
+ * An entry on the annotation undo/redo stack. `before`/`after` are the full
+ * annotation spec in each state, or `null` for "does not exist". Applying a
+ * state = remove (null) or create/replace by id (spec), which uniformly covers
+ * create / delete / edit.
+ */
+interface AnnotationCommand {
+  pageNumber: number;
+  id: string;
+  before: PdfAnnotationSpec | null;
+  after: PdfAnnotationSpec | null;
+}
+
+/** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
+export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'freeText';
+
+/** Style applied to newly drawn annotations. */
+export interface AnnotationStyle {
+  /** Stroke (outline) CSS color string (e.g. `#e53935`). */
+  color: string;
+  /** Interior (fill) CSS color for closed shapes (rectangle/ellipse), or `null` for no fill. */
+  fillColor: string | null;
+  /** Stroke width in PDF points. */
+  strokeWidth: number;
+  /** Stroke opacity 0-1 (baked into the stroke color's alpha). */
+  opacity: number;
+}
+
+/** In-progress annotation drawing gesture (page-local px). */
+interface DrawState {
+  pageNumber: number;
+  tool: AnnotationTool;
+  pageGeom: PageGeometry;
+  pageSize: Size;
+  svg: SVGSVGElement;
+  /** Sampled points in page-local px (ink) or `[start]` for shapes. */
+  points: Offset[];
+  preview: SVGElement;
+  pointerId: number;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+/** On-screen diameter (px) of an annotation drag anchor, held constant across zoom. */
+const ANCHOR_SCREEN_PX = 8;
+
+/** `x,y` for an SVG points list. */
+function offsetPair(o: Offset): string {
+  return `${o.x},${o.y}`;
+}
+
+/** Bounding {@link PdfRect} of PDF-space points (y-up). */
+function bboxOfPoints(pts: readonly PdfPoint[]): PdfRect {
+  let left = Infinity;
+  let right = -Infinity;
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (const p of pts) {
+    left = Math.min(left, p.x);
+    right = Math.max(right, p.x);
+    top = Math.max(top, p.y);
+    bottom = Math.min(bottom, p.y);
+  }
+  return { left, top, right, bottom };
+}
+
+/** Ink strokes approximating an arrow from `s` to `e` (a shaft plus a V head). */
+function arrowInkStrokes(s: PdfPoint, e: PdfPoint): PdfPoint[][] {
+  const dx = e.x - s.x;
+  const dy = e.y - s.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const head = Math.min(12, len * 0.3);
+  const a = 0.5; // half-angle spread
+  const left: PdfPoint = { x: e.x - head * (ux * Math.cos(a) - uy * Math.sin(a)), y: e.y - head * (uy * Math.cos(a) + ux * Math.sin(a)) };
+  const right: PdfPoint = { x: e.x - head * (ux * Math.cos(a) + uy * Math.sin(a)), y: e.y - head * (uy * Math.cos(a) - ux * Math.sin(a)) };
+  return [
+    [s, e],
+    [left, e, right],
+  ];
+}
+
+/** Builds a spec from an existing annotation, translated by (dx, dy) in PDF points. */
+function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number): PdfAnnotationSpec {
+  const tp = (p: PdfPoint): PdfPoint => ({ x: p.x + dx, y: p.y + dy });
+  const spec: PdfAnnotationSpec = {
+    subtype: a.subtype,
+    rect: { left: a.rect.left + dx, top: a.rect.top + dy, right: a.rect.right + dx, bottom: a.rect.bottom + dy },
+    color: a.color,
+    interiorColor: a.interiorColor,
+    borderWidth: a.borderWidth,
+    contents: a.contents,
+    author: a.author,
+  };
+  const g = a.geometry;
+  switch (g.kind) {
+    case 'ink':
+      spec.geometry = { kind: 'ink', strokes: g.strokes.map((st) => st.map(tp)) };
+      break;
+    case 'markup':
+      spec.geometry = {
+        kind: 'markup',
+        quads: g.quads.map((q) => ({ topLeft: tp(q.topLeft), topRight: tp(q.topRight), bottomLeft: tp(q.bottomLeft), bottomRight: tp(q.bottomRight) })),
+      };
+      break;
+    case 'line':
+      spec.geometry = { kind: 'line', start: tp(g.start), end: tp(g.end) };
+      break;
+    case 'polygon':
+    case 'polyline':
+      spec.geometry = { kind: g.kind, vertices: g.vertices.map(tp) };
+      break;
+    default:
+      spec.geometry = { kind: 'none' };
+  }
+  return spec;
+}
+
+/** The full spec of an existing annotation (unchanged geometry). */
+function annotationToSpec(a: PdfAnnotationObject): PdfAnnotationSpec {
+  return translateAnnotationSpec(a, 0, 0);
+}
+
+/** Bounding {@link PdfRect} of every ink point in a spec (y-up). */
+function inkSpecRect(strokes: PdfAnnotationPoint[][]): PdfRect {
+  return bboxOfPoints(strokes.flat());
+}
+
+/**
+ * A displayable annotation object built by overlaying a spec's rect/color/
+ * geometry onto a base annotation — used to live-render a drag preview.
+ */
+function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec): PdfAnnotationObject {
+  return {
+    ...base,
+    rect: spec.rect ?? base.rect,
+    color: spec.color === undefined ? base.color : spec.color,
+    interiorColor: spec.interiorColor === undefined ? base.interiorColor : spec.interiorColor,
+    borderWidth: spec.borderWidth ?? base.borderWidth,
+    flags: spec.flags ?? base.flags,
+    contents: spec.contents === undefined ? base.contents : spec.contents,
+    author: spec.author === undefined ? base.author : spec.author,
+    geometry: spec.geometry ?? base.geometry,
+  };
+}
+
+/** Union (bounding) {@link PdfRect} of several boxes (y-up). */
+function unionBounds(rects: readonly PdfRect[]): PdfRect {
+  let left = Infinity;
+  let right = -Infinity;
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (const r of rects) {
+    left = Math.min(left, r.left, r.right);
+    right = Math.max(right, r.left, r.right);
+    top = Math.max(top, r.top, r.bottom);
+    bottom = Math.min(bottom, r.top, r.bottom);
+  }
+  return { left, top, right, bottom };
+}
+
+/** Whether two y-down px rectangles overlap (edges inclusive). */
+function rectsOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
+}
+
+/** The eight bounding-box handle points (corners + edge midpoints), fixed order. */
+function boundingBoxHandlePoints(b: PdfRect): PdfAnnotationPoint[] {
+  const midX = (b.left + b.right) / 2;
+  const midY = (b.top + b.bottom) / 2;
+  return [
+    { x: b.left, y: b.top },
+    { x: midX, y: b.top },
+    { x: b.right, y: b.top },
+    { x: b.right, y: midY },
+    { x: b.right, y: b.bottom },
+    { x: midX, y: b.bottom },
+    { x: b.left, y: b.bottom },
+    { x: b.left, y: midY },
+  ];
+}
+
+/** Applies a bounding-box handle drag (by index) to `box`, returning the new box (normalized). */
+function resizeBoxByHandle(box: PdfRect, index: number, to: PdfAnnotationPoint): PdfRect {
+  const edges = [
+    { left: true, top: true },
+    { top: true },
+    { right: true, top: true },
+    { right: true },
+    { right: true, bottom: true },
+    { bottom: true },
+    { left: true, bottom: true },
+    { left: true },
+  ][index] as { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };
+  let { left, right, top, bottom } = box;
+  if (edges.left) left = to.x;
+  if (edges.right) right = to.x;
+  if (edges.top) top = to.y;
+  if (edges.bottom) bottom = to.y;
+  const nb: PdfRect = { left: Math.min(left, right), right: Math.max(left, right), top: Math.max(top, bottom), bottom: Math.min(top, bottom) };
+  if (nb.right - nb.left < 1) nb.right = nb.left + 1;
+  if (nb.top - nb.bottom < 1) nb.top = nb.bottom + 1;
+  return nb;
+}
+
+/** Bounding {@link PdfRect} (y-up) of an annotation's geometry. */
+function annotationBounds(a: PdfAnnotationObject): PdfRect {
+  const g = a.geometry;
+  switch (g.kind) {
+    case 'ink':
+      return inkSpecRect(g.strokes);
+    case 'markup':
+      return bboxOfPoints(g.quads.flatMap((q) => [q.topLeft, q.topRight, q.bottomLeft, q.bottomRight]));
+    case 'line':
+      return bboxOfPoints([g.start, g.end]);
+    case 'polygon':
+    case 'polyline':
+      return g.vertices.length ? bboxOfPoints(g.vertices) : a.rect;
+    default:
+      return a.rect;
+  }
+}
+
+/** Maps a spec's geometry + rect from `oldBox` to `newBox` by an affine scale (y-up). */
+function scaleAnnotationSpec(a: PdfAnnotationObject, oldBox: PdfRect, newBox: PdfRect): PdfAnnotationSpec {
+  const ow = oldBox.right - oldBox.left || 1;
+  const oh = oldBox.top - oldBox.bottom || 1;
+  const sx = (newBox.right - newBox.left) / ow;
+  const sy = (newBox.top - newBox.bottom) / oh;
+  const map = (p: PdfAnnotationPoint): PdfAnnotationPoint => ({
+    x: newBox.left + (p.x - oldBox.left) * sx,
+    y: newBox.bottom + (p.y - oldBox.bottom) * sy,
+  });
+  const s = annotationToSpec(a);
+  // Map the annotation's own rect through the transform (not to `newBox`), so a
+  // group scale repositions/resizes each member within the group instead of
+  // collapsing them all onto the group box. For a single-shape resize `oldBox`
+  // is the shape's own bounds, so this still yields `newBox`.
+  const c1 = map({ x: a.rect.left, y: a.rect.top });
+  const c2 = map({ x: a.rect.right, y: a.rect.bottom });
+  s.rect = { left: Math.min(c1.x, c2.x), right: Math.max(c1.x, c2.x), top: Math.max(c1.y, c2.y), bottom: Math.min(c1.y, c2.y) };
+  const g = a.geometry;
+  if (g.kind === 'ink') s.geometry = { kind: 'ink', strokes: g.strokes.map((st) => st.map(map)) };
+  else if (g.kind === 'markup')
+    s.geometry = {
+      kind: 'markup',
+      quads: g.quads.map((q) => ({ topLeft: map(q.topLeft), topRight: map(q.topRight), bottomLeft: map(q.bottomLeft), bottomRight: map(q.bottomRight) })),
+    };
+  else if (g.kind === 'line') s.geometry = { kind: 'line', start: map(g.start), end: map(g.end) };
+  else if (g.kind === 'polygon' || g.kind === 'polyline') s.geometry = { kind: g.kind, vertices: g.vertices.map(map) };
+  return s;
+}
+
+/**
+ * The eight bounding-box handles (corners + edge midpoints) that scale a shape.
+ * A handle may cross the opposite edge freely (the box is normalized, not
+ * ordering-locked); a 1pt floor just avoids a degenerate box.
+ */
+function boundingBoxAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
+  const b = annotationBounds(a);
+  return boundingBoxHandlePoints(b).map((point, index) => ({
+    point,
+    reshape: (to) => scaleAnnotationSpec(a, b, resizeBoxByHandle(b, index, to)),
+  }));
+}
+
+/** Classifies an ink annotation by how it was authored (from its stroke shape). */
+function inkStrokeKind(g: { strokes: PdfAnnotationPoint[][] }): 'line' | 'arrow' | 'curve' {
+  if (g.strokes.length > 1) return 'arrow'; // arrow = shaft stroke + head stroke(s)
+  const s0 = g.strokes[0];
+  if (!s0 || s0.length <= 2) return 'line'; // a straight 2-point stroke
+  return 'curve'; // freehand pen
+}
+
+/** Whether a selected annotation shows the faint bounding-box guide. */
+function annotationShowsBoundingBox(a: PdfAnnotationObject): boolean {
+  if (a.subtype === 'circle') return true; // ellipse
+  if (a.geometry.kind === 'ink') return inkStrokeKind(a.geometry) === 'curve'; // freehand pen
+  return false; // rectangle, line/arrow, markup, free text, …
+}
+
+/**
+ * The draggable control points of an annotation:
+ * - straight lines & arrows (authored as 2-point / multi-stroke ink) and true
+ *   `line` annotations expose just their two endpoints;
+ * - polygons/polylines keep per-vertex handles;
+ * - freehand pen, rectangle, ellipse and other area shapes expose the eight
+ *   bounding-box handles and drag = uniform scale.
+ */
+function annotationAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
+  const base = annotationToSpec(a);
+  const clone = (): PdfAnnotationSpec => structuredClone(base);
+  const g = a.geometry;
+  switch (g.kind) {
+    case 'line':
+      return (['start', 'end'] as const).map((end) => ({
+        point: g[end],
+        reshape: (to) => {
+          const s = clone();
+          (s.geometry as { kind: 'line'; start: PdfAnnotationPoint; end: PdfAnnotationPoint })[end] = { x: to.x, y: to.y };
+          return s;
+        },
+      }));
+    case 'polygon':
+    case 'polyline':
+      return g.vertices.map((p, vi) => ({
+        point: p,
+        reshape: (to) => {
+          const s = clone();
+          (s.geometry as { kind: 'polygon' | 'polyline'; vertices: PdfAnnotationPoint[] }).vertices[vi] = { x: to.x, y: to.y };
+          return s;
+        },
+      }));
+    case 'ink': {
+      const kind = inkStrokeKind(g);
+      if (kind === 'line') {
+        // Straight line: two draggable endpoints.
+        return [0, 1].map((pi) => ({
+          point: g.strokes[0]![pi]!,
+          reshape: (to) => {
+            const s = clone();
+            const strokes = (s.geometry as { kind: 'ink'; strokes: PdfAnnotationPoint[][] }).strokes;
+            strokes[0]![pi] = { x: to.x, y: to.y };
+            s.rect = inkSpecRect(strokes);
+            return s;
+          },
+        }));
+      }
+      if (kind === 'arrow') {
+        // Arrow: endpoints of the shaft; the head regenerates from them.
+        const shaft = g.strokes[0]!;
+        const ends = [shaft[0]!, shaft[shaft.length - 1]!];
+        return ends.map((pt, i) => ({
+          point: pt,
+          reshape: (to) => {
+            const start = i === 0 ? { x: to.x, y: to.y } : ends[0]!;
+            const end = i === 1 ? { x: to.x, y: to.y } : ends[1]!;
+            const s = clone();
+            const strokes = arrowInkStrokes(start, end);
+            s.geometry = { kind: 'ink', strokes };
+            s.rect = inkSpecRect(strokes);
+            return s;
+          },
+        }));
+      }
+      return boundingBoxAnchors(a); // freehand pen
+    }
+    default:
+      // rect-defined (square, circle, freeText, text, …) and markup: scale.
+      return boundingBoxAnchors(a);
+  }
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** An annotation RGB color as a CSS string, or `fallback` when unset. */
+function colorCss(c: { r: number; g: number; b: number; a: number } | null, fallback: string): string;
+function colorCss(c: { r: number; g: number; b: number; a: number } | null, fallback: null): string | null;
+function colorCss(c: { r: number; g: number; b: number; a: number } | null, fallback: string | null): string | null {
+  if (!c) return fallback;
+  return `rgb(${c.r}, ${c.g}, ${c.b})`;
+}
+
+/** Parses `#rrggbb` (or `#rgb`) to an RGBA color (alpha from `opacity` 0-1). */
+function cssColorToRgba(css: string, opacity = 1): { r: number; g: number; b: number; a: number } {
+  let hex = css.trim();
+  if (hex.startsWith('#')) hex = hex.slice(1);
+  if (hex.length === 3) hex = hex.replace(/(.)/g, '$1$1');
+  const n = parseInt(hex, 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return { r, g, b, a: Math.round(Math.max(0, Math.min(1, opacity)) * 255) };
+}
+
 const HANDLE_HIT_RADIUS = 24;
 const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
@@ -653,6 +1073,14 @@ export class PdfrxViewer {
     this.formOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
     container.appendChild(this.formOverlayRoot);
 
+    // Annotation overlay layer: per-page SVG that paints the document's
+    // annotations (ink, shapes, markup, notes) and hosts interactive editing.
+    // Click-through unless a drawing tool is active or a shape opts in, so
+    // viewer gestures still reach the canvas.
+    this.annotationOverlayRoot = document.createElement('div');
+    this.annotationOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    container.appendChild(this.annotationOverlayRoot);
+
     // Viewport-fixed overlay layer (does not pan/zoom); above the page overlays.
     this.viewerOverlayRoot = document.createElement('div');
     this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
@@ -680,11 +1108,47 @@ export class PdfrxViewer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly overlayRoot: HTMLDivElement;
   private readonly formOverlayRoot: HTMLDivElement;
+  private readonly annotationOverlayRoot: HTMLDivElement;
   private readonly viewerOverlayRoot: HTMLDivElement;
   /** Per-page overlay containers, built lazily when a page first becomes visible. */
   private readonly overlayContainers = new Map<number, HTMLElement>();
   /** Per-page form-control overlays (native HTML controls over AcroForm widgets). */
   private readonly formOverlays = new Map<number, FormPageOverlay>();
+  /** Per-page annotation overlays (SVG painting the page's annotations). */
+  private readonly annotationOverlays = new Map<number, AnnotationPageOverlay>();
+  /** Per-page loaded annotations, keyed by page number (mirrors {@link pageFormFields}). */
+  private readonly pageAnnotations = new Map<number, PdfAnnotationObject[] | Promise<PdfAnnotationObject[]>>();
+  /** Last known objects by id; survives the brief gap while SVG overlays rebuild. */
+  private readonly annotationSnapshots = new Map<string, { pageNumber: number; annotation: PdfAnnotationObject }>();
+  /**
+   * Active annotation mode: a drawing tool, `'select'` (marquee/multi-select
+   * editing), or null (normal viewing — pan/text-select, single-click select).
+   */
+  private annotationMode: AnnotationTool | 'select' | null = null;
+  /** Current style applied to newly drawn annotations. */
+  private annotationStyle: AnnotationStyle = {
+    color: '#e53935',
+    fillColor: null,
+    strokeWidth: 3,
+    opacity: 1,
+  };
+  /** Ids of the currently selected annotations (empty when none). */
+  private readonly selectedAnnotationIds = new Set<string>();
+  /** In-progress drawing gesture, or null. */
+  private drawState: DrawState | null = null;
+  /**
+   * Annotation undo/redo stack. Each entry is a *group* of one or more commands
+   * applied/undone atomically (a multi-object move/resize/delete is one step).
+   * Entries `[0, historyIndex)` are applied.
+   */
+  private annotationHistory: AnnotationCommand[][] = [];
+  private annotationHistoryIndex = 0;
+  /** Merge key attached to the latest history entry (used by slider gestures). */
+  private annotationHistoryMergeKey: string | null = null;
+  /** Keeps annotation style writes single-flight. */
+  private annotationStyleUpdateQueue: Promise<void> = Promise.resolve();
+  /** Latest queued generation per slider gesture; older waiting writes are skipped. */
+  private readonly annotationStyleLatestGeneration = new Map<string, number>();
   /** True while a pointer gesture is in progress (for onInteractionStart/End). */
   private interactionActive = false;
   private readonly resizeObserver: ResizeObserver;
@@ -1562,11 +2026,13 @@ export class PdfrxViewer {
     this.hideContextMenu();
     this.searcher?.dispose();
     this.clearFormOverlays();
+    this.clearAnnotationOverlays();
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.#engine.dispose();
     this.overlayRoot.remove();
     this.formOverlayRoot.remove();
+    this.annotationOverlayRoot.remove();
     this.viewerOverlayRoot.remove();
     this.canvas.remove();
   }
@@ -1605,6 +2071,9 @@ export class PdfrxViewer {
     this.pageTexts.clear();
     this.pageFormFields.clear();
     this.clearFormOverlays();
+    this.pageAnnotations.clear();
+    this.annotationSnapshots.clear();
+    this.clearAnnotationOverlays();
     this.overlayContainers.clear();
     this.overlayRoot.replaceChildren();
     this.clearSelection();
@@ -1614,13 +2083,17 @@ export class PdfrxViewer {
     this.doc = doc;
     this.pageGeoms = doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
     this.layout = this.computeLayout();
-    this.cache = new PageRenderCache(doc, () => this.invalidate());
+    this.cache = new PageRenderCache(doc, () => this.invalidate(), () => this.canvasAnnotationRenderingMode());
     this.pageLinks.clear();
     this.hoveredLink = null;
+    this.annotationHistory = [];
+    this.annotationHistoryIndex = 0;
+    this.selectedAnnotationIds.clear();
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
     doc.addEventListener('pagesRearranged', () => this.onPagesRearranged());
     doc.addEventListener('formFieldsChanged', () => this.reconcileFormOverlays());
+    doc.addEventListener('annotationsChanged', () => this.onAnnotationsChanged());
     this.resetView();
     this.buildViewerOverlays();
     for (const listener of this.documentChangeListeners) {
@@ -1661,6 +2134,9 @@ export class PdfrxViewer {
     this.pageLinks.clear();
     this.pageFormFields.clear();
     this.clearFormOverlays();
+    this.pageAnnotations.clear();
+    this.annotationSnapshots.clear();
+    this.clearAnnotationOverlays();
     this.hoveredLink = null;
     this.clearSelection();
     this.cache?.onArrangementChanged();
@@ -2299,6 +2775,9 @@ export class PdfrxViewer {
 
   private onPointerDownCore(e: PointerEvent): void {
     this.canvas.focus({ preventScroll: true });
+    // A pointerdown that reaches the canvas is on an empty area (annotation
+    // shapes sit on the overlay above), so clear any annotation selection.
+    if (this.selectedAnnotationIds.size) this.setSelectedAnnotations([]);
     this.lastPointerType = e.pointerType;
     this.hideContextMenu();
     this.stopFling();
@@ -2624,6 +3103,21 @@ export class PdfrxViewer {
     const cmd = e.ctrlKey || e.metaKey;
     const k = PdfrxViewer.SCROLL_BY_ARROW_KEY;
     const handled = ((): boolean => {
+      // Annotation undo/redo: Ctrl/Cmd+Z, and Ctrl/Cmd+Shift+Z or Ctrl+Y to redo.
+      if (cmd && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) void this.redoAnnotation();
+        else void this.undoAnnotation();
+        return true;
+      }
+      if (cmd && e.key.toLowerCase() === 'y') {
+        void this.redoAnnotation();
+        return true;
+      }
+      // Delete/Backspace removes the selected annotation(s).
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedAnnotationIds.size) {
+        void this.deleteSelectedAnnotation();
+        return true;
+      }
       if (cmd && e.key.toLowerCase() === 'c') {
         void this.copySelection();
         return true;
@@ -2634,6 +3128,18 @@ export class PdfrxViewer {
       }
       switch (e.key) {
         case 'Escape':
+          // Cancel the active tool / select mode / annotation selection first,
+          // else fall back to clearing the text selection.
+          if (this.annotationMode !== null) {
+            this.annotationMode = null;
+            this.setSelectedAnnotations([]);
+            this.invalidate();
+            return true;
+          }
+          if (this.selectedAnnotationIds.size) {
+            this.setSelectedAnnotations([]);
+            return true;
+          }
           this.clearSelection();
           return true;
         case 'PageUp':
@@ -2772,6 +3278,10 @@ export class PdfrxViewer {
     };
     addItem('Copy', !!(this.selA && this.selB) && this.isCopyAllowed, () => {
       void this.copySelection().then(() => this.clearSelection());
+    });
+    addItem('Highlight', this.canHighlightSelection(), () => {
+      this.hideContextMenu();
+      void this.highlightSelection();
     });
     addItem('Select All', true, () => {
       this.hideContextMenu();
@@ -2912,6 +3422,7 @@ export class PdfrxViewer {
       this.ensureText(pageNumber);
       this.ensureLinks(pageNumber);
       this.ensureFormFields(pageNumber);
+      this.ensureAnnotations(pageNumber);
       if (requiredScale > this.cache.baseScaleCap(pageNumber) * 1.1) {
         if (!rectIsEmpty(visibleOnPage)) {
           this.cache.schedulePatch(pageNumber, visibleOnPage, pageRect, requiredScale);
@@ -2969,6 +3480,7 @@ export class PdfrxViewer {
     // Keep DOM page overlays in sync with the view transform.
     this.updateOverlays();
     this.updateFormOverlays();
+    this.updateAnnotationOverlays();
   }
 
   // -------------------------------------------------------------------------
@@ -3311,6 +3823,1301 @@ export class PdfrxViewer {
   private clearFormOverlays(): void {
     this.formOverlayRoot.replaceChildren();
     this.formOverlays.clear();
+  }
+
+  // -------------------------------------------------------------------------
+  // Annotation overlay: per-page SVG painting the document's annotations.
+  // -------------------------------------------------------------------------
+
+  /** Whether the SVG annotation overlay is active (option default: on). */
+  private annotationsEnabled(): boolean {
+    return this.options.interactiveAnnotations !== false;
+  }
+
+  /**
+   * The annotation-rendering mode for canvas renders. When the overlay is on,
+   * the canvas draws form widgets but not annotations (`formsOnly`), so they are
+   * not painted twice; otherwise the engine default is kept.
+   */
+  private canvasAnnotationRenderingMode(): PdfAnnotationRenderingMode | undefined {
+    return this.annotationsEnabled() ? 'formsOnly' : undefined;
+  }
+
+  /** Loads (once) the annotations of a page position; mirrors {@link ensureFormFields}. */
+  private ensureAnnotations(pageNumber: number): void {
+    if (!this.doc || !this.annotationsEnabled() || this.pageAnnotations.has(pageNumber)) return;
+    const page = this.doc.pages[pageNumber - 1];
+    if (!page || !page.isLoaded) return;
+    const generation = this.arrangementGeneration;
+    const promise = page.loadAnnotations().then((annotations) => {
+      if (generation === this.arrangementGeneration) {
+        this.pageAnnotations.set(pageNumber, annotations);
+        this.invalidate();
+      }
+      return annotations;
+    });
+    this.pageAnnotations.set(pageNumber, promise);
+  }
+
+  private getLoadedAnnotations(pageNumber: number): PdfAnnotationObject[] | null {
+    const annotations = this.pageAnnotations.get(pageNumber);
+    return annotations instanceof Promise ? null : (annotations ?? null);
+  }
+
+  /**
+   * Positions/builds the per-page annotation overlays to follow the view
+   * transform. Mirrors {@link updateFormOverlays}; called from the paint loop.
+   * A surface is built for every visible page (even with no annotations) so a
+   * drawing tool always has somewhere to draw.
+   */
+  private updateAnnotationOverlays(): void {
+    if (!this.annotationsEnabled() || !this.layout || !this.doc) {
+      if (this.annotationOverlays.size) this.clearAnnotationOverlays();
+      return;
+    }
+    const t = this.transform;
+    const visible = calcVisibleRect(t, this.viewSize);
+    for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+      const pageRect = this.layout.pageLayouts[i]!;
+      const onScreen = rectOverlaps(pageRect, visible);
+      const pageNumber = i + 1;
+      let overlay = this.annotationOverlays.get(pageNumber);
+      if (onScreen && !overlay) {
+        const annotations = this.getLoadedAnnotations(pageNumber);
+        if (annotations) {
+          overlay = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
+          this.annotationOverlays.set(pageNumber, overlay);
+          this.annotationOverlayRoot.appendChild(overlay.container);
+        }
+      }
+      if (!overlay) continue;
+      if (onScreen) {
+        const vr = documentRectToView(t, pageRect);
+        overlay.container.style.display = '';
+        overlay.container.style.transform = `translate(${vr.left}px, ${vr.top}px) scale(${t.zoom})`;
+        // A drawing tool or select mode makes the SVG capture drags anywhere on
+        // the page (to draw / rubber-band); otherwise only the shapes are
+        // interactive so empty areas still pan / select text.
+        const drawing = this.drawingTool() !== null;
+        const capturing = drawing || this.isAnnotationSelectMode();
+        overlay.container.style.pointerEvents = capturing ? 'auto' : 'none';
+        overlay.svg.style.pointerEvents = capturing ? 'auto' : 'none';
+        overlay.svg.style.cursor = drawing ? 'crosshair' : this.isAnnotationSelectMode() ? 'default' : '';
+        // Keep the selection anchors + bounding box a constant on-screen size as
+        // the zoom changes.
+        if (overlay.anchorLayer.childElementCount) {
+          const r = `${ANCHOR_SCREEN_PX / 2 / t.zoom}`;
+          const dash = `${4 / t.zoom} ${3 / t.zoom}`;
+          for (const child of overlay.anchorLayer.children) {
+            if (child.tagName === 'circle') {
+              child.setAttribute('r', r);
+              child.setAttribute('stroke-width', `${1.5 / t.zoom}`);
+            } else {
+              child.setAttribute('stroke-width', `${1 / t.zoom}`);
+              child.setAttribute('stroke-dasharray', dash);
+            }
+          }
+        }
+      } else {
+        overlay.container.style.display = 'none';
+      }
+    }
+  }
+
+  /** Builds one page's annotation overlay (a point-space SVG) from its annotations. */
+  private buildAnnotationPageOverlay(
+    pageNumber: number,
+    annotations: readonly PdfAnnotationObject[],
+    pageGeom: PageGeometry,
+    pageRect: Rect,
+  ): AnnotationPageOverlay {
+    const pageSize: Size = { width: rectWidth(pageRect), height: rectHeight(pageRect) };
+    const container = document.createElement('div');
+    // Point-space container (origin at the page top-left); positioned with
+    // translate+scale(zoom) by updateAnnotationOverlays. Click-through by default.
+    container.style.cssText =
+      `position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;` +
+      `width:${pageSize.width}px;height:${pageSize.height}px;`;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('width', `${pageSize.width}`);
+    svg.setAttribute('height', `${pageSize.height}`);
+    svg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
+    svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
+    const byId = new Map<string, PdfAnnotationObject>();
+    for (const a of annotations) {
+      this.annotationSnapshots.set(a.id, { pageNumber, annotation: a });
+      const el = this.buildAnnotationShape(a, pageGeom, pageSize);
+      if (el) {
+        el.dataset.annotId = a.id;
+        svg.appendChild(el);
+        byId.set(a.id, a);
+      }
+    }
+    // Anchor handles for the selected annotation sit above the shapes.
+    const anchorLayer = document.createElementNS(SVG_NS, 'g');
+    anchorLayer.setAttribute('class', 'pdfrx-anchors');
+    svg.appendChild(anchorLayer);
+    container.appendChild(svg);
+    const overlay: AnnotationPageOverlay = { pageNumber, pageGeom, pageSize, container, svg, anchorLayer, annotations: byId };
+    this.attachAnnotationEditing(overlay, pageNumber, pageGeom, pageSize);
+    this.refreshAnnotationSelection(overlay);
+    return overlay;
+  }
+
+  /**
+   * Builds the SVG element for one annotation in the overlay's point-space
+   * (page-local px == PDF points, y-down). Returns null for subtypes we do not
+   * paint.
+   */
+  private buildAnnotationShape(
+    a: PdfAnnotationObject,
+    pageGeom: PageGeometry,
+    pageSize: Size,
+  ): SVGGElement | null {
+    const toPx = (p: { x: number; y: number }): Offset =>
+      pdfPointToOffset(p, { page: pageGeom, scaledPageSize: pageSize });
+    const rectPx = (): Rect => pdfRectToRect(a.rect, { page: pageGeom, scaledPageSize: pageSize });
+    const stroke = colorCss(a.color, '#000000');
+    const fill = colorCss(a.interiorColor, null);
+    const width = Math.max(0, a.borderWidth);
+    const shapeStroke = width > 0 ? stroke : 'none';
+    const g = document.createElementNS(SVG_NS, 'g');
+    // PDF annotations expose one opacity for their entire appearance. Apply it
+    // at the group level so stroke and interior fill cannot drift apart.
+    const annotationAlpha = a.color?.a ?? a.interiorColor?.a ?? 255;
+    g.setAttribute('opacity', `${annotationAlpha / 255}`);
+    const add = (el: SVGElement): void => void g.appendChild(el);
+
+    const g2 = a.geometry;
+    switch (g2.kind) {
+      case 'ink': {
+        for (const strokePts of g2.strokes) {
+          if (strokePts.length < 2) continue;
+          const pl = document.createElementNS(SVG_NS, 'polyline');
+          pl.setAttribute('points', strokePts.map((p) => offsetPair(toPx(p))).join(' '));
+          pl.setAttribute('fill', 'none');
+          pl.setAttribute('stroke', shapeStroke);
+          pl.setAttribute('stroke-width', `${width}`);
+          pl.setAttribute('stroke-linejoin', 'round');
+          pl.setAttribute('stroke-linecap', 'round');
+          add(pl);
+        }
+        break;
+      }
+      case 'markup': {
+        const markupStroke = a.subtype === 'underline' || a.subtype === 'strikeout';
+        for (const q of g2.quads) {
+          if (markupStroke) {
+            // Underline/strikeout: a line across the quad.
+            const yFrac = a.subtype === 'underline' ? 0.92 : 0.5;
+            const left = toPx({ x: lerp(q.bottomLeft.x, q.topLeft.x, 0), y: lerp(q.bottomLeft.y, q.topLeft.y, yFrac) });
+            const right = toPx({ x: q.bottomRight.x, y: lerp(q.bottomRight.y, q.topRight.y, yFrac) });
+            const ln = document.createElementNS(SVG_NS, 'line');
+            ln.setAttribute('x1', `${left.x}`);
+            ln.setAttribute('y1', `${left.y}`);
+            ln.setAttribute('x2', `${right.x}`);
+            ln.setAttribute('y2', `${right.y}`);
+            ln.setAttribute('stroke', stroke);
+            ln.setAttribute('stroke-width', `${Math.max(width, 1)}`);
+            add(ln);
+          } else {
+            const poly = document.createElementNS(SVG_NS, 'polygon');
+            poly.setAttribute(
+              'points',
+              [q.topLeft, q.topRight, q.bottomRight, q.bottomLeft].map((p) => offsetPair(toPx(p))).join(' '),
+            );
+            poly.setAttribute('fill', stroke);
+            poly.setAttribute('fill-opacity', a.subtype === 'highlight' ? '0.4' : '0.25');
+            add(poly);
+          }
+        }
+        break;
+      }
+      case 'line': {
+        const s = toPx(g2.start);
+        const e = toPx(g2.end);
+        const ln = document.createElementNS(SVG_NS, 'line');
+        ln.setAttribute('x1', `${s.x}`);
+        ln.setAttribute('y1', `${s.y}`);
+        ln.setAttribute('x2', `${e.x}`);
+        ln.setAttribute('y2', `${e.y}`);
+        ln.setAttribute('stroke', shapeStroke);
+        ln.setAttribute('stroke-width', `${width}`);
+        ln.setAttribute('stroke-linecap', 'round');
+        add(ln);
+        break;
+      }
+      case 'polygon':
+      case 'polyline': {
+        if (g2.vertices.length >= 2) {
+          const el = document.createElementNS(SVG_NS, g2.kind === 'polygon' ? 'polygon' : 'polyline');
+          el.setAttribute('points', g2.vertices.map((p) => offsetPair(toPx(p))).join(' '));
+          el.setAttribute('fill', g2.kind === 'polygon' ? fill ?? 'none' : 'none');
+          el.setAttribute('stroke', shapeStroke);
+          el.setAttribute('stroke-width', `${width}`);
+          add(el);
+        }
+        break;
+      }
+      default: {
+        // Rect-defined subtypes (square, circle, freeText, text, stamp, …).
+        const box = rectPx();
+        if (a.subtype === 'circle') {
+          // PDFium keeps the annotation rect as the outer painted bounds and
+          // deflates the ellipse path by half the border width. SVG strokes are
+          // centered on their path, so mirror that inset explicitly.
+          const inset = width / 2;
+          const ell = document.createElementNS(SVG_NS, 'ellipse');
+          ell.setAttribute('cx', `${(box.left + box.right) / 2}`);
+          ell.setAttribute('cy', `${(box.top + box.bottom) / 2}`);
+          ell.setAttribute('rx', `${Math.max(0, Math.abs(rectWidth(box)) / 2 - inset)}`);
+          ell.setAttribute('ry', `${Math.max(0, Math.abs(rectHeight(box)) / 2 - inset)}`);
+          ell.setAttribute('fill', fill ?? 'none');
+          ell.setAttribute('stroke', shapeStroke);
+          ell.setAttribute('stroke-width', `${width}`);
+          add(ell);
+        } else if (a.subtype === 'text') {
+          // Sticky note: a small filled marker at the annotation's top-left.
+          const note = document.createElementNS(SVG_NS, 'rect');
+          const s = 16;
+          note.setAttribute('x', `${box.left}`);
+          note.setAttribute('y', `${box.top}`);
+          note.setAttribute('width', `${s}`);
+          note.setAttribute('height', `${s}`);
+          note.setAttribute('rx', '3');
+          note.setAttribute('fill', colorCss(a.color, '#ffd24a') ?? '#ffd24a');
+          note.setAttribute('stroke', '#8a6d1a');
+          add(note);
+        } else {
+          const inset = a.subtype === 'square' ? width / 2 : 0;
+          const rect = document.createElementNS(SVG_NS, 'rect');
+          rect.setAttribute('x', `${box.left + inset}`);
+          rect.setAttribute('y', `${box.top + inset}`);
+          rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - inset * 2)}`);
+          rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - inset * 2)}`);
+          rect.setAttribute('fill', fill ?? 'none');
+          rect.setAttribute('stroke', shapeStroke);
+          rect.setAttribute('stroke-width', `${width}`);
+          add(rect);
+          if (a.subtype === 'freeText' && a.contents) {
+            const text = document.createElementNS(SVG_NS, 'text');
+            text.setAttribute('x', `${box.left + 2}`);
+            text.setAttribute('y', `${box.top + 12}`);
+            text.setAttribute('fill', stroke);
+            text.setAttribute('font-size', '12');
+            text.textContent = a.contents;
+            add(text);
+          }
+        }
+      }
+    }
+    return g.childElementCount ? g : null;
+  }
+
+  /** Reloads/repaints annotation overlays on the affected pages after a change. */
+  private onAnnotationsChanged(): void {
+    // Drop cached annotations and overlays so the paint loop reloads them.
+    this.pageAnnotations.clear();
+    this.clearAnnotationOverlays();
+    this.invalidate();
+  }
+
+  /** Removes all annotation overlays. */
+  private clearAnnotationOverlays(): void {
+    this.annotationOverlayRoot.replaceChildren();
+    this.annotationOverlays.clear();
+    this.drawState = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Annotation editing (drawing tools, selection, move, delete).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Selects a drawing tool (or `null` for idle/viewing). While a drawing tool is
+   * active the annotation overlay captures pointer drags to create annotations.
+   * Setting a tool leaves select mode. Requires `interactiveAnnotations`.
+   */
+  setAnnotationTool(tool: AnnotationTool | null): void {
+    this.annotationMode = tool;
+    if (tool) this.setSelectedAnnotations([]);
+    this.invalidate();
+  }
+
+  /** The active drawing tool, or null (idle or select mode). */
+  getAnnotationTool(): AnnotationTool | null {
+    return this.annotationMode === 'select' ? null : this.annotationMode;
+  }
+
+  /**
+   * Enters (or leaves) annotation *select* mode: dragging on empty page area
+   * rubber-band-selects every overlapping annotation, and a multi-selection can
+   * be moved/resized as a group. Single-click selection works with or without it.
+   */
+  setAnnotationSelectMode(on: boolean): void {
+    this.annotationMode = on ? 'select' : null;
+    this.invalidate();
+  }
+
+  /** Whether annotation select mode is active. */
+  isAnnotationSelectMode(): boolean {
+    return this.annotationMode === 'select';
+  }
+
+  /** The active drawing tool, or null. @internal */
+  private drawingTool(): AnnotationTool | null {
+    return this.annotationMode === 'select' ? null : this.annotationMode;
+  }
+
+  /** Updates the style applied to newly drawn annotations. */
+  setAnnotationStyle(style: Partial<AnnotationStyle>): void {
+    this.annotationStyle = { ...this.annotationStyle, ...style };
+  }
+
+  /** The current annotation drawing style. */
+  getAnnotationStyle(): AnnotationStyle {
+    return { ...this.annotationStyle };
+  }
+
+  /**
+   * Applies a `color` and/or `strokeWidth` to every currently selected annotation
+   * as one undoable step. No-op when nothing is selected. Use alongside
+   * {@link setAnnotationStyle} (which only affects newly drawn annotations).
+   */
+  async applyStyleToSelection(style: Partial<AnnotationStyle>, historyMergeKey?: string): Promise<void> {
+    if (!this.doc || this.selectedAnnotationIds.size === 0) return;
+    const { color, opacity, fillColor, strokeWidth } = style;
+    if (
+      color === undefined &&
+      opacity === undefined &&
+      fillColor === undefined &&
+      strokeWidth === undefined
+    ) {
+      return;
+    }
+    const stroke = color !== undefined ? cssColorToRgba(color, opacity ?? this.annotationStyle.opacity) : undefined;
+    // `fillColor` is tri-state: undefined = leave, null = clear the fill, string = set it.
+    const fill =
+      fillColor === undefined
+        ? undefined
+        : fillColor === null
+          ? null
+          : cssColorToRgba(fillColor, opacity ?? this.annotationStyle.opacity);
+    const toAlpha = (v: number): number => Math.round(Math.max(0, Math.min(1, v)) * 255);
+    const targets = [...this.selectedAnnotationIds]
+      .map((id) => this.locateAnnotation(id))
+      .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null);
+    const group: AnnotationCommand[] = [];
+    for (const t of targets) {
+      const before = annotationToSpec(t.annotation);
+      const after = annotationToSpec(t.annotation);
+      if (stroke) after.color = stroke;
+      // Opacity belongs to the annotation as a whole. Re-alpha both authored
+      // colors so the SVG overlay and PDFium's single /CA value agree.
+      else if (opacity !== undefined && after.color) after.color = { ...after.color, a: toAlpha(opacity) };
+      if (fill !== undefined) after.interiorColor = fill;
+      else if (opacity !== undefined && after.interiorColor) {
+        after.interiorColor = { ...after.interiorColor, a: toAlpha(opacity) };
+      }
+      if (strokeWidth !== undefined) after.borderWidth = strokeWidth;
+      group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after });
+    }
+    if (group.length === 0) return;
+    const generation =
+      historyMergeKey === undefined ? 0 : (this.annotationStyleLatestGeneration.get(historyMergeKey) ?? 0) + 1;
+    if (historyMergeKey !== undefined) this.annotationStyleLatestGeneration.set(historyMergeKey, generation);
+    const update = async (): Promise<void> => {
+      // One write may already be in flight. Of the writes waiting behind it for
+      // this slider gesture, only apply the most recent value.
+      if (
+        historyMergeKey !== undefined &&
+        this.annotationStyleLatestGeneration.get(historyMergeKey) !== generation
+      ) {
+        return;
+      }
+      try {
+        if (!this.doc) return;
+        for (const cmd of group) {
+          const after = cmd.after!;
+          await this.doc.updateAnnotation(cmd.pageNumber, cmd.id, after);
+          const snapshot = this.annotationSnapshots.get(cmd.id);
+          if (snapshot) {
+            this.annotationSnapshots.set(cmd.id, {
+              pageNumber: cmd.pageNumber,
+              annotation: syntheticAnnotation(snapshot.annotation, after),
+            });
+          }
+        }
+        this.recordAnnotationCommandGroup(group, historyMergeKey);
+      } finally {
+        if (
+          historyMergeKey !== undefined &&
+          this.annotationStyleLatestGeneration.get(historyMergeKey) === generation
+        ) {
+          this.annotationStyleLatestGeneration.delete(historyMergeKey);
+        }
+      }
+    };
+    const pending = this.annotationStyleUpdateQueue.then(update, update);
+    this.annotationStyleUpdateQueue = pending.catch(() => undefined);
+    await pending;
+  }
+
+  /** The id of the first selected annotation, or null. */
+  getSelectedAnnotationId(): string | null {
+    for (const id of this.selectedAnnotationIds) return id;
+    return null;
+  }
+
+  /** The ids of all currently selected annotations. */
+  getSelectedAnnotationIds(): string[] {
+    return [...this.selectedAnnotationIds];
+  }
+
+  /** Selects (highlights) a single annotation by id, or clears with `null`. */
+  setSelectedAnnotation(id: string | null): void {
+    this.setSelectedAnnotations(id ? [id] : []);
+  }
+
+  /** Replaces the selection with `ids` and redraws anchor handles. */
+  setSelectedAnnotations(ids: Iterable<string>): void {
+    const next = new Set(ids);
+    if (next.size === this.selectedAnnotationIds.size && [...next].every((id) => this.selectedAnnotationIds.has(id))) {
+      return;
+    }
+    this.selectedAnnotationIds.clear();
+    for (const id of next) this.selectedAnnotationIds.add(id);
+    this.refreshAnnotationSelectionAll();
+  }
+
+  /**
+   * Highlights the current text selection: adds a `Highlight` markup annotation
+   * per page from the selected text's line rectangles (quadpoints), as one
+   * undoable step, then clears the text selection. No-op without a selection.
+   * `color` defaults to the current annotation drawing color.
+   */
+  async highlightSelection(color: string = this.annotationStyle.color): Promise<void> {
+    if (!this.doc || !this.selA || !this.selB) return;
+    const rgba = cssColorToRgba(color, this.annotationStyle.opacity);
+    const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
+    const group: AnnotationCommand[] = [];
+    for (const range of ranges) {
+      const quads: PdfAnnotationQuad[] = [];
+      for (const fr of enumerateFragmentBoundingRects({ pageText: range.pageText, start: range.start, end: range.end })) {
+        const b = fr.bounds; // bbox-relative PDF page coords (y-up, top >= bottom)
+        quads.push({
+          topLeft: { x: b.left, y: b.top },
+          topRight: { x: b.right, y: b.top },
+          bottomLeft: { x: b.left, y: b.bottom },
+          bottomRight: { x: b.right, y: b.bottom },
+        });
+      }
+      if (quads.length === 0) continue;
+      const pageNumber = range.pageText.pageNumber;
+      const rect = bboxOfPoints(quads.flatMap((q) => [q.topLeft, q.topRight, q.bottomLeft, q.bottomRight]));
+      const spec: PdfAnnotationSpec = { subtype: 'highlight', rect, color: rgba, geometry: { kind: 'markup', quads } };
+      const id = await this.doc.addAnnotation(pageNumber, spec);
+      group.push({ pageNumber, id, before: null, after: spec });
+    }
+    this.recordAnnotationCommandGroup(group);
+    this.clearSelection();
+  }
+
+  /** Whether the current text selection can be highlighted (has a selection + annotations on). */
+  canHighlightSelection(): boolean {
+    return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
+  }
+
+  /** Removes every selected annotation as one undoable step. */
+  async deleteSelectedAnnotation(): Promise<void> {
+    if (!this.doc || this.selectedAnnotationIds.size === 0) return;
+    const targets = [...this.selectedAnnotationIds]
+      .map((id) => this.locateAnnotation(id))
+      .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null);
+    if (targets.length === 0) return;
+    this.selectedAnnotationIds.clear();
+    const group: AnnotationCommand[] = [];
+    for (const t of targets) {
+      const before = annotationToSpec(t.annotation);
+      await this.doc.removeAnnotation(t.pageNumber, t.annotation.id);
+      group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after: null });
+    }
+    this.recordAnnotationCommandGroup(group);
+  }
+
+  /** Finds the page number and last known object of an annotation by id. */
+  private locateAnnotation(id: string): { pageNumber: number; annotation: PdfAnnotationObject } | null {
+    for (const [pageNumber, overlay] of this.annotationOverlays) {
+      const annotation = overlay.annotations.get(id);
+      if (annotation) return { pageNumber, annotation };
+    }
+    return this.annotationSnapshots.get(id) ?? null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Annotation undo / redo.
+  // -------------------------------------------------------------------------
+
+  /** Records a single-command edit as its own undo step. */
+  private recordAnnotationCommand(cmd: AnnotationCommand): void {
+    this.recordAnnotationCommandGroup([cmd]);
+  }
+
+  /** Records a group of commands as one atomic undo step (skips empty groups). */
+  private recordAnnotationCommandGroup(group: AnnotationCommand[], mergeKey?: string): void {
+    if (group.length === 0) return;
+    if (
+      mergeKey !== undefined &&
+      mergeKey === this.annotationHistoryMergeKey &&
+      this.annotationHistoryIndex === this.annotationHistory.length &&
+      this.annotationHistoryIndex > 0
+    ) {
+      const previous = this.annotationHistory[this.annotationHistoryIndex - 1]!;
+      const previousById = new Map(previous.map((cmd) => [`${cmd.pageNumber}:${cmd.id}`, cmd]));
+      this.annotationHistory[this.annotationHistoryIndex - 1] = group.map((cmd) => {
+        const first = previousById.get(`${cmd.pageNumber}:${cmd.id}`);
+        return first ? { ...cmd, before: first.before } : cmd;
+      });
+      return;
+    }
+    this.annotationHistory.length = this.annotationHistoryIndex;
+    this.annotationHistory.push(group);
+    this.annotationHistoryIndex++;
+    this.annotationHistoryMergeKey = mergeKey ?? null;
+  }
+
+  /** Whether an annotation edit can be undone. */
+  canUndoAnnotation(): boolean {
+    return this.annotationHistoryIndex > 0;
+  }
+
+  /** Whether an undone annotation edit can be redone. */
+  canRedoAnnotation(): boolean {
+    return this.annotationHistoryIndex < this.annotationHistory.length;
+  }
+
+  /** Undoes the last annotation edit (a whole group at once). */
+  async undoAnnotation(): Promise<void> {
+    if (!this.canUndoAnnotation()) return;
+    const group = this.annotationHistory[--this.annotationHistoryIndex]!;
+    this.setSelectedAnnotations([]);
+    for (let i = group.length - 1; i >= 0; i--) {
+      const cmd = group[i]!;
+      await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.before);
+    }
+  }
+
+  /** Redoes the last undone annotation edit (a whole group at once). */
+  async redoAnnotation(): Promise<void> {
+    if (!this.canRedoAnnotation()) return;
+    const group = this.annotationHistory[this.annotationHistoryIndex++]!;
+    this.setSelectedAnnotations([]);
+    for (const cmd of group) await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.after);
+  }
+
+  /**
+   * Drives the document to a target annotation state without touching the
+   * history: `null` removes the annotation, a spec creates/replaces it by id.
+   */
+  private async applyAnnotationState(pageNumber: number, id: string, spec: PdfAnnotationSpec | null): Promise<void> {
+    if (!this.doc) return;
+    this.selectedAnnotationIds.delete(id);
+    if (spec === null) await this.doc.removeAnnotation(pageNumber, id);
+    else await this.doc.updateAnnotation(pageNumber, id, spec);
+  }
+
+  /** Re-applies the selection outline + anchor handles across every overlay. */
+  private refreshAnnotationSelectionAll(): void {
+    for (const overlay of this.annotationOverlays.values()) this.refreshAnnotationSelection(overlay);
+  }
+
+  /** The selected annotations that live on this overlay's page. */
+  private selectedAnnotationsOn(overlay: AnnotationPageOverlay): PdfAnnotationObject[] {
+    const out: PdfAnnotationObject[] = [];
+    for (const id of this.selectedAnnotationIds) {
+      const a = overlay.annotations.get(id);
+      if (a) out.push(a);
+    }
+    return out;
+  }
+
+  /**
+   * Draws the selection's draggable anchor handles (the sole indication of
+   * selection): a single annotation gets its own shape handles; a multi-selection
+   * gets one group bounding box that moves/scales every member together.
+   */
+  private refreshAnnotationSelection(overlay: AnnotationPageOverlay): void {
+    overlay.anchorLayer.replaceChildren();
+    // Outline every selected shape so a multi-selection is visible around the box.
+    const multi = this.selectedAnnotationIds.size > 1;
+    for (const child of Array.from(overlay.svg.children)) {
+      const g = child as SVGGElement;
+      if (!g.dataset.annotId) continue;
+      const selected = this.selectedAnnotationIds.has(g.dataset.annotId);
+      g.style.filter = multi && selected ? 'drop-shadow(0 0 2px #2196f3)' : '';
+    }
+    const sel = this.selectedAnnotationsOn(overlay);
+    if (sel.length === 1) this.renderAnnotationAnchors(overlay, sel[0]!);
+    else if (sel.length > 1) this.renderGroupSelection(overlay, sel);
+  }
+
+  /**
+   * Draws a single blue guide box with eight handles around a multi-selection;
+   * dragging a handle scales every member, dragging the box body moves them all.
+   */
+  private renderGroupSelection(overlay: AnnotationPageOverlay, sel: PdfAnnotationObject[]): void {
+    const zoom = this.transform.zoom;
+    const b = unionBounds(sel.map((a) => annotationBounds(a)));
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    const tl = pdfPointToOffset({ x: b.left, y: b.top }, opts);
+    const br = pdfPointToOffset({ x: b.right, y: b.bottom }, opts);
+    const box = document.createElementNS(SVG_NS, 'rect');
+    box.setAttribute('x', `${Math.min(tl.x, br.x)}`);
+    box.setAttribute('y', `${Math.min(tl.y, br.y)}`);
+    box.setAttribute('width', `${Math.abs(br.x - tl.x)}`);
+    box.setAttribute('height', `${Math.abs(br.y - tl.y)}`);
+    box.setAttribute('fill', 'none');
+    box.setAttribute('stroke', '#2196f3');
+    box.setAttribute('stroke-opacity', '0.9');
+    box.setAttribute('stroke-width', `${1 / zoom}`);
+    box.setAttribute('stroke-dasharray', `${4 / zoom} ${3 / zoom}`);
+    box.style.pointerEvents = 'none';
+    overlay.anchorLayer.appendChild(box);
+    // Eight scaling handles around the group box.
+    const r = ANCHOR_SCREEN_PX / 2 / zoom;
+    boundingBoxHandlePoints(b).forEach((pt, index) => {
+      const px = pdfPointToOffset(pt, opts);
+      const c = document.createElementNS(SVG_NS, 'circle');
+      c.setAttribute('cx', `${px.x}`);
+      c.setAttribute('cy', `${px.y}`);
+      c.setAttribute('r', `${r}`);
+      c.setAttribute('fill', '#fff');
+      c.setAttribute('stroke', '#2196f3');
+      c.setAttribute('stroke-width', `${1.5 / zoom}`);
+      c.style.pointerEvents = 'auto';
+      c.style.cursor = 'grab';
+      c.addEventListener('pointerdown', (e) => {
+        if (this.drawingTool() || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.beginGroupResize(overlay, sel, b, index, c, e.pointerId);
+      });
+      overlay.anchorLayer.appendChild(c);
+    });
+  }
+
+  /** Draws a draggable circle for each control point of the selected annotation. */
+  private renderAnnotationAnchors(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): void {
+    const anchors = annotationAnchors(annotation);
+    // The overlay is scaled by zoom, so divide by it to keep a constant on-screen
+    // handle size regardless of zoom (updateAnnotationOverlays keeps it in sync).
+    const zoom = this.transform.zoom;
+    const r = ANCHOR_SCREEN_PX / 2 / zoom;
+    // A dashed bounding rectangle guides scaling of shapes whose bounds are not
+    // already obvious from the shape (freehand pen, ellipse — not a rectangle,
+    // not line/arrow).
+    if (annotationShowsBoundingBox(annotation)) {
+      const b = annotationBounds(annotation);
+      const tl = pdfPointToOffset({ x: b.left, y: b.top }, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      const br = pdfPointToOffset({ x: b.right, y: b.bottom }, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      const box = document.createElementNS(SVG_NS, 'rect');
+      box.setAttribute('x', `${Math.min(tl.x, br.x)}`);
+      box.setAttribute('y', `${Math.min(tl.y, br.y)}`);
+      box.setAttribute('width', `${Math.abs(br.x - tl.x)}`);
+      box.setAttribute('height', `${Math.abs(br.y - tl.y)}`);
+      box.setAttribute('fill', 'none');
+      box.setAttribute('stroke', '#2196f3');
+      box.setAttribute('stroke-opacity', '0.9');
+      box.setAttribute('stroke-width', `${1 / zoom}`);
+      box.setAttribute('stroke-dasharray', `${4 / zoom} ${3 / zoom}`);
+      box.style.pointerEvents = 'none';
+      overlay.anchorLayer.appendChild(box);
+    }
+    anchors.forEach((anchor, index) => {
+      const px = pdfPointToOffset(anchor.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      const c = document.createElementNS(SVG_NS, 'circle');
+      c.setAttribute('cx', `${px.x}`);
+      c.setAttribute('cy', `${px.y}`);
+      c.setAttribute('r', `${r}`);
+      c.setAttribute('fill', '#fff');
+      c.setAttribute('stroke', '#2196f3');
+      c.setAttribute('stroke-width', `${1.5 / this.transform.zoom}`);
+      c.style.pointerEvents = 'auto';
+      c.style.cursor = 'grab';
+      c.addEventListener('pointerdown', (e) => {
+        if (this.drawingTool() || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.beginAnchorDrag(overlay, annotation, index, c, e.pointerId);
+      });
+      overlay.anchorLayer.appendChild(c);
+    });
+  }
+
+  /** Drags one anchor (control point), reshaping just that point, then commits. */
+  private beginAnchorDrag(
+    overlay: AnnotationPageOverlay,
+    annotation: PdfAnnotationObject,
+    index: number,
+    circle: SVGCircleElement,
+    pointerId: number,
+  ): void {
+    const anchor = annotationAnchors(annotation)[index];
+    if (!anchor) return;
+    try {
+      circle.setPointerCapture(pointerId);
+    } catch {
+      /* ignore */
+    }
+    circle.style.cursor = 'grabbing';
+    let lastSpec: PdfAnnotationSpec | null = null;
+    const move = (e: PointerEvent): void => {
+      const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const to = offsetToPdfPoint(px, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      lastSpec = anchor.reshape(to);
+      const display = syntheticAnnotation(annotation, lastSpec);
+      this.previewAnnotationShape(overlay, annotation, lastSpec);
+      // Move every anchor (and the bounding box) to follow the reshaped geometry.
+      this.updateAnchorPositions(overlay, display);
+    };
+    const up = (): void => {
+      circle.removeEventListener('pointermove', move);
+      circle.removeEventListener('pointerup', up);
+      circle.removeEventListener('pointercancel', up);
+      circle.style.cursor = 'grab';
+      if (!lastSpec || !this.doc) return;
+      const before = annotationToSpec(annotation);
+      const after = lastSpec;
+      void this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after).then(() => {
+        this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
+      });
+    };
+    circle.addEventListener('pointermove', move);
+    circle.addEventListener('pointerup', up);
+    circle.addEventListener('pointercancel', up);
+  }
+
+  /** Replaces the selected annotation's shape with a live preview from `spec`. */
+  private previewAnnotationShape(overlay: AnnotationPageOverlay, base: PdfAnnotationObject, spec: PdfAnnotationSpec): void {
+    const old = Array.from(overlay.svg.children).find(
+      (c) => (c as SVGGElement).dataset?.annotId === base.id,
+    ) as SVGGElement | undefined;
+    if (!old) return;
+    const fresh = this.buildAnnotationShape(syntheticAnnotation(base, spec), overlay.pageGeom, overlay.pageSize);
+    if (!fresh) return;
+    fresh.dataset.annotId = base.id;
+    fresh.style.pointerEvents = 'auto';
+    overlay.svg.replaceChild(fresh, old);
+  }
+
+  /**
+   * Moves the existing anchor circles (and the bounding-box guide) to match
+   * `annotation` in place — used during a live resize so every handle follows,
+   * not just the dragged one. Does not rebuild the DOM (preserves pointer capture).
+   */
+  private updateAnchorPositions(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): void {
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    const anchors = annotationAnchors(annotation);
+    const circles = overlay.anchorLayer.querySelectorAll('circle');
+    anchors.forEach((a, i) => {
+      const c = circles[i];
+      if (!c) return;
+      const px = pdfPointToOffset(a.point, opts);
+      c.setAttribute('cx', `${px.x}`);
+      c.setAttribute('cy', `${px.y}`);
+    });
+    const box = overlay.anchorLayer.querySelector('rect');
+    if (box) {
+      const b = annotationBounds(annotation);
+      const tl = pdfPointToOffset({ x: b.left, y: b.top }, opts);
+      const br = pdfPointToOffset({ x: b.right, y: b.bottom }, opts);
+      box.setAttribute('x', `${Math.min(tl.x, br.x)}`);
+      box.setAttribute('y', `${Math.min(tl.y, br.y)}`);
+      box.setAttribute('width', `${Math.abs(br.x - tl.x)}`);
+      box.setAttribute('height', `${Math.abs(br.y - tl.y)}`);
+    }
+  }
+
+  /** Wires pointer editing onto a freshly built page overlay. */
+  private attachAnnotationEditing(overlay: AnnotationPageOverlay, pageNumber: number, pageGeom: PageGeometry, pageSize: Size): void {
+    const svg = overlay.svg;
+    // Any pointerdown within the overlay (shape / anchor / marquee) focuses the
+    // canvas so its keyboard shortcuts (Delete to remove the selection, undo/redo)
+    // work — the shapes' stopPropagation otherwise keeps focus away in capture-off
+    // handlers, so this runs in the capture phase, before them.
+    svg.addEventListener('pointerdown', () => this.canvas.focus({ preventScroll: true }), true);
+    // On the SVG surface (empty page area, since shapes stop propagation): draw
+    // when a tool is active, rubber-band-select in select mode.
+    svg.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const start = this.clientToPagePx(svg, e.clientX, e.clientY);
+      if (this.drawingTool()) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.beginDraw(pageNumber, overlay, pageGeom, pageSize, start, e.pointerId);
+      } else if (this.isAnnotationSelectMode()) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.beginMarquee(overlay, start, e.pointerId);
+      }
+    });
+    svg.addEventListener('pointermove', (e) => {
+      if (!this.drawState || this.drawState.svg !== svg) return;
+      this.updateDraw(this.clientToPagePx(svg, e.clientX, e.clientY));
+    });
+    const finish = (e: PointerEvent): void => {
+      if (!this.drawState || this.drawState.svg !== svg) return;
+      void this.commitDraw(this.clientToPagePx(svg, e.clientX, e.clientY));
+    };
+    svg.addEventListener('pointerup', finish);
+    svg.addEventListener('pointercancel', finish);
+    // Selection + move: per-shape, so empty areas still pan/select text.
+    for (const child of Array.from(svg.children)) {
+      const g = child as SVGGElement;
+      const id = g.dataset.annotId;
+      if (!id) continue;
+      // Shapes stay interactive even while the SVG surface is click-through, so
+      // they can be selected without blocking pan/text-select on empty areas.
+      g.style.pointerEvents = 'auto';
+      g.style.cursor = 'pointer';
+      g.addEventListener('pointerdown', (e) => {
+        if (this.drawingTool() || e.button !== 0) return; // drawing mode handled above
+        e.preventDefault();
+        e.stopPropagation();
+        const start = this.clientToPagePx(svg, e.clientX, e.clientY);
+        // Dragging a member of a multi-selection moves the whole group; otherwise
+        // select just this shape and move it.
+        if (this.selectedAnnotationIds.size > 1 && this.selectedAnnotationIds.has(id)) {
+          this.beginGroupMove(overlay, this.selectedAnnotationsOn(overlay), start, e.pointerId);
+        } else {
+          this.setSelectedAnnotation(id);
+          this.beginMove(pageNumber, overlay, pageGeom, pageSize, g, id, start, e.pointerId);
+        }
+      });
+    }
+  }
+
+  /** Maps client (screen) coordinates to the overlay SVG's page-local px space. */
+  private clientToPagePx(svg: SVGSVGElement, clientX: number, clientY: number): Offset {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const local = pt.matrixTransform(ctm.inverse());
+    return { x: local.x, y: local.y };
+  }
+
+  private beginDraw(
+    pageNumber: number,
+    overlay: AnnotationPageOverlay,
+    pageGeom: PageGeometry,
+    pageSize: Size,
+    start: Offset,
+    pointerId: number,
+  ): void {
+    const tool = this.drawingTool()!;
+    const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight' || tool === 'freeText';
+    const previewTag = tool === 'ellipse' ? 'ellipse' : isShape ? 'rect' : tool === 'ink' ? 'polyline' : 'line';
+    const preview = document.createElementNS(SVG_NS, previewTag);
+    const previewFill =
+      tool === 'highlight'
+        ? this.annotationStyle.color
+        : (tool === 'rectangle' || tool === 'ellipse') && this.annotationStyle.fillColor
+          ? this.annotationStyle.fillColor
+          : 'none';
+    preview.setAttribute('fill', previewFill);
+    if (tool === 'highlight') preview.setAttribute('fill-opacity', '0.4');
+    else if (previewFill !== 'none') preview.setAttribute('fill-opacity', `${this.annotationStyle.opacity}`);
+    preview.setAttribute('stroke', this.annotationStyle.strokeWidth > 0 ? this.annotationStyle.color : 'none');
+    preview.setAttribute('stroke-opacity', `${this.annotationStyle.opacity}`);
+    preview.setAttribute('stroke-width', `${this.annotationStyle.strokeWidth}`);
+    preview.setAttribute('stroke-linejoin', 'round');
+    preview.setAttribute('stroke-linecap', 'round');
+    overlay.svg.appendChild(preview);
+    try {
+      overlay.svg.setPointerCapture(pointerId);
+    } catch {
+      /* capture is best-effort */
+    }
+    this.drawState = { pageNumber, tool, pageGeom, pageSize, svg: overlay.svg, points: [start], preview, pointerId };
+    if (tool === 'note') {
+      // Click-to-place: no drag needed; commit immediately at pointerup.
+    }
+    this.updateDraw(start);
+  }
+
+  private updateDraw(current: Offset): void {
+    const s = this.drawState;
+    if (!s) return;
+    if (s.tool === 'ink') {
+      s.points.push(current);
+      (s.preview as SVGPolylineElement).setAttribute('points', s.points.map(offsetPair).join(' '));
+      return;
+    }
+    const start = s.points[0]!;
+    if (s.tool === 'line' || s.tool === 'arrow') {
+      const ln = s.preview as SVGLineElement;
+      ln.setAttribute('x1', `${start.x}`);
+      ln.setAttribute('y1', `${start.y}`);
+      ln.setAttribute('x2', `${current.x}`);
+      ln.setAttribute('y2', `${current.y}`);
+      return;
+    }
+    // Rect-like preview (rectangle/ellipse/highlight/freeText).
+    const left = Math.min(start.x, current.x);
+    const top = Math.min(start.y, current.y);
+    const w = Math.abs(current.x - start.x);
+    const h = Math.abs(current.y - start.y);
+    if (s.tool === 'ellipse') {
+      const inset = this.annotationStyle.strokeWidth / 2;
+      const ell = s.preview as SVGEllipseElement;
+      ell.setAttribute('cx', `${left + w / 2}`);
+      ell.setAttribute('cy', `${top + h / 2}`);
+      ell.setAttribute('rx', `${Math.max(0, w / 2 - inset)}`);
+      ell.setAttribute('ry', `${Math.max(0, h / 2 - inset)}`);
+    } else {
+      const inset = s.tool === 'rectangle' ? this.annotationStyle.strokeWidth / 2 : 0;
+      const r = s.preview as SVGRectElement;
+      r.setAttribute('x', `${left + inset}`);
+      r.setAttribute('y', `${top + inset}`);
+      r.setAttribute('width', `${Math.max(0, w - inset * 2)}`);
+      r.setAttribute('height', `${Math.max(0, h - inset * 2)}`);
+    }
+  }
+
+  private async commitDraw(end: Offset): Promise<void> {
+    const s = this.drawState;
+    this.drawState = null;
+    if (!s || !this.doc) return;
+    try {
+      s.svg.releasePointerCapture(s.pointerId);
+    } catch {
+      /* ignore */
+    }
+    s.preview.remove();
+    const spec = this.buildSpecFromDraw(s, end);
+    if (!spec) return;
+    const id = await this.doc.addAnnotation(s.pageNumber, spec);
+    this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
+  }
+
+  /** Converts a completed drawing gesture into an annotation spec (PDF coords). */
+  private buildSpecFromDraw(s: DrawState, end: Offset): PdfAnnotationSpec | null {
+    const toPdf = (o: Offset): PdfPoint => offsetToPdfPoint(o, { page: s.pageGeom, scaledPageSize: s.pageSize });
+    const color = cssColorToRgba(this.annotationStyle.color, this.annotationStyle.opacity);
+    const borderWidth = this.annotationStyle.strokeWidth;
+    const start = s.points[0]!;
+    const rectOf = (a: Offset, b: Offset) => {
+      const p1 = toPdf(a);
+      const p2 = toPdf(b);
+      return {
+        left: Math.min(p1.x, p2.x),
+        top: Math.max(p1.y, p2.y),
+        right: Math.max(p1.x, p2.x),
+        bottom: Math.min(p1.y, p2.y),
+      };
+    };
+    switch (s.tool) {
+      case 'ink': {
+        if (s.points.length < 2) return null;
+        const stroke = s.points.map(toPdf);
+        return { subtype: 'ink', rect: bboxOfPoints(stroke), color, borderWidth, geometry: { kind: 'ink', strokes: [stroke] } };
+      }
+      case 'line': {
+        const stroke = [toPdf(start), toPdf(end)];
+        return { subtype: 'ink', rect: bboxOfPoints(stroke), color, borderWidth, geometry: { kind: 'ink', strokes: [stroke] } };
+      }
+      case 'arrow': {
+        const strokes = arrowInkStrokes(toPdf(start), toPdf(end));
+        return { subtype: 'ink', rect: bboxOfPoints(strokes.flat()), color, borderWidth, geometry: { kind: 'ink', strokes } };
+      }
+      case 'rectangle':
+      case 'ellipse': {
+        const interiorColor = this.annotationStyle.fillColor
+          ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
+          : undefined;
+        return {
+          subtype: s.tool === 'rectangle' ? 'square' : 'circle',
+          rect: rectOf(start, end),
+          color,
+          interiorColor,
+          borderWidth,
+        };
+      }
+      case 'highlight': {
+        const r = rectOf(start, end);
+        if (r.right - r.left < 1 || r.top - r.bottom < 1) return null;
+        return {
+          subtype: 'highlight',
+          rect: r,
+          color,
+          geometry: {
+            kind: 'markup',
+            quads: [
+              {
+                topLeft: { x: r.left, y: r.top },
+                topRight: { x: r.right, y: r.top },
+                bottomLeft: { x: r.left, y: r.bottom },
+                bottomRight: { x: r.right, y: r.bottom },
+              },
+            ],
+          },
+        };
+      }
+      case 'note': {
+        const p = toPdf(start);
+        const text = typeof prompt === 'function' ? prompt('Note text:') : '';
+        if (text == null) return null;
+        return {
+          subtype: 'text',
+          rect: { left: p.x, top: p.y, right: p.x + 18, bottom: p.y - 18 },
+          color,
+          contents: text,
+        };
+      }
+      case 'freeText': {
+        const r = rectOf(start, end);
+        const text = typeof prompt === 'function' ? prompt('Text:') : '';
+        if (text == null) return null;
+        return { subtype: 'freeText', rect: r, color, contents: text };
+      }
+    }
+  }
+
+  private beginMove(
+    pageNumber: number,
+    overlay: AnnotationPageOverlay,
+    pageGeom: PageGeometry,
+    pageSize: Size,
+    g: SVGGElement,
+    id: string,
+    start: Offset,
+    pointerId: number,
+  ): void {
+    const annotation = overlay.annotations.get(id);
+    if (!annotation) return;
+    try {
+      g.setPointerCapture(pointerId);
+    } catch {
+      /* ignore */
+    }
+    const move = (e: PointerEvent): void => {
+      const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const transform = `translate(${cur.x - start.x} ${cur.y - start.y})`;
+      g.setAttribute('transform', transform);
+      // Move the anchors + bounding box rigidly with the shape.
+      overlay.anchorLayer.setAttribute('transform', transform);
+    };
+    const up = (e: PointerEvent): void => {
+      g.removeEventListener('pointermove', move);
+      g.removeEventListener('pointerup', up);
+      g.removeEventListener('pointercancel', up);
+      const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const dxPx = cur.x - start.x;
+      const dyPx = cur.y - start.y;
+      if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
+        // A click, not a move: undo the (tiny) live transform.
+        g.removeAttribute('transform');
+        overlay.anchorLayer.removeAttribute('transform');
+        return;
+      }
+      // A real move: keep the live transform so the shape/anchors hold their new
+      // spot until the reload replaces this overlay (avoids a snap-back flicker).
+      const scale = pageSize.height / pageGeom.height;
+      const dx = dxPx / scale;
+      const dy = -dyPx / scale;
+      void this.commitMove(pageNumber, annotation, dx, dy);
+    };
+    g.addEventListener('pointermove', move);
+    g.addEventListener('pointerup', up);
+    g.addEventListener('pointercancel', up);
+  }
+
+  private async commitMove(pageNumber: number, a: PdfAnnotationObject, dx: number, dy: number): Promise<void> {
+    if (!this.doc) return;
+    const before = annotationToSpec(a);
+    const after = translateAnnotationSpec(a, dx, dy);
+    await this.doc.updateAnnotation(pageNumber, a.id, after);
+    this.recordAnnotationCommand({ pageNumber, id: a.id, before, after });
+  }
+
+  // -------------------------------------------------------------------------
+  // Marquee (rubber-band) selection and group move/resize.
+  // -------------------------------------------------------------------------
+
+  /** Rubber-band selection: drag a rectangle; select every overlapping annotation. */
+  private beginMarquee(overlay: AnnotationPageOverlay, start: Offset, pointerId: number): void {
+    this.setSelectedAnnotations([]);
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('fill', 'rgba(33, 150, 243, 0.12)');
+    rect.setAttribute('stroke', '#2196f3');
+    rect.setAttribute('stroke-width', `${1 / this.transform.zoom}`);
+    rect.setAttribute('stroke-dasharray', `${4 / this.transform.zoom} ${3 / this.transform.zoom}`);
+    rect.style.pointerEvents = 'none';
+    overlay.anchorLayer.appendChild(rect);
+    try {
+      overlay.svg.setPointerCapture(pointerId);
+    } catch {
+      /* best-effort */
+    }
+    const place = (cur: Offset): { left: number; top: number; right: number; bottom: number } => {
+      const left = Math.min(start.x, cur.x);
+      const top = Math.min(start.y, cur.y);
+      rect.setAttribute('x', `${left}`);
+      rect.setAttribute('y', `${top}`);
+      rect.setAttribute('width', `${Math.abs(cur.x - start.x)}`);
+      rect.setAttribute('height', `${Math.abs(cur.y - start.y)}`);
+      return { left, top, right: Math.max(start.x, cur.x), bottom: Math.max(start.y, cur.y) };
+    };
+    place(start);
+    const move = (e: PointerEvent): void => {
+      place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+    };
+    const up = (e: PointerEvent): void => {
+      overlay.svg.removeEventListener('pointermove', move);
+      overlay.svg.removeEventListener('pointerup', up);
+      overlay.svg.removeEventListener('pointercancel', up);
+      const boxPx = place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+      rect.remove();
+      // Select every annotation whose on-page px bounds overlap the marquee.
+      const hit: string[] = [];
+      for (const [id, a] of overlay.annotations) {
+        const shapeBox = this.annotationPxBounds(a, overlay);
+        if (shapeBox && rectsOverlap(boxPx, shapeBox)) hit.push(id);
+      }
+      this.setSelectedAnnotations(hit);
+    };
+    overlay.svg.addEventListener('pointermove', move);
+    overlay.svg.addEventListener('pointerup', up);
+    overlay.svg.addEventListener('pointercancel', up);
+  }
+
+  /** On-page px bounding box of an annotation, or null. */
+  private annotationPxBounds(a: PdfAnnotationObject, overlay: AnnotationPageOverlay): { left: number; top: number; right: number; bottom: number } | null {
+    const b = annotationBounds(a);
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    const p1 = pdfPointToOffset({ x: b.left, y: b.top }, opts);
+    const p2 = pdfPointToOffset({ x: b.right, y: b.bottom }, opts);
+    return { left: Math.min(p1.x, p2.x), top: Math.min(p1.y, p2.y), right: Math.max(p1.x, p2.x), bottom: Math.max(p1.y, p2.y) };
+  }
+
+  /** Drags the whole multi-selection rigidly, committing one grouped move. */
+  private beginGroupMove(overlay: AnnotationPageOverlay, sel: PdfAnnotationObject[], start: Offset, pointerId: number): void {
+    const svg = overlay.svg;
+    const groups = new Map<string, SVGGElement>();
+    for (const child of Array.from(svg.children)) {
+      const g = child as SVGGElement;
+      if (g.dataset.annotId && this.selectedAnnotationIds.has(g.dataset.annotId)) groups.set(g.dataset.annotId, g);
+    }
+    try {
+      svg.setPointerCapture(pointerId);
+    } catch {
+      /* best-effort */
+    }
+    const move = (e: PointerEvent): void => {
+      const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
+      const transform = `translate(${cur.x - start.x} ${cur.y - start.y})`;
+      for (const g of groups.values()) g.setAttribute('transform', transform);
+      overlay.anchorLayer.setAttribute('transform', transform);
+    };
+    const up = (e: PointerEvent): void => {
+      svg.removeEventListener('pointermove', move);
+      svg.removeEventListener('pointerup', up);
+      svg.removeEventListener('pointercancel', up);
+      const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
+      const dxPx = cur.x - start.x;
+      const dyPx = cur.y - start.y;
+      if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
+        for (const g of groups.values()) g.removeAttribute('transform');
+        overlay.anchorLayer.removeAttribute('transform');
+        return;
+      }
+      const scale = overlay.pageSize.height / overlay.pageGeom.height;
+      const dx = dxPx / scale;
+      const dy = -dyPx / scale;
+      void this.commitGroupTransform(overlay, sel, (a) => translateAnnotationSpec(a, dx, dy));
+    };
+    svg.addEventListener('pointermove', move);
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+  }
+
+  /** Drags one group-box handle, scaling every selected annotation together. */
+  private beginGroupResize(
+    overlay: AnnotationPageOverlay,
+    sel: PdfAnnotationObject[],
+    box: PdfRect,
+    index: number,
+    circle: SVGCircleElement,
+    pointerId: number,
+  ): void {
+    try {
+      circle.setPointerCapture(pointerId);
+    } catch {
+      /* best-effort */
+    }
+    circle.style.cursor = 'grabbing';
+    let newBox: PdfRect | null = null;
+    const move = (e: PointerEvent): void => {
+      const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const to = offsetToPdfPoint(px, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      newBox = resizeBoxByHandle(box, index, to);
+      // Live-preview every member scaled into the new group box.
+      for (const a of sel) this.previewAnnotationShape(overlay, a, scaleAnnotationSpec(a, box, newBox));
+      this.updateGroupAnchorPositions(overlay, newBox);
+    };
+    const up = (): void => {
+      circle.removeEventListener('pointermove', move);
+      circle.removeEventListener('pointerup', up);
+      circle.removeEventListener('pointercancel', up);
+      circle.style.cursor = 'grab';
+      if (!newBox) return;
+      const target = newBox;
+      void this.commitGroupTransform(overlay, sel, (a) => scaleAnnotationSpec(a, box, target));
+    };
+    circle.addEventListener('pointermove', move);
+    circle.addEventListener('pointerup', up);
+    circle.addEventListener('pointercancel', up);
+  }
+
+  /** Moves the group box + its handles to a new box in place (during a resize). */
+  private updateGroupAnchorPositions(overlay: AnnotationPageOverlay, box: PdfRect): void {
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    const rectEl = overlay.anchorLayer.querySelector('rect');
+    if (rectEl) {
+      const tl = pdfPointToOffset({ x: box.left, y: box.top }, opts);
+      const br = pdfPointToOffset({ x: box.right, y: box.bottom }, opts);
+      rectEl.setAttribute('x', `${Math.min(tl.x, br.x)}`);
+      rectEl.setAttribute('y', `${Math.min(tl.y, br.y)}`);
+      rectEl.setAttribute('width', `${Math.abs(br.x - tl.x)}`);
+      rectEl.setAttribute('height', `${Math.abs(br.y - tl.y)}`);
+    }
+    const circles = overlay.anchorLayer.querySelectorAll('circle');
+    boundingBoxHandlePoints(box).forEach((pt, i) => {
+      const c = circles[i];
+      if (!c) return;
+      const px = pdfPointToOffset(pt, opts);
+      c.setAttribute('cx', `${px.x}`);
+      c.setAttribute('cy', `${px.y}`);
+    });
+  }
+
+  /** Applies `makeSpec` to every member of the selection as one undoable group. */
+  private async commitGroupTransform(
+    overlay: AnnotationPageOverlay,
+    sel: PdfAnnotationObject[],
+    makeSpec: (a: PdfAnnotationObject) => PdfAnnotationSpec,
+  ): Promise<void> {
+    if (!this.doc) return;
+    const group: AnnotationCommand[] = [];
+    for (const a of sel) {
+      const before = annotationToSpec(a);
+      const after = makeSpec(a);
+      await this.doc.updateAnnotation(overlay.pageNumber, a.id, after);
+      group.push({ pageNumber: overlay.pageNumber, id: a.id, before, after });
+    }
+    this.recordAnnotationCommandGroup(group);
   }
 
   /**

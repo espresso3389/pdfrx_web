@@ -24,6 +24,8 @@ export interface PdfToolbarProps {
   showSearch?: boolean;
   /** Show the print button. Defaults to `true`. */
   showPrint?: boolean;
+  /** Controls placed right after the search field, set apart from print/children by a gap. */
+  afterSearch?: ReactNode;
   /** Extra controls, placed at the end of the bar. */
   children?: ReactNode;
 }
@@ -57,6 +59,7 @@ export function PdfToolbar({
   showZoomControls = true,
   showSearch = true,
   showPrint = true,
+  afterSearch,
   children,
 }: PdfToolbarProps): ReactNode {
   // Only meaningful on a narrow screen: whether the collapsed search field is
@@ -90,6 +93,9 @@ export function PdfToolbar({
             <IconSearch />
           </button>
         )}
+        {afterSearch && <span className="pdfrx-toolbar-gap" aria-hidden />}
+        {afterSearch}
+        {afterSearch && <span className="pdfrx-toolbar-gap" aria-hidden />}
         {showPrint && <PdfPrintButton />}
         {children}
         {sidebarTogglePosition === 'end' && sidebarToggle}

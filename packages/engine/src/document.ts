@@ -9,6 +9,10 @@ import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
   isWireError,
   PdfErrorCode,
+  type WireAnnotationGeometry,
+  type WireAnnotationObject,
+  type WireAnnotationSpec,
+  type WireColor,
   type WireDest,
   type WireDocument,
   type WireFontQueries,
@@ -21,12 +25,20 @@ import {
 import {
   annotationRenderingModeToIndex,
   decodeFormFieldFlags,
+  pdfAnnotationSubtypeFromName,
   PdfImage,
   PdfPasswordException,
   pdfFormFieldTypeFromCode,
   pdfPageRotationFromIndex,
   pdfPageRotationToIndex,
+  type PdfAnnotationColor,
+  type PdfAnnotationGeometry,
+  type PdfAnnotationObject,
+  type PdfAnnotationPoint,
+  type PdfAnnotationQuad,
   type PdfAnnotationRenderingMode,
+  type PdfAnnotationSpec,
+  type PdfAnnotationSubtype,
   type PdfDest,
   type PdfDocumentEventMap,
   type PdfDocumentEventName,
@@ -1007,6 +1019,101 @@ export class PdfDocument {
   }
 
   /**
+   * Loads all content annotations (ink, shapes, text markup, notes, free text —
+   * not widgets/links/popups) across the document's loaded pages, each tagged
+   * with its 1-based `pageNumber`. Annotations on pages imported from another
+   * document are skipped (they carry their own annotation state, like form
+   * fields). Returns `[]` for a disposed document.
+   */
+  async loadAnnotations(): Promise<PdfAnnotationObject[]> {
+    if (this._isDisposed) return [];
+    const all: PdfAnnotationObject[] = [];
+    for (const page of this._pages) {
+      if (page.document.docHandle !== this.docHandle) continue; // imported pages carry their own annotations
+      all.push(...(await page.loadAnnotations()));
+    }
+    return all;
+  }
+
+  /**
+   * Creates an annotation on `pageNumber` (1-based) from `spec` and returns its
+   * id (the `/NM` key). The worker generates the annotation's appearance stream,
+   * so it is included by {@link encodePdf} and renders in other PDF viewers.
+   * Only ink / markup / square / circle / freeText / text geometries are honored
+   * — see {@link PdfAnnotationSpec}. Fires `annotationsChanged` (`source: 'api'`).
+   */
+  async addAnnotation(pageNumber: number, spec: PdfAnnotationSpec): Promise<string> {
+    if (this._isDisposed) throw new Error('Document is disposed');
+    const page = this.pageForAnnotation(pageNumber);
+    const result = await this.sendCommand('addAnnotation', {
+      docHandle: this.docHandle,
+      pageIndex: page.sourcePageIndex,
+      spec: page.annotationSpecToWire(spec),
+    });
+    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    return result.id;
+  }
+
+  /**
+   * Replaces the annotation `id` on `pageNumber` with a fresh one built from
+   * `spec`, keeping the same id. Geometry has no in-place setter, so an edit is a
+   * remove + recreate; pass the full new spec (e.g. moved/resized geometry).
+   * Fires `annotationsChanged` (`source: 'api'`).
+   */
+  async updateAnnotation(pageNumber: number, id: string, spec: PdfAnnotationSpec): Promise<string> {
+    if (this._isDisposed) throw new Error('Document is disposed');
+    const page = this.pageForAnnotation(pageNumber);
+    const result = await this.sendCommand('updateAnnotation', {
+      docHandle: this.docHandle,
+      pageIndex: page.sourcePageIndex,
+      id,
+      spec: page.annotationSpecToWire(spec),
+    });
+    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    return result.id;
+  }
+
+  /**
+   * Removes the annotation `id` from `pageNumber`. Returns whether it was found.
+   * Fires `annotationsChanged` (`source: 'api'`).
+   */
+  async removeAnnotation(pageNumber: number, id: string): Promise<boolean> {
+    if (this._isDisposed) throw new Error('Document is disposed');
+    const page = this.pageForAnnotation(pageNumber);
+    const result = await this.sendCommand('removeAnnotation', {
+      docHandle: this.docHandle,
+      pageIndex: page.sourcePageIndex,
+      id,
+    });
+    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    return result.ok;
+  }
+
+  /**
+   * Bulk-creates annotations (one {@link addAnnotation} per item) and returns
+   * their ids in order. Convenience for importing an exported annotation set.
+   */
+  async importAnnotations(items: readonly { pageNumber: number; spec: PdfAnnotationSpec }[]): Promise<string[]> {
+    const ids: string[] = [];
+    for (const item of items) ids.push(await this.addAnnotation(item.pageNumber, item.spec));
+    return ids;
+  }
+
+  /**
+   * Resolves a 1-based page number to a host-document page usable for annotation
+   * writes (imported pages are rejected, matching `loadAnnotations`).
+   * @internal
+   */
+  private pageForAnnotation(pageNumber: number): PdfPage {
+    const page = this._pages[pageNumber - 1];
+    if (!page) throw new Error(`Invalid page number: ${pageNumber}`);
+    if (page.document.docHandle !== this.docHandle) {
+      throw new Error(`Cannot edit annotations on imported page ${pageNumber}`);
+    }
+    return page;
+  }
+
+  /**
    * Sends one form-field write to the worker (find the field's page, dispatch
    * the typed command). No calculation or event — the primitive shared by
    * {@link setFormFieldValue} and {@link runFormCalculations}.
@@ -1502,6 +1609,150 @@ export class PdfPage {
   }
 
   /**
+   * Loads the content annotations on this page (ink, shapes, text markup, notes,
+   * free text — not widgets/links/popups), with rects and geometry in
+   * bounding-box-relative page coordinates (like {@link loadLinks}). Returns an
+   * empty array if the document is disposed or the page is not yet loaded.
+   */
+  async loadAnnotations(): Promise<PdfAnnotationObject[]> {
+    if (this.document.isDisposed || !this.isLoaded) return [];
+    const result = await this.document.sendCommand('loadAnnotations', {
+      docHandle: this.document.docHandle,
+      pageIndex: this.sourcePageIndex,
+    });
+    return result.annotations.map((a) => this.annotationFromWire(a));
+  }
+
+  /** @internal Converts a wire annotation (raw coords) to the public model (bbox-relative). */
+  private annotationFromWire(a: WireAnnotationObject): PdfAnnotationObject {
+    return {
+      id: a.id,
+      pageNumber: this.pageNumber,
+      subtype: pdfAnnotationSubtypeFromName(a.subtype),
+      rect: this.rectFromWire(a.rect),
+      color: colorFromWire(a.color),
+      interiorColor: colorFromWire(a.interiorColor),
+      borderWidth: a.borderWidth,
+      flags: a.flags,
+      contents: a.contents,
+      author: a.author,
+      subject: a.subject,
+      modificationDate: a.modificationDate,
+      creationDate: a.creationDate,
+      geometry: this.annotationGeometryFromWire(a.geometry),
+    };
+  }
+
+  /** @internal */
+  private annotationGeometryFromWire(g: WireAnnotationGeometry): PdfAnnotationGeometry {
+    switch (g.kind) {
+      case 'ink':
+        return { kind: 'ink', strokes: g.strokes.map((s) => this.pointsFromFlat(s)) };
+      case 'markup':
+        return { kind: 'markup', quads: g.quads.map((q) => this.quadFromWire(q)) };
+      case 'line':
+        return {
+          kind: 'line',
+          start: this.pointFromWire(g.line[0], g.line[1]),
+          end: this.pointFromWire(g.line[2], g.line[3]),
+        };
+      case 'polygon':
+        return { kind: 'polygon', vertices: this.pointsFromFlat(g.vertices) };
+      case 'polyline':
+        return { kind: 'polyline', vertices: this.pointsFromFlat(g.vertices) };
+      default:
+        return { kind: 'none' };
+    }
+  }
+
+  /**
+   * @internal Converts an annotation spec (bbox-relative page coords) to the wire
+   * form (raw page coords) the worker's create/replace commands expect.
+   */
+  annotationSpecToWire(spec: PdfAnnotationSpec): WireAnnotationSpec {
+    return {
+      subtype: spec.subtype,
+      rect: spec.rect ? this.rectToWire(spec.rect) : undefined,
+      color: spec.color === undefined ? undefined : spec.color === null ? null : colorToWire(spec.color),
+      interiorColor:
+        spec.interiorColor === undefined ? undefined : spec.interiorColor === null ? null : colorToWire(spec.interiorColor),
+      borderWidth: spec.borderWidth,
+      flags: spec.flags,
+      contents: spec.contents,
+      author: spec.author,
+      geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
+    };
+  }
+
+  /** @internal */
+  private annotationGeometryToWire(g: PdfAnnotationGeometry): WireAnnotationGeometry {
+    switch (g.kind) {
+      case 'ink':
+        return { kind: 'ink', strokes: g.strokes.map((s) => this.flatFromPoints(s)) };
+      case 'markup':
+        return { kind: 'markup', quads: g.quads.map((q) => this.quadToWire(q)) };
+      case 'line': {
+        const [sx, sy] = this.toRawPagePoint(g.start.x, g.start.y);
+        const [ex, ey] = this.toRawPagePoint(g.end.x, g.end.y);
+        return { kind: 'line', line: [sx, sy, ex, ey] };
+      }
+      case 'polygon':
+        return { kind: 'polygon', vertices: this.flatFromPoints(g.vertices) };
+      case 'polyline':
+        return { kind: 'polyline', vertices: this.flatFromPoints(g.vertices) };
+      default:
+        return { kind: 'none' };
+    }
+  }
+
+  /** @internal */
+  private pointFromWire(x: number, y: number): PdfAnnotationPoint {
+    return { x: x - this.bbLeft, y: y - this.bbBottom };
+  }
+
+  /** @internal */
+  private pointsFromFlat(flat: number[]): PdfAnnotationPoint[] {
+    const pts: PdfAnnotationPoint[] = [];
+    for (let i = 0; i + 1 < flat.length; i += 2) pts.push(this.pointFromWire(flat[i]!, flat[i + 1]!));
+    return pts;
+  }
+
+  /** @internal */
+  private quadFromWire(q: number[]): PdfAnnotationQuad {
+    return {
+      topLeft: this.pointFromWire(q[0]!, q[1]!),
+      topRight: this.pointFromWire(q[2]!, q[3]!),
+      bottomLeft: this.pointFromWire(q[4]!, q[5]!),
+      bottomRight: this.pointFromWire(q[6]!, q[7]!),
+    };
+  }
+
+  /** @internal */
+  private flatFromPoints(pts: PdfAnnotationPoint[]): number[] {
+    const flat: number[] = [];
+    for (const p of pts) {
+      const [x, y] = this.toRawPagePoint(p.x, p.y);
+      flat.push(x, y);
+    }
+    return flat;
+  }
+
+  /** @internal */
+  private quadToWire(q: PdfAnnotationQuad): number[] {
+    return [
+      ...this.toRawPagePoint(q.topLeft.x, q.topLeft.y),
+      ...this.toRawPagePoint(q.topRight.x, q.topRight.y),
+      ...this.toRawPagePoint(q.bottomLeft.x, q.bottomLeft.y),
+      ...this.toRawPagePoint(q.bottomRight.x, q.bottomRight.y),
+    ];
+  }
+
+  /** @internal Converts a bbox-relative {@link PdfRect} to a raw wire rect. */
+  private rectToWire(r: PdfRect): WireRect {
+    return [r.left + this.bbLeft, r.top + this.bbBottom, r.right + this.bbLeft, r.bottom + this.bbBottom];
+  }
+
+  /**
    * Converts a wire rect (raw page coordinates) to a {@link PdfRect} relative to
    * the page's bounding-box origin ({@link bbLeft} / {@link bbBottom}).
    * @internal
@@ -1533,6 +1784,16 @@ export class PdfPage {
   toRawPagePoint(x: number, y: number): [number, number] {
     return [x + this.bbLeft, y + this.bbBottom];
   }
+}
+
+/** @internal */
+function colorFromWire(c: WireColor | null): PdfAnnotationColor | null {
+  return c ? { r: c[0], g: c[1], b: c[2], a: c[3] } : null;
+}
+
+/** @internal */
+function colorToWire(c: PdfAnnotationColor): WireColor {
+  return [c.r, c.g, c.b, c.a];
 }
 
 /**

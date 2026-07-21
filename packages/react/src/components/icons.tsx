@@ -125,6 +125,119 @@ export const IconSave = (): ReactNode => (
   </Icon>
 );
 
+/** @internal Annotate toggle: a freehand scribble. */
+export const IconAnnotate = (): ReactNode => (
+  <Icon>
+    <path d="M3 16C5 7 7.5 6 9.5 9c2 3 1.5 8 4 8s2-9 4.5-9c2 0 2.5 4 3 6" />
+  </Icon>
+);
+
+/** @internal Text-selection mode: an I-beam cursor. */
+export const IconCursorText = (): ReactNode => (
+  <Icon>
+    <path d="M9 5c2 0 3 .8 3 2 0-1.2 1-2 3-2M9 19c2 0 3-.8 3-2 0 1.2 1 2 3 2M12 7v10" />
+  </Icon>
+);
+
+/** @internal Object-select mode: a marquee with a pointer. */
+export const IconSelectObject = (): ReactNode => (
+  <Icon>
+    <rect x="4" y="4" width="11" height="11" rx="1" strokeDasharray="3 2.5" />
+    <path d="M13.5 13.5l7 2.6-3.1 1.3-1.3 3.1z" />
+  </Icon>
+);
+
+/** @internal Freehand pen tool. */
+export const IconPen = (): ReactNode => (
+  <Icon>
+    <path d="M4 20h4L19.5 8.5a2.1 2.1 0 00-3-3L5 17z" />
+    <path d="M14.5 7.5l3 3" />
+  </Icon>
+);
+
+/** @internal Rectangle tool. */
+export const IconRectangle = (): ReactNode => (
+  <Icon>
+    <rect x="4" y="6" width="16" height="12" rx="1" />
+  </Icon>
+);
+
+/** @internal Ellipse tool. */
+export const IconEllipse = (): ReactNode => (
+  <Icon>
+    <ellipse cx="12" cy="12" rx="8" ry="6" />
+  </Icon>
+);
+
+/** @internal Line tool. */
+export const IconLine = (): ReactNode => (
+  <Icon>
+    <path d="M5 19L19 5" />
+  </Icon>
+);
+
+/** @internal Arrow tool. */
+export const IconArrowTool = (): ReactNode => (
+  <Icon>
+    <path d="M5 19L19 5M19 5h-6.5M19 5v6.5" />
+  </Icon>
+);
+
+/** @internal Note (comment bubble) tool. */
+export const IconNote = (): ReactNode => (
+  <Icon>
+    <path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-7l-4 4v-4H6a2 2 0 01-2-2z" />
+  </Icon>
+);
+
+/** @internal Text box tool. */
+export const IconTextBox = (): ReactNode => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="M9 9.5h6M12 9.5V15" />
+  </Icon>
+);
+
+/** @internal Highlighter (text-markup) — kept for apps that opt the tool in. */
+export const IconHighlighter = (): ReactNode => (
+  <Icon>
+    <path d="M15 4l5 5-8.5 8.5H7V13z" />
+    <path d="M4 20h7" />
+  </Icon>
+);
+
+/** @internal Annotation opacity. */
+export const IconOpacity = (): ReactNode => (
+  <Icon>
+    <path d="M12 3C9 7 6 10.2 6 14a6 6 0 0012 0c0-3.8-3-7-6-11z" />
+    <path d="M8.5 15.5a3.8 3.8 0 003.5 2.3" />
+  </Icon>
+);
+
+/** @internal Annotation stroke thickness. */
+export const IconThickness = (): ReactNode => (
+  <Icon>
+    <path d="M5 7h14M5 12h14M5 17h14" />
+    <path d="M5 7v.5M5 12v1.5M5 17v3" />
+  </Icon>
+);
+
+/** @internal Undo. */
+export const IconUndo = (): ReactNode => (
+  <Icon>
+    <path d="M9 14L4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 015.5 5.5V19" />
+  </Icon>
+);
+
+/** @internal Redo. */
+export const IconRedo = (): ReactNode => (
+  <Icon>
+    <path d="M15 14l5-5-5-5" />
+    <path d="M20 9H9.5A5.5 5.5 0 004 14.5V19" />
+  </Icon>
+);
+
 /** @internal */
 export const IconRotate = (): ReactNode => (
   <Icon>

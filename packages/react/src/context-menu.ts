@@ -55,6 +55,10 @@ export function buildDefaultContextMenu(
     context.close();
     void viewer.copySelection().then(() => viewer.clearSelection());
   });
+  addItem(strings.highlight, viewer.canHighlightSelection(), () => {
+    context.close();
+    void viewer.highlightSelection();
+  });
   addItem(strings.selectAll, true, () => {
     context.close();
     void viewer.selectAll();

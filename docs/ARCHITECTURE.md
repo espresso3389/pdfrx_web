@@ -143,6 +143,87 @@ controls so their values stay visible. Toggle with `PdfDocument.formCalculationE
 Arbitrary custom field scripts and `/AA/F` format actions are **not** run — that
 would require shipping a JS engine.
 
+## Annotations
+
+Content annotations (ink, shapes, text markup, notes, free text — everything but
+widgets/links/popups) are read, created, edited and exported, mirroring the form
+design. New worker functions sit in a `// [pdfrx_web: annotation support]` block
+next to the form block:
+
+- **Reads** (`loadAnnotations`) reuse the existing enumeration primitives
+  (`FPDFPage_GetAnnot*`, `FPDFAnnot_GetSubtype/GetRect/GetStringValue`) and add
+  subtype geometry: ink strokes (`FPDFAnnot_GetInkListPath`), markup quadpoints
+  (`FPDFAnnot_GetAttachmentPoints`), line/vertices. Widgets, links and popups are
+  skipped (surfaced through the form/link paths).
+- **Writes** (`addAnnotation` / `updateAnnotation` / `removeAnnotation`) go
+  through `FPDFPage_CreateAnnot` + `FPDFAnnot_Set*` / `AddInkStroke` /
+  `AppendAttachmentPoints` / `RemoveAnnot`. The public API only sets the
+  geometries PDFium can author: **ink** (also how the viewer realizes line/arrow
+  — there is no `/L` or `/Vertices` setter), **markup** quads, and rect-defined
+  **square/circle/freeText/text**. An edit is a remove + recreate keeping the same
+  id (geometry has no in-place setter), so the client sends the full new spec.
+- **Identity.** On creation the worker stamps a generated `/NM` id, returned as
+  `PdfAnnotationObject.id`; reads fall back to `@<index>` for annotations without
+  one. This survives the index shifts that removals cause.
+- **Appearance / export.** After each edit the worker forces PDFium to generate
+  and persist `/AP` streams by drawing the page once into a 1×1 `FPDF_ANNOT`
+  bitmap. Because `encodePdf` runs `FPDF_SaveAsCopy` on the same live document,
+  created annotations are in the exported bytes *and* render in third-party
+  viewers. Colors are additionally stored in private `pdfrx:C` / `pdfrx:IC` keys,
+  because `FPDFAnnot_GetColor` refuses to report a color once an `/AP` exists.
+
+The engine surfaces `PdfPage.loadAnnotations()`,
+`PdfDocument.loadAnnotations()` / `addAnnotation()` / `updateAnnotation()` /
+`removeAnnotation()` / `importAnnotations()`, and an `annotationsChanged` event;
+`@pdfrx/react` exposes the `useAnnotations` hook and a `PdfAnnotationToolbar`.
+
+**Painted through an SVG overlay, not the canvas.** Like forms, `@pdfrx/viewer`
+lays a per-page `<svg>` over each page in a dedicated `annotationOverlayRoot`
+layer, positioned in point-space and transformed to follow pan/zoom exactly like
+`updateFormOverlays` (`updateAnnotationOverlays` mirrors it). While the overlay is
+on (the `interactiveAnnotations` option, default on) the canvas renders with a new
+`'formsOnly'` mode — form widgets via `FPDF_FFLDraw` but **not** `FPDF_ANNOT` — so
+annotations come only from the SVG and per-edit updates never re-render the page
+(no flicker). A drawing tool (`setAnnotationTool`) makes the SVG capture pointer
+drags to create annotations; with no tool, a selected annotation shows draggable
+**anchor handles** — the sole selection indicator — sized to a constant 8px
+on-screen regardless of zoom. Freehand pen, rectangle, ellipse and other
+rect/markup shapes expose the eight bounding-box handles (corners + edge
+midpoints) and drag = uniform **scale** of the whole shape; a handle may cross
+the opposite edge freely (no ordering is preserved). Pen and ellipse also draw a
+dashed bounding rectangle to show that box (a rectangle already is its box).
+Straight lines and arrows (authored as 2-point / multi-stroke ink, distinguished
+by `inkStrokeKind`) and polygons keep per-endpoint/per-vertex handles (`annotationAnchors` — each anchor's `reshape`
+returns the full edited spec). Dragging the body moves the whole annotation and
+Delete removes it; empty areas fall through to the canvas for pan/text-select. Edits write back
+through the engine and the `annotationsChanged` event rebuilds the affected
+page's SVG.
+
+**Text highlight** is not a drawing tool — it is proper text markup. The user
+selects text (normal mode) and picks *Highlight* from the right-click context
+menu; `PdfrxViewer.highlightSelection(color?)` turns the selection into per-line
+quadpoints (`getSelectedRanges` + `enumerateFragmentBoundingRects`, the same
+geometry that paints the selection) and adds one `Highlight` markup annotation
+per page as a single undo group. `canHighlightSelection()` gates the menu item.
+
+**Select mode & multi-selection.** `setAnnotationSelectMode(true)` (the toolbar's
+Select button) enters a mode where dragging empty page area draws a rubber-band
+marquee and selects every overlapping annotation; single-click select still works
+with or without it. The selection is a `Set<id>`. A single selection shows the
+annotation's own handles; a multi-selection shows one group bounding box whose
+eight handles scale every member together (`scaleAnnotationSpec` maps each
+member's own rect/geometry through the group's affine transform) and whose body
+drag moves them all. Anchors follow live during both.
+
+**Undo/redo** is unlimited and lives in the viewer as a stack of command
+*groups* — each group is one or more `{pageNumber, id, before, after}` commands
+(a full annotation spec, or `null` for "absent") applied/undone atomically, so a
+multi-object move/resize/delete is a single step. Because `updateAnnotation`
+creates the annotation when its id is not found, replaying any state is uniformly
+"remove (null) or create/replace by id", so create/delete/move/reshape all undo
+and redo the same way. `undoAnnotation()`/`redoAnnotation()` drive the document
+to the neighbouring group state without recording.
+
 ## Known limitations
 
 - Form calculations cover only Acrobat's `AFSimple_Calculate` (SUM/PRD/AVG/MIN/MAX);
@@ -150,8 +231,14 @@ would require shipping a JS engine.
   in the WASM build). The HTML-overlay controls approximate rather than
   pixel-match the PDF's field styling (font, border). Comb fields, rich text and
   editable combo boxes are not yet handled.
-- Scroll physics beyond exponential-decay fling (no platform-specific curves),
-  annotation editing.
+- Annotations: the SVG overlay renders the geometries pdfrx_web understands
+  (ink, markup, square/circle, line/polygon, note/free-text). Subtypes it cannot
+  reproduce faithfully — image stamps, and any type drawn only from an `/AP`
+  stream — show as a plain rectangle outline while the overlay is on, because the
+  canvas no longer draws them. Line/arrow are stored as ink annotations (no
+  PDFium geometry setter for `Line`/`Polygon`). Move/resize assume an unrotated
+  page.
+- Scroll physics beyond exponential-decay fling (no platform-specific curves).
 
 For the full list of features that upstream [pdfrx](https://github.com/espresso3389/pdfrx)
 has but this port does not yet — and which are deliberately out of scope — see
