@@ -11,14 +11,18 @@ import {
   type WireDest,
   type WireDocument,
   type WireFontQueries,
+  type WireFormField,
+  type WireFormNotification,
   type WireOutlineNode,
   type WirePageInfo,
   type WireRect,
 } from './protocol.js';
 import {
   annotationRenderingModeToIndex,
+  decodeFormFieldFlags,
   PdfImage,
   PdfPasswordException,
+  pdfFormFieldTypeFromCode,
   pdfPageRotationFromIndex,
   pdfPageRotationToIndex,
   type PdfAnnotationRenderingMode,
@@ -27,6 +31,8 @@ import {
   type PdfDocumentEventName,
   type PdfDownloadProgressCallback,
   type PdfFontQuery,
+  type PdfFormField,
+  type PdfFormFieldValue,
   type PdfLink,
   type PdfOutlineNode,
   type PdfPageRawText,
@@ -388,6 +394,59 @@ export class PdfDocument {
     this._pages = wire.pages.map((p) => new PdfPage(this, p));
     this.nativePageCount = this._pages.length;
     this.updateMissingFonts(wire.missingFonts);
+    if (this.formHandle) this.ensureFormNotify();
+  }
+
+  /**
+   * Registers (once) the worker-side callback that relays form invalidate/change
+   * notifications for this document, so interactive edits repaint and
+   * `formFieldsChanged` fires. No-op for documents without a form environment.
+   * @internal
+   */
+  private ensureFormNotify(): void {
+    if (this.formNotifyCallbackId !== null || !this.formHandle || this._isDisposed) return;
+    const callbackId = this.comm.registerCallback((notification: WireFormNotification) =>
+      this.handleFormNotification(notification),
+    );
+    this.formNotifyCallbackId = callbackId;
+    // Fire-and-forget: the worker stores the id against this document's form context.
+    void this.comm.sendCommand('registerFormNotify', { docHandle: this.docHandle, callbackId }).catch(() => {});
+  }
+
+  /**
+   * Dispatches a form notification relayed from the worker's form-fill callbacks.
+   * @internal
+   */
+  private handleFormNotification(notification: WireFormNotification): void {
+    if (this._isDisposed) return;
+    if (notification.kind === 'change') {
+      this.emit('formFieldsChanged', { source: 'user' });
+      return;
+    }
+    // invalidate: map the physical page index back onto the arrangement.
+    const pageNumber = this.pageNumberOfSourceIndex(notification.pageIndex);
+    if (pageNumber === null) return;
+    const page = this._pages[pageNumber - 1];
+    if (!page) return;
+    const rect = page.wireRectToPdf(notification.rect);
+    for (const listener of this.formInvalidateListeners) {
+      try {
+        listener(pageNumber, rect);
+      } catch (e) {
+        console.error('Error in form invalidate listener:', e);
+      }
+    }
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Subscribes to form dirty-region
+   * redraws (page number + rect in PDF page coordinates). Returns an unsubscribe.
+   * @internal
+   */
+  addFormInvalidateListener(listener: (pageNumber: number, rect: PdfRect) => void): () => void {
+    this.ensureFormNotify();
+    this.formInvalidateListeners.add(listener);
+    return () => this.formInvalidateListeners.delete(listener);
   }
 
   private readonly comm: WorkerCommunicator;
@@ -415,6 +474,12 @@ export class PdfDocument {
   private readonly borrowers = new Set<PdfDocument>();
   private _isDisposed = false;
   private loadLock: Promise<void> = Promise.resolve();
+  /** Callback id registered with the worker to relay form invalidate/change notifications. */
+  private formNotifyCallbackId: number | null = null;
+  /** Internal listeners (the viewer) wanting form dirty-region redraws. */
+  private readonly formInvalidateListeners = new Set<(pageNumber: number, rect: PdfRect) => void>();
+  /** Cache of field name → physical page index, populated by {@link loadFormFields}. */
+  private readonly formFieldSourceIndex = new Map<string, number>();
 
   /** Encryption/permission info, or `null` if the document is not encrypted. */
   readonly permissions: PdfPermissions | null;
@@ -674,6 +739,11 @@ export class PdfDocument {
     for (const lender of this.borrowedFrom) lender.borrowers.delete(this);
     this.borrowedFrom.clear();
     this.borrowers.clear();
+    this.formInvalidateListeners.clear();
+    if (this.formNotifyCallbackId !== null) {
+      this.comm.unregisterCallback(this.formNotifyCallbackId);
+      this.formNotifyCallbackId = null;
+    }
     const promise = this.comm.sendCommand('closeDocument', {
       docHandle: this.docHandle,
       formHandle: this.formHandle,
@@ -874,6 +944,160 @@ export class PdfDocument {
       removeSecurity: options.removeSecurity ?? false,
     });
     return new Uint8Array(result.data);
+  }
+
+  /**
+   * Loads all AcroForm fields across the document's currently loaded pages,
+   * grouped by fully-qualified name (widgets that share a name — e.g. a radio
+   * group — merge into one field). Returns an empty array for documents without
+   * a form. Reflects live values, including ones changed by
+   * {@link setFormFieldValue} or interactive editing.
+   */
+  async loadFormFields(): Promise<PdfFormField[]> {
+    if (this._isDisposed || !this.formHandle) return [];
+    const byName = new Map<string, { field: PdfFormField; rects: PdfRect[] }>();
+    const ordered: { field: PdfFormField; rects: PdfRect[] }[] = [];
+    for (const page of this._pages) {
+      if (page.document.docHandle !== this.docHandle) continue; // imported pages carry their own form state
+      const fields = await page.loadFormFields();
+      for (const field of fields) {
+        if (field.name) this.formFieldSourceIndex.set(field.name, page.sourcePageIndex);
+        // Merge widgets of the same named field that span pages (rare).
+        const existing = field.name ? byName.get(field.name) : undefined;
+        if (existing) {
+          existing.rects.push(...field.rects);
+        } else {
+          const entry = { field, rects: [...field.rects] };
+          if (field.name) byName.set(field.name, entry);
+          ordered.push(entry);
+        }
+      }
+    }
+    return ordered.map(({ field, rects }) => ({ ...field, rects }));
+  }
+
+  /** Returns the current value of the named field, or `undefined` if it is not found. */
+  async getFormFieldValue(name: string): Promise<string | undefined> {
+    const fields = await this.loadFormFields();
+    return fields.find((f) => f.name === name)?.value;
+  }
+
+  /**
+   * Sets the value of the field identified by fully-qualified `name`, routed
+   * through the form-fill module so the widget appearance regenerates and the
+   * change is visible on the next render. Fires `formFieldsChanged`
+   * (`source: 'api'`). The interpretation of `value` depends on the field type —
+   * see {@link PdfFormFieldValue}.
+   */
+  async setFormFieldValue(name: string, value: PdfFormFieldValue): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    let sourcePageIndex = this.formFieldSourceIndex.get(name);
+    if (sourcePageIndex === undefined) {
+      await this.loadFormFields(); // populate the cache
+      sourcePageIndex = this.formFieldSourceIndex.get(name);
+      if (sourcePageIndex === undefined) throw new Error(`Form field not found: ${name}`);
+    }
+    const params: {
+      docHandle: number;
+      formHandle: number;
+      pageIndex: number;
+      fieldName: string;
+      value?: string;
+      checked?: boolean;
+      selectedLabels?: string[];
+    } = { docHandle: this.docHandle, formHandle: this.formHandle, pageIndex: sourcePageIndex, fieldName: name };
+    if (typeof value === 'boolean') params.checked = value;
+    else if (Array.isArray(value)) params.selectedLabels = value;
+    else params.value = value;
+    await this.sendCommand('setFormFieldValue', params);
+    const pageNumber = this.pageNumberOfSourceIndex(sourcePageIndex);
+    this.emit('formFieldsChanged', {
+      source: 'api',
+      ...(pageNumber !== null ? { pageNumbers: [pageNumber] } : {}),
+    });
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Opens `page` for interactive
+   * form editing so pointer/keyboard events can be routed to it. Idempotent.
+   * @internal
+   */
+  async formOpenPage(page: PdfPage): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    await this.sendCommand('formOpenPage', {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      pageIndex: page.sourcePageIndex,
+    });
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Closes an interactive form page.
+   * @internal
+   */
+  async formClosePage(page: PdfPage): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    await this.sendCommand('formClosePage', {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      pageIndex: page.sourcePageIndex,
+    });
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Forwards a pointer event; `x`/`y`
+   * are in the page's bounding-box-relative PDF coordinates (same space as
+   * {@link PdfFormField.rects}), y-up.
+   * @internal
+   */
+  async formPointerEvent(
+    page: PdfPage,
+    type: 'down' | 'up' | 'move' | 'doubleClick',
+    x: number,
+    y: number,
+    modifier = 0,
+  ): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    const [rawX, rawY] = page.toRawPagePoint(x, y);
+    await this.sendCommand('formPointerEvent', {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      pageIndex: page.sourcePageIndex,
+      type,
+      x: rawX,
+      y: rawY,
+      modifier,
+    });
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Forwards a keyboard event.
+   * @internal
+   */
+  async formKeyEvent(
+    page: PdfPage,
+    type: 'char' | 'keyDown' | 'keyUp',
+    code: number,
+    modifier = 0,
+  ): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    await this.sendCommand('formKeyEvent', {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      pageIndex: page.sourcePageIndex,
+      type,
+      code,
+      modifier,
+    });
+  }
+
+  /**
+   * Reserved for internal use only (the viewer). Clears the form keyboard focus.
+   * @internal
+   */
+  async formKillFocus(): Promise<void> {
+    if (this._isDisposed || !this.formHandle) return;
+    await this.sendCommand('formKillFocus', { docHandle: this.docHandle, formHandle: this.formHandle });
   }
 
   /**
@@ -1196,6 +1420,22 @@ export class PdfPage {
   }
 
   /**
+   * Loads the AcroForm fields whose widgets sit on this page, grouped by
+   * fully-qualified name. Rects are in PDF page coordinates (bounding-box
+   * relative, like {@link loadLinks}). Returns an empty array if the document is
+   * disposed, has no form, or the page is not yet loaded.
+   */
+  async loadFormFields(): Promise<PdfFormField[]> {
+    if (this.document.isDisposed || !this.isLoaded || !this.document.formHandle) return [];
+    const result = await this.document.sendCommand('loadFormFields', {
+      docHandle: this.document.docHandle,
+      formHandle: this.document.formHandle,
+      pageIndex: this.sourcePageIndex,
+    });
+    return groupWireFormFields(result.fields, this);
+  }
+
+  /**
    * Converts a wire rect (raw page coordinates) to a {@link PdfRect} relative to
    * the page's bounding-box origin ({@link bbLeft} / {@link bbBottom}).
    * @internal
@@ -1208,6 +1448,87 @@ export class PdfPage {
       bottom: r[3] - this.bbBottom,
     };
   }
+
+  /**
+   * Reserved for internal use only. Converts a wire rect to a bounding-box-relative
+   * {@link PdfRect} (see {@link rectFromWire}); used by the form invalidate relay.
+   * @internal
+   */
+  wireRectToPdf(r: WireRect): PdfRect {
+    return this.rectFromWire(r);
+  }
+
+  /**
+   * Reserved for internal use only. Converts a bounding-box-relative page point
+   * (as used by {@link PdfFormField.rects} / {@link loadLinks}) back to raw PDF
+   * page coordinates, which the form-fill `FORM_On*` input APIs expect.
+   * @internal
+   */
+  toRawPagePoint(x: number, y: number): [number, number] {
+    return [x + this.bbLeft, y + this.bbBottom];
+  }
+}
+
+/**
+ * Groups per-widget wire fields into public {@link PdfFormField}s keyed by
+ * fully-qualified name (radio-group buttons and other same-named widgets merge),
+ * converting rects to the page's bounding-box-relative coordinates.
+ * @internal
+ */
+function groupWireFormFields(wireFields: WireFormField[], page: PdfPage): PdfFormField[] {
+  const byName = new Map<string, WireFormField[]>();
+  const order: string[] = [];
+  wireFields.forEach((field, index) => {
+    // Unnamed fields are never merged: give each its own bucket.
+    const key = field.name ? `n:${field.name}` : `i:${index}`;
+    let group = byName.get(key);
+    if (!group) {
+      group = [];
+      byName.set(key, group);
+      order.push(key);
+    }
+    group.push(field);
+  });
+  return order.map((key) => buildFormField(byName.get(key)!, page));
+}
+
+/**
+ * Builds one {@link PdfFormField} from a group of same-named wire widgets.
+ * @internal
+ */
+function buildFormField(group: WireFormField[], page: PdfPage): PdfFormField {
+  const first = group[0]!;
+  const type = pdfFormFieldTypeFromCode(first.fieldType);
+  const rects = group.map((w) => page.wireRectToPdf(w.rect));
+  const flags = decodeFormFieldFlags(first.flags);
+  const base: PdfFormField = {
+    name: first.name,
+    type,
+    pageNumber: page.pageNumber,
+    rects,
+    value: first.value,
+    alternateName: first.alternateName || null,
+    flags,
+  };
+  if (type === 'checkBox') {
+    return { ...base, isChecked: !!first.isChecked, exportValue: first.exportValue || null };
+  }
+  if (type === 'radioButton') {
+    const options = group.map((w) => ({
+      label: w.exportValue ?? '',
+      selected: (w.exportValue ?? '') === first.value && first.value !== '',
+    }));
+    const selected = options.find((o) => o.selected);
+    return { ...base, isChecked: !!selected, exportValue: selected?.label ?? null, options };
+  }
+  if (type === 'comboBox' || type === 'listBox') {
+    return { ...base, options: (first.options ?? []).map((o) => ({ label: o.label, selected: o.selected })) };
+  }
+  if (type === 'textField') {
+    // /Ff bit 13 (value 1<<12) — Multiline.
+    return { ...base, multiline: (first.flags & 0x1000) !== 0 };
+  }
+  return base;
 }
 
 /**

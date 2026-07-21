@@ -115,6 +115,34 @@ export interface WireLink {
   annotation?: WireAnnotation | null;
 }
 
+/** One option of a choice (combo/list) form field on the wire. */
+export interface WireFormFieldOption {
+  label: string;
+  selected: boolean;
+}
+
+/** A form field widget on the wire (one per widget annotation). Basis for `PdfFormField`. */
+export interface WireFormField {
+  /** Fully-qualified field name (`/T` chain); empty when unnamed. */
+  name: string;
+  /** Raw `FPDF_FORMFIELD_*` type code. */
+  fieldType: number;
+  /** Raw `FPDF_FORMFLAG_*` bit flags. */
+  flags: number;
+  /** Widget rectangle in raw page coordinates (not yet bounding-box adjusted). */
+  rect: WireRect;
+  /** Current field value (`/V`). */
+  value: string;
+  /** Alternate name / tooltip (`/TU`). */
+  alternateName: string;
+  /** Checkbox/radio only: whether this widget is the checked state. */
+  isChecked?: boolean;
+  /** Checkbox/radio only: this widget's export ("on") value. */
+  exportValue?: string;
+  /** Combo/list only: the selectable options. */
+  options?: WireFormFieldOption[];
+}
+
 /** Byte order of raw pixel data handed to the worker. */
 export type WirePixelFormat = 'rgba8888' | 'bgra8888';
 
@@ -333,7 +361,90 @@ export interface WorkerCommandMap {
     };
     result: { data: ArrayBuffer };
   };
+  /** Enumerates the AcroForm widget fields on one page. */
+  loadFormFields: {
+    params: { docHandle: number; formHandle: number; pageIndex: number };
+    result: { fields: WireFormField[] };
+  };
+  /**
+   * Sets a form field's value by fully-qualified name, routed through the
+   * form-fill module so the widget appearance regenerates and `FFI_OnChange`
+   * fires. Which of `value`/`checked`/`selectedLabels` is used depends on the
+   * field's actual type.
+   */
+  setFormFieldValue: {
+    params: {
+      docHandle: number;
+      formHandle: number;
+      pageIndex: number;
+      fieldName: string;
+      /** Text value (text field, editable combo) or the export value to select (radio, single choice). */
+      value?: string;
+      /** Checkbox desired state. */
+      checked?: boolean;
+      /** Option labels to select (list/combo, supports multi-select). */
+      selectedLabels?: string[];
+    };
+    result: { ok: boolean };
+  };
+  /** Opens a page for interactive form editing (`FORM_OnAfterLoadPage`); the handle is cached. */
+  formOpenPage: {
+    params: { docHandle: number; formHandle: number; pageIndex: number };
+    result: { pageHandle: number };
+  };
+  /** Closes an interactive form page (`FORM_OnBeforeClosePage`). */
+  formClosePage: {
+    params: { docHandle: number; formHandle: number; pageIndex: number };
+    result: { message: string };
+  };
+  /** Forwards a pointer event (PDF page coordinates, y-up) to the form-fill module. */
+  formPointerEvent: {
+    params: {
+      docHandle: number;
+      formHandle: number;
+      pageIndex: number;
+      type: 'down' | 'up' | 'move' | 'doubleClick';
+      x: number;
+      y: number;
+      /** FWL event-flag bitmask (shift/ctrl/alt). Default 0. */
+      modifier?: number;
+    };
+    result: { message: string };
+  };
+  /** Forwards a keyboard event to the form-fill module. */
+  formKeyEvent: {
+    params: {
+      docHandle: number;
+      formHandle: number;
+      pageIndex: number;
+      /** `char` → `FORM_OnChar` (Unicode); `keyDown`/`keyUp` → FWL virtual key code. */
+      type: 'char' | 'keyDown' | 'keyUp';
+      code: number;
+      /** FWL event-flag bitmask (shift/ctrl/alt). Default 0. */
+      modifier?: number;
+    };
+    result: { message: string };
+  };
+  /** Clears the form's keyboard focus (`FORM_ForceToKillFocus`). */
+  formKillFocus: {
+    params: { docHandle: number; formHandle: number };
+    result: { message: string };
+  };
+  /** Registers the callback id used to relay form invalidate/change notifications. */
+  registerFormNotify: {
+    params: { docHandle: number; callbackId: number };
+    result: { message: string };
+  };
 }
+
+/**
+ * Payload relayed to the client's form-notify callback (registered via
+ * `registerFormNotify`). `invalidate` carries a dirty rectangle in PDF page
+ * coordinates; `change` signals that some field value changed.
+ */
+export type WireFormNotification =
+  | { kind: 'invalidate'; pageIndex: number; rect: WireRect }
+  | { kind: 'change' };
 
 /** Union of all worker command names (the keys of {@link WorkerCommandMap}). */
 export type WorkerCommand = keyof WorkerCommandMap;

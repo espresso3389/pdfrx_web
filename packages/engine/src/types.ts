@@ -134,6 +134,104 @@ export interface PdfLink {
 }
 
 /**
+ * Kind of an AcroForm field, mapped from PDFium's `FPDF_FORMFIELD_*` codes.
+ */
+export type PdfFormFieldType =
+  | 'unknown'
+  | 'pushButton'
+  | 'checkBox'
+  | 'radioButton'
+  | 'comboBox'
+  | 'listBox'
+  | 'textField'
+  | 'signature';
+
+/** Maps a raw `FPDF_FORMFIELD_*` code to a {@link PdfFormFieldType}. */
+export const pdfFormFieldTypeFromCode = (code: number): PdfFormFieldType => {
+  switch (code) {
+    case 1:
+      return 'pushButton';
+    case 2:
+      return 'checkBox';
+    case 3:
+      return 'radioButton';
+    case 4:
+      return 'comboBox';
+    case 5:
+      return 'listBox';
+    case 6:
+      return 'textField';
+    case 7:
+      return 'signature';
+    default:
+      return 'unknown';
+  }
+};
+
+/** Decoded `FPDF_FORMFLAG_*` bits of a form field. */
+export interface PdfFormFieldFlags {
+  /** The field cannot be edited by the user. */
+  readonly readOnly: boolean;
+  /** The field must have a value when the form is submitted. */
+  readonly required: boolean;
+  /** The field is excluded from form submission/export. */
+  readonly noExport: boolean;
+}
+
+/** Decodes the raw `FPDF_FORMFLAG_*` bitmask into {@link PdfFormFieldFlags}. */
+export const decodeFormFieldFlags = (flags: number): PdfFormFieldFlags => ({
+  readOnly: (flags & 1) !== 0,
+  required: (flags & 2) !== 0,
+  noExport: (flags & 4) !== 0,
+});
+
+/** One selectable option of a combo box or list box. */
+export interface PdfFormFieldOption {
+  readonly label: string;
+  readonly selected: boolean;
+}
+
+/**
+ * An AcroForm field of a document. A field is identified by its fully-qualified
+ * {@link name}; widgets that share a name (e.g. the buttons of a radio group)
+ * are merged into one field with several {@link rects}. Obtain them via
+ * {@link PdfPage.loadFormFields} / {@link PdfDocument.loadFormFields}, read
+ * values here, and change them with {@link PdfDocument.setFormFieldValue}.
+ */
+export interface PdfFormField {
+  /** Fully-qualified field name (`/T`); may be empty for unnamed fields. */
+  readonly name: string;
+  /** Field kind. */
+  readonly type: PdfFormFieldType;
+  /** 1-based page number the field's widget(s) sit on. */
+  readonly pageNumber: number;
+  /** Widget rectangles in PDF page coordinates (one per widget). */
+  readonly rects: readonly PdfRect[];
+  /** Current value (`/V`): the text, the selected export value, or `''` for buttons. */
+  readonly value: string;
+  /** Alternate name / tooltip (`/TU`), or `null`. */
+  readonly alternateName: string | null;
+  /** Checkbox/radio: whether the field is currently checked/selected. */
+  readonly isChecked?: boolean;
+  /** Checkbox/radio: the export ("on") value; for a radio group, the selected one. */
+  readonly exportValue?: string | null;
+  /** Combo/list: the options and their selection state. */
+  readonly options?: readonly PdfFormFieldOption[];
+  /** Text fields: whether the field accepts multiple lines (`/Ff` Multiline bit). */
+  readonly multiline?: boolean;
+  /** Decoded field flags. */
+  readonly flags: PdfFormFieldFlags;
+}
+
+/**
+ * A value accepted by {@link PdfDocument.setFormFieldValue}. Interpretation
+ * depends on the field type: `boolean` toggles a checkbox, a `string` sets text
+ * / selects a radio export value or a single choice option, and a `string[]`
+ * selects options of a (multi-select) list box.
+ */
+export type PdfFormFieldValue = string | boolean | string[];
+
+/**
  * Raw text of a page: full text plus one rect per UTF-16 code unit.
  * See {@link PdfPage.loadText}.
  */
@@ -342,6 +440,13 @@ export interface PdfDocumentEventMap {
   pagesRearranged: { pageNumbers: number[] };
   /** The engine reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
   missingFonts: { queries: PdfFontQuery[] };
+  /**
+   * A form field value changed. `source` is `'user'` for interactive edits in
+   * the viewer (relayed from the form-fill module) and `'api'` for
+   * {@link PdfDocument.setFormFieldValue}. Reload values with
+   * {@link PdfDocument.loadFormFields} when this fires.
+   */
+  formFieldsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
 }
 
 /** Union of the event names in {@link PdfDocumentEventMap}. */

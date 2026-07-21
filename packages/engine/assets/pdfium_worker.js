@@ -1366,6 +1366,162 @@ function _resetMissingFonts() {
  * @typedef {{errorCode: number, errorCodeStr: string|undefined, message: string}} PdfError
  */
 
+// [pdfrx_web: form support — reapplied by scripts/sync-assets.mjs] {
+/**
+ * Per-form-fill-environment state. Keyed by the `formInfo` pointer, which PDFium
+ * hands back to us as `pThis` in every FPDF_FORMFILLINFO callback.
+ * @typedef {{
+ *   docHandle: number,
+ *   formHandle: number,
+ *   notifyCallbackId: number,
+ *   currentPageHandle: number,
+ *   openPages: Map<number, number>,
+ *   handleToIndex: Map<number, number>,
+ * }} FormContext
+ */
+
+/** @type {Object<number, FormContext>} formInfo pointer -> context */
+const formContextsByInfo = {};
+/** @type {Object<number, number>} docHandle -> formInfo pointer */
+const formInfoByDoc = {};
+/** Cached FPDF_FORMFILLINFO callback table (created once, shared by all documents). */
+let _formFillCallbacks = null;
+let _formTimerSeq = 1;
+
+/**
+ * @param {number} pThis formInfo pointer passed back by PDFium
+ * @returns {FormContext|undefined}
+ */
+function _formCtxByInfo(pThis) {
+  return formContextsByInfo[pThis];
+}
+
+/**
+ * @param {number} docHandle
+ * @returns {FormContext|undefined}
+ */
+function _formCtxByDoc(docHandle) {
+  const info = formInfoByDoc[docHandle];
+  return info ? formContextsByInfo[info] : undefined;
+}
+
+/**
+ * Lazily builds the shared FPDF_FORMFILLINFO callback function pointers. Must run
+ * after the wasm module is initialized (so `Pdfium.addFunction` is available).
+ * @returns {Object<string, number>} map of slot name -> table index
+ */
+function _ensureFormFillCallbacks() {
+  if (_formFillCallbacks) return _formFillCallbacks;
+  const add = (fn, sig) => Pdfium.addFunction(fn, sig);
+
+  _formFillCallbacks = {
+    // FFI_Invalidate(pThis, page, double left, top, right, bottom)
+    invalidate: add((pThis, page, left, top, right, bottom) => {
+      const ctx = _formCtxByInfo(pThis);
+      if (!ctx || !ctx.notifyCallbackId) return;
+      const pageIndex = ctx.handleToIndex.get(page);
+      invokeCallback(ctx.notifyCallbackId, {
+        kind: 'invalidate',
+        pageIndex: pageIndex ?? -1,
+        rect: [left, top, right, bottom],
+      });
+    }, 'viidddd'),
+    // FFI_SetCursor(pThis, nCursorType)
+    setCursor: add(() => {}, 'vii'),
+    // FFI_SetTimer(pThis, uElapse, lpTimerFunc) -> int id (no real timer -> no caret blink)
+    setTimer: add(() => _formTimerSeq++, 'iiii'),
+    // FFI_KillTimer(pThis, nTimerID)
+    killTimer: add(() => {}, 'vii'),
+    // FFI_GetLocalTime(pThis) -> FPDF_SYSTEMTIME (struct return via sret pointer)
+    getLocalTime: add((retPtr) => {
+      new Uint8Array(Pdfium.memory.buffer, retPtr, 16).fill(0);
+    }, 'vii'),
+    // FFI_OnChange(pThis)
+    onChange: add((pThis) => {
+      const ctx = _formCtxByInfo(pThis);
+      if (ctx && ctx.notifyCallbackId) invokeCallback(ctx.notifyCallbackId, { kind: 'change' });
+    }, 'vi'),
+    // FFI_GetPage(pThis, document, nPageIndex) -> FPDF_PAGE
+    getPage: add((pThis, _document, nPageIndex) => {
+      const ctx = _formCtxByInfo(pThis);
+      return ctx ? ctx.openPages.get(nPageIndex) ?? 0 : 0;
+    }, 'iiii'),
+    // FFI_GetCurrentPage(pThis, document) -> FPDF_PAGE
+    getCurrentPage: add((pThis) => {
+      const ctx = _formCtxByInfo(pThis);
+      return ctx ? ctx.currentPageHandle : 0;
+    }, 'iii'),
+    // FFI_GetRotation(pThis, page) -> int
+    getRotation: add(() => 0, 'iii'),
+    // FFI_ExecuteNamedAction(pThis, namedAction)
+    executeNamedAction: add(() => {}, 'vii'),
+    // FFI_SetTextFieldFocus(pThis, value, valueLen, is_focus)
+    setTextFieldFocus: add(() => {}, 'viiii'),
+    // FFI_DoURIAction(pThis, bsURI) — viewer owns link navigation
+    doURIAction: add(() => {}, 'vii'),
+    // FFI_DoGoToAction(pThis, nPageIndex, zoomMode, fPosArray, sizeofArray)
+    doGoToAction: add(() => {}, 'viiiii'),
+  };
+  return _formFillCallbacks;
+}
+
+/**
+ * Fills the FPDF_FORMFILLINFO struct (version 1) at `formInfo` with our callback
+ * pointers and registers the per-document form context.
+ * @param {number} formInfo pointer to a 35-int block
+ * @param {number} docHandle
+ */
+function _initFormFillInfo(formInfo, docHandle) {
+  const cb = _ensureFormFillCallbacks();
+  const u32 = new Uint32Array(Pdfium.memory.buffer, formInfo, 35);
+  u32.fill(0); // malloc does not zero; clear reserved/unused slots
+  u32[0] = 1; // version
+  // u32[1] = Release (null)
+  u32[2] = cb.invalidate;
+  // u32[3] = FFI_OutputSelectedRect (null)
+  u32[4] = cb.setCursor;
+  u32[5] = cb.setTimer;
+  u32[6] = cb.killTimer;
+  u32[7] = cb.getLocalTime;
+  u32[8] = cb.onChange;
+  u32[9] = cb.getPage;
+  u32[10] = cb.getCurrentPage;
+  u32[11] = cb.getRotation;
+  u32[12] = cb.executeNamedAction;
+  u32[13] = cb.setTextFieldFocus;
+  u32[14] = cb.doURIAction;
+  u32[15] = cb.doGoToAction;
+  // u32[16] = m_pJsPlatform (null)
+}
+
+/**
+ * @param {number} formInfo
+ * @param {number} docHandle
+ * @param {number} formHandle
+ */
+function _registerFormContext(formInfo, docHandle, formHandle) {
+  formContextsByInfo[formInfo] = {
+    docHandle,
+    formHandle,
+    notifyCallbackId: 0,
+    currentPageHandle: 0,
+    openPages: new Map(),
+    handleToIndex: new Map(),
+  };
+  formInfoByDoc[docHandle] = formInfo;
+}
+
+/**
+ * @param {number} docHandle
+ */
+function _disposeFormContext(docHandle) {
+  const info = formInfoByDoc[docHandle];
+  if (info === undefined) return;
+  delete formContextsByInfo[info];
+  delete formInfoByDoc[docHandle];
+}
+// [pdfrx_web: form support] }
+
 /**
  * @param {number} docHandle
  * @param {boolean} useProgressiveLoading
@@ -1395,9 +1551,11 @@ function _loadDocument(docHandle, useProgressiveLoading, onDispose) {
 
     const formInfoSize = 35 * 4;
     formInfo = Pdfium.wasmExports.malloc(formInfoSize);
-    const uint32 = new Uint32Array(Pdfium.memory.buffer, formInfo, formInfoSize >> 2);
-    uint32[0] = 1; // version
+    // [pdfrx_web: form support] populate FPDF_FORMFILLINFO callbacks so FORM_On*
+    // input can be routed through the form-fill module without null-pointer traps.
+    _initFormFillInfo(formInfo, docHandle);
     formHandle = Pdfium.wasmExports.FPDFDOC_InitFormFillEnvironment(docHandle, formInfo);
+    _registerFormContext(formInfo, docHandle, formHandle);
 
     const pages = _loadPagesInLimitedTime(docHandle, 0, useProgressiveLoading ? 1 : null);
     if (useProgressiveLoading) {
@@ -1430,6 +1588,7 @@ function _loadDocument(docHandle, useProgressiveLoading, onDispose) {
     try {
       if (formHandle !== 0) Pdfium.wasmExports.FPDFDOC_ExitFormFillEnvironment(formHandle);
     } catch (e) {}
+    _disposeFormContext(docHandle); // [pdfrx_web: form support]
     Pdfium.wasmExports.free(formInfo);
     delete disposers[docHandle];
     onDispose();
@@ -1608,6 +1767,20 @@ async function reloadPages(params) {
  * @param {{formHandle: number, formInfo: number, docHandle: number}} params
  */
 function closeDocument(params) {
+  // [pdfrx_web: form support] close any pages still open for interactive editing
+  // and drop the form context before tearing down the form environment.
+  const ctx = _formCtxByDoc(params.docHandle);
+  if (ctx && params.formHandle) {
+    for (const pageHandle of ctx.openPages.values()) {
+      try {
+        Pdfium.wasmExports.FORM_OnBeforeClosePage(pageHandle, params.formHandle);
+      } catch (e) {}
+      try {
+        Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
+      } catch (e) {}
+    }
+  }
+  _disposeFormContext(params.docHandle);
   if (params.formHandle) {
     try {
       Pdfium.wasmExports.FPDFDOC_ExitFormFillEnvironment(params.formHandle);
@@ -2902,6 +3075,402 @@ function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeigh
   }
 }
 
+// [pdfrx_web: form support — reapplied by scripts/sync-assets.mjs] {
+const FPDF_ANNOT_WIDGET = 20;
+const FPDF_FORMFIELD_PUSHBUTTON = 1;
+const FPDF_FORMFIELD_CHECKBOX = 2;
+const FPDF_FORMFIELD_RADIOBUTTON = 3;
+const FPDF_FORMFIELD_COMBOBOX = 4;
+const FPDF_FORMFIELD_LISTBOX = 5;
+const FPDF_FORMFIELD_TEXTFIELD = 6;
+
+/**
+ * Reads a UTF-16LE string out of one of the `FPDFAnnot_Get*` byte-length APIs
+ * (buffer=null, buflen=0 -> required byte count incl. the trailing NUL).
+ * @param {(...args: number[]) => number} getFn
+ * @param {number} formHandle
+ * @param {number} annot
+ * @param {number[]} extra extra args placed before (buffer, buflen)
+ * @returns {string}
+ */
+function _getFormString(getFn, formHandle, annot, extra = []) {
+  const len = getFn(formHandle, annot, ...extra, 0, 0);
+  if (len <= 2) return '';
+  const buf = Pdfium.wasmExports.malloc(len);
+  try {
+    getFn(formHandle, annot, ...extra, buf, len);
+    return StringUtils.utf16BytesToString(new Uint8Array(Pdfium.memory.buffer, buf, len));
+  } finally {
+    Pdfium.wasmExports.free(buf);
+  }
+}
+
+/**
+ * @param {number} annot
+ * @returns {[number, number, number, number]} normalized page-coord rect [l, top, r, bottom] (top>=bottom)
+ */
+function _getWidgetRect(annot) {
+  const rectF = Pdfium.wasmExports.malloc(4 * 4);
+  try {
+    Pdfium.wasmExports.FPDFAnnot_GetRect(annot, rectF);
+    const [l, t, r, b] = new Float32Array(Pdfium.memory.buffer, rectF, 4);
+    return [l, t > b ? t : b, r, t > b ? b : t];
+  } finally {
+    Pdfium.wasmExports.free(rectF);
+  }
+}
+
+/**
+ * @param {number} pageHandle
+ * @param {(annot: number) => void} cb invoked per Widget annotation (annot handle valid only during the call)
+ */
+function _forEachWidget(pageHandle, cb) {
+  const count = Pdfium.wasmExports.FPDFPage_GetAnnotCount(pageHandle);
+  for (let i = 0; i < count; i++) {
+    const annot = Pdfium.wasmExports.FPDFPage_GetAnnot(pageHandle, i);
+    if (!annot) continue;
+    try {
+      if (Pdfium.wasmExports.FPDFAnnot_GetSubtype(annot) === FPDF_ANNOT_WIDGET) cb(annot);
+    } finally {
+      Pdfium.wasmExports.FPDFPage_CloseAnnot(annot);
+    }
+  }
+}
+
+/**
+ * @param {number} formHandle
+ * @param {number} annot Widget annotation
+ * @returns {object} WireFormField
+ */
+function _readWidgetField(formHandle, annot) {
+  const w = Pdfium.wasmExports;
+  const fieldType = w.FPDFAnnot_GetFormFieldType(formHandle, annot);
+  const field = {
+    name: _getFormString(w.FPDFAnnot_GetFormFieldName, formHandle, annot),
+    fieldType,
+    flags: w.FPDFAnnot_GetFormFieldFlags(formHandle, annot),
+    rect: _getWidgetRect(annot),
+    value: _getFormString(w.FPDFAnnot_GetFormFieldValue, formHandle, annot),
+    alternateName: _getFormString(w.FPDFAnnot_GetFormFieldAlternateName, formHandle, annot),
+  };
+  if (fieldType === FPDF_FORMFIELD_CHECKBOX || fieldType === FPDF_FORMFIELD_RADIOBUTTON) {
+    field.isChecked = !!w.FPDFAnnot_IsChecked(formHandle, annot);
+    field.exportValue = _getFormString(w.FPDFAnnot_GetFormFieldExportValue, formHandle, annot);
+  } else if (fieldType === FPDF_FORMFIELD_COMBOBOX || fieldType === FPDF_FORMFIELD_LISTBOX) {
+    const optionCount = w.FPDFAnnot_GetOptionCount(formHandle, annot);
+    const options = [];
+    for (let i = 0; i < optionCount; i++) {
+      options.push({
+        label: _getFormString(w.FPDFAnnot_GetOptionLabel, formHandle, annot, [i]),
+        selected: !!w.FPDFAnnot_IsOptionSelected(formHandle, annot, i),
+      });
+    }
+    field.options = options;
+  }
+  return field;
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number, pageIndex: number}} params
+ * @returns {{fields: object[]}}
+ */
+function loadFormFields(params) {
+  const { docHandle, formHandle, pageIndex } = params;
+  const readWidgets = (pageHandle) => {
+    const fields = [];
+    _forEachWidget(pageHandle, (annot) => fields.push(_readWidgetField(formHandle, annot)));
+    return { fields };
+  };
+  // Button state reads (FPDFAnnot_IsChecked / GetFormFieldExportValue) are only
+  // correct while the page is loaded into the form-fill module, so bracket the
+  // enumeration with FORM_OnAfterLoadPage / FORM_OnBeforeClosePage (or reuse an
+  // already-open interactive page).
+  const ctx = _formCtxByDoc(docHandle);
+  if (ctx && formHandle) return _withFormPage(ctx, formHandle, pageIndex, readWidgets);
+  const pageHandle = Pdfium.wasmExports.FPDF_LoadPage(docHandle, pageIndex);
+  if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+  try {
+    return readWidgets(pageHandle);
+  } finally {
+    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
+  }
+}
+
+/**
+ * Runs `fn` with an interactive page handle for `pageIndex`, reusing an already
+ * open one or opening (and closing) a temporary one bracketed by
+ * FORM_OnAfterLoadPage / FORM_OnBeforeClosePage.
+ * @param {FormContext} ctx
+ * @param {number} formHandle
+ * @param {number} pageIndex
+ * @param {(pageHandle: number) => any} fn
+ */
+function _withFormPage(ctx, formHandle, pageIndex, fn) {
+  let pageHandle = ctx.openPages.get(pageIndex);
+  const prevCurrent = ctx.currentPageHandle;
+  let opened = false;
+  if (!pageHandle) {
+    pageHandle = Pdfium.wasmExports.FPDF_LoadPage(ctx.docHandle, pageIndex);
+    if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+    Pdfium.wasmExports.FORM_OnAfterLoadPage(pageHandle, formHandle);
+    ctx.openPages.set(pageIndex, pageHandle);
+    ctx.handleToIndex.set(pageHandle, pageIndex);
+    opened = true;
+  }
+  ctx.currentPageHandle = pageHandle;
+  try {
+    return fn(pageHandle);
+  } finally {
+    if (opened) {
+      Pdfium.wasmExports.FORM_OnBeforeClosePage(pageHandle, formHandle);
+      Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
+      ctx.openPages.delete(pageIndex);
+      ctx.handleToIndex.delete(pageHandle);
+      ctx.currentPageHandle = prevCurrent;
+    }
+  }
+}
+
+/**
+ * @param {string|undefined} v
+ * @returns {boolean}
+ */
+function _truthyFormValue(v) {
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s !== '' && s !== 'off' && s !== 'false' && s !== '0' && s !== 'no';
+}
+
+/**
+ * Sets a form field's value through the form-fill module (which regenerates the
+ * widget appearance and fires FFI_OnChange), matched by fully-qualified name.
+ * @param {{docHandle: number, formHandle: number, pageIndex: number, fieldName: string,
+ *          value?: string, checked?: boolean, selectedLabels?: string[]}} params
+ * @returns {{ok: boolean}}
+ */
+function setFormFieldValue(params) {
+  const { docHandle, formHandle, pageIndex, fieldName } = params;
+  const ctx = _formCtxByDoc(docHandle);
+  if (!ctx) throw new Error(`No form context for document ${docHandle}`);
+  const w = Pdfium.wasmExports;
+
+  return _withFormPage(ctx, formHandle, pageIndex, (pageHandle) => {
+    // Gather this page's widgets that belong to the named field. Annot handles
+    // must stay valid past the enumeration, so capture the ones we need.
+    /** @type {{fieldType: number, exportValue: string, rect: number[], index: number}[]} */
+    const matches = [];
+    let annotIndex = -1;
+    _forEachWidget(pageHandle, (annot) => {
+      annotIndex++;
+      if (_getFormString(w.FPDFAnnot_GetFormFieldName, formHandle, annot) !== fieldName) return;
+      const fieldType = w.FPDFAnnot_GetFormFieldType(formHandle, annot);
+      const exportValue =
+        fieldType === FPDF_FORMFIELD_CHECKBOX || fieldType === FPDF_FORMFIELD_RADIOBUTTON
+          ? _getFormString(w.FPDFAnnot_GetFormFieldExportValue, formHandle, annot)
+          : '';
+      matches.push({ fieldType, exportValue, rect: _getWidgetRect(annot), index: annotIndex });
+    });
+    if (matches.length === 0) return { ok: false };
+
+    const first = matches[0];
+    const clickCenter = (rect) => {
+      const cx = (rect[0] + rect[2]) / 2;
+      const cy = (rect[1] + rect[3]) / 2;
+      w.FORM_OnLButtonDown(formHandle, pageHandle, 0, cx, cy);
+      w.FORM_OnLButtonUp(formHandle, pageHandle, 0, cx, cy);
+    };
+    const focus = (index) => {
+      const annot = w.FPDFPage_GetAnnot(pageHandle, index);
+      try {
+        w.FORM_SetFocusedAnnot(formHandle, annot);
+      } finally {
+        w.FPDFPage_CloseAnnot(annot);
+      }
+    };
+    const replaceText = (index, text) => {
+      focus(index);
+      w.FORM_SelectAllText(formHandle, pageHandle);
+      const ptr = StringUtils.allocateUTF16(text ?? '');
+      try {
+        w.FORM_ReplaceSelection(formHandle, pageHandle, ptr);
+      } finally {
+        StringUtils.freeUTF8(ptr);
+      }
+    };
+
+    switch (first.fieldType) {
+      case FPDF_FORMFIELD_TEXTFIELD:
+        replaceText(first.index, params.value);
+        break;
+      case FPDF_FORMFIELD_CHECKBOX: {
+        const desired = params.checked ?? _truthyFormValue(params.value);
+        const annot = w.FPDFPage_GetAnnot(pageHandle, first.index);
+        const isChecked = !!w.FPDFAnnot_IsChecked(formHandle, annot);
+        w.FPDFPage_CloseAnnot(annot);
+        if (isChecked !== desired) clickCenter(first.rect);
+        break;
+      }
+      case FPDF_FORMFIELD_RADIOBUTTON: {
+        const target = matches.find((m) => m.exportValue === params.value) ?? first;
+        clickCenter(target.rect);
+        break;
+      }
+      case FPDF_FORMFIELD_COMBOBOX:
+      case FPDF_FORMFIELD_LISTBOX: {
+        focus(first.index);
+        const annot = w.FPDFPage_GetAnnot(pageHandle, first.index);
+        try {
+          const count = w.FPDFAnnot_GetOptionCount(formHandle, annot);
+          const wanted =
+            params.selectedLabels && params.selectedLabels.length
+              ? params.selectedLabels
+              : params.value != null
+                ? [params.value]
+                : [];
+          if (wanted.length === 0 && first.fieldType === FPDF_FORMFIELD_COMBOBOX) {
+            // Editable combo box: no matching option, treat as free text.
+            replaceText(first.index, params.value);
+            break;
+          }
+          let matchedAny = false;
+          for (let i = 0; i < count; i++) {
+            const label = _getFormString(w.FPDFAnnot_GetOptionLabel, formHandle, annot, [i]);
+            const selected = wanted.includes(label);
+            if (selected) matchedAny = true;
+            w.FORM_SetIndexSelected(formHandle, pageHandle, i, selected);
+          }
+          if (!matchedAny && first.fieldType === FPDF_FORMFIELD_COMBOBOX) {
+            replaceText(first.index, params.value);
+          }
+        } finally {
+          w.FPDFPage_CloseAnnot(annot);
+        }
+        break;
+      }
+      default:
+        return { ok: false };
+    }
+    return { ok: true };
+  });
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number, pageIndex: number}} params
+ * @returns {{pageHandle: number}}
+ */
+function formOpenPage(params) {
+  const { docHandle, formHandle, pageIndex } = params;
+  const ctx = _formCtxByDoc(docHandle);
+  if (!ctx) throw new Error(`No form context for document ${docHandle}`);
+  let pageHandle = ctx.openPages.get(pageIndex);
+  if (!pageHandle) {
+    pageHandle = Pdfium.wasmExports.FPDF_LoadPage(docHandle, pageIndex);
+    if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
+    Pdfium.wasmExports.FORM_OnAfterLoadPage(pageHandle, formHandle);
+    ctx.openPages.set(pageIndex, pageHandle);
+    ctx.handleToIndex.set(pageHandle, pageIndex);
+  }
+  ctx.currentPageHandle = pageHandle;
+  return { pageHandle };
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number, pageIndex: number}} params
+ * @returns {{message: string}}
+ */
+function formClosePage(params) {
+  const { docHandle, formHandle, pageIndex } = params;
+  const ctx = _formCtxByDoc(docHandle);
+  if (!ctx) return { message: 'no context' };
+  const pageHandle = ctx.openPages.get(pageIndex);
+  if (pageHandle) {
+    Pdfium.wasmExports.FORM_OnBeforeClosePage(pageHandle, formHandle);
+    Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
+    ctx.openPages.delete(pageIndex);
+    ctx.handleToIndex.delete(pageHandle);
+    if (ctx.currentPageHandle === pageHandle) ctx.currentPageHandle = 0;
+  }
+  return { message: 'closed' };
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number, pageIndex: number, type: string,
+ *          x: number, y: number, modifier?: number}} params
+ * @returns {{message: string}}
+ */
+function formPointerEvent(params) {
+  const { docHandle, formHandle, pageIndex, type, x, y, modifier = 0 } = params;
+  const ctx = _formCtxByDoc(docHandle);
+  const pageHandle = ctx && ctx.openPages.get(pageIndex);
+  if (!pageHandle) throw new Error(`Form page ${pageIndex} is not open`);
+  ctx.currentPageHandle = pageHandle;
+  const w = Pdfium.wasmExports;
+  switch (type) {
+    case 'down':
+      w.FORM_OnLButtonDown(formHandle, pageHandle, modifier, x, y);
+      break;
+    case 'up':
+      w.FORM_OnLButtonUp(formHandle, pageHandle, modifier, x, y);
+      break;
+    case 'move':
+      w.FORM_OnMouseMove(formHandle, pageHandle, modifier, x, y);
+      break;
+    case 'doubleClick':
+      w.FORM_OnLButtonDoubleClick(formHandle, pageHandle, modifier, x, y);
+      break;
+    default:
+      throw new Error(`Unknown form pointer event type: ${type}`);
+  }
+  return { message: 'ok' };
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number, pageIndex: number, type: string,
+ *          code: number, modifier?: number}} params
+ * @returns {{message: string}}
+ */
+function formKeyEvent(params) {
+  const { docHandle, formHandle, pageIndex, type, code, modifier = 0 } = params;
+  const ctx = _formCtxByDoc(docHandle);
+  const pageHandle = ctx && ctx.openPages.get(pageIndex);
+  if (!pageHandle) throw new Error(`Form page ${pageIndex} is not open`);
+  const w = Pdfium.wasmExports;
+  switch (type) {
+    case 'char':
+      w.FORM_OnChar(formHandle, pageHandle, code, modifier);
+      break;
+    case 'keyDown':
+      w.FORM_OnKeyDown(formHandle, pageHandle, code, modifier);
+      break;
+    case 'keyUp':
+      w.FORM_OnKeyUp(formHandle, pageHandle, code, modifier);
+      break;
+    default:
+      throw new Error(`Unknown form key event type: ${type}`);
+  }
+  return { message: 'ok' };
+}
+
+/**
+ * @param {{docHandle: number, formHandle: number}} params
+ * @returns {{message: string}}
+ */
+function formKillFocus(params) {
+  Pdfium.wasmExports.FORM_ForceToKillFocus(params.formHandle);
+  return { message: 'ok' };
+}
+
+/**
+ * @param {{docHandle: number, callbackId: number}} params
+ * @returns {{message: string}}
+ */
+function registerFormNotify(params) {
+  const ctx = _formCtxByDoc(params.docHandle);
+  if (ctx) ctx.notifyCallbackId = params.callbackId;
+  return { message: 'ok' };
+}
+// [pdfrx_web: form support] }
+
 /**
  * Functions that can be called from the main thread
  */
@@ -2924,6 +3493,15 @@ const functions = {
   clearAllFontData,
   assemble,
   encodePdf,
+  // [pdfrx_web: form support]
+  loadFormFields,
+  setFormFieldValue,
+  formOpenPage,
+  formClosePage,
+  formPointerEvent,
+  formKeyEvent,
+  formKillFocus,
+  registerFormNotify,
 };
 
 /**
@@ -3210,5 +3788,20 @@ class StringUtils {
    */
   static freeUTF8(ptr) {
     Pdfium.wasmExports.free(ptr);
+  }
+  /**
+   * [pdfrx_web: form support] Allocate a null-terminated UTF-16LE string
+   * (FPDF_WIDESTRING), as required by FORM_ReplaceSelection and friends.
+   * @param {string} str
+   * @returns {number} Pointer to a buffer holding UTF-16LE + a 16-bit NUL. Free with [freeUTF8].
+   */
+  static allocateUTF16(str) {
+    const s = str ?? '';
+    const size = (s.length + 1) * 2;
+    const ptr = Pdfium.wasmExports.malloc(size);
+    const view = new Uint16Array(Pdfium.memory.buffer, ptr, s.length + 1);
+    for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i);
+    view[s.length] = 0;
+    return ptr;
   }
 }
