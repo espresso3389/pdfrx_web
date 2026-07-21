@@ -130,11 +130,26 @@ place (skipping the focused element). Gated by the `interactiveForms` option
 (`formOpenPage` / `formPointerEvent` / `formKeyEvent` / …) for headless use, but
 the viewer no longer drives them.
 
+**Calculated fields.** Auto-calculating forms drive their totals with field
+JavaScript (`/AA/C` calculate actions), which this PDFium build cannot run (no
+V8). The engine ships a tiny JS-free stand-in ([form-calc.ts](../packages/engine/src/form-calc.ts)):
+the worker's `loadFormCalculations` reads each field's calculate-action source,
+`parseCalcAction` recognizes Acrobat's built-in `AFSimple_Calculate`
+(SUM/PRD/AVG/MIN/MAX), and `setFormFieldValue` recomputes the dependent fields to
+a fixed point (so multi-level chains like checkbox → unit-price → subtotal →
+grand-total resolve) and writes the changed ones back before firing
+`formFieldsChanged`. Read-only computed fields still render as (disabled) overlay
+controls so their values stay visible. Toggle with `PdfDocument.formCalculationEnabled`.
+Arbitrary custom field scripts and `/AA/F` format actions are **not** run — that
+would require shipping a JS engine.
+
 ## Known limitations
 
-- Form editing does not run field-level JavaScript actions, and the HTML-overlay
-  controls approximate rather than pixel-match the PDF's field styling (font,
-  border). Comb fields, rich text and editable combo boxes are not yet handled.
+- Form calculations cover only Acrobat's `AFSimple_Calculate` (SUM/PRD/AVG/MIN/MAX);
+  arbitrary field JavaScript and `/AA/F` format actions do not run (no JS engine
+  in the WASM build). The HTML-overlay controls approximate rather than
+  pixel-match the PDF's field styling (font, border). Comb fields, rich text and
+  editable combo boxes are not yet handled.
 - Scroll physics beyond exponential-decay fling (no platform-specific curves),
   annotation editing.
 

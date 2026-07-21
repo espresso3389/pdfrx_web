@@ -25,9 +25,11 @@ Upstream API names are given so you can find the reference implementation.
 > only through `PdfLink.annotation`.
 >
 > **pdfrx_web-only (not upstream):** AcroForm field enumeration, value get/set,
-> change notifications, and interactive in-viewer editing — `PdfPage.loadFormFields()`,
-> `PdfDocument.loadFormFields()` / `getFormFieldValue()` / `setFormFieldValue()`,
-> the `formFieldsChanged` event, and the React `useFormFields` hook.
+> change notifications, interactive in-viewer editing via an HTML overlay, and a
+> JS-free `AFSimple_Calculate` engine for calculating forms —
+> `PdfPage.loadFormFields()`, `PdfDocument.loadFormFields()` /
+> `getFormFieldValue()` / `setFormFieldValue()`, the `formFieldsChanged` event,
+> `formCalculationEnabled`, and the React `useFormFields` hook.
 
 ---
 
