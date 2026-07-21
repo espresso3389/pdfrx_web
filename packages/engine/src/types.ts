@@ -466,6 +466,8 @@ export interface PdfAnnotationObject {
   readonly contents: string | null;
   /** `/T` author/title. */
   readonly author: string | null;
+  readonly fontFace: string | null;
+  readonly appearanceLines: readonly string[] | null;
   /** `/Subj` subject. */
   readonly subject: string | null;
   /** Raw PDF date string (`D:…`), if any. */
@@ -494,6 +496,10 @@ export interface PdfAnnotationSpec {
   flags?: number;
   contents?: string | null;
   author?: string | null;
+  /** Font face registered with the engine for a generated FreeText appearance. */
+  fontFace?: string | null;
+  /** Pre-wrapped lines used by the generated FreeText appearance. */
+  appearanceLines?: string[];
   geometry?: PdfAnnotationGeometry;
 }
 

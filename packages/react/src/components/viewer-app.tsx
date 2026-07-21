@@ -416,6 +416,7 @@ function SaveButton(): ReactNode {
     if (!document) return;
     setIsSaving(true);
     try {
+      await viewer.flushAnnotationTextEdit();
       // Materializes any proxy arrangement into the PDF, then serializes it.
       const data = await document.encodePdf();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));

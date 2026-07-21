@@ -181,6 +181,8 @@ export interface WireAnnotationObject {
   contents: string | null;
   /** `/T` author/title. */
   author: string | null;
+  fontFace: string | null;
+  appearanceLines: string[] | null;
   /** `/Subj` subject. */
   subject: string | null;
   modificationDate: string | null;
@@ -205,6 +207,10 @@ export interface WireAnnotationSpec {
   flags?: number;
   contents?: string | null;
   author?: string | null;
+  /** Registered worker font face used to build a FreeText appearance. */
+  fontFace?: string | null;
+  /** Pre-wrapped lines for the generated FreeText appearance. */
+  appearanceLines?: string[];
   geometry?: WireAnnotationGeometry;
 }
 

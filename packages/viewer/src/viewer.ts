@@ -769,7 +769,9 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       borderWidth: a.borderWidth,
       flags: a.flags,
       contents: a.contents,
-      author: a.author,
+    author: a.author,
+    fontFace: a.fontFace,
+    appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
       geometry: a.geometry,
     },
     dx,
@@ -1042,6 +1044,77 @@ function cssColorToRgba(css: string, opacity = 1): { r: number; g: number; b: nu
   return { r, g, b, a: Math.round(Math.max(0, Math.min(1, opacity)) * 255) };
 }
 
+/** Selects the PDFium/Windows charset used by the configured font resolver. */
+function freeTextCharset(text: string): number | null {
+  // Prefer the more specific scripts before the shared Han ideograph range.
+  if (/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(text)) return 128;
+  if (/\p{Script=Hangul}/u.test(text)) return 129;
+  if (/\p{Script=Han}/u.test(text)) return 134;
+  if (/\p{Script=Arabic}/u.test(text)) return 178;
+  if (/\p{Script=Hebrew}/u.test(text)) return 177;
+  if (/\p{Script=Thai}/u.test(text)) return 222;
+  if (/\p{Script=Cyrillic}/u.test(text)) return 204;
+  if (/\p{Script=Greek}/u.test(text)) return 161;
+  // Standard Helvetica covers basic Latin/Latin-1. Resolve a broad Unicode
+  // fallback for any other script or extended character.
+  return /[^\u0000-\u00ff]/u.test(text) ? 1 : null;
+}
+
+const FREE_TEXT_FONT_SIZE = 12;
+const FREE_TEXT_PADDING = 3;
+
+/** Wraps explicit paragraphs and long lines using the same 12pt UI font. */
+function wrapFreeText(text: string, width: number): string[] {
+  const maxWidth = Math.max(1, width - FREE_TEXT_PADDING * 2);
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return text.replace(/\r\n?/g, '\n').split('\n');
+  context.font = `${FREE_TEXT_FONT_SIZE}px Arial, sans-serif`;
+  const result: string[] = [];
+  const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+  const fits = (value: string): boolean => context.measureText(value).width <= maxWidth;
+  const pushBrokenToken = (prefix: string, token: string): string => {
+    let line = prefix;
+    for (const char of token) {
+      if (line && !fits(line + char)) {
+        result.push(line.trimEnd());
+        line = char;
+      } else {
+        line += char;
+      }
+    }
+    return line;
+  };
+  for (const paragraph of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (paragraph === '') {
+      result.push('');
+      continue;
+    }
+    const tokens = segmenter ? [...segmenter.segment(paragraph)].map((item) => item.segment) : paragraph.split(/(\s+)/u);
+    let line = '';
+    for (const token of tokens) {
+      if (fits(line + token)) {
+        line += token;
+      } else if (line) {
+        result.push(line.trimEnd());
+        line = fits(token) ? token.trimStart() : pushBrokenToken('', token.trimStart());
+      } else {
+        line = pushBrokenToken('', token);
+      }
+    }
+    result.push(line.trimEnd());
+  }
+  return result.length ? result : [''];
+}
+
+function refreshFreeTextLayout(spec: PdfAnnotationSpec): void {
+  if (spec.subtype !== 'freeText' || !spec.rect || spec.contents == null) return;
+  spec.appearanceLines = wrapFreeText(
+    spec.contents,
+    spec.rect.right - spec.rect.left - (spec.borderWidth ?? 0) * 2,
+  );
+}
+
 const HANDLE_HIT_RADIUS = 24;
 const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
@@ -1208,6 +1281,8 @@ export class PdfrxViewer {
   private annotationHistoryMergeKey: string | null = null;
   /** Keeps annotation style writes single-flight. */
   private annotationStyleUpdateQueue: Promise<void> = Promise.resolve();
+  /** Includes an active Text/FreeText editor and the worker write it starts. */
+  private pendingAnnotationTextEdit: Promise<void> = Promise.resolve();
   /** Latest queued generation per slider gesture; older waiting writes are skipped. */
   private readonly annotationStyleLatestGeneration = new Map<string, number>();
   /** True while a pointer gesture is in progress (for onInteractionStart/End). */
@@ -4207,17 +4282,80 @@ export class PdfrxViewer {
           ell.setAttribute('stroke-width', `${width}`);
           add(ell);
         } else if (a.subtype === 'text') {
-          // Sticky note: a small filled marker at the annotation's top-left.
+          // PDFium's default Text-annotation appearance is a fixed yellow note
+          // icon anchored four points below the annotation rect's top-left. It
+          // ignores /C for the icon itself and adds a short downward tail.
+          const x = box.left;
+          // PDFium normalizes the loaded Text rect to the icon's painted top.
+          const y = box.top;
+          const tail = document.createElementNS(SVG_NS, 'path');
+          tail.setAttribute('d', `M ${x + 4} ${y + 16} L ${x + 6} ${y + 20} L ${x + 8} ${y + 16} Z`);
+          tail.setAttribute('fill', '#ffff00');
+          tail.setAttribute('stroke', '#000');
+          tail.setAttribute('stroke-width', '1');
+          add(tail);
           const note = document.createElementNS(SVG_NS, 'rect');
-          const s = 16;
-          note.setAttribute('x', `${box.left}`);
-          note.setAttribute('y', `${box.top}`);
-          note.setAttribute('width', `${s}`);
-          note.setAttribute('height', `${s}`);
-          note.setAttribute('rx', '3');
-          note.setAttribute('fill', colorCss(a.color, '#ffd24a') ?? '#ffd24a');
-          note.setAttribute('stroke', '#8a6d1a');
+          note.setAttribute('x', `${x + 0.5}`);
+          note.setAttribute('y', `${y + 0.5}`);
+          note.setAttribute('width', '19');
+          note.setAttribute('height', '15');
+          note.setAttribute('fill', '#ffff00');
+          note.setAttribute('stroke', '#000');
+          note.setAttribute('stroke-width', '1');
           add(note);
+          for (const lineY of [y + 4, y + 8, y + 12]) {
+            const line = document.createElementNS(SVG_NS, 'line');
+            line.setAttribute('x1', `${x + 3}`);
+            line.setAttribute('x2', `${x + 17}`);
+            line.setAttribute('y1', `${lineY + 0.5}`);
+            line.setAttribute('y2', `${lineY + 0.5}`);
+            line.setAttribute('stroke', '#000');
+            line.setAttribute('stroke-width', '1');
+            add(line);
+          }
+        } else if (a.subtype === 'freeText') {
+          // FreeText uses the normal shape style: /C is the border and /IC is
+          // the box background. The worker builds the same custom /AP.
+          const rect = document.createElementNS(SVG_NS, 'rect');
+          const inset = width / 2;
+          rect.setAttribute('x', `${box.left + inset}`);
+          rect.setAttribute('y', `${box.top + inset}`);
+          rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - width)}`);
+          rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - width)}`);
+          rect.setAttribute('fill', fill ?? 'none');
+          rect.setAttribute('stroke', shapeStroke);
+          rect.setAttribute('stroke-width', `${width}`);
+          add(rect);
+          if (a.contents) {
+            const clipId = `pdfrx-free-text-${a.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+            const clipPath = document.createElementNS(SVG_NS, 'clipPath');
+            clipPath.setAttribute('id', clipId);
+            const clipRect = document.createElementNS(SVG_NS, 'rect');
+            clipRect.setAttribute('x', `${box.left + width + FREE_TEXT_PADDING}`);
+            clipRect.setAttribute('y', `${box.top + width + FREE_TEXT_PADDING}`);
+            clipRect.setAttribute('width', `${Math.max(0, rectWidth(box) - width * 2 - FREE_TEXT_PADDING * 2)}`);
+            clipRect.setAttribute('height', `${Math.max(0, rectHeight(box) - width * 2 - FREE_TEXT_PADDING * 2)}`);
+            clipPath.appendChild(clipRect);
+            add(clipPath);
+            const text = document.createElementNS(SVG_NS, 'text');
+            const textX = box.left + width + FREE_TEXT_PADDING;
+            const textY = box.top + width + FREE_TEXT_PADDING + FREE_TEXT_FONT_SIZE;
+            text.setAttribute('x', `${textX}`);
+            text.setAttribute('y', `${textY}`);
+            text.setAttribute('fill', '#000');
+            text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
+            text.setAttribute('font-size', `${FREE_TEXT_FONT_SIZE}`);
+            text.setAttribute('clip-path', `url(#${clipId})`);
+            const lines = a.appearanceLines ?? wrapFreeText(a.contents, rectWidth(box) - width * 2);
+            lines.forEach((line, index) => {
+              const tspan = document.createElementNS(SVG_NS, 'tspan');
+              tspan.setAttribute('x', `${textX}`);
+              tspan.setAttribute('y', `${textY + index * (FREE_TEXT_FONT_SIZE * 1.2)}`);
+              tspan.textContent = line || '\u00a0';
+              text.appendChild(tspan);
+            });
+            add(text);
+          }
         } else {
           const inset = a.subtype === 'square' ? width / 2 : 0;
           const rect = document.createElementNS(SVG_NS, 'rect');
@@ -4229,15 +4367,6 @@ export class PdfrxViewer {
           rect.setAttribute('stroke', shapeStroke);
           rect.setAttribute('stroke-width', `${width}`);
           add(rect);
-          if (a.subtype === 'freeText' && a.contents) {
-            const text = document.createElementNS(SVG_NS, 'text');
-            text.setAttribute('x', `${box.left + 2}`);
-            text.setAttribute('y', `${box.top + 12}`);
-            text.setAttribute('fill', stroke);
-            text.setAttribute('font-size', '12');
-            text.textContent = a.contents;
-            add(text);
-          }
         }
       }
     }
@@ -4376,6 +4505,7 @@ export class PdfrxViewer {
         after.interiorColor = { ...after.interiorColor, a: toAlpha(opacity) };
       }
       if (strokeWidth !== undefined) after.borderWidth = strokeWidth;
+      refreshFreeTextLayout(after);
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after });
     }
     if (group.length === 0) return;
@@ -4814,6 +4944,7 @@ export class PdfrxViewer {
       if (!lastSpec || !this.doc) return;
       const before = annotationToSpec(annotation);
       const after = lastSpec;
+      refreshFreeTextLayout(after);
       void this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after).then(() => {
         this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
       });
@@ -4911,7 +5042,7 @@ export class PdfrxViewer {
     });
     const finish = (e: PointerEvent): void => {
       if (!this.drawState || this.drawState.svg !== svg) return;
-      void this.commitDraw(this.clientToPagePx(svg, e.clientX, e.clientY));
+      this.trackAnnotationTextEdit(this.commitDraw(overlay, this.clientToPagePx(svg, e.clientX, e.clientY)));
     };
     svg.addEventListener('pointerup', finish);
     svg.addEventListener('pointercancel', finish);
@@ -4922,7 +5053,10 @@ export class PdfrxViewer {
       if (!id) continue;
       // Shapes stay interactive even while the SVG surface is click-through, so
       // they can be selected without blocking pan/text-select on empty areas.
-      g.style.pointerEvents = 'auto';
+      const annotation = overlay.annotations.get(id);
+      // An unfilled FreeText box otherwise only receives events on its glyphs
+      // and stroke. Treat its complete rectangular bounds as the hit target.
+      g.style.pointerEvents = annotation?.subtype === 'freeText' ? 'bounding-box' : 'auto';
       g.style.cursor = 'pointer';
       g.addEventListener('pointerdown', (e) => {
         if (this.drawingTool() || e.button !== 0) return; // drawing mode handled above
@@ -4953,6 +5087,13 @@ export class PdfrxViewer {
             e.shiftKey && (e.ctrlKey || e.metaKey),
           );
         }
+      });
+      g.addEventListener('dblclick', (e) => {
+        const annotation = overlay.annotations.get(id);
+        if (!annotation || (annotation.subtype !== 'text' && annotation.subtype !== 'freeText')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.trackAnnotationTextEdit(this.editTextAnnotation(overlay, annotation));
       });
     }
   }
@@ -5048,7 +5189,7 @@ export class PdfrxViewer {
     }
   }
 
-  private async commitDraw(end: Offset): Promise<void> {
+  private async commitDraw(overlay: AnnotationPageOverlay, end: Offset): Promise<void> {
     const s = this.drawState;
     this.drawState = null;
     if (!s || !this.doc) return;
@@ -5060,10 +5201,143 @@ export class PdfrxViewer {
     s.preview.remove();
     const spec = this.buildSpecFromDraw(s, end);
     if (!spec) return;
+    if (spec.subtype === 'text' || spec.subtype === 'freeText') {
+      const contents = await this.requestAnnotationText(overlay, spec);
+      if (contents === null) return;
+      spec.contents = contents;
+      if (spec.subtype === 'freeText') {
+        spec.fontFace = await this.ensureFreeTextFont(contents);
+        if (spec.rect) spec.appearanceLines = wrapFreeText(contents, spec.rect.right - spec.rect.left - (spec.borderWidth ?? 0) * 2);
+      }
+    }
     const id = await this.doc.addAnnotation(s.pageNumber, spec);
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
     this.setAnnotationSelectMode(true);
     this.setSelectedAnnotation(id);
+  }
+
+  private async ensureFreeTextFont(contents: string): Promise<string | null> {
+    const charset = freeTextCharset(contents);
+    if (charset === null) return null;
+    const face = `PdfrxFreeText-${charset}`;
+    const resolver = this.options.fontResolver === undefined ? googleFontsResolver : this.options.fontResolver;
+    if (!resolver) return null;
+    const resolution = resolver({ face, weight: 400, isItalic: false, charset, pitchFamily: 0 });
+    if (!resolution) return null;
+    let download = this.fontDownloads.get(resolution.url);
+    if (!download) {
+      download = fetch(resolution.url)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return new Uint8Array(await response.arrayBuffer());
+        })
+        .catch((error: unknown) => {
+          console.warn(`pdfrx: failed to download FreeText font ${resolution.url}:`, error);
+          return null;
+        });
+      this.fontDownloads.set(resolution.url, download);
+    }
+    const data = await download;
+    if (!data) return null;
+    await this.#engine.addFontData(face, data, resolution.resolvedFace);
+    return face;
+  }
+
+  private trackAnnotationTextEdit(operation: Promise<void>): void {
+    const previous = this.pendingAnnotationTextEdit;
+    this.pendingAnnotationTextEdit = Promise.all([previous, operation])
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        // A failed annotation write must not permanently poison subsequent
+        // saves. The original operation is fire-and-forget from a pointer
+        // handler, so report it here and leave the queue usable.
+        console.error('Failed to commit annotation text:', error);
+      });
+  }
+
+  /** Commits an open Text/FreeText editor and waits until its PDF write finishes. */
+  async flushAnnotationTextEdit(): Promise<void> {
+    const editor = this.annotationOverlayRoot.querySelector<HTMLTextAreaElement>(
+      '.pdfrx-annotation-text-editor textarea',
+    );
+    editor?.blur();
+    await this.pendingAnnotationTextEdit;
+  }
+
+  /** Opens a page-local editor for a new or existing Text/FreeText annotation. */
+  private requestAnnotationText(
+    overlay: AnnotationPageOverlay,
+    spec: PdfAnnotationSpec,
+  ): Promise<string | null> {
+    const rect = spec.rect;
+    if (!rect) return Promise.resolve(null);
+    overlay.svg.querySelector('.pdfrx-annotation-text-editor')?.remove();
+    const box = pdfRectToRect(rect, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+    const isNote = spec.subtype === 'text';
+    const width = isNote ? Math.min(180, Math.max(100, overlay.pageSize.width - box.right - 8)) : Math.max(40, rectWidth(box));
+    const height = isNote ? 96 : Math.max(28, rectHeight(box));
+    const x = isNote ? Math.min(box.right + 6, overlay.pageSize.width - width - 4) : box.left;
+    const y = Math.min(box.top, overlay.pageSize.height - height - 4);
+    const foreign = document.createElementNS(SVG_NS, 'foreignObject');
+    foreign.setAttribute('class', 'pdfrx-annotation-text-editor');
+    foreign.setAttribute('x', `${Math.max(4, x)}`);
+    foreign.setAttribute('y', `${Math.max(4, y)}`);
+    foreign.setAttribute('width', `${width}`);
+    foreign.setAttribute('height', `${height}`);
+    foreign.style.pointerEvents = 'auto';
+    const textarea = document.createElement('textarea');
+    textarea.value = spec.contents ?? '';
+    textarea.placeholder = isNote ? 'Note' : 'Text';
+    textarea.style.cssText =
+      'box-sizing:border-box;width:100%;height:100%;resize:none;padding:5px;' +
+      'font:12px Arial,Helvetica,sans-serif;color:#111;background:rgba(255,255,255,.96);' +
+      'border:1px solid #2196f3;border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);';
+    textarea.addEventListener('pointerdown', (event) => event.stopPropagation());
+    foreign.appendChild(textarea);
+    overlay.svg.appendChild(foreign);
+    // Pointerup is followed by the browser's click/focus default action. Focus
+    // on the next frame so that action cannot immediately blur and commit an
+    // empty FreeText editor after a drag.
+    requestAnimationFrame(() => {
+      if (!textarea.isConnected) return;
+      textarea.focus({ preventScroll: true });
+      textarea.select();
+    });
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = (value: string | null): void => {
+        if (finished) return;
+        finished = true;
+        foreign.remove();
+        resolve(value);
+      };
+      textarea.addEventListener('blur', () => finish(textarea.value));
+      textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(null);
+        } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          finish(textarea.value);
+        }
+      });
+    });
+  }
+
+  /** Reopens the inline editor and records the contents change as one undo step. */
+  private async editTextAnnotation(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): Promise<void> {
+    if (!this.doc) return;
+    const before = annotationToSpec(annotation);
+    const contents = await this.requestAnnotationText(overlay, before);
+    if (contents === null || contents === (before.contents ?? '')) return;
+    const after = structuredClone(before);
+    after.contents = contents;
+    if (after.subtype === 'freeText') {
+      after.fontFace = await this.ensureFreeTextFont(contents);
+      if (after.rect) after.appearanceLines = wrapFreeText(contents, after.rect.right - after.rect.left - (after.borderWidth ?? 0) * 2);
+    }
+    await this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after);
+    this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
   }
 
   /** Converts a completed drawing gesture into an annotation spec (PDF coords). */
@@ -5131,20 +5405,19 @@ export class PdfrxViewer {
       }
       case 'note': {
         const p = toPdf(start);
-        const text = typeof prompt === 'function' ? prompt('Note text:') : '';
-        if (text == null) return null;
         return {
           subtype: 'text',
           rect: { left: p.x, top: p.y, right: p.x + 18, bottom: p.y - 18 },
           color,
-          contents: text,
+          contents: '',
         };
       }
       case 'freeText': {
         const r = rectOf(start, end);
-        const text = typeof prompt === 'function' ? prompt('Text:') : '';
-        if (text == null) return null;
-        return { subtype: 'freeText', rect: r, color, contents: text };
+        const interiorColor = this.annotationStyle.fillColor
+          ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
+          : undefined;
+        return { subtype: 'freeText', rect: r, color, interiorColor, borderWidth, contents: '' };
       }
     }
   }
@@ -5517,6 +5790,7 @@ export class PdfrxViewer {
     for (const a of sel) {
       const before = annotationToSpec(a);
       const after = makeSpec(a);
+      refreshFreeTextLayout(after);
       await this.doc.updateAnnotation(overlay.pageNumber, a.id, after);
       group.push({ pageNumber: overlay.pageNumber, id: a.id, before, after });
     }

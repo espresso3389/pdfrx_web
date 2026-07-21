@@ -1636,6 +1636,8 @@ export class PdfPage {
       flags: a.flags,
       contents: a.contents,
       author: a.author,
+      fontFace: a.fontFace,
+      appearanceLines: a.appearanceLines,
       subject: a.subject,
       modificationDate: a.modificationDate,
       creationDate: a.creationDate,
@@ -1680,6 +1682,8 @@ export class PdfPage {
       flags: spec.flags,
       contents: spec.contents,
       author: spec.author,
+      fontFace: spec.fontFace,
+      appearanceLines: spec.appearanceLines,
       geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
     };
   }

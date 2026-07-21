@@ -30,6 +30,7 @@ export function PdfSaveButton({ className, style, fileName, children }: PdfSaveB
     if (!doc) return;
     setIsSaving(true);
     try {
+      await viewer.flushAnnotationTextEdit();
       const data = await doc.encodePdf();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');

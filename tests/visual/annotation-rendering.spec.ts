@@ -22,6 +22,7 @@ interface AnnotationSpec {
   color: AnnotationColor;
   interiorColor?: AnnotationColor;
   borderWidth: number;
+  contents?: string;
   geometry?: unknown;
 }
 
@@ -107,6 +108,30 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
       },
     },
     maxMismatchRatio: 0.01,
+  },
+  {
+    name: 'sticky note appearance',
+    spec: {
+      subtype: 'text',
+      rect: { left: 72, top: 184, right: 96, bottom: 160 },
+      color: rgba(251, 192, 45, 255),
+      borderWidth: 0,
+      contents: 'Review this section',
+      geometry: { kind: 'none' },
+    },
+    maxMismatchRatio: 0.004,
+  },
+  {
+    name: 'free text appearance',
+    spec: {
+      subtype: 'freeText',
+      rect: { left: 36, top: 184, right: 220, bottom: 112 },
+      color: rgba(229, 57, 53, 255),
+      borderWidth: 1,
+      contents: 'Free text annotation',
+      geometry: { kind: 'none' },
+    },
+    maxMismatchRatio: 0.025,
   },
 ];
 
@@ -381,4 +406,115 @@ test('wheel scrolling and browser-safe zoom work while the annotation SVG captur
   await page.mouse.wheel(0, -80);
   await page.keyboard.up('Control');
   await expect.poll(async () => (await transform()).zoom).toBeGreaterThan(beforeZoom.zoom);
+});
+
+test('note and FreeText use inline editors instead of browser prompts', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const setup = (tool: 'note' | 'freeText'): Promise<void> =>
+    page.evaluate((value) => {
+      const api = (
+        window as unknown as {
+          annotationVisualTest: { setupTextTool(t: 'note' | 'freeText', strokeWidth?: number): Promise<void> };
+        }
+      ).annotationVisualTest;
+      return api.setupTextTool(value);
+    }, tool);
+  const read = (): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]> =>
+    page.evaluate(() => {
+      const api = (
+        window as unknown as {
+          annotationVisualTest: {
+            readTextAnnotations(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]>;
+          };
+        }
+      ).annotationVisualTest;
+      return api.readTextAnnotations();
+    });
+
+  await setup('note');
+  await expect(page.locator('svg[style*="crosshair"]')).toHaveCount(1);
+  await page.mouse.click(120, 80);
+  const noteEditor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(noteEditor).toHaveCount(1);
+  await noteEditor.fill('Review this section');
+  await noteEditor.press('Control+Enter');
+  await expect.poll(async () => (await read()).length).toBe(1);
+  expect(await read()).toEqual([{ subtype: 'text', contents: 'Review this section', borderWidth: 0 }]);
+
+  // Exercise the second creation flow from a fresh document/viewer so the
+  // previous tool's asynchronous overlay replacement cannot affect the drag.
+  await page.reload();
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupTextTool(t: 'note' | 'freeText', strokeWidth?: number): Promise<void> };
+      }
+    ).annotationVisualTest.setupTextTool('freeText', 7),
+  );
+  await expect(page.locator('svg[style*="crosshair"]')).toHaveCount(1);
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(200, 140, { steps: 3 });
+  await page.mouse.up();
+  const freeTextEditor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(freeTextEditor).toHaveCount(1);
+  const multilineText = '日本語テキスト ABC\nThis is a very long line that must wrap inside the text box.';
+  await freeTextEditor.fill(multilineText);
+  // Saving while the editor still owns focus must first commit its contents;
+  // otherwise encodePdf can race ahead and persist an empty Text Box.
+  await page.evaluate(() =>
+    (
+      window as unknown as { annotationVisualTest: { flushAnnotationTextEdit(): Promise<void> } }
+    ).annotationVisualTest.flushAnnotationTextEdit(),
+  );
+  await expect.poll(async () => (await read()).length).toBe(1);
+  expect(await read()).toEqual([{ subtype: 'freeText', contents: multilineText, borderWidth: 7 }]);
+  const renderedText = page.locator('g[data-annot-id] text');
+  await expect(renderedText.locator('tspan')).toHaveCount(4);
+  await expect(renderedText).toHaveAttribute('clip-path', /^url\(#pdfrx-free-text-/);
+  const roundTrip = await page.evaluate(() => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: {
+          inspectCurrentFreeTextRoundTrip(): Promise<{ contents: string | null; darkInteriorPixels: number }>;
+        };
+      }
+    ).annotationVisualTest;
+    return api.inspectCurrentFreeTextRoundTrip();
+  });
+  expect(roundTrip.contents).toBe(multilineText);
+  expect(roundTrip.darkInteriorPixels).toBeGreaterThan(100);
+
+  // The empty area inside the box is also a hit target; users should not have
+  // to double-click directly on a glyph or the thin border to edit it.
+  const freeTextShape = page.locator('g[data-annot-id]').first();
+  await freeTextShape.dblclick({ position: { x: 140, y: 45 } });
+  await expect(page.locator('.pdfrx-annotation-text-editor textarea')).toHaveValue(multilineText);
+});
+
+test('FreeText contents survive encode and render after reopening', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'freeText',
+    rect: { left: 36, top: 184, right: 220, bottom: 112 },
+    color: rgba(229, 57, 53, 255),
+    borderWidth: 1,
+    contents: 'Persisted free text',
+    geometry: { kind: 'none' },
+  };
+  const result = await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: {
+          runFreeTextRoundTrip(s: unknown): Promise<{ contents: string | null; darkInteriorPixels: number }>;
+        };
+      }
+    ).annotationVisualTest;
+    return api.runFreeTextRoundTrip(annotation);
+  }, spec);
+  expect(result.contents).toBe(spec.contents);
+  expect(result.darkInteriorPixels, 'reopened PDF should paint the FreeText glyphs').toBeGreaterThan(20);
 });

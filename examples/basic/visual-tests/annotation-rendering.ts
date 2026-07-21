@@ -261,6 +261,98 @@ function readViewTransform(): { xZoomed: number; yZoomed: number; zoom: number }
   return viewer.currentTransform;
 }
 
+async function setupTextTool(tool: 'note' | 'freeText', strokeWidth?: number): Promise<void> {
+  await clearAnnotations();
+  if (strokeWidth !== undefined) viewer.setAnnotationStyle({ strokeWidth });
+  viewer.setAnnotationTool(tool);
+}
+
+async function readTextAnnotations(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]> {
+  const doc = viewer.document;
+  if (!doc) return [];
+  return (await doc.pages[0]!.loadAnnotations()).map((annotation) => ({
+    subtype: annotation.subtype,
+    contents: annotation.contents,
+    borderWidth: annotation.borderWidth,
+  }));
+}
+
+async function flushAnnotationTextEdit(): Promise<void> {
+  await viewer.flushAnnotationTextEdit();
+}
+
+async function runFreeTextRoundTrip(spec: PdfAnnotationSpec): Promise<{
+  contents: string | null;
+  darkInteriorPixels: number;
+}> {
+  const doc = viewer.document;
+  if (!doc || !spec.rect) throw new Error('Test PDF is not open or spec has no rect');
+  await clearAnnotations();
+  await doc.addAnnotation(1, spec);
+  const encoded = await doc.encodePdf();
+  const reopened = await viewer.engine.openData(encoded);
+  try {
+    const annotation = (await reopened.pages[0]!.loadAnnotations())[0];
+    const image = await reopened.pages[0]!.render({
+      fullWidth: SIZE,
+      fullHeight: SIZE,
+      backgroundColor: 0xffffffff,
+      annotationRenderingMode: 'annotationAndForms',
+    });
+    if (!image) throw new Error('Round-trip render was cancelled');
+    const pixels = image.toImageData().data;
+    const left = Math.ceil(spec.rect.left + 2);
+    const right = Math.floor(spec.rect.right - 2);
+    const top = Math.ceil(SIZE - spec.rect.top + 2);
+    const bottom = Math.floor(SIZE - spec.rect.bottom - 2);
+    let darkInteriorPixels = 0;
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        const i = (y * SIZE + x) * 4;
+        if (pixels[i]! < 80 && pixels[i + 1]! < 80 && pixels[i + 2]! < 80) darkInteriorPixels++;
+      }
+    }
+    return { contents: annotation?.contents ?? null, darkInteriorPixels };
+  } finally {
+    await reopened.dispose();
+    await clearAnnotations();
+  }
+}
+
+async function inspectCurrentFreeTextRoundTrip(): Promise<{ contents: string | null; darkInteriorPixels: number }> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  const current = (await doc.pages[0]!.loadAnnotations()).find((annotation) => annotation.subtype === 'freeText');
+  if (!current) return { contents: null, darkInteriorPixels: 0 };
+  const encoded = await doc.encodePdf();
+  const reopened = await viewer.engine.openData(encoded);
+  try {
+    const annotation = (await reopened.pages[0]!.loadAnnotations()).find((item) => item.subtype === 'freeText');
+    const image = await reopened.pages[0]!.render({
+      fullWidth: SIZE,
+      fullHeight: SIZE,
+      backgroundColor: 0xffffffff,
+      annotationRenderingMode: 'annotationAndForms',
+    });
+    if (!image) throw new Error('Round-trip render was cancelled');
+    const pixels = image.toImageData().data;
+    const left = Math.ceil(current.rect.left + 2);
+    const right = Math.floor(current.rect.right - 2);
+    const top = Math.ceil(SIZE - current.rect.top + 2);
+    const bottom = Math.floor(SIZE - current.rect.bottom - 2);
+    let darkInteriorPixels = 0;
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        const i = (y * SIZE + x) * 4;
+        if (pixels[i]! < 80 && pixels[i + 1]! < 80 && pixels[i + 2]! < 80) darkInteriorPixels++;
+      }
+    }
+    return { contents: annotation?.contents ?? null, darkInteriorPixels };
+  } finally {
+    await reopened.dispose();
+  }
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -271,6 +363,11 @@ declare global {
       readDuplicateState: typeof readDuplicateState;
       setupSelectAllTest: typeof setupSelectAllTest;
       readViewTransform: typeof readViewTransform;
+      setupTextTool: typeof setupTextTool;
+      readTextAnnotations: typeof readTextAnnotations;
+      flushAnnotationTextEdit: typeof flushAnnotationTextEdit;
+      runFreeTextRoundTrip: typeof runFreeTextRoundTrip;
+      inspectCurrentFreeTextRoundTrip: typeof inspectCurrentFreeTextRoundTrip;
     };
   }
 }
@@ -283,4 +380,9 @@ window.annotationVisualTest = {
   readDuplicateState,
   setupSelectAllTest,
   readViewTransform,
+  setupTextTool,
+  readTextAnnotations,
+  flushAnnotationTextEdit,
+  runFreeTextRoundTrip,
+  inspectCurrentFreeTextRoundTrip,
 };

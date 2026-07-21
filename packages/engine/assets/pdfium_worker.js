@@ -3569,6 +3569,7 @@ function _generateAnnotId() {
 // so we persist the authored colors here to keep them readable for the overlay.
 const ANNOT_COLOR_KEY = 'pdfrx:C';
 const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
+const ANNOT_FONT_FACE_KEY = 'pdfrx:FontFace';
 
 /** Serializes an RGBA color to the private-key string form, or '' to clear it. */
 function _colorToKey(c) {
@@ -3721,6 +3722,17 @@ function _readAnnotationObject(annot, index) {
     flags: w.FPDFAnnot_GetFlags(annot),
     contents: content ? content.content : null,
     author: content ? content.title : null,
+    fontFace: _getAnnotField(ANNOT_FONT_FACE_KEY, annot) || null,
+    appearanceLines: (() => {
+      const value = _getAnnotField('pdfrx:FreeTextLines', annot);
+      if (!value) return null;
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    })(),
     subject: content ? content.subject : null,
     modificationDate: content ? content.modificationDate : null,
     creationDate: content ? content.creationDate : null,
@@ -3749,6 +3761,7 @@ function loadAnnotations(params) {
         const subtype = w.FPDFAnnot_GetSubtype(annot);
         if (subtype === FPDF_ANNOT_WIDGET || subtype === FPDF_ANNOT_SUBTYPE_LINK || subtype === FPDF_ANNOT_SUBTYPE_POPUP)
           continue;
+        if (_getAnnotField('pdfrx:FreeTextAppearance', annot)) continue;
         annotations.push(_readAnnotationObject(annot, i));
       } finally {
         w.FPDFPage_CloseAnnot(annot);
@@ -3779,7 +3792,7 @@ function _setAnnotStringKey(annot, key, value) {
  * realizes line/arrow), `markup` (attachment points) and rect-defined
  * square/circle. Colors/border/flags/text apply to every subtype.
  */
-function _applyAnnotSpec(annot, spec) {
+function _applyAnnotSpec(annot, spec, docHandle) {
   const w = Pdfium.wasmExports;
   if (spec.rect) {
     const buf = w.malloc(16);
@@ -3801,6 +3814,8 @@ function _applyAnnotSpec(annot, spec) {
   if (typeof spec.flags === 'number') w.FPDFAnnot_SetFlags(annot, spec.flags);
   if (spec.contents != null) _setAnnotStringKey(annot, 'Contents', spec.contents);
   if (spec.author != null) _setAnnotStringKey(annot, 'T', spec.author);
+  if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
+  if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
   const g = spec.geometry;
   if (g && g.kind === 'ink') {
     for (const stroke of g.strokes) {
@@ -3819,6 +3834,78 @@ function _applyAnnotSpec(annot, spec) {
       w.FPDFAnnot_AppendAttachmentPoints(annot, buf);
       w.free(buf);
     }
+  }
+}
+
+/** Builds a FreeText appearance with independent fill, stroke, and embedded text. */
+function _appendFreeTextAppearance(docHandle, annot, spec) {
+  const w = Pdfium.wasmExports;
+  const rect = spec.rect;
+  if (!rect) return;
+  const [left, top, right, bottom] = rect;
+  const width = Math.max(0, right - left);
+  const height = Math.max(0, top - bottom);
+  const borderWidth = Math.max(0, spec.borderWidth ?? 0);
+  const fill = spec.interiorColor;
+  const stroke = spec.color;
+  if (fill || (stroke && borderWidth > 0)) {
+    const path = w.FPDFPageObj_CreateNewRect(left, bottom, width, height);
+    if (path) {
+      if (fill) w.FPDFPageObj_SetFillColor(path, fill[0], fill[1], fill[2], fill[3] ?? 255);
+      if (stroke && borderWidth > 0) {
+        w.FPDFPageObj_SetStrokeColor(path, stroke[0], stroke[1], stroke[2], stroke[3] ?? 255);
+        w.FPDFPageObj_SetStrokeWidth(path, borderWidth);
+      }
+      w.FPDFPath_SetDrawMode(path, fill ? 1 : 0, stroke && borderWidth > 0 ? 1 : 0);
+      if (!w.FPDFAnnot_AppendObject(annot, path)) w.FPDFPageObj_Destroy(path);
+    }
+  }
+  if (!spec.contents) return;
+  let font = 0;
+  const cached = spec.fontFace ? pdfFontMapper?.cachedFontsByFace[spec.fontFace] : null;
+  if (cached?.data) {
+    const fontPtr = w.malloc(cached.data.byteLength);
+    try {
+      new Uint8Array(Pdfium.memory.buffer, fontPtr, cached.data.byteLength).set(cached.data);
+      font = w.FPDFText_LoadFont(docHandle, fontPtr, cached.data.byteLength, 1, 1);
+    } finally {
+      w.free(fontPtr);
+    }
+  }
+  try {
+    const fontSize = 12;
+    const lineHeight = fontSize * 1.2;
+    const lines = spec.appearanceLines ?? String(spec.contents).replace(/\r\n?/g, '\n').split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      if (!line) continue;
+      let text = 0;
+      if (font) {
+        text = w.FPDFPageObj_CreateTextObj(docHandle, font, fontSize);
+      } else {
+        const name = StringUtils.allocateUTF8('Arial');
+        try {
+          text = w.FPDFPageObj_NewTextObj(docHandle, name, fontSize);
+        } finally {
+          StringUtils.freeUTF8(name);
+        }
+      }
+      if (!text) continue;
+      const value = StringUtils.allocateUTF16(line);
+      try {
+        if (!w.FPDFText_SetText(text, value)) {
+          w.FPDFPageObj_Destroy(text);
+          continue;
+        }
+      } finally {
+        StringUtils.freeUTF8(value);
+      }
+      w.FPDFPageObj_SetFillColor(text, 0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255);
+      w.FPDFPageObj_Transform(text, 1, 0, 0, 1, left + borderWidth + 3, top - borderWidth - 3 - fontSize - index * lineHeight);
+      if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);
+    }
+  } finally {
+    if (font) w.FPDFFont_Close(font);
   }
 }
 
@@ -3865,7 +3952,7 @@ function _findAnnotIndexById(pageHandle, id) {
 }
 
 /** Creates an annotation from `spec` on a live page handle and returns its id. */
-function _createAnnotOnPage(pageHandle, spec, forcedId) {
+function _createAnnotOnPage(docHandle, pageHandle, spec, forcedId) {
   const w = Pdfium.wasmExports;
   const code = ANNOT_SUBTYPE_CODES[spec.subtype];
   if (code == null) throw new Error(`Unsupported annotation subtype: ${spec.subtype}`);
@@ -3874,11 +3961,39 @@ function _createAnnotOnPage(pageHandle, spec, forcedId) {
   const id = forcedId || spec.id || _generateAnnotId();
   try {
     _setAnnotStringKey(annot, 'NM', id);
-    _applyAnnotSpec(annot, spec);
+    _applyAnnotSpec(annot, spec, docHandle);
+    // PDFium cannot append page objects to a FreeText /AP. Keep the semantic
+    // FreeText annotation hidden and paint its deterministic appearance in an
+    // internal companion Stamp annotation instead.
+    if (spec.subtype === 'freeText') w.FPDFAnnot_SetFlags(annot, (spec.flags ?? 0) | 32);
   } finally {
     w.FPDFPage_CloseAnnot(annot);
   }
+  if (spec.subtype === 'freeText') {
+    const stamp = w.FPDFPage_CreateAnnot(pageHandle, ANNOT_SUBTYPE_CODES.stamp);
+    if (stamp) {
+      try {
+        w.FPDFAnnot_SetFlags(stamp, 4);
+        _setAnnotStringKey(stamp, 'NM', `${id}:appearance`);
+        _setAnnotStringKey(stamp, 'pdfrx:FreeTextAppearance', id);
+        if (spec.rect) {
+          const buf = w.malloc(16);
+          new Float32Array(Pdfium.memory.buffer, buf, 4).set(spec.rect);
+          w.FPDFAnnot_SetRect(stamp, buf);
+          w.free(buf);
+        }
+        _appendFreeTextAppearance(docHandle, stamp, spec);
+      } finally {
+        w.FPDFPage_CloseAnnot(stamp);
+      }
+    }
+  }
   return id;
+}
+
+function _removeAnnotById(pageHandle, id) {
+  const index = _findAnnotIndexById(pageHandle, id);
+  return index >= 0 ? !!Pdfium.wasmExports.FPDFPage_RemoveAnnot(pageHandle, index) : false;
 }
 
 /**
@@ -3891,7 +4006,7 @@ function addAnnotation(params) {
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
   if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
   try {
-    const id = _createAnnotOnPage(pageHandle, spec);
+    const id = _createAnnotOnPage(docHandle, pageHandle, spec);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     return { id };
@@ -3913,9 +4028,9 @@ function updateAnnotation(params) {
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
   if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
   try {
-    const idx = _findAnnotIndexById(pageHandle, id);
-    if (idx >= 0) w.FPDFPage_RemoveAnnot(pageHandle, idx);
-    const newId = _createAnnotOnPage(pageHandle, spec, spec.id || id);
+    _removeAnnotById(pageHandle, `${id}:appearance`);
+    _removeAnnotById(pageHandle, id);
+    const newId = _createAnnotOnPage(docHandle, pageHandle, spec, spec.id || id);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     return { id: newId };
@@ -3934,9 +4049,8 @@ function removeAnnotation(params) {
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
   if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
   try {
-    const idx = _findAnnotIndexById(pageHandle, id);
-    if (idx < 0) return { ok: false };
-    const ok = !!w.FPDFPage_RemoveAnnot(pageHandle, idx);
+    _removeAnnotById(pageHandle, `${id}:appearance`);
+    const ok = _removeAnnotById(pageHandle, id);
     w.FPDFPage_GenerateContent(pageHandle);
     return { ok };
   } finally {
