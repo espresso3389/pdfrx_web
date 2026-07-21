@@ -607,6 +607,9 @@ interface AnnotationPageOverlay {
   pageSize: Size;
   container: HTMLDivElement;
   svg: SVGSVGElement;
+  /** Sibling page layer whose whole transformed surface blends with the PDF canvas. */
+  highlightContainer: HTMLDivElement;
+  highlightSvg: SVGSVGElement;
   /** A `<g>` above the shapes holding the selected annotation's drag anchors. */
   anchorLayer: SVGGElement;
   /** Annotations currently painted, keyed by id (for hit-testing / reconcile). */
@@ -3961,6 +3964,7 @@ export class PdfrxViewer {
       if (onScreen && overlay && annotations && this.dirtyAnnotationOverlayPages.has(pageNumber)) {
         const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
         overlay.container.replaceWith(replacement.container);
+        overlay.highlightContainer.replaceWith(replacement.highlightContainer);
         this.annotationOverlays.set(pageNumber, replacement);
         this.dirtyAnnotationOverlayPages.delete(pageNumber);
         overlay = replacement;
@@ -3969,6 +3973,7 @@ export class PdfrxViewer {
         if (annotations) {
           overlay = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
           this.annotationOverlays.set(pageNumber, overlay);
+          this.annotationOverlayRoot.appendChild(overlay.highlightContainer);
           this.annotationOverlayRoot.appendChild(overlay.container);
           this.dirtyAnnotationOverlayPages.delete(pageNumber);
         }
@@ -3977,7 +3982,9 @@ export class PdfrxViewer {
       if (onScreen) {
         const vr = documentRectToView(t, pageRect);
         overlay.container.style.display = '';
+        overlay.highlightContainer.style.display = '';
         overlay.container.style.transform = `translate(${vr.left}px, ${vr.top}px) scale(${t.zoom})`;
+        overlay.highlightContainer.style.transform = overlay.container.style.transform;
         // A drawing tool or select mode makes the SVG capture drags anywhere on
         // the page (to draw / rubber-band); otherwise only the shapes are
         // interactive so empty areas still pan / select text.
@@ -4003,6 +4010,7 @@ export class PdfrxViewer {
         }
       } else {
         overlay.container.style.display = 'none';
+        overlay.highlightContainer.style.display = 'none';
       }
     }
   }
@@ -4024,18 +4032,37 @@ export class PdfrxViewer {
     container.style.cssText =
       `position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;` +
       `width:${pageSize.width}px;height:${pageSize.height}px;`;
+    const highlightContainer = document.createElement('div');
+    highlightContainer.className = 'pdfrx-annotation-highlight-page';
+    highlightContainer.style.cssText = container.style.cssText + 'mix-blend-mode:multiply;';
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('width', `${pageSize.width}`);
     svg.setAttribute('height', `${pageSize.height}`);
     svg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
     svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
+    const highlightSvg = document.createElementNS(SVG_NS, 'svg');
+    highlightSvg.setAttribute('width', `${pageSize.width}`);
+    highlightSvg.setAttribute('height', `${pageSize.height}`);
+    highlightSvg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
+    highlightSvg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
     const byId = new Map<string, PdfAnnotationObject>();
     for (const a of annotations) {
       this.annotationSnapshots.set(a.id, { pageNumber, annotation: a });
       const el = this.buildAnnotationShape(a, pageGeom, pageSize);
       if (el) {
-        el.dataset.annotId = a.id;
-        svg.appendChild(el);
+        if (a.subtype === 'highlight') {
+          el.dataset.annotVisualId = a.id;
+          el.style.pointerEvents = 'none';
+          highlightSvg.appendChild(el);
+          const hit = el.cloneNode(true) as SVGGElement;
+          hit.removeAttribute('data-annot-visual-id');
+          hit.dataset.annotId = a.id;
+          hit.style.opacity = '0';
+          svg.appendChild(hit);
+        } else {
+          el.dataset.annotId = a.id;
+          svg.appendChild(el);
+        }
         byId.set(a.id, a);
       }
     }
@@ -4044,7 +4071,18 @@ export class PdfrxViewer {
     anchorLayer.setAttribute('class', 'pdfrx-anchors');
     svg.appendChild(anchorLayer);
     container.appendChild(svg);
-    const overlay: AnnotationPageOverlay = { pageNumber, pageGeom, pageSize, container, svg, anchorLayer, annotations: byId };
+    highlightContainer.appendChild(highlightSvg);
+    const overlay: AnnotationPageOverlay = {
+      pageNumber,
+      pageGeom,
+      pageSize,
+      container,
+      svg,
+      highlightContainer,
+      highlightSvg,
+      anchorLayer,
+      annotations: byId,
+    };
     this.attachAnnotationEditing(overlay, pageNumber, pageGeom, pageSize);
     this.refreshAnnotationSelection(overlay);
     return overlay;
@@ -4117,7 +4155,9 @@ export class PdfrxViewer {
               [q.topLeft, q.topRight, q.bottomRight, q.bottomLeft].map((p) => offsetPair(toPx(p))).join(' '),
             );
             poly.setAttribute('fill', stroke);
-            poly.setAttribute('fill-opacity', a.subtype === 'highlight' ? '0.4' : '0.25');
+            if (a.subtype !== 'highlight') {
+              poly.setAttribute('fill-opacity', '0.25');
+            }
             add(poly);
           }
         }
@@ -4790,7 +4830,25 @@ export class PdfrxViewer {
     if (!fresh) return;
     fresh.dataset.annotId = base.id;
     fresh.style.pointerEvents = 'auto';
+    if (base.subtype === 'highlight') {
+      const visual = overlay.highlightSvg.querySelector<SVGGElement>(`g[data-annot-visual-id="${CSS.escape(base.id)}"]`);
+      if (visual) {
+        const visualFresh = fresh.cloneNode(true) as SVGGElement;
+        visualFresh.removeAttribute('data-annot-id');
+        visualFresh.dataset.annotVisualId = base.id;
+        visualFresh.style.pointerEvents = 'none';
+        overlay.highlightSvg.replaceChild(visualFresh, visual);
+      }
+      fresh.style.opacity = '0';
+    }
     overlay.svg.replaceChild(fresh, old);
+  }
+
+  /** Visible shape for an id (highlights paint on their separate blend layer). */
+  private annotationDisplayGroup(overlay: AnnotationPageOverlay, id: string, fallback: SVGGElement): SVGGElement {
+    return (
+      overlay.highlightSvg.querySelector<SVGGElement>(`g[data-annot-visual-id="${CSS.escape(id)}"]`) ?? fallback
+    );
   }
 
   /**
@@ -4926,14 +4984,16 @@ export class PdfrxViewer {
           ? this.annotationStyle.fillColor
           : 'none';
     preview.setAttribute('fill', previewFill);
-    if (tool === 'highlight') preview.setAttribute('fill-opacity', '0.4');
+    if (tool === 'highlight') {
+      preview.setAttribute('fill-opacity', `${this.annotationStyle.opacity}`);
+    }
     else if (previewFill !== 'none') preview.setAttribute('fill-opacity', `${this.annotationStyle.opacity}`);
     preview.setAttribute('stroke', this.annotationStyle.strokeWidth > 0 ? this.annotationStyle.color : 'none');
     preview.setAttribute('stroke-opacity', `${this.annotationStyle.opacity}`);
     preview.setAttribute('stroke-width', `${this.annotationStyle.strokeWidth}`);
     preview.setAttribute('stroke-linejoin', tool === 'ink' ? 'round' : 'miter');
     preview.setAttribute('stroke-linecap', tool === 'ink' ? 'round' : 'butt');
-    overlay.svg.appendChild(preview);
+    (tool === 'highlight' ? overlay.highlightSvg : overlay.svg).appendChild(preview);
     try {
       overlay.svg.setPointerCapture(pointerId);
     } catch {
@@ -5099,16 +5159,18 @@ export class PdfrxViewer {
   ): void {
     const annotation = overlay.annotations.get(id);
     if (!annotation) return;
+    const display = this.annotationDisplayGroup(overlay, id, g);
     try {
       g.setPointerCapture(pointerId);
     } catch {
       /* ignore */
     }
-    const preview = duplicate ? (g.cloneNode(true) as SVGGElement) : g;
+    const preview = duplicate ? (display.cloneNode(true) as SVGGElement) : display;
     if (duplicate) {
       preview.removeAttribute('data-annot-id');
+      preview.removeAttribute('data-annot-visual-id');
       preview.style.pointerEvents = 'none';
-      g.parentNode?.insertBefore(preview, g.nextSibling);
+      display.parentNode?.insertBefore(preview, display.nextSibling);
     }
     const displacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
@@ -5314,15 +5376,19 @@ export class PdfrxViewer {
       const g = child as SVGGElement;
       if (g.dataset.annotId && this.selectedAnnotationIds.has(g.dataset.annotId)) groups.set(g.dataset.annotId, g);
     }
+    const displayGroups = new Map(
+      [...groups].map(([id, g]) => [id, this.annotationDisplayGroup(overlay, id, g)] as const),
+    );
     const previews = duplicate
-      ? [...groups.values()].map((g) => {
+      ? [...displayGroups.values()].map((g) => {
           const clone = g.cloneNode(true) as SVGGElement;
           clone.removeAttribute('data-annot-id');
+          clone.removeAttribute('data-annot-visual-id');
           clone.style.pointerEvents = 'none';
           g.parentNode?.insertBefore(clone, g.nextSibling);
           return clone;
         })
-      : [...groups.values()];
+      : [...displayGroups.values()];
     try {
       svg.setPointerCapture(pointerId);
     } catch {

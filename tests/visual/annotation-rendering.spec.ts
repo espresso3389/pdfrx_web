@@ -87,6 +87,27 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
     },
     maxMismatchRatio: 0.015,
   },
+  {
+    name: 'text highlight color and opacity',
+    spec: {
+      subtype: 'highlight',
+      rect: { left: 36, top: 156, right: 220, bottom: 108 },
+      color: rgba(251, 192, 45),
+      borderWidth: 0,
+      geometry: {
+        kind: 'markup',
+        quads: [
+          {
+            topLeft: { x: 36, y: 156 },
+            topRight: { x: 220, y: 156 },
+            bottomLeft: { x: 36, y: 108 },
+            bottomRight: { x: 220, y: 108 },
+          },
+        ],
+      },
+    },
+    maxMismatchRatio: 0.01,
+  },
 ];
 
 for (const visualCase of cases) {
@@ -284,6 +305,42 @@ test('a selected fill-only rectangle shows a dashed bounding box', async ({ page
   const guide = page.locator('.pdfrx-anchors > rect');
   await expect(guide).toHaveCount(1);
   await expect(guide).toHaveAttribute('stroke-dasharray', /\d/);
+});
+
+test('highlight uses a page-level Multiply layer that can blend with the PDF canvas', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'highlight',
+    rect: { left: 36, top: 156, right: 220, bottom: 108 },
+    color: rgba(229, 57, 53),
+    borderWidth: 0,
+    geometry: {
+      kind: 'markup',
+      quads: [
+        {
+          topLeft: { x: 36, y: 156 },
+          topRight: { x: 220, y: 156 },
+          bottomLeft: { x: 36, y: 108 },
+          bottomRight: { x: 220, y: 108 },
+        },
+      ],
+    },
+  };
+  const id = await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    return api.setupDuplicateGesture(annotation);
+  }, spec);
+  const blendLayer = page.locator('.pdfrx-annotation-highlight-page');
+  await expect(blendLayer).toHaveCount(1);
+  await expect(blendLayer).toHaveCSS('mix-blend-mode', 'multiply');
+  const visual = page.locator(`g[data-annot-visual-id="${id}"]`);
+  await expect(visual).toHaveCount(1);
+  await expect(visual.locator('polygon')).not.toHaveAttribute('fill-opacity');
 });
 
 test('wheel scrolling and browser-safe zoom work while the annotation SVG captures object selection', async ({ page }) => {

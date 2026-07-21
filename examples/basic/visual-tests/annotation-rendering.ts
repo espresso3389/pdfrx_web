@@ -31,7 +31,9 @@ await viewer.openData(bytes);
 
 async function waitForShape(id: string): Promise<SVGGElement> {
   for (let frame = 0; frame < 120; frame++) {
-    const shape = [...host.querySelectorAll<SVGGElement>('g[data-annot-id]')].find((el) => el.dataset.annotId === id);
+    const shape =
+      host.querySelector<SVGGElement>(`g[data-annot-visual-id="${CSS.escape(id)}"]`) ??
+      host.querySelector<SVGGElement>(`g[data-annot-id="${CSS.escape(id)}"]`);
     if (shape) return shape;
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
