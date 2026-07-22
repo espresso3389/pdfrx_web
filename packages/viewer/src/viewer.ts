@@ -5367,7 +5367,7 @@ export class PdfrxViewer {
       c.setAttribute('stroke', '#2196f3');
       c.setAttribute('stroke-width', `${1.5 / zoom}`);
       c.style.pointerEvents = 'auto';
-      c.style.cursor = 'grab';
+      c.style.cursor = 'crosshair';
       c.addEventListener('pointerdown', (e) => {
         if (!this.isAnnotationSelectMode() || e.button !== 0) return;
         e.preventDefault();
@@ -5415,7 +5415,7 @@ export class PdfrxViewer {
       c.setAttribute('stroke', '#2196f3');
       c.setAttribute('stroke-width', `${1.5 / this.transform.zoom}`);
       c.style.pointerEvents = 'auto';
-      c.style.cursor = 'grab';
+      c.style.cursor = 'crosshair';
       c.addEventListener('pointerdown', (e) => {
         if (!this.isAnnotationSelectMode() || e.button !== 0) return;
         e.preventDefault();
@@ -5441,7 +5441,7 @@ export class PdfrxViewer {
     } catch {
       /* ignore */
     }
-    circle.style.cursor = 'grabbing';
+    circle.style.cursor = 'crosshair';
     let lastSpec: PdfAnnotationSpec | null = null;
     const move = (e: PointerEvent): void => {
       const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
@@ -5456,7 +5456,7 @@ export class PdfrxViewer {
       circle.removeEventListener('pointermove', move);
       circle.removeEventListener('pointerup', up);
       circle.removeEventListener('pointercancel', up);
-      circle.style.cursor = 'grab';
+      circle.style.cursor = 'crosshair';
       if (!lastSpec || !this.doc) return;
       const before = annotationToSpec(annotation);
       const after = lastSpec;
@@ -5594,6 +5594,15 @@ export class PdfrxViewer {
         e.preventDefault();
         e.stopPropagation();
         const start = this.clientToPagePx(svg, e.clientX, e.clientY);
+        // Cmd/Ctrl-click toggles this shape in the current selection. Keep
+        // Shift+Cmd/Ctrl available for the existing constrained duplicate drag.
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
+          const next = new Set(this.selectedAnnotationIds);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          this.setSelectedAnnotations(next);
+          return;
+        }
         // Dragging a member of a multi-selection moves the whole group; otherwise
         // select just this shape and move it.
         if (this.selectedAnnotationIds.size > 1 && this.selectedAnnotationIds.has(id)) {
@@ -6397,7 +6406,7 @@ export class PdfrxViewer {
     } catch {
       /* best-effort */
     }
-    circle.style.cursor = 'grabbing';
+    circle.style.cursor = 'crosshair';
     let newBox: PdfRect | null = null;
     const move = (e: PointerEvent): void => {
       const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
@@ -6411,7 +6420,7 @@ export class PdfrxViewer {
       circle.removeEventListener('pointermove', move);
       circle.removeEventListener('pointerup', up);
       circle.removeEventListener('pointercancel', up);
-      circle.style.cursor = 'grab';
+      circle.style.cursor = 'crosshair';
       if (!newBox) return;
       const target = newBox;
       void this.commitGroupTransform(overlay, sel, (a) => scaleAnnotationSpec(a, box, target));
