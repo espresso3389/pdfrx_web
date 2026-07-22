@@ -505,6 +505,28 @@ export interface PdfAnnotationObject {
   readonly geometry: PdfAnnotationGeometry;
 }
 
+/** Filters for {@link PdfDocument.loadAnnotations}. */
+export interface PdfLoadAnnotationsOptions {
+  /** Return only this subtype, or any of these subtypes. Omit to return all annotations. */
+  readonly subtype?: PdfAnnotationSubtype | readonly PdfAnnotationSubtype[];
+}
+
+/** Options for {@link PdfDocument.loadHighlights}. */
+export interface PdfLoadHighlightsOptions {
+  /**
+   * Extract the page text covered by each highlight's quadpoints. This loads
+   * page text in addition to annotations, so it is disabled by default.
+   */
+  readonly includeText?: boolean;
+}
+
+/** A highlight returned by {@link PdfDocument.loadHighlights}. */
+export interface PdfHighlightObject extends PdfAnnotationObject {
+  readonly subtype: 'highlight';
+  /** Highlighted page text, or `null` when text extraction was not requested or unavailable. */
+  readonly text: string | null;
+}
+
 /**
  * Parameters to create or replace an annotation via
  * {@link PdfDocument.addAnnotation} / {@link PdfDocument.updateAnnotation}.

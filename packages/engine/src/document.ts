@@ -46,7 +46,10 @@ import {
   type PdfFontQuery,
   type PdfFormField,
   type PdfFormFieldValue,
+  type PdfHighlightObject,
   type PdfLink,
+  type PdfLoadAnnotationsOptions,
+  type PdfLoadHighlightsOptions,
   type PdfOutlineNode,
   type PdfPageRawText,
   type PdfPageRotation,
@@ -358,6 +361,45 @@ export class PdfrxEngine {
     }
   }
 }
+
+/** Extracts raw page text covered by a highlight's individual quadpoints. */
+const extractHighlightText = (highlight: PdfHighlightObject, pageText: PdfPageRawText | null): string | null => {
+  if (!pageText || highlight.geometry.kind !== 'markup') return null;
+  const ranges: { start: number; end: number }[] = [];
+  for (const quad of highlight.geometry.quads) {
+    const points = [quad.topLeft, quad.topRight, quad.bottomLeft, quad.bottomRight];
+    const left = Math.min(...points.map((p) => p.x));
+    const right = Math.max(...points.map((p) => p.x));
+    const bottom = Math.min(...points.map((p) => p.y));
+    const top = Math.max(...points.map((p) => p.y));
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < pageText.charRects.length; i++) {
+      const rect = pageText.charRects[i];
+      if (!rect) continue;
+      const rectLeft = Math.min(rect.left, rect.right);
+      const rectRight = Math.max(rect.left, rect.right);
+      const rectBottom = Math.min(rect.bottom, rect.top);
+      const rectTop = Math.max(rect.bottom, rect.top);
+      if (rectRight < left || rectLeft > right || rectTop < bottom || rectBottom > top) continue;
+      if (start < 0) start = i;
+      end = i + 1;
+    }
+    if (start >= 0) ranges.push({ start, end });
+  }
+  if (ranges.length === 0) return '';
+  ranges.sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const range of ranges) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
+    else merged.push({ ...range });
+  }
+  return merged
+    .map((range) => pageText.fullText.substring(range.start, range.end).trim())
+    .filter((text) => text.length > 0)
+    .join('\n');
+};
 
 /**
  * Listener for a document event named `E`.
@@ -1021,18 +1063,48 @@ export class PdfDocument {
   /**
    * Loads all content annotations (ink, shapes, text markup, notes, free text —
    * not widgets/links/popups) across the document's loaded pages, each tagged
-   * with its 1-based `pageNumber`. Annotations on pages imported from another
-   * document are skipped (they carry their own annotation state, like form
-   * fields). Returns `[]` for a disposed document.
+   * with its 1-based `pageNumber`. Use `options.subtype` to restrict the result
+   * to one or more annotation subtypes. Annotations on pages imported from
+   * another document are skipped (they carry their own annotation state, like
+   * form fields). Returns `[]` for a disposed document.
    */
-  async loadAnnotations(): Promise<PdfAnnotationObject[]> {
+  async loadAnnotations(options: PdfLoadAnnotationsOptions = {}): Promise<PdfAnnotationObject[]> {
     if (this._isDisposed) return [];
     const all: PdfAnnotationObject[] = [];
+    const requestedSubtypes = options.subtype === undefined
+      ? null
+      : new Set(Array.isArray(options.subtype) ? options.subtype : [options.subtype]);
     for (const page of this._pages) {
       if (page.document.docHandle !== this.docHandle) continue; // imported pages carry their own annotations
-      all.push(...(await page.loadAnnotations()));
+      const annotations = await page.loadAnnotations();
+      all.push(...(requestedSubtypes ? annotations.filter((a) => requestedSubtypes.has(a.subtype)) : annotations));
     }
     return all;
+  }
+
+  /**
+   * Loads every highlight annotation in the document. Each result includes its
+   * 1-based page number. With `includeText`, the engine also loads the relevant
+   * pages' text and extracts the characters covered by the highlight quadpoints.
+   */
+  async loadHighlights(options: PdfLoadHighlightsOptions = {}): Promise<PdfHighlightObject[]> {
+    const annotations = await this.loadAnnotations({ subtype: 'highlight' });
+    const highlights: PdfHighlightObject[] = annotations.map((annotation) => ({
+      ...annotation,
+      subtype: 'highlight',
+      text: null,
+    }));
+    if (!options.includeText || highlights.length === 0) return highlights;
+
+    const textByPage = new Map<number, PdfPageRawText | null>();
+    await Promise.all([...new Set(highlights.map((h) => h.pageNumber))].map(async (pageNumber) => {
+      const page = this._pages[pageNumber - 1];
+      textByPage.set(pageNumber, page ? await page.loadText() : null);
+    }));
+    return highlights.map((highlight) => ({
+      ...highlight,
+      text: extractHighlightText(highlight, textByPage.get(highlight.pageNumber) ?? null),
+    }));
   }
 
   /**

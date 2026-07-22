@@ -173,7 +173,7 @@ next to the form block:
   because `FPDFAnnot_GetColor` refuses to report a color once an `/AP` exists.
 
 The engine surfaces `PdfPage.loadAnnotations()`,
-`PdfDocument.loadAnnotations()` / `addAnnotation()` / `updateAnnotation()` /
+`PdfDocument.loadAnnotations()` / `loadHighlights()` / `addAnnotation()` / `updateAnnotation()` /
 `removeAnnotation()` / `importAnnotations()`, and an `annotationsChanged` event;
 `@pdfrx/react` exposes the `useAnnotations` hook and a `PdfAnnotationToolbar`.
 
