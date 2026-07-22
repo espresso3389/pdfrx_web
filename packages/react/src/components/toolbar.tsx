@@ -38,9 +38,10 @@ export interface PdfToolbarProps {
  * {@link PdfZoomControls}, {@link PdfSearchBox}, {@link PdfPrintButton}) if you
  * would rather lay them out yourself.
  *
- * On a narrow (phone) screen the inline search field is replaced by a search
- * button; tapping it reveals the search field in a second row below the bar.
- * This is purely responsive — on a wide screen the field is always inline.
+ * On a narrow (phone) screen the zoom controls are hidden and the inline search
+ * field is replaced by a search button; tapping it reveals the search field in
+ * a second row below the bar. This is purely responsive — on a wide screen the
+ * zoom controls and search field are shown inline.
  *
  * @example
  * ```tsx

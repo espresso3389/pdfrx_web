@@ -916,9 +916,14 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* --- Phones: collapse the toolbar's inline search into a toggle + row ----- */
+/* --- Phones: simplify zoom controls and collapse search into a toggle ----- */
 
 @media (max-width: 640px) {
+  /* Pinch gestures provide zoom on phones, so keep the toolbar compact. */
+  .pdfrx-toolbar > .pdfrx-zoom-controls {
+    display: none;
+  }
+
   /* Hide the always-inline field... */
   .pdfrx-toolbar-search {
     display: none;
