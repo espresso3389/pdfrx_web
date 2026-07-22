@@ -65,6 +65,27 @@ export interface PdfrxStrings {
   highlight: string;
   selectAll: string;
 
+  // Editing / annotation toolbar
+  undo: string;
+  redo: string;
+  textSelection: string;
+  selectObjects: string;
+  penTool: string;
+  rectangleTool: string;
+  ellipseTool: string;
+  lineTool: string;
+  arrowTool: string;
+  highlighterTool: string;
+  noteTool: string;
+  textBoxTool: string;
+  strokeColor: string;
+  noStroke: string;
+  fillColor: string;
+  noFill: string;
+  opacity: string;
+  thickness: string;
+  closeAnnotationToolbar: string;
+
   // Viewer app chrome
   openFile: string;
   download: string;
@@ -117,6 +138,26 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   copy: 'Copy',
   highlight: 'Highlight',
   selectAll: 'Select All',
+
+  undo: 'Undo',
+  redo: 'Redo',
+  textSelection: 'Text selection',
+  selectObjects: 'Select objects',
+  penTool: 'Pen',
+  rectangleTool: 'Rectangle',
+  ellipseTool: 'Ellipse',
+  lineTool: 'Line',
+  arrowTool: 'Arrow',
+  highlighterTool: 'Highlighter',
+  noteTool: 'Note',
+  textBoxTool: 'Text box',
+  strokeColor: 'Stroke color',
+  noStroke: 'No stroke',
+  fillColor: 'Fill color',
+  noFill: 'No fill',
+  opacity: 'Opacity',
+  thickness: 'Thickness',
+  closeAnnotationToolbar: 'Close annotation toolbar',
 
   openFile: 'Open a PDF file',
   download: 'Download',

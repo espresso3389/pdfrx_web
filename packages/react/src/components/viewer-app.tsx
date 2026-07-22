@@ -308,8 +308,8 @@ function PdfrxViewerAppChrome({
                 className="pdfrx-button"
                 onClick={() => void undo()}
                 disabled={!canUndo}
-                title="Undo (Ctrl+Z)"
-                aria-label="Undo"
+                title={`${strings.undo} (Ctrl+Z)`}
+                aria-label={strings.undo}
               >
                 <IconUndo />
               </button>
@@ -318,8 +318,8 @@ function PdfrxViewerAppChrome({
                 className="pdfrx-button"
                 onClick={() => void redo()}
                 disabled={!canRedo}
-                title="Redo (Ctrl+Shift+Z)"
-                aria-label="Redo"
+                title={`${strings.redo} (Ctrl+Shift+Z)`}
+                aria-label={strings.redo}
               >
                 <IconRedo />
               </button>

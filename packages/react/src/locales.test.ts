@@ -42,6 +42,15 @@ describe('resolvePdfrxStrings', () => {
     expect(resolvePdfrxStrings('ja').goToPage(3)).toBe('3 ページへ移動');
     expect(resolvePdfrxStrings('fr').failedToOpen('x')).toBe("Échec de l'ouverture du document : x");
   });
+
+  it('localizes editing and annotation controls', () => {
+    const ja = resolvePdfrxStrings('ja');
+    expect(ja.undo).toBe('元に戻す');
+    expect(ja.redo).toBe('やり直す');
+    expect(ja.textSelection).toBe('テキストを選択');
+    expect(ja.strokeColor).toBe('線の色');
+    expect(ja.closeAnnotationToolbar).toBe('注釈ツールバーを閉じる');
+  });
 });
 
 describe('builtinPdfrxStrings', () => {

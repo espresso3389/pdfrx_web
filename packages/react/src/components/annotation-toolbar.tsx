@@ -1,6 +1,7 @@
 import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
+import { usePdfrxStrings } from '../strings.js';
 import {
   IconArrowTool,
   IconClose,
@@ -52,17 +53,6 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
   freeText: IconTextBox,
 };
 
-const TOOL_TITLE: Record<AnnotationTool, string> = {
-  ink: 'Pen',
-  rectangle: 'Rectangle',
-  ellipse: 'Ellipse',
-  line: 'Line',
-  arrow: 'Arrow',
-  highlight: 'Highlighter',
-  note: 'Note',
-  freeText: 'Text box',
-};
-
 /**
  * The annotation mode bar: mutually-exclusive toggles for text selection,
  * object selection and each drawing tool, plus color/width pickers — wired to
@@ -80,6 +70,17 @@ export function PdfAnnotationToolbar({
   onClose,
 }: PdfAnnotationToolbarProps): ReactNode {
   const viewer = usePdfrxViewer();
+  const strings = usePdfrxStrings();
+  const toolTitles: Record<AnnotationTool, string> = {
+    ink: strings.penTool,
+    rectangle: strings.rectangleTool,
+    ellipse: strings.ellipseTool,
+    line: strings.lineTool,
+    arrow: strings.arrowTool,
+    highlight: strings.highlighterTool,
+    note: strings.noteTool,
+    freeText: strings.textBoxTool,
+  };
   // One active mode at a time: 'text' = normal text-selection viewing,
   // 'select' = object select (marquee/multi-select), a tool name = draw.
   const [active, setActive] = useState<ToolbarMode>('select');
@@ -177,17 +178,17 @@ export function PdfAnnotationToolbar({
 
   return (
     <div className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
-      <ModeButton mode="text" active={active} onClick={applyMode} title="Text selection">
+      <ModeButton mode="text" active={active} onClick={applyMode} title={strings.textSelection}>
         <IconCursorText />
       </ModeButton>
-      <ModeButton mode="select" active={active} onClick={applyMode} title="Select objects">
+      <ModeButton mode="select" active={active} onClick={applyMode} title={strings.selectObjects}>
         <IconSelectObject />
       </ModeButton>
       <span className="pdfrx-toolbar-separator" aria-hidden />
       {tools.map((tool) => {
         const ToolIcon = TOOL_ICON[tool];
         return (
-          <ModeButton key={tool} mode={tool} active={active} onClick={applyMode} title={TOOL_TITLE[tool]}>
+          <ModeButton key={tool} mode={tool} active={active} onClick={applyMode} title={toolTitles[tool]}>
             <ToolIcon />
           </ModeButton>
         );
@@ -198,8 +199,8 @@ export function PdfAnnotationToolbar({
           <button
             type="button"
             className={['pdfrx-button', openPalette === 'stroke' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
-            title="Stroke color"
-            aria-label="Stroke color"
+            title={strings.strokeColor}
+            aria-label={strings.strokeColor}
             aria-expanded={openPalette === 'stroke'}
             onClick={() => setOpenPalette(openPalette === 'stroke' ? null : 'stroke')}
           >
@@ -214,7 +215,7 @@ export function PdfAnnotationToolbar({
             />
           </button>
           {openPalette === 'stroke' && (
-            <div className="pdfrx-annot-popup" role="listbox" aria-label="Stroke color">
+            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.strokeColor}>
               <button
                 type="button"
                 role="option"
@@ -226,8 +227,8 @@ export function PdfAnnotationToolbar({
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                aria-label="No stroke"
-                title="No stroke"
+                aria-label={strings.noStroke}
+                title={strings.noStroke}
                 onClick={pickNoStroke}
               />
               {colors.map((c) => (
@@ -237,7 +238,7 @@ export function PdfAnnotationToolbar({
                   role="option"
                   aria-selected={strokeEnabled && color === c}
                   className={['pdfrx-annot-swatch', strokeEnabled && color === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
-                  aria-label={`Stroke ${c}`}
+                  aria-label={`${strings.strokeColor}: ${c}`}
                   onClick={() => pickStroke(c)}
                   style={{ background: c }}
                 />
@@ -249,8 +250,8 @@ export function PdfAnnotationToolbar({
           <button
             type="button"
             className={['pdfrx-button', openPalette === 'fill' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
-            title="Fill color"
-            aria-label="Fill color"
+            title={strings.fillColor}
+            aria-label={strings.fillColor}
             aria-expanded={openPalette === 'fill'}
             onClick={() => setOpenPalette(openPalette === 'fill' ? null : 'fill')}
           >
@@ -260,7 +261,7 @@ export function PdfAnnotationToolbar({
             />
           </button>
           {openPalette === 'fill' && (
-            <div className="pdfrx-annot-popup" role="listbox" aria-label="Fill color">
+            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.fillColor}>
               <button
                 type="button"
                 role="option"
@@ -272,8 +273,8 @@ export function PdfAnnotationToolbar({
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                aria-label="No fill"
-                title="No fill"
+                aria-label={strings.noFill}
+                title={strings.noFill}
                 onClick={() => pickFill(null)}
               />
               {colors.map((c) => (
@@ -283,7 +284,7 @@ export function PdfAnnotationToolbar({
                   role="option"
                   aria-selected={fillColor === c}
                   className={['pdfrx-annot-swatch', fillColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
-                  aria-label={`Fill ${c}`}
+                  aria-label={`${strings.fillColor}: ${c}`}
                   onClick={() => pickFill(c)}
                   style={{ background: c }}
                 />
@@ -295,15 +296,15 @@ export function PdfAnnotationToolbar({
           <button
             type="button"
             className={['pdfrx-button', openPalette === 'opacity' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
-            title="Opacity"
-            aria-label="Opacity"
+            title={strings.opacity}
+            aria-label={strings.opacity}
             aria-expanded={openPalette === 'opacity'}
             onClick={() => setOpenPalette(openPalette === 'opacity' ? null : 'opacity')}
           >
             <IconOpacity />
           </button>
           {openPalette === 'opacity' && (
-            <div className="pdfrx-annot-slider-popup" role="dialog" aria-label="Opacity">
+            <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.opacity}>
               <span className="pdfrx-annot-slider-value">{Math.round(opacity * 100)}%</span>
               <input
                 className="pdfrx-annot-slider-vertical"
@@ -318,7 +319,7 @@ export function PdfAnnotationToolbar({
                 onKeyDown={() => beginSliderGesture('opacity')}
                 onKeyUp={endSliderGesture}
                 onBlur={endSliderGesture}
-                aria-label="Opacity"
+                aria-label={strings.opacity}
               />
             </div>
           )}
@@ -327,8 +328,8 @@ export function PdfAnnotationToolbar({
           <button
             type="button"
             className={['pdfrx-button', openPalette === 'width' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
-            title="Thickness"
-            aria-label="Thickness"
+            title={strings.thickness}
+            aria-label={strings.thickness}
             aria-expanded={openPalette === 'width'}
             onClick={() => setOpenPalette(openPalette === 'width' ? null : 'width')}
             disabled={!strokeEnabled}
@@ -336,7 +337,7 @@ export function PdfAnnotationToolbar({
             <IconThickness />
           </button>
           {openPalette === 'width' && strokeEnabled && (
-            <div className="pdfrx-annot-slider-popup" role="dialog" aria-label="Thickness">
+            <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.thickness}>
               <span className="pdfrx-annot-slider-value">{width}</span>
               <input
                 className="pdfrx-annot-slider-vertical"
@@ -350,7 +351,7 @@ export function PdfAnnotationToolbar({
                 onKeyDown={() => beginSliderGesture('strokeWidth')}
                 onKeyUp={endSliderGesture}
                 onBlur={endSliderGesture}
-                aria-label="Thickness"
+                aria-label={strings.thickness}
               />
             </div>
           )}
@@ -363,8 +364,8 @@ export function PdfAnnotationToolbar({
             type="button"
             className="pdfrx-button pdfrx-annot-close"
             onClick={onClose}
-            title="Close annotation toolbar"
-            aria-label="Close annotation toolbar"
+            title={strings.closeAnnotationToolbar}
+            aria-label={strings.closeAnnotationToolbar}
           >
             <IconClose />
           </button>
