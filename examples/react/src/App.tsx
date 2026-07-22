@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { buildDefaultContextMenu, PdfrxViewerApp, type PdfReactContextMenuBuilder } from '@pdfrx/react';
 import { ComposedDemo } from './ComposedDemo.js';
 import { HeadlessDemo } from './HeadlessDemo.js';
+import './theme.css';
 
 /** Reuse the built-in localized menu and append a "Search the web" item. */
 const contextMenuBuilder: PdfReactContextMenuBuilder = (context, { viewer, strings }) => {
@@ -40,6 +41,7 @@ function useMediaQuery(query: string): boolean {
 /** The three layers @pdfrx/react offers, as three tabs. */
 const DEMOS = ['all-in-one', 'composed', 'headless'] as const;
 type Demo = (typeof DEMOS)[number];
+type Theme = 'auto' | 'dark' | 'light';
 
 const LABELS: Record<Demo, string> = {
   'all-in-one': 'All-in-one',
@@ -61,13 +63,18 @@ const LANGS: { value: string; label: string }[] = [
 export function App() {
   const [demo, setDemo] = useState<Demo>('all-in-one');
   const [lang, setLang] = useState('auto');
+  const [theme, setTheme] = useState<Theme>('auto');
   const isPhone = useMediaQuery(`(max-width: ${PHONE_MAX_WIDTH}px)`);
 
   // 'auto' → undefined, which makes @pdfrx/react detect the browser locale.
   const locale = lang === 'auto' ? undefined : lang;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', font: '13px system-ui, sans-serif' }}>
+    <div
+      className="demo-react"
+      data-theme={theme}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', font: '13px system-ui, sans-serif' }}
+    >
       <nav style={styles.nav}>
         {/* The brand takes room the tabs need on a phone; drop it there. */}
         {!isPhone && <strong style={{ marginInlineEnd: 8 }}>@pdfrx/react</strong>}
@@ -81,6 +88,17 @@ export function App() {
           </button>
         ))}
         <span style={{ flex: 1 }} />
+        <select
+          value={theme}
+          onChange={(e) => setTheme(e.target.value as Theme)}
+          style={styles.select}
+          title="Color theme"
+          aria-label="Color theme"
+        >
+          <option value="auto">Theme: Auto</option>
+          <option value="dark">Theme: Dark</option>
+          <option value="light">Theme: Light</option>
+        </select>
         <select
           value={lang}
           onChange={(e) => setLang(e.target.value)}

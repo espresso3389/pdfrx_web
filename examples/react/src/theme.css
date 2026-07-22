@@ -1,0 +1,37 @@
+/*
+ * The package follows prefers-color-scheme in auto mode. The explicit demo
+ * modes override the same public custom properties consumers use to theme it.
+ */
+.demo-react {
+  color-scheme: light dark;
+}
+
+.demo-react[data-theme='light'] {
+  color-scheme: light;
+  background: #ffffff;
+}
+
+.demo-react[data-theme='dark'] {
+  color-scheme: dark;
+  background: #0d1117;
+}
+
+.demo-react[data-theme='light'] :is(.pdfrx-app, .pdfrx-toolbar, .pdfrx-sidebar, .pdfrx-search, .pdfrx-surface) {
+  --pdfrx-fg: #1f2328;
+  --pdfrx-fg-muted: #656d76;
+  --pdfrx-bg: #ffffff;
+  --pdfrx-bg-subtle: #f6f8fa;
+  --pdfrx-border: #d0d7de;
+  --pdfrx-hover: rgba(0, 0, 0, 0.06);
+  --pdfrx-danger: #cf222e;
+}
+
+.demo-react[data-theme='dark'] :is(.pdfrx-app, .pdfrx-toolbar, .pdfrx-sidebar, .pdfrx-search, .pdfrx-surface) {
+  --pdfrx-fg: #e6edf3;
+  --pdfrx-fg-muted: #8b949e;
+  --pdfrx-bg: #0d1117;
+  --pdfrx-bg-subtle: #161b22;
+  --pdfrx-border: #30363d;
+  --pdfrx-hover: rgba(255, 255, 255, 0.08);
+  --pdfrx-danger: #f85149;
+}
