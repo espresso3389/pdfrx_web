@@ -80,7 +80,13 @@ export function buildDefaultContextMenu(
     item.appendChild(arrow);
     host.appendChild(item);
     if (enabled) {
+      const PALETTE_HOVER_GRACE = 6;
+      let trackPalettePointer: ((event: MouseEvent) => void) | null = null;
       const closePalette = (): void => {
+        if (trackPalettePointer) {
+          document.removeEventListener('mousemove', trackPalettePointer);
+          trackPalettePointer = null;
+        }
         host.querySelector<HTMLElement>('.pdfrx-highlight-palette')?.remove();
         item.setAttribute('aria-expanded', 'false');
       };
@@ -98,8 +104,12 @@ export function buildDefaultContextMenu(
           swatch.title = color;
           swatch.setAttribute('aria-label', `${strings.highlight} ${color}`);
           swatch.addEventListener('click', () => {
-            context.close();
+            // Capture and start processing the viewer selection before the
+            // menu is removed. Removing the clicked submenu first can let the
+            // browser's focus/default-action processing invalidate selection
+            // state in real browsers even though a synthetic click still works.
             void viewer.highlightSelection(color, TEXT_HIGHLIGHT_OPACITY);
+            context.close();
           });
           palette.appendChild(swatch);
         }
@@ -108,10 +118,22 @@ export function buildDefaultContextMenu(
         // Prefer a conventional right-side submenu, but flip it at the window edge.
         const rect = palette.getBoundingClientRect();
         if (rect.right > window.innerWidth - 4) palette.classList.add('pdfrx-highlight-palette-left');
+        trackPalettePointer = (event): void => {
+          if (host.matches(':hover')) return;
+          const paletteRect = palette.getBoundingClientRect();
+          const insideGraceArea =
+            event.clientX >= paletteRect.left - PALETTE_HOVER_GRACE &&
+            event.clientX <= paletteRect.right + PALETTE_HOVER_GRACE &&
+            event.clientY >= paletteRect.top - PALETTE_HOVER_GRACE &&
+            event.clientY <= paletteRect.bottom + PALETTE_HOVER_GRACE;
+          if (!insideGraceArea) closePalette();
+        };
+        document.addEventListener('mousemove', trackPalettePointer);
       };
       host.addEventListener('mouseenter', openPalette);
-      host.addEventListener('mouseleave', () => {
-        if (!host.contains(document.activeElement)) closePalette();
+      host.addEventListener('mouseleave', (event) => {
+        if (host.contains(document.activeElement)) return;
+        trackPalettePointer?.(event);
       });
       host.addEventListener('focusin', openPalette);
       host.addEventListener('focusout', (event) => {
@@ -132,11 +154,11 @@ export function buildDefaultContextMenu(
     context.close();
     void viewer.copySelection().then(() => viewer.clearSelection());
   });
-  addHighlightPalette();
   addItem(strings.selectAll, true, () => {
     context.close();
     void viewer.selectAll();
   });
+  addHighlightPalette();
 
   return menu;
 }

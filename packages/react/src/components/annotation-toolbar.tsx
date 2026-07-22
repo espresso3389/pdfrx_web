@@ -27,7 +27,7 @@ type ToolbarMode = 'text' | 'select' | AnnotationTool;
 export interface PdfAnnotationToolbarProps {
   className?: string;
   style?: CSSProperties;
-  /** Which tools to show, in order. Defaults to all. */
+  /** Which tools to show, in order. Note remains available as an opt-in tool. */
   tools?: readonly AnnotationTool[];
   /** Preset colors offered in the color picker. */
   colors?: readonly string[];
@@ -40,7 +40,7 @@ export interface PdfAnnotationToolbarProps {
 
 // Highlight is not a drawing tool here — it is applied to a text selection via
 // the right-click context menu (a Highlight markup over the selected text).
-const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow', 'note', 'freeText'];
+const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow', 'freeText'];
 
 const DEFAULT_COLORS: readonly string[] = ['#e53935', '#1e88e5', '#43a047', '#fbc02d', '#8e24aa', '#000000'];
 

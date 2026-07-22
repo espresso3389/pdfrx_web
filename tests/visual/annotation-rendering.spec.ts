@@ -159,7 +159,7 @@ test('approved stamp preserves its label and standard outline', async ({ page })
     (
       window as unknown as {
         annotationVisualTest: {
-          inspectStamp(s: unknown): Promise<{ label: string | null; stroke: string | null; fill: string | null; rx: string | null }>;
+          inspectStamp(s: unknown): Promise<{ label: string | null; labelFill: string | null; stroke: string | null; fill: string | null; rx: string | null }>;
         };
       }
     ).annotationVisualTest.inspectStamp(spec),
@@ -170,7 +170,13 @@ test('approved stamp preserves its label and standard outline', async ({ page })
     contents: 'APPROVED',
     geometry: { kind: 'none' },
   });
-  expect(result).toEqual({ label: 'APPROVED', stroke: 'rgb(229, 57, 53)', fill: 'none', rx: '5' });
+  expect(result).toEqual({
+    label: 'APPROVED',
+    labelFill: 'rgb(229, 57, 53)',
+    stroke: 'rgb(229, 57, 53)',
+    fill: 'none',
+    rx: '5',
+  });
 });
 
 test('annotation overlay is atomically replaced after move/resize', async ({ page }) => {

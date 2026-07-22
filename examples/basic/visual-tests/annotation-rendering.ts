@@ -139,6 +139,7 @@ async function run(spec: PdfAnnotationSpec): Promise<VisualDiffResult> {
 
 async function inspectStamp(spec: PdfAnnotationSpec): Promise<{
   label: string | null;
+  labelFill: string | null;
   stroke: string | null;
   fill: string | null;
   rx: string | null;
@@ -151,6 +152,7 @@ async function inspectStamp(spec: PdfAnnotationSpec): Promise<{
     const rect = shape.querySelector('rect');
     return {
       label: shape.querySelector('text')?.textContent ?? null,
+      labelFill: shape.querySelector('text')?.getAttribute('fill') ?? null,
       stroke: rect?.getAttribute('stroke') ?? null,
       fill: rect?.getAttribute('fill') ?? null,
       rx: rect?.getAttribute('rx') ?? null,

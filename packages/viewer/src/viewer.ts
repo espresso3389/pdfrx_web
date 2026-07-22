@@ -4407,10 +4407,12 @@ export class PdfrxViewer {
             add(rect);
           }
           if (a.contents) {
+            const appearanceTextColor =
+              a.appearanceTextStyles[0]?.fillColor ?? a.appearancePaths.find((path) => path.stroke)?.strokeColor;
             const text = document.createElementNS(SVG_NS, 'text');
             text.setAttribute('x', `${(box.left + box.right) / 2}`);
             text.setAttribute('y', `${(box.top + box.bottom) / 2}`);
-            text.setAttribute('fill', stroke);
+            text.setAttribute('fill', colorCss(appearanceTextColor ?? a.color, '#000000') ?? '#000000');
             text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
             text.setAttribute('font-size', `${Math.max(8, rectHeight(box) * 0.5)}`);
             text.setAttribute('font-weight', '700');
