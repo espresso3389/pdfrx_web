@@ -7,6 +7,7 @@ export class PageSourceRegistry {
   readonly #documents = new Map<string, { document: PdfDocument; pages: readonly PdfPage[] }>();
   readonly #ids = new WeakMap<PdfDocument, string>();
 
+  /** Registers an open PDF and captures its immutable physical source pages. */
   register(documentId: string, document: PdfDocument): void {
     if (documentId.length === 0) throw new Error('documentId must not be empty');
     const existingDocument = this.#documents.get(documentId);
@@ -26,6 +27,7 @@ export class PageSourceRegistry {
     this.#ids.set(document, documentId);
   }
 
+  /** Removes a source mapping without disposing the caller-owned document. */
   unregister(documentId: string): void {
     const registered = this.#documents.get(documentId);
     if (!registered) return;
@@ -33,11 +35,13 @@ export class PageSourceRegistry {
     this.#ids.delete(registered.document);
   }
 
+  /** Returns whether a live document is registered for `documentId`. */
   has(documentId: string): boolean {
     const registered = this.#documents.get(documentId);
     return registered !== undefined && !registered.document.isDisposed;
   }
 
+  /** @throws `Error` when the source is missing or disposed. */
   document(documentId: string): PdfDocument {
     const registered = this.#documents.get(documentId);
     if (!registered) throw new Error(`Source document is not registered: ${documentId}`);
@@ -45,6 +49,7 @@ export class PageSourceRegistry {
     return registered.document;
   }
 
+  /** Resolves a zero-based physical source page. @throws `RangeError` if missing. */
   page(documentId: string, pageIndex: number): PdfPage {
     this.document(documentId); // validates registration and lifetime
     const page = this.#documents.get(documentId)!.pages[pageIndex];
@@ -52,6 +57,7 @@ export class PageSourceRegistry {
     return page;
   }
 
+  /** Resolves the session id previously assigned to a PDF document. */
   documentId(document: PdfDocument): string {
     const documentId = this.#ids.get(document);
     if (!documentId) throw new Error('PDF document is not registered as a session source');
@@ -59,7 +65,7 @@ export class PageSourceRegistry {
   }
 }
 
-/** Converts a session arrangement into the engine page proxies rendered by this client. */
+/** Converts a session arrangement into rotated engine page proxies for this client. */
 export function resolvePagePlacements(
   placements: readonly PagePlacement[],
   sources: PageSourceRegistry,
@@ -70,7 +76,10 @@ export function resolvePagePlacements(
   });
 }
 
-/** Captures the current engine arrangement as independently addressable session placements. */
+/**
+ * Captures an engine arrangement as independently addressable placements.
+ * @throws `Error` for unregistered documents or empty/duplicate generated ids.
+ */
 export function createPagePlacements(
   pages: readonly PdfPage[],
   sources: PageSourceRegistry,
@@ -93,7 +102,10 @@ export function createPagePlacements(
   });
 }
 
-/** Applies resolved placements through the viewer's origin-aware page API. */
+/**
+ * Applies resolved placements through the viewer's origin-aware page API.
+ * Remote replay should use `origin: 'remote'` and `recordHistory: false`.
+ */
 export function applyPagePlacementsToViewer(
   viewer: PdfrxViewer,
   placements: readonly PagePlacement[],

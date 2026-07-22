@@ -2,9 +2,13 @@ import type { PdfDest, PdfDocument, PdfOutlineNode } from '@pdfrx/engine';
 import type { PagePlacement } from '@pdfrx/viewer-core';
 import type { PageSourceRegistry } from './page-adapter.js';
 
+/** Outline node whose destination refers to the final arranged page index. */
 export interface MappedOutlineNode {
+  /** Visible bookmark label. */
   readonly title: string;
+  /** Resolved target, or `null` for a structural node without a destination. */
   readonly dest: { readonly pageIndex: number; readonly command: string; readonly params: readonly (number | null)[] } | null;
+  /** Recursively mapped child bookmarks. */
   readonly children: readonly MappedOutlineNode[];
 }
 
@@ -12,6 +16,11 @@ export interface MappedOutlineNode {
  * Exports a virtual collaborative arrangement and merges outlines from every
  * represented source document. AcroForm merging is intentionally a separate
  * phase because it requires field-name and resource collision policy.
+ * Equal field names from separate sources receive source-scoped prefixes.
+ *
+ * @param rootDocument Document currently owned by the viewer.
+ * @param placements Final authoritative virtual-page order.
+ * @param sources Registry containing every referenced source document.
  */
 export async function encodeCollaborativePdf(
   rootDocument: PdfDocument,

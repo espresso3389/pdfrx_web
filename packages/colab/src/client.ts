@@ -22,18 +22,28 @@ import {
   type SharedFormFieldChange,
 } from './form-protocol.js';
 
+/** Minimal browser WebSocket surface used by {@link PageCollaborationClient}. */
 export interface CollaborationWebSocket {
+  /** Native WebSocket ready-state value. */
   readonly readyState: number;
+  /** Sends one serialized relay message. */
   send(data: string): void;
+  /** Begins a normal socket close. */
   close(): void;
+  /** Registers a browser-compatible socket event listener. */
   addEventListener(type: 'open' | 'close' | 'error' | 'message', listener: (event: Event | MessageEvent) => void): void;
 }
 
+/** Factory override used by tests or hosts that provide a WebSocket polyfill. */
 export type CollaborationWebSocketFactory = (url: string) => CollaborationWebSocket;
+/** Receives the current page snapshot and, for incremental updates, its commit. */
 export type PageSessionListener = (snapshot: PageSessionSnapshot, committed?: CommittedPageOperation) => void;
+/** Receives the current annotation snapshot and optional incremental commit. */
 export type AnnotationSessionListener = (snapshot: AnnotationSessionSnapshot, committed?: CommittedAnnotationOperation) => void;
+/** Receives the current form snapshot and optional incremental commit. */
 export type FormSessionListener = (snapshot: FormSessionSnapshot, committed?: CommittedFormOperation) => void;
 
+/** Converts a relay WebSocket endpoint into its session source HTTP endpoint. */
 export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: string): string {
   const url = new URL(relayUrl);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
@@ -43,6 +53,10 @@ export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: 
   return url.toString();
 }
 
+/**
+ * Uploads one immutable PDF source to the reference relay's HTTP endpoint.
+ * @throws `Error` when the relay rejects or cannot store the source.
+ */
 export async function uploadRelaySource(
   relayUrl: string,
   sessionId: string,
@@ -78,7 +92,13 @@ interface QueuedFormOperation {
   readonly reject: (error: Error) => void;
 }
 
+/** Operation rejection returned by the relay, optionally with its current revision. */
 export class RelayOperationError extends Error {
+  /**
+   * @param code Machine-readable error category supplied by the relay.
+   * @param message Human-readable relay diagnostic.
+   * @param currentRevision Relay revision included for stale-operation recovery.
+   */
   constructor(
     readonly code: string,
     message: string,
@@ -89,7 +109,13 @@ export class RelayOperationError extends Error {
   }
 }
 
-/** Browser-side strict-revision client. Local operations are sent one at a time. */
+/**
+ * Browser-side client for the reference strict-revision relay protocol.
+ *
+ * Page, annotation, and form operations have independent queues and revision
+ * streams. Each stream sends one local operation at a time and resolves its
+ * promise only after the relay broadcasts the authoritative commit.
+ */
 export class PageCollaborationClient {
   readonly #listeners = new Set<PageSessionListener>();
   readonly #annotationListeners = new Set<AnnotationSessionListener>();
@@ -107,42 +133,56 @@ export class PageCollaborationClient {
   #formPending: QueuedFormOperation | null = null;
 
   constructor(
+    /** Stable participant id attached to every submitted operation. */
     readonly actorId: string,
+    /** Generates operation correlation ids; injectable for deterministic tests. */
     readonly createOperationId: () => string = () => crypto.randomUUID(),
+    /** Creates the transport socket; defaults to the browser `WebSocket`. */
     readonly createSocket: CollaborationWebSocketFactory = (url) => new WebSocket(url),
   ) {
     if (actorId.length === 0) throw new Error('actorId must not be empty');
   }
 
+  /** Latest authoritative page snapshot, or `null` until the session is joined. */
   get snapshot(): PageSessionSnapshot | null {
     return this.#snapshot;
   }
 
+  /** Latest authoritative annotation snapshot, or `null` before initialization. */
   get annotationSnapshot(): AnnotationSessionSnapshot | null {
     return this.#annotationSnapshot;
   }
 
+  /** Latest authoritative form snapshot, or `null` before initialization. */
   get formSnapshot(): FormSessionSnapshot | null {
     return this.#formSnapshot;
   }
 
+  /** Subscribes to page snapshots. The listener is called after subsequent commits. */
   subscribe(listener: PageSessionListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
+  /** Subscribes to annotation state and immediately emits an existing snapshot. */
   subscribeAnnotations(listener: AnnotationSessionListener): () => void {
     this.#annotationListeners.add(listener);
     if (this.#annotationSnapshot) listener(this.#annotationSnapshot);
     return () => this.#annotationListeners.delete(listener);
   }
 
+  /** Subscribes to form state and immediately emits an existing snapshot. */
   subscribeForms(listener: FormSessionListener): () => void {
     this.#formListeners.add(listener);
     if (this.#formSnapshot) listener(this.#formSnapshot);
     return () => this.#formListeners.delete(listener);
   }
 
+  /**
+   * Opens the relay socket and joins `sessionId`.
+   * @returns The initial authoritative page snapshot.
+   * @throws `Error` if already connected, the session is invalid, or joining fails.
+   */
   connect(url: string, sessionId: string): Promise<PageSessionSnapshot> {
     if (this.#socket) throw new Error('Client is already connected');
     if (sessionId.length === 0) return Promise.reject(new Error('sessionId must not be empty'));
@@ -244,6 +284,7 @@ export class PageCollaborationClient {
     });
   }
 
+  /** Queues a page operation and resolves after its authoritative commit. */
   submit(operation: PagePlacementOperation): Promise<CommittedPageOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -254,6 +295,7 @@ export class PageCollaborationClient {
     });
   }
 
+  /** Queues an annotation mutation and resolves after its authoritative commit. */
   submitAnnotation(change: SharedAnnotationChange): Promise<CommittedAnnotationOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -264,6 +306,7 @@ export class PageCollaborationClient {
     });
   }
 
+  /** Queues a source-scoped form value and resolves after its authoritative commit. */
   submitForm(change: SharedFormFieldChange): Promise<CommittedFormOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -274,6 +317,7 @@ export class PageCollaborationClient {
     });
   }
 
+  /** Closes the transport. Any queued or pending operations are rejected. */
   close(): void {
     this.#socket?.close();
   }

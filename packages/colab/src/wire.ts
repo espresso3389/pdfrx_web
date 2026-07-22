@@ -13,12 +13,14 @@ import type {
   SharedFormFieldChange,
 } from './form-protocol.js';
 
+/** Messages accepted from a browser client by the reference relay. */
 export type ClientRelayMessage =
   | { readonly type: 'session.join'; readonly sessionId: string }
   | { readonly type: 'page.operation'; readonly sessionId: string; readonly request: PageOperationRequest }
   | { readonly type: 'annotation.operation'; readonly sessionId: string; readonly request: AnnotationOperationRequest }
   | { readonly type: 'form.operation'; readonly sessionId: string; readonly request: FormOperationRequest };
 
+/** Snapshots, commits, and structured errors emitted by the reference relay. */
 export type ServerRelayMessage =
   | { readonly type: 'session.snapshot'; readonly sessionId: string; readonly snapshot: PageSessionSnapshot }
   | { readonly type: 'annotation.snapshot'; readonly sessionId: string; readonly snapshot: AnnotationSessionSnapshot }
@@ -158,7 +160,10 @@ const parseFormRequest = (value: unknown): FormOperationRequest => {
   };
 };
 
-/** Parses and validates one untrusted client WebSocket payload. */
+/**
+ * Parses and validates one untrusted client WebSocket payload.
+ * @throws `Error` for malformed JSON, envelopes, or operations.
+ */
 export function parseClientRelayMessage(json: string): ClientRelayMessage {
   const value: unknown = JSON.parse(json);
   if (!isRecord(value) || !isString(value.type) || !isString(value.sessionId)) {
@@ -177,6 +182,10 @@ export function parseClientRelayMessage(json: string): ClientRelayMessage {
   throw new Error(`Unknown relay message: ${value.type}`);
 }
 
+/**
+ * Parses and validates one untrusted relay payload before changing client state.
+ * @throws `Error` for malformed JSON, snapshots, commits, or errors.
+ */
 export function parseServerRelayMessage(json: string): ServerRelayMessage {
   const value: unknown = JSON.parse(json);
   if (!isRecord(value) || typeof value.type !== 'string') throw new Error('Invalid server relay message');

@@ -40,6 +40,7 @@ const formFieldValue = (field: PdfFormField): PdfFormFieldValue => {
 const sameFormValue = (left: PdfFormFieldValue | undefined, right: PdfFormFieldValue): boolean =>
   left !== undefined && JSON.stringify(left) === JSON.stringify(right);
 
+/** Configuration for the ready-made collaborative React viewer. */
 export interface CollaborativePdfViewerProps {
   /** Stable participant identifier attached to page and annotation operations. */
   readonly actorId: string;
@@ -53,9 +54,18 @@ export interface CollaborativePdfViewerProps {
   readonly src: string | URL | ArrayBuffer | Uint8Array | Blob;
   /** Directory containing the PDFium worker assets. */
   readonly wasmModulesUrl?: string;
+  /** Additional class applied to the outer `.collab-pane` element. */
   readonly className?: string;
 }
 
+/**
+ * Ready-made `@pdfrx/react` viewer connected to a strict-revision relay.
+ *
+ * It owns its provider, opens missing shared sources, synchronizes page,
+ * annotation, and form streams, and supplies import and collaborative export
+ * UI. Hosts should import both `@pdfrx/react/styles.css` and
+ * `@pdfrx/colab/styles.css` once.
+ */
 export function CollaborativePdfViewer({
   name,
   actorId,

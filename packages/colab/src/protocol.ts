@@ -5,31 +5,50 @@ import {
   type PagePlacementOperation,
 } from '@pdfrx/viewer-core';
 
+/**
+ * Strict-revision page-arrangement protocol shared by collaboration clients
+ * and authoritative relays.
+ * @packageDocumentation
+ */
+
 /** Persisted or transferred authoritative page state. */
 export interface PageSessionSnapshot {
+  /** Last committed page-operation revision, starting at zero. */
   readonly revision: number;
+  /** Complete ordered virtual-page arrangement at {@link revision}. */
   readonly pages: readonly PagePlacement[];
 }
 
 /** Optimistic command submitted by one client. */
 export interface PageOperationRequest {
+  /** Globally unique id used to correlate the eventual commit or rejection. */
   readonly operationId: string;
+  /** Stable participant id responsible for the operation. */
   readonly actorId: string;
+  /** Revision the participant observed when creating the operation. */
   readonly baseRevision: number;
+  /** Intent expressed against stable placement ids rather than page numbers. */
   readonly operation: PagePlacementOperation;
 }
 
 /** Command accepted and sequenced by the authoritative relay. */
 export interface CommittedPageOperation extends PageOperationRequest {
+  /** Authoritative revision assigned to the accepted operation. */
   readonly revision: number;
 }
 
+/** Machine-readable failure categories produced by the strict page protocol. */
 export type PageProtocolErrorCode =
   | 'invalid-envelope'
   | 'base-revision-mismatch'
   | 'unexpected-revision';
 
+/** Error thrown for malformed, stale, or out-of-sequence page protocol data. */
 export class PageProtocolError extends Error {
+  /**
+   * @param code Stable category suitable for relay error envelopes.
+   * @param message Human-readable diagnostic text.
+   */
   constructor(
     readonly code: PageProtocolErrorCode,
     message: string,
@@ -52,6 +71,11 @@ const assertRequest = (request: PageOperationRequest): void => {
   assertRevision(request.baseRevision, 'baseRevision');
 };
 
+/**
+ * Validates revision and placement invariants in an authoritative snapshot.
+ * @throws {@link PageProtocolError} for an invalid revision.
+ * @throws `PageArrangementError` when placement identities or sources are invalid.
+ */
 export function validatePageSessionSnapshot(snapshot: PageSessionSnapshot): void {
   assertRevision(snapshot.revision, 'revision');
   validatePagePlacements(snapshot.pages);
@@ -60,6 +84,9 @@ export function validatePageSessionSnapshot(snapshot: PageSessionSnapshot): void
 /**
  * Authoritative-server transition. A stale optimistic command is rejected;
  * transformation/rebase policy can be layered above this strict primitive.
+ *
+ * @returns The next immutable snapshot and the corresponding sequenced event.
+ * @throws {@link PageProtocolError} when the request is malformed or stale.
  */
 export function commitPageOperation(
   snapshot: PageSessionSnapshot,
@@ -81,7 +108,10 @@ export function commitPageOperation(
   };
 }
 
-/** Applies the next relay event on a client or while replaying an operation log. */
+/**
+ * Applies the next relay event on a client or while replaying an operation log.
+ * @throws {@link PageProtocolError} if the event does not immediately follow the snapshot.
+ */
 export function applyCommittedPageOperation(
   snapshot: PageSessionSnapshot,
   committed: CommittedPageOperation,

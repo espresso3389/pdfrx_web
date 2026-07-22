@@ -50,6 +50,7 @@ export function movePlacementToIndex(
   return { type: 'page.move', placementId: moved.placementId, after };
 }
 
+/** Returns a compact human-readable operation label for an activity log. */
 export function describePageOperation(operation: PagePlacementOperation): string {
   switch (operation.type) {
     case 'page.replace': return `文書を置換 (${operation.pages.length}ページ)`;

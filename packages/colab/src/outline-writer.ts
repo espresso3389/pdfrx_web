@@ -13,6 +13,7 @@ import type { PagePlacement } from '@pdfrx/viewer-core';
 import { parseCalcAction } from '@pdfrx/engine';
 import type { MappedOutlineNode } from './export-composer.js';
 
+/** Replaces the encoded PDF's outline catalog with mapped bookmark nodes. */
 export async function writeOutline(bytes: Uint8Array, nodes: readonly MappedOutlineNode[]): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(bytes);
   const context = pdf.context;
@@ -75,6 +76,7 @@ function destinationCommand(command: string): string {
  * Rebuilds the catalog AcroForm from Widget annotations already copied with
  * the final pages. Each source receives a prefix so equal field names from
  * different PDFs remain independent.
+ * @returns Re-encoded PDF bytes containing the merged AcroForm catalog.
  */
 export async function mergeAcroForms(
   bytes: Uint8Array,
