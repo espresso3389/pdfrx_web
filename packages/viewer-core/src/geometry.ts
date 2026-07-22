@@ -351,6 +351,13 @@ export function offsetToPdfPoint(o: Offset, { page, scaledPageSize, rotation }: 
   );
 }
 
+/** Convert a y-down page-local displacement into a PDF-space displacement, including page rotation. */
+export function offsetDeltaToPdfDelta(delta: Offset, options: PageConversionOptions): PdfPoint {
+  const origin = offsetToPdfPoint({ x: 0, y: 0 }, options);
+  const endpoint = offsetToPdfPoint(delta, options);
+  return { x: endpoint.x - origin.x, y: endpoint.y - origin.y };
+}
+
 /**
  * Convert a document-space point to PDF page space using the page's laid-out
  * rect. Inverse of {@link pdfPointToOffsetInDocument}.

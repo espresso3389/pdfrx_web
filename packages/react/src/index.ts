@@ -69,7 +69,13 @@ export { PdfThumbnailList, type PdfThumbnailListProps } from './components/thumb
 export { PdfOutlineTree, type PdfOutlineTreeProps } from './components/outline-tree.js';
 export { PdfSearchBox, type PdfSearchBoxProps } from './components/search-box.js';
 export { PdfAnnotationToolbar, type PdfAnnotationToolbarProps } from './components/annotation-toolbar.js';
+export {
+  PdfPageActions,
+  type PdfPageActionsProps,
+  type PdfPageRotationDelta,
+} from './components/page-actions.js';
 export { PdfSaveButton, type PdfSaveButtonProps } from './components/save-button.js';
+export { IconAnnotate, IconOpenFile } from './components/icons.js';
 export {
   PdfPageIndicator,
   PdfZoomControls,
@@ -80,7 +86,12 @@ export {
 
 // --- Hooks ---
 export { usePdfrxViewer } from './hooks/use-pdfrx-viewer.js';
-export { useDocumentGeneration, usePdfPagesRevision } from './hooks/use-document-generation.js';
+export {
+  useDocumentGeneration,
+  usePdfPagesRevision,
+  usePdfPageChanges,
+  type PdfPageChangeListener,
+} from './hooks/use-document-generation.js';
 export { usePdfDocument, type PdfDocumentState } from './hooks/use-pdf-document.js';
 export { usePdfNavigation, type PdfNavigation } from './hooks/use-pdf-navigation.js';
 export { usePdfZoom, type PdfZoom } from './hooks/use-pdf-zoom.js';
@@ -98,6 +109,7 @@ export { useViewerSnapshot, shallowEqual, type ViewerSubscribe } from './hooks/u
 export type {
   PdfrxViewer,
   PdfrxViewerOptions,
+  PdfrxPageMutationOptions,
   AnnotationTool,
   AnnotationMode,
   AnnotationStyle,
@@ -116,4 +128,14 @@ export type {
   ContextMenuBuilder,
   ContextMenuContext,
 } from '@pdfrx/viewer';
-export type { PdfDocument, PdfPage, PdfOutlineNode, PdfDest, PdfLink, PdfPasswordProvider } from '@pdfrx/engine';
+export type {
+  PdfDocument,
+  PdfPage,
+  PdfOutlineNode,
+  PdfDest,
+  PdfLink,
+  PdfPasswordProvider,
+  PdfPageArrangementEntry,
+  PdfPageChangeOrigin,
+  PdfPageMutationOptions,
+} from '@pdfrx/engine';

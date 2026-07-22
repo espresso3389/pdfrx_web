@@ -24,7 +24,10 @@ partial regions, text with per-character rects, links, outline, font management,
 `assemble` is surfaced on
 `PdfDocument` as `assemblePages()`, which writes back the arrangement built with
 `setPages` / `setPage` — the only page-editing API — and `encodePdf()` reflects
-those edits. Notable client behaviors:
+those edits. `encodePdfCopy()` normally clones the root document, but when its
+virtual arrangement contains pages from exactly one imported document it clones
+that source instead; PDFium page import does not copy document-level AcroForm,
+outline, metadata, or name-tree dictionaries. Notable client behaviors:
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
   the engine resolves relative document URLs against `document.baseURI` before
@@ -232,6 +235,14 @@ creates the annotation when its id is not found, replaying any state is uniforml
 and redo the same way. `undoAnnotation()`/`redoAnnotation()` drive the document
 to the neighbouring group state without recording.
 
+Page-arrangement changes use the same synchronization boundary. `setPages()` /
+`setPage()` accept an origin plus optional transaction and actor IDs, and
+`pagesRearranged` carries before/after arrangement descriptors. A
+`'materialize'` origin distinguishes `assemblePages()` replacing proxies with
+native pages from a semantic user edit. `PdfrxViewer` additionally accepts
+`recordHistory: false` for remote/restore application, while React consumers can
+subscribe to the exact events with `usePdfPageChanges()`.
+
 ## Known limitations
 
 - Form calculations cover only Acrobat's `AFSimple_Calculate` (SUM/PRD/AVG/MIN/MAX);
@@ -244,10 +255,16 @@ to the neighbouring group state without recording.
   reproduce faithfully — image stamps, and any type drawn only from an `/AP`
   stream — show as a plain rectangle outline while the overlay is on, because the
   canvas no longer draws them. Line/arrow are stored as ink annotations (no
-  PDFium geometry setter for `Line`/`Polygon`). Move/resize assume an unrotated
-  page.
+  PDFium geometry setter for `Line`/`Polygon`).
 - Scroll physics beyond exponential-decay fling (no platform-specific curves).
 
 For the full list of features that upstream [pdfrx](https://github.com/espresso3389/pdfrx)
 has but this port does not yet — and which are deliberately out of scope — see
 [FEATURE-PARITY.md](FEATURE-PARITY.md).
+
+## Collaborative applications
+
+Networking and session identity stay above the reusable viewer packages. See
+[COLLABORATION.md](COLLABORATION.md) for the implemented page/annotation/form
+session model, stable page-placement protocol, client-local application model,
+and mixed-source export policy used by the private collaboration workspace.

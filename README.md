@@ -24,14 +24,19 @@ It renders pages, text selection, links, and search highlights onto a single
   standard fonts, Noto families for CJK and other scripts) — see
   [docs/FONT-FALLBACK.md](docs/FONT-FALLBACK.md)
 - Password-protected documents
+- Interactive AcroForm filling with JS-free standard calculations
+- SVG annotation editing: ink, shapes, markup, notes/free text, and undo/redo
+- Non-destructive page reorder, rotate, remove, and cross-document insertion
+- Non-destructive PDF download through a temporary encoded copy
 
 ## Try the demo
 
 **[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
 React viewer, runs entirely in your browser.
 
-It has a search bar, thumbnails/outline sidebar, print button, page editing, and
-opening local files (button or drag & drop) — and switches between the three
+It has a search bar, thumbnails/outline sidebar, print/download buttons, form
+filling, annotation tools, page editing, and opening local files (button or drag
+& drop) — and switches between the three
 layers `@pdfrx/react` offers (all-in-one component, composed parts, headless
 hooks). To run it locally:
 
@@ -159,7 +164,7 @@ Password-protected files are supported by passing a
 | [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks: [`<PdfrxViewerApp>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html), composable parts, and headless hooks. |
 | [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
-| [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker: open/render pages, text, links, outline, fonts. |
+| [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed WASM-worker client: rendering, text/links/outline, forms, annotations, fonts, page arrangement, and encoding. |
 
 Full **[API reference](https://espresso3389.github.io/pdfrx_web/)** is
 generated with TypeDoc and published to GitHub Pages.

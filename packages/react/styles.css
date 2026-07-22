@@ -659,6 +659,21 @@
   min-width: 0;
 }
 
+.pdfrx-page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Keep SVG rotation icons geometrically centered. An inline wrapper otherwise
+   reserves descender space on its text baseline and shifts the icon upward. */
+.pdfrx-page-actions .pdfrx-button > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 .pdfrx-annot-colors {
   display: inline-flex;
   align-items: center;

@@ -1,4 +1,6 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import type { PdfDocumentEventMap } from '@pdfrx/engine';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { usePdfrxViewer } from './use-pdfrx-viewer.js';
 import { usePdfrxStore } from '../context.js';
 
 /**
@@ -29,4 +31,25 @@ export function usePdfPagesRevision(): number {
   const store = usePdfrxStore();
   const getSnapshot = useCallback(() => store.pagesRevision, [store]);
   return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+}
+
+/** Receives exact page-arrangement events without deriving mutations from React renders. */
+export type PdfPageChangeListener = (event: PdfDocumentEventMap['pagesRearranged']) => void;
+
+/**
+ * Subscribes to page-arrangement mutations on the current document.
+ *
+ * Remote adapters should ignore events whose `origin` is `remote`, `restore`,
+ * `history`, or `materialize` to avoid echoing applied or internal changes.
+ */
+export function usePdfPageChanges(listener: PdfPageChangeListener): void {
+  const viewer = usePdfrxViewer();
+  const listenerRef = useRef(listener);
+  listenerRef.current = listener;
+
+  useEffect(() => {
+    const document = viewer?.document;
+    if (!document) return;
+    return document.addEventListener('pagesRearranged', (event) => listenerRef.current(event));
+  }, [viewer, viewer?.document]);
 }

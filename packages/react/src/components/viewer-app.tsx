@@ -8,7 +8,8 @@ import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
-import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconRotate, IconSave, IconTrash, IconUndo } from './icons.js';
+import { PdfPageActions } from './page-actions.js';
+import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
 
@@ -271,7 +272,7 @@ function PdfrxViewerAppChrome({
   }, [isNarrow]);
 
   const renderPageActions = enablePageEditing
-    ? (pageNumber: number): ReactNode => <PageActions pageNumber={pageNumber} />
+    ? (pageNumber: number): ReactNode => <PdfPageActions pageNumber={pageNumber} />
     : undefined;
 
   // On a wide screen the slot animates its width between `sidebarWidth` and 0
@@ -403,36 +404,6 @@ function PdfrxViewerAppChrome({
         )}
       </div>
     </div>
-  );
-}
-
-/** Rotate and delete buttons drawn over a thumbnail. */
-function PageActions({ pageNumber }: { pageNumber: number }): ReactNode {
-  const viewer = usePdfrxViewer();
-  const strings = usePdfrxStrings();
-
-  // Both edits are synchronous rearrangements of the page list: no worker
-  // round-trip and no PDF rebuild until the document is encoded.
-  const rotate = (): void => {
-    const document = viewer?.document;
-    const page = document?.pages[pageNumber - 1];
-    if (document && page) viewer?.setPage(pageNumber, page.rotatedCW90());
-  };
-  const remove = (): void => {
-    const document = viewer?.document;
-    if (!document || document.pages.length <= 1) return;
-    viewer?.setPages(document.pages.filter((p) => p.pageNumber !== pageNumber));
-  };
-
-  return (
-    <>
-      <button className="pdfrx-button" onClick={rotate} title={strings.rotatePage}>
-        <IconRotate />
-      </button>
-      <button className="pdfrx-button pdfrx-danger" onClick={remove} title={strings.deletePage}>
-        <IconTrash />
-      </button>
-    </>
   );
 }
 

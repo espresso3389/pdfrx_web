@@ -56,6 +56,8 @@ import {
   type PdfLoadHighlightsOptions,
   type PdfOutlineNode,
   type PdfPageRawText,
+  type PdfPageArrangementEntry,
+  type PdfPageMutationOptions,
   type PdfPageRotation,
   type PdfPasswordProvider,
   PdfPermissions,
@@ -623,9 +625,10 @@ export class PdfDocument {
    * ```
    * @throws if `pages` is empty, or a page belongs to a disposed document.
    */
-  setPages(pages: readonly PdfPage[]): void {
+  setPages(pages: readonly PdfPage[], options: PdfPageMutationOptions = {}): void {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     if (pages.length === 0) throw new Error('setPages requires at least one page');
+    const before = this.describePageArrangement(this._pages);
     const arranged = pages.map((page, index) => {
       if (page.document.isDisposed) {
         throw new Error(`Page ${index + 1} belongs to disposed document ${page.document.sourceName}`);
@@ -637,7 +640,14 @@ export class PdfDocument {
     this.arrangementDirty = true;
     const pageNumbers = arranged.map((p) => p.pageNumber);
     this.emit('pageStatusChanged', { pageNumbers });
-    this.emit('pagesRearranged', { pageNumbers });
+    this.emit('pagesRearranged', {
+      origin: options.origin ?? 'api',
+      transactionId: options.transactionId,
+      actorId: options.actorId,
+      before,
+      after: this.describePageArrangement(arranged),
+      pageNumbers,
+    });
   }
 
   /**
@@ -645,13 +655,21 @@ export class PdfDocument {
    * common case for GUI editing (`doc.setPage(3, doc.pages[2]!.rotatedCW90())`).
    * Like {@link setPages}, this touches no PDF data.
    */
-  setPage(pageNumber: number, page: PdfPage): void {
+  setPage(pageNumber: number, page: PdfPage, options: PdfPageMutationOptions = {}): void {
     if (pageNumber < 1 || pageNumber > this._pages.length) {
       throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this._pages.length})`);
     }
     const pages = this._pages.slice();
     pages[pageNumber - 1] = page;
-    this.setPages(pages);
+    this.setPages(pages, options);
+  }
+
+  private describePageArrangement(pages: readonly PdfPage[]): PdfPageArrangementEntry[] {
+    return pages.map((page) => ({
+      sourceKey: page.sourceKey,
+      sourcePageIndex: page.sourcePageIndex,
+      rotation: page.rotation,
+    }));
   }
 
   /**
@@ -956,7 +974,7 @@ export class PdfDocument {
    * synchronized block.
    * @internal
    */
-  private async refreshAllPages(): Promise<void> {
+  private async refreshAllPages(before: readonly PdfPageArrangementEntry[]): Promise<void> {
     const result = await this.sendCommand('reloadPages', {
       docHandle: this.docHandle,
       currentPagesCount: this.nativePageCount,
@@ -972,7 +990,12 @@ export class PdfDocument {
     this.updateMissingFonts(result.missingFonts);
     const pageNumbers = pages.map((p) => p.pageNumber);
     this.emit('pageStatusChanged', { pageNumbers });
-    this.emit('pagesRearranged', { pageNumbers });
+    this.emit('pagesRearranged', {
+      origin: 'materialize',
+      before,
+      after: this.describePageArrangement(pages),
+      pageNumbers,
+    });
   }
 
   /**
@@ -990,6 +1013,7 @@ export class PdfDocument {
   async assemblePages(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     if (!this.arrangementDirty) return;
+    const before = this.describePageArrangement(this._pages);
     const sources = this._pages.map((p) => p.toAssembleSource());
     await this.synchronized(async () => {
       const pageIndices: number[] = [];
@@ -1014,7 +1038,7 @@ export class PdfDocument {
         rotations,
         ...(Object.keys(importedPages).length > 0 ? { importedPages } : {}),
       });
-      await this.refreshAllPages();
+      await this.refreshAllPages(before);
     });
   }
 
@@ -1037,8 +1061,27 @@ export class PdfDocument {
    * Serializes the current page arrangement through a temporary document,
    * leaving this document and any outstanding page proxies untouched. The
    * temporary copy is always disposed before this method returns.
+   *
+   * When the arrangement consists entirely of pages from one imported PDF,
+   * that source PDF becomes the copy base. This preserves its document-level
+   * structures (AcroForm, outline, metadata, name trees) instead of importing
+   * only its page dictionaries into an unrelated root document.
+   * A mixed-source arrangement still uses this document as its base; combining
+   * the other sources' catalog structures requires an application-level merge
+   * policy for field names, destinations, signatures, and similar semantics.
    */
   async encodePdfCopy(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    const sourceDocuments = new Set(this._pages.map((page) => page.document));
+    const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
+    return baseDocument.encodeArrangementCopy(this._pages, options);
+  }
+
+  /** Encodes `pages` using this document as the document-level structure base. */
+  private async encodeArrangementCopy(
+    pagesToEncode: readonly PdfPage[],
+    options: { incremental?: boolean; removeSecurity?: boolean },
+  ): Promise<Uint8Array> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     const result = await this.sendCommand('cloneDocument', { docHandle: this.docHandle });
     if (isWireError(result)) {
@@ -1046,7 +1089,7 @@ export class PdfDocument {
     }
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (copy)`, null);
     try {
-      const pages = this._pages.map((page) => {
+      const pages = pagesToEncode.map((page) => {
         if (page.document.docHandle !== this.docHandle) return page;
         const copiedSource = copy.pages[page.sourcePageIndex];
         if (!copiedSource) {
@@ -1173,8 +1216,8 @@ export class PdfDocument {
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
-    const result = await this.sendCommand('addAnnotation', {
-      docHandle: this.docHandle,
+    const result = await page.document.sendCommand('addAnnotation', {
+      docHandle: page.document.docHandle,
       pageIndex: page.sourcePageIndex,
       spec: page.annotationSpecToWire(effectiveSpec),
     });
@@ -1195,8 +1238,8 @@ export class PdfDocument {
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
-    const result = await this.sendCommand('updateAnnotation', {
-      docHandle: this.docHandle,
+    const result = await page.document.sendCommand('updateAnnotation', {
+      docHandle: page.document.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
       spec: page.annotationSpecToWire(effectiveSpec),
@@ -1213,8 +1256,8 @@ export class PdfDocument {
   async removeAnnotation(pageNumber: number, id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
     if (this._isDisposed) throw new Error('Document is disposed');
     const page = this.pageForAnnotation(pageNumber);
-    const result = await this.sendCommand('removeAnnotation', {
-      docHandle: this.docHandle,
+    const result = await page.document.sendCommand('removeAnnotation', {
+      docHandle: page.document.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
     });
@@ -1263,8 +1306,8 @@ export class PdfDocument {
     for (const item of snapshot.annotations) {
       const spec = { ...structuredClone(item.spec), id: item.id };
       const page = this.pageForAnnotation(item.pageNumber);
-      const result = await this.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
-        docHandle: this.docHandle,
+      const result = await page.document.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
+        docHandle: page.document.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(existingIds.has(item.id) ? { id: item.id } : {}),
         spec: page.annotationSpecToWire(spec),
@@ -1285,8 +1328,8 @@ export class PdfDocument {
       const page = this.pageForAnnotation(change.pageNumber);
       const spec = { ...structuredClone(change.spec), id: change.id };
       const command = change.type === 'add' ? 'addAnnotation' : 'updateAnnotation';
-      const result = await this.sendCommand(command, {
-        docHandle: this.docHandle,
+      const result = await page.document.sendCommand(command, {
+        docHandle: page.document.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(command === 'updateAnnotation' ? { id: change.id } : {}),
         spec: page.annotationSpecToWire(spec),
@@ -1298,7 +1341,11 @@ export class PdfDocument {
 
   private async removeAnnotationRaw(pageNumber: number, id: string): Promise<boolean> {
     const page = this.pageForAnnotation(pageNumber);
-    const result = await this.sendCommand('removeAnnotation', { docHandle: this.docHandle, pageIndex: page.sourcePageIndex, id });
+    const result = await page.document.sendCommand('removeAnnotation', {
+      docHandle: page.document.docHandle,
+      pageIndex: page.sourcePageIndex,
+      id,
+    });
     return result.ok;
   }
 
@@ -1314,16 +1361,14 @@ export class PdfDocument {
   }
 
   /**
-   * Resolves a 1-based page number to a host-document page usable for annotation
-   * writes (imported pages are rejected, matching `loadAnnotations`).
+   * Resolves a 1-based arrangement position to its physical page. Annotation
+   * writes are dispatched to that page's owning document, so arrangements may
+   * freely mix pages imported from other open documents.
    * @internal
    */
   private pageForAnnotation(pageNumber: number): PdfPage {
     const page = this._pages[pageNumber - 1];
     if (!page) throw new Error(`Invalid page number: ${pageNumber}`);
-    if (page.document.docHandle !== this.docHandle) {
-      throw new Error(`Cannot edit annotations on imported page ${pageNumber}`);
-    }
     return page;
   }
 

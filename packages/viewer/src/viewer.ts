@@ -16,10 +16,13 @@ import {
   type PdfAnnotationSpec,
   type PdfDest,
   type PdfDocument,
+  type PdfDocumentEventMap,
   type PdfFontQuery,
   type PdfFormField,
   type PdfLink,
   type PdfPage,
+  type PdfPageChangeOrigin,
+  type PdfPageMutationOptions,
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfOutlineNode,
@@ -45,6 +48,7 @@ import {
   layoutPagesHorizontal,
   layoutPagesVertical,
   offsetToPdfPoint,
+  offsetDeltaToPdfDelta,
   offsetToPdfPointInDocument,
   pdfPointToOffset,
   pdfRectToRect,
@@ -77,6 +81,13 @@ import {
 } from '@pdfrx/viewer-core';
 import { PageRenderCache } from './render-cache.js';
 import { PdfTextSearcher } from './text-searcher.js';
+
+interface ArrangementViewportAnchor {
+  readonly pageIndex: number;
+  readonly xRatio: number;
+  readonly yRatio: number;
+  readonly zoom: number;
+}
 
 /** Construction options for {@link PdfrxViewer}. */
 export interface PdfrxViewerOptions {
@@ -263,7 +274,9 @@ export interface PdfrxViewerOptions {
   /**
    * Overlays native HTML controls over AcroForm fields so the user can fill the
    * form (text inputs, checkboxes, radios, dropdowns). Edits are written back to
-   * the PDF and reflected by `PdfDocument.encodePdf`. Default: `true`.
+   * the owning source PDF and reflected when that document is encoded. Exporting
+   * one virtual arrangement made from several source PDFs requires an
+   * application-level AcroForm catalog merge. Default: `true`.
    */
   interactiveForms?: boolean;
   /**
@@ -322,6 +335,12 @@ export interface PdfrxViewerOptions {
   loadingIndicator?: boolean;
   /** Color of the built-in loading indicator. Default: `'rgba(255, 255, 255, 0.85)'`. */
   loadingIndicatorColor?: string;
+}
+
+/** Options for applying a page arrangement through the viewer. */
+export interface PdfrxPageMutationOptions extends PdfPageMutationOptions {
+  /** Add this mutation to the viewer-local Undo/Redo stack. Defaults to true only for `user` changes. */
+  readonly recordHistory?: boolean;
 }
 
 /** Progress of the document being opened (see {@link PdfrxViewer.loadingProgress}). */
@@ -1300,7 +1319,7 @@ export class PdfrxViewer {
     // widgets. Same click-through container as overlayRoot; the controls
     // themselves opt into pointer-events so they capture their own input.
     this.formOverlayRoot = document.createElement('div');
-    this.formOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    this.formOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2;';
     container.appendChild(this.formOverlayRoot);
 
     // Annotation overlay layer: per-page SVG that paints the document's
@@ -1308,12 +1327,12 @@ export class PdfrxViewer {
     // Click-through unless a drawing tool is active or a shape opts in, so
     // viewer gestures still reach the canvas.
     this.annotationOverlayRoot = document.createElement('div');
-    this.annotationOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    this.annotationOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;';
     container.appendChild(this.annotationOverlayRoot);
 
     // Viewport-fixed overlay layer (does not pan/zoom); above the page overlays.
     this.viewerOverlayRoot = document.createElement('div');
-    this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
+    this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:3;';
     container.appendChild(this.viewerOverlayRoot);
 
     this.resizeObserver = new ResizeObserver(() => this.onResize());
@@ -1411,12 +1430,16 @@ export class PdfrxViewer {
   private readonly pageLinks = new Map<number, PdfLink[] | Promise<PdfLink[]>>();
   /** Cached form fields per page position (parallel to {@link pageLinks}); feeds the form overlay. */
   private readonly pageFormFields = new Map<number, PdfFormField[] | Promise<PdfFormField[]>>();
+  /** Form listeners for every physical document represented by the virtual page arrangement. */
+  private readonly formDocumentListeners = new Map<PdfDocument, () => void>();
   /**
    * Bumped whenever page positions stop meaning what they meant (new document,
    * rearrangement). Text and links are cached by position, so a load that was
    * in flight across the change must not write its result back.
    */
   private arrangementGeneration = 0;
+  /** Captured before viewer-owned page mutations, since document events fire after the page array changes. */
+  private pendingArrangementViewportAnchor: ArrangementViewportAnchor | null = null;
   private hoveredLink: { link: PdfLink; rects: Rect[] } | null = null;
 
   private viewSize: Size = { width: 0, height: 0 };
@@ -2275,6 +2298,7 @@ export class PdfrxViewer {
     this.resizeObserver.disconnect();
     this.hideContextMenu();
     this.searcher?.dispose();
+    this.clearFormDocumentListeners();
     this.clearFormOverlays();
     this.clearAnnotationOverlays();
     this.container.removeEventListener('wheel', this.onWheel, { capture: true });
@@ -2317,6 +2341,7 @@ export class PdfrxViewer {
 
   private async setDocument(doc: PdfDocument): Promise<void> {
     this.cache?.dispose();
+    this.clearFormDocumentListeners();
     await this.doc?.dispose();
     this.arrangementGeneration++;
     this.pageTexts.clear();
@@ -2341,8 +2366,8 @@ export class PdfrxViewer {
     this.selectedAnnotationIds.clear();
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
-    doc.addEventListener('pagesRearranged', () => this.onPagesRearranged());
-    doc.addEventListener('formFieldsChanged', () => this.reconcileFormOverlays());
+    doc.addEventListener('pagesRearranged', (event) => this.onPagesRearranged(event));
+    this.syncFormDocumentListeners();
     doc.addEventListener('annotationsChanged', () => this.onAnnotationsChanged());
     this.resetView();
     this.buildViewerOverlays();
@@ -2368,7 +2393,9 @@ export class PdfrxViewer {
     if (!this.doc) return;
     this.pageGeoms = this.doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
     this.layout = this.computeLayout();
-    this.invalidate();
+    // Page metadata can change the document extent. Never leave a transform
+    // that was clamped against the old extent in an invalid/off-screen range.
+    this.setTransform(this.transform);
   }
 
   /**
@@ -2377,13 +2404,16 @@ export class PdfrxViewer {
    * because {@link PageRenderCache} keys them by content — which is what makes
    * reordering and rotating in a GUI instant.
    */
-  private onPagesRearranged(): void {
+  private onPagesRearranged(event: PdfDocumentEventMap['pagesRearranged']): void {
     if (!this.doc) return;
+    const anchor = this.pendingArrangementViewportAnchor ?? this.captureArrangementViewportAnchor();
+    this.pendingArrangementViewportAnchor = null;
     this.arrangementGeneration++;
     this.pageTexts.clear();
     this.pageLinks.clear();
     this.pageFormFields.clear();
     this.clearFormOverlays();
+    this.syncFormDocumentListeners();
     this.pageAnnotations.clear();
     this.annotationSnapshots.clear();
     this.clearAnnotationOverlays();
@@ -2391,7 +2421,52 @@ export class PdfrxViewer {
     this.clearSelection();
     this.cache?.onArrangementChanged();
     this.searcher?.onPagesRearranged();
-    this.onPageStatusChanged();
+    this.pageGeoms = this.doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
+    this.layout = this.computeLayout();
+    this.restoreArrangementViewportAnchor(anchor, event);
+  }
+
+  /** Captures the viewport centre relative to its most-visible page before an arrangement relayout. */
+  private captureArrangementViewportAnchor(): ArrangementViewportAnchor | null {
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return null;
+    const pageIndex = (this.currentPageNumber ?? 1) - 1;
+    const pageRect = this.layout.pageLayouts[pageIndex];
+    if (!pageRect) return null;
+    const centre = viewToDocument(this.transform, { x: this.viewSize.width / 2, y: this.viewSize.height / 2 });
+    return {
+      pageIndex,
+      xRatio: Math.min(1, Math.max(0, (centre.x - pageRect.left) / rectWidth(pageRect))),
+      yRatio: Math.min(1, Math.max(0, (centre.y - pageRect.top) / rectHeight(pageRect))),
+      zoom: this.transform.zoom,
+    };
+  }
+
+  /** Restores that page-relative centre after rotation/reorder changed page and document extents. */
+  private restoreArrangementViewportAnchor(
+    anchor: ArrangementViewportAnchor | null,
+    event: PdfDocumentEventMap['pagesRearranged'],
+  ): void {
+    if (!this.layout || !anchor) {
+      this.setTransform(this.transform);
+      return;
+    }
+    const before = event.before[anchor.pageIndex];
+    let pageIndex = before && event.after[anchor.pageIndex]?.sourceKey === before.sourceKey
+      ? anchor.pageIndex
+      : event.after.findIndex((page) =>
+          page.sourceKey === before?.sourceKey && page.sourcePageIndex === before?.sourcePageIndex,
+        );
+    if (pageIndex < 0) pageIndex = Math.min(anchor.pageIndex, this.layout.pageLayouts.length - 1);
+    const pageRect = this.layout.pageLayouts[pageIndex];
+    if (!pageRect) {
+      this.setTransform(this.transform);
+      return;
+    }
+    const point = {
+      x: pageRect.left + rectWidth(pageRect) * anchor.xRatio,
+      y: pageRect.top + rectHeight(pageRect) * anchor.yRatio,
+    };
+    this.setTransform(calcTransformFor(point, anchor.zoom, this.viewSize));
   }
 
   /** Computes the page layout from the custom hook, or the direction built-ins. */
@@ -2710,9 +2785,9 @@ export class PdfrxViewer {
 
   /** Loads (once) the form fields of a page position; mirrors {@link ensureLinks}. */
   private ensureFormFields(pageNumber: number): void {
-    if (!this.doc || !this.doc.formHandle || this.pageFormFields.has(pageNumber)) return;
+    if (!this.doc || this.pageFormFields.has(pageNumber)) return;
     const page = this.doc.pages[pageNumber - 1];
-    if (!page || !page.isLoaded) return;
+    if (!page || !page.isLoaded || !page.document.formHandle) return;
     const generation = this.arrangementGeneration;
     const promise = page.loadFormFields().then((fields) => {
       if (generation === this.arrangementGeneration) {
@@ -3879,7 +3954,7 @@ export class PdfrxViewer {
    * transform. Mirrors {@link updateOverlays}; called from the paint loop.
    */
   private updateFormOverlays(): void {
-    if (this.options.interactiveForms === false || !this.layout || !this.doc || !this.doc.formHandle) {
+    if (this.options.interactiveForms === false || !this.layout || !this.doc) {
       if (this.formOverlays.size) this.clearFormOverlays();
       return;
     }
@@ -3893,7 +3968,8 @@ export class PdfrxViewer {
       if (onScreen && !overlay) {
         const fields = this.getLoadedFormFields(pageNumber);
         if (fields && fields.length) {
-          const built = this.buildFormPageOverlay(fields, this.pageGeoms[i]!, pageRect);
+          const page = this.doc.pages[i];
+          const built = page ? this.buildFormPageOverlay(page, fields, this.pageGeoms[i]!, pageRect) : null;
           if (built) {
             overlay = built;
             this.formOverlays.set(pageNumber, built);
@@ -3914,6 +3990,7 @@ export class PdfrxViewer {
 
   /** Builds one page's form overlay container from its fields, or null if empty. */
   private buildFormPageOverlay(
+    page: PdfPage,
     fields: readonly PdfFormField[],
     pageGeom: PageGeometry,
     pageRect: Rect,
@@ -3927,7 +4004,7 @@ export class PdfrxViewer {
       `width:${pageSize.width}px;height:${pageSize.height}px;`;
     const controls = new Map<string, (field: PdfFormField) => void>();
     for (const field of fields) {
-      for (const el of this.buildFormControls(field, pageGeom, pageSize, controls)) container.appendChild(el);
+      for (const el of this.buildFormControls(page.document, field, pageGeom, pageSize, controls)) container.appendChild(el);
     }
     if (container.childElementCount === 0) return null;
     return { container, controls };
@@ -3941,13 +4018,13 @@ export class PdfrxViewer {
    * control — the canvas renders them.
    */
   private buildFormControls(
+    doc: PdfDocument,
     field: PdfFormField,
     pageGeom: PageGeometry,
     pageSize: Size,
     controls: Map<string, (field: PdfFormField) => void>,
   ): HTMLElement[] {
-    if (!this.doc || !field.name) return [];
-    const doc = this.doc;
+    if (!field.name) return [];
     const readOnly = field.flags.readOnly;
     /** Disables read-only controls (they display + reconcile but cannot be edited). */
     const disable = (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void => {
@@ -3977,7 +4054,7 @@ export class PdfrxViewer {
     };
     const fontPx = (box: Rect): string => `${Math.min(Math.max(rectHeight(box) * 0.62, 8), 24)}px sans-serif`;
     const commit = (value: string | boolean): void => {
-      void doc.setFormFieldValue(field.name, value);
+      void doc.setFormFieldValue(field.name, value).then(() => this.reconcileFormOverlays());
     };
     const box0 = toPx(field.rects[0]!);
 
@@ -4083,6 +4160,32 @@ export class PdfrxViewer {
         })
         .catch(() => {});
     }
+  }
+
+  /** Tracks form changes on root and imported source documents in the current arrangement. */
+  private syncFormDocumentListeners(): void {
+    if (!this.doc) {
+      this.clearFormDocumentListeners();
+      return;
+    }
+    const current = new Set(this.doc.pages.map((page) => page.document));
+    for (const [sourceDocument, unsubscribe] of this.formDocumentListeners) {
+      if (current.has(sourceDocument)) continue;
+      unsubscribe();
+      this.formDocumentListeners.delete(sourceDocument);
+    }
+    for (const sourceDocument of current) {
+      if (this.formDocumentListeners.has(sourceDocument)) continue;
+      this.formDocumentListeners.set(
+        sourceDocument,
+        sourceDocument.addEventListener('formFieldsChanged', () => this.reconcileFormOverlays()),
+      );
+    }
+  }
+
+  private clearFormDocumentListeners(): void {
+    for (const unsubscribe of this.formDocumentListeners.values()) unsubscribe();
+    this.formDocumentListeners.clear();
   }
 
   /** Removes all form-control overlays. */
@@ -5043,7 +5146,7 @@ export class PdfrxViewer {
     const entry = this.history[--this.historyIndex]!;
     this.setSelectedAnnotations([]);
     if (entry.kind === 'pages') {
-      this.doc?.setPages(entry.before);
+      this.replaceDocumentPages(entry.before, { origin: 'history', actorId: this.options.editing?.actorId });
     } else {
       for (let i = entry.commands.length - 1; i >= 0; i--) {
         const cmd = entry.commands[i]!;
@@ -5060,7 +5163,7 @@ export class PdfrxViewer {
     const entry = this.history[this.historyIndex++]!;
     this.setSelectedAnnotations([]);
     if (entry.kind === 'pages') {
-      this.doc?.setPages(entry.after);
+      this.replaceDocumentPages(entry.after, { origin: 'history', actorId: this.options.editing?.actorId });
     } else {
       for (const cmd of entry.commands) await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.after);
     }
@@ -5079,7 +5182,7 @@ export class PdfrxViewer {
   }
 
   /** Replaces the page arrangement and records it as one undoable edit. */
-  setPages(pages: readonly PdfPage[]): void {
+  setPages(pages: readonly PdfPage[], options: PdfrxPageMutationOptions = {}): void {
     if (!this.doc) return;
     if (this.options.editing?.pages === false) throw new Error('Page editing is disabled');
     const before = this.doc.pages.slice();
@@ -5087,20 +5190,38 @@ export class PdfrxViewer {
       before.length === pages.length &&
       before.every((page, index) => page.renderKey === pages[index]?.renderKey)
     ) return;
-    this.doc.setPages(pages);
-    this.recordHistoryEntry({ kind: 'pages', before, after: this.doc.pages.slice() });
+    const origin: PdfPageChangeOrigin = options.origin ?? 'user';
+    this.replaceDocumentPages(pages, {
+      origin,
+      transactionId: options.transactionId,
+      actorId: options.actorId ?? this.options.editing?.actorId,
+    });
+    if (options.recordHistory ?? origin === 'user') {
+      this.recordHistoryEntry({ kind: 'pages', before, after: this.doc.pages.slice() });
+    }
     this.annotationHistoryMergeKey = null;
   }
 
   /** Replaces one page slot and records it as one undoable edit. */
-  setPage(pageNumber: number, page: PdfPage): void {
+  setPage(pageNumber: number, page: PdfPage, options: PdfrxPageMutationOptions = {}): void {
     if (!this.doc) return;
     if (pageNumber < 1 || pageNumber > this.doc.pages.length) {
       throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this.doc.pages.length})`);
     }
     const pages = this.doc.pages.slice();
     pages[pageNumber - 1] = page;
-    this.setPages(pages);
+    this.setPages(pages, options);
+  }
+
+  /** Mutates the document while preserving a viewport anchor captured against the still-current layout. */
+  private replaceDocumentPages(pages: readonly PdfPage[], options: PdfPageMutationOptions): void {
+    if (!this.doc) return;
+    this.pendingArrangementViewportAnchor = this.captureArrangementViewportAnchor();
+    try {
+      this.doc.setPages(pages, options);
+    } finally {
+      this.pendingArrangementViewportAnchor = null;
+    }
   }
 
   /**
@@ -5663,6 +5784,16 @@ export class PdfrxViewer {
     spec.fontFace = spec.appearanceRuns.flat().find((run) => run.fontFace)?.fontFace ?? null;
   }
 
+  /**
+   * Prepares browser-dependent resources used by a remotely supplied annotation
+   * before it is written to this viewer's document. In particular, FreeText
+   * font registrations live in one engine worker and therefore must be repeated
+   * independently by every collaboration participant.
+   */
+  async prepareAnnotationAppearance(spec: PdfAnnotationSpec): Promise<void> {
+    if (spec.subtype === 'freeText') await this.prepareFreeTextAppearance(spec);
+  }
+
   private trackAnnotationTextEdit(operation: Promise<void>): void {
     const previous = this.pendingAnnotationTextEdit;
     this.pendingAnnotationTextEdit = Promise.all([previous, operation])
@@ -5952,9 +6083,10 @@ export class PdfrxViewer {
       }
       // A real move: keep the live transform so the shape/anchors hold their new
       // spot until the reload replaces this overlay (avoids a snap-back flicker).
-      const scale = pageSize.height / pageGeom.height;
-      const dx = dxPx / scale;
-      const dy = -dyPx / scale;
+      const { x: dx, y: dy } = offsetDeltaToPdfDelta(
+        { x: dxPx, y: dyPx },
+        { page: pageGeom, scaledPageSize: pageSize },
+      );
       if (duplicate) {
         // Keep the clone visible until the annotation-change reload atomically
         // replaces this overlay; removing it now would flash an empty gap.
@@ -6172,9 +6304,10 @@ export class PdfrxViewer {
         overlay.anchorLayer.removeAttribute('transform');
         return;
       }
-      const scale = overlay.pageSize.height / overlay.pageGeom.height;
-      const dx = dxPx / scale;
-      const dy = -dyPx / scale;
+      const { x: dx, y: dy } = offsetDeltaToPdfDelta(
+        { x: dxPx, y: dyPx },
+        { page: overlay.pageGeom, scaledPageSize: overlay.pageSize },
+      );
       if (duplicate) {
         // Successful document writes replace the whole overlay and naturally
         // discard these clones. Only clean them up directly if the write fails.

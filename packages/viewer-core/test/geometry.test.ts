@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   offsetToPdfPoint,
+  offsetDeltaToPdfDelta,
   pdfPointRotate,
   pdfPointRotateReverse,
   pdfPointToOffsetInDocument,
@@ -86,5 +87,14 @@ describe('PDF <-> view space conversions', () => {
     const viewRect = pdfRectToRect(r, { page: rotatedPage });
     const back = rectToPdfRect(viewRect, { page: rotatedPage });
     expect(back).toEqual(r);
+  });
+
+  it.each([
+    [{ width: 200, height: 100, rotation: 0 }, { x: 10, y: -20 }],
+    [{ width: 100, height: 200, rotation: 1 }, { x: 20, y: 10 }],
+    [{ width: 200, height: 100, rotation: 2 }, { x: -10, y: 20 }],
+    [{ width: 100, height: 200, rotation: 3 }, { x: -20, y: -10 }],
+  ] as const)('converts view displacement through page rotation %#', (rotatedPage, expected) => {
+    expect(offsetDeltaToPdfDelta({ x: 10, y: 20 }, { page: rotatedPage })).toEqual(expected);
   });
 });

@@ -21,6 +21,8 @@
  *   fragments).
  * - `selection` — nearest-character hit testing, A/B anchors, word
  *   selection, and per-page range expansion.
+ * - `page-arrangement` — stable page-placement identity and pure operations
+ *   for application-owned editing and synchronization models.
  *
  * Coordinate spaces: **PDF page space** is points (1/72"), origin
  * bottom-left, y-up, `top >= bottom`; **document space** is y-down over the
@@ -30,6 +32,7 @@
 
 export * from './geometry.js';
 export * from './layout.js';
+export * from './page-arrangement.js';
 export * from './selection.js';
 export * from './text.js';
 export * from './text-formatter.js';

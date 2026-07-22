@@ -92,6 +92,8 @@ export interface PdfrxStrings {
   annotate: string;
   closeSidebar: string;
   rotatePage: string;
+  rotatePageCounterclockwise: string;
+  rotatePage180: string;
   deletePage: string;
   /** "Add pages" button at the end of the thumbnail strip (label + aria-label). */
   addPages: string;
@@ -164,6 +166,8 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   annotate: 'Annotate',
   closeSidebar: 'Close sidebar',
   rotatePage: 'Rotate 90° clockwise',
+  rotatePageCounterclockwise: 'Rotate 90° counterclockwise',
+  rotatePage180: 'Rotate 180°',
   deletePage: 'Delete this page',
   addPages: 'Add pages',
   enterPassword: 'This document is password protected.\nPassword:',

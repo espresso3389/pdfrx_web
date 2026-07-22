@@ -604,6 +604,29 @@ export interface PdfRestoreAnnotationsOptions extends PdfAnnotationMutationOptio
   readonly mode?: 'merge' | 'replace';
 }
 
+/** Where a page-arrangement mutation originated. */
+export type PdfPageChangeOrigin = 'user' | 'api' | 'remote' | 'restore' | 'history' | 'materialize';
+
+/** Options shared by page-arrangement mutation APIs. */
+export interface PdfPageMutationOptions {
+  /** Defaults to `api`. */
+  readonly origin?: PdfPageChangeOrigin;
+  /** Application-defined id used to correlate or deduplicate a change. */
+  readonly transactionId?: string;
+  /** Stable application/user id responsible for the mutation. */
+  readonly actorId?: string;
+}
+
+/** A position-independent description of one page in a local arrangement. */
+export interface PdfPageArrangementEntry {
+  /** Physical source identity within the current engine process. Not a persistent/session id. */
+  readonly sourceKey: string;
+  /** Source page index in its owning PDF, zero-based. */
+  readonly sourcePageIndex: number;
+  /** Effective clockwise rotation. */
+  readonly rotation: PdfPageRotation;
+}
+
 /**
  * Whether/how annotations are drawn when rendering a page.
  *
@@ -710,7 +733,16 @@ export interface PdfDocumentEventMap {
    * `pageStatusChanged`; listen to this one to invalidate things keyed by page
    * position, which a plain progressive-load update does not disturb.
    */
-  pagesRearranged: { pageNumbers: number[] };
+  pagesRearranged: {
+    origin: PdfPageChangeOrigin;
+    transactionId?: string;
+    actorId?: string;
+    /** Arrangement immediately before the mutation. */
+    before: readonly PdfPageArrangementEntry[];
+    /** Arrangement immediately after the mutation. */
+    after: readonly PdfPageArrangementEntry[];
+    pageNumbers: number[];
+  };
   /** The engine reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
   missingFonts: { queries: PdfFontQuery[] };
   /**

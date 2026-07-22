@@ -3,6 +3,7 @@ import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { IconSave } from './icons.js';
+import type { PdfDocument } from '@pdfrx/engine';
 
 /** Props for {@link PdfSaveButton}. */
 export interface PdfSaveButtonProps {
@@ -12,6 +13,8 @@ export interface PdfSaveButtonProps {
   fileName?: string;
   /** Custom label/children; defaults to a save icon. */
   children?: ReactNode;
+  /** Overrides serialization, for example to merge collaboration document structures. */
+  encode?: (document: PdfDocument) => Promise<Uint8Array>;
 }
 
 /**
@@ -19,7 +22,7 @@ export interface PdfSaveButtonProps {
  * annotation and page edits — and downloads it as a PDF without materializing
  * the live document's page arrangement or invalidating its editing history.
  */
-export function PdfSaveButton({ className, style, fileName, children }: PdfSaveButtonProps): ReactNode {
+export function PdfSaveButton({ className, style, fileName, children, encode }: PdfSaveButtonProps): ReactNode {
   const viewer = usePdfrxViewer();
   const { pageCount, sourceName } = usePdfDocument();
   const strings = usePdfrxStrings();
@@ -31,7 +34,7 @@ export function PdfSaveButton({ className, style, fileName, children }: PdfSaveB
     setIsSaving(true);
     try {
       await viewer.flushAnnotationTextEdit();
-      const data = await doc.encodePdfCopy();
+      const data = encode ? await encode(doc) : await doc.encodePdfCopy();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;

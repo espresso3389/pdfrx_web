@@ -2,8 +2,8 @@
 
 A typed TypeScript client for rendering PDF documents. It runs a WASM rendering
 engine in a worker and exposes a promise-based document API: open/render pages,
-extract text with per-character bounding boxes, links, outline, font
-registration, and PDF re-encoding. This is the engine layer underneath
+extract text with per-character bounding boxes, links, outline, AcroForm
+fields, annotations, font registration, page arrangement, and PDF re-encoding. This is the engine layer underneath
 [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer); use it directly
 when you only need rendering/extraction without the viewer UI.
 
@@ -113,6 +113,8 @@ Each symbol links to its entry in the
 - Page manipulation — reorder, rotate, remove, duplicate, and import (cross-document) — is all `setPages` / `setPage` over proxy pages; [`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages) writes the arrangement back into the PDF (`encodePdf()` calls it for you)
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — materialize the arrangement into the live document and serialize it
 - [`doc.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy) — assemble and serialize through a temporary copy, preserving the live document's proxy arrangement
+- `encodePdfCopy()` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
+- AcroForm: `loadFormFields()` / `getFormFieldValue()` / `setFormFieldValue()`, `formFieldsChanged`, and JS-free `AFSimple_Calculate` support for SUM/PRD/AVG/MIN/MAX. Arbitrary field JavaScript is not executed.
 - [`doc.permissions`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#permissions) — encrypted-document permissions with [`allowsCopying`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPermissions.html#allowscopying) / `allowsPrinting` / `allowsDocumentAssembly` / `allowsModifyAnnotations` helpers
 - Note: [`openData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#opendata) copies the bytes to the worker rather than transferring them, because `data` must stay usable for a wrong-password retry and for reopening after font registration
 - Document events: [`pageStatusChanged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#pagestatuschanged), [`pagesRearranged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#pagesrearranged), [`loadComplete`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#loadcomplete), [`missingFonts`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#missingfonts)

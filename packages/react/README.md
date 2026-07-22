@@ -117,8 +117,21 @@ Undoing a page edit therefore restores the page numbering that existed when an
 earlier annotation edit was recorded. This ordering is the invariant that keeps
 annotation commands, which refer to 1-based page numbers, consistent.
 
-When building custom React page controls, mutate the arrangement through the
-viewer returned by `usePdfrxViewer()`:
+For the standard rotate/delete UI, use `PdfPageActions`. It performs local
+viewer mutations by default, while collaborative hosts can intercept the same
+controls and submit stable operations to their relay:
+
+```tsx
+<PdfPageActions
+  pageNumber={pageNumber}
+  rotationDeltas={[270, 90, 180]}
+  onRotatePage={(page, delta) => submitRotate(page, delta)}
+  onDeletePage={(page) => submitDelete(page)}
+/>
+```
+
+When building other custom React page controls, mutate the arrangement through
+the viewer returned by `usePdfrxViewer()`:
 
 ```tsx
 const viewer = usePdfrxViewer();
@@ -189,6 +202,19 @@ normally do the same:
 await viewer.flushAnnotationTextEdit();
 const data = await viewer.document!.encodePdfCopy();
 ```
+
+`PdfSaveButton` accepts an `encode(document)` override when an application must
+post-process the bytes—for example, to merge outlines and AcroForm catalogs
+from several source PDFs. The default remains `document.encodePdfCopy()`:
+
+```tsx
+<PdfSaveButton encode={(document) => exportVirtualDocument(document, session)} />
+```
+
+The engine preserves document-level structures from a sole imported source. A
+mixed-source arrangement needs an application-specific merge policy for field
+name collisions, outline destinations, calculation order, signatures, and
+other catalog entries; page import alone cannot decide those semantics.
 
 The temporary native document and its encoded buffers increase peak memory
 usage during the save. For memory-constrained applications, it can instead be
