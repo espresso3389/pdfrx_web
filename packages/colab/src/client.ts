@@ -36,6 +36,27 @@ export interface CollaborationWebSocket {
 
 /** Factory override used by tests or hosts that provide a WebSocket polyfill. */
 export type CollaborationWebSocketFactory = (url: string) => CollaborationWebSocket;
+/** Fetch-compatible hook used for authenticated source download and upload. */
+export type CollaborationFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
+/** Resolves the immutable source endpoint used by the collaboration session. */
+export type RelaySourceUrlResolver = (relayUrl: string, sessionId: string, documentId: string) => string;
+
+/**
+ * Host-provided transport hooks for authentication and custom relay routing.
+ *
+ * The defaults use the browser's native `WebSocket` and `fetch`, and derive a
+ * root-level HTTP source path from the relay URL. Applications can inject a
+ * credentialed fetch, a ticket-bearing socket factory, or a reverse-proxy
+ * specific source URL without coupling the package to one auth provider.
+ */
+export interface CollaborationTransport {
+  /** Creates the relay socket; useful for short-lived connection tickets or polyfills. */
+  readonly createWebSocket?: CollaborationWebSocketFactory;
+  /** Performs source GET/PUT requests; add credentials or authorization here. */
+  readonly fetch?: CollaborationFetch;
+  /** Overrides source HTTP URL construction. */
+  readonly resolveSourceUrl?: RelaySourceUrlResolver;
+}
 /** Receives the current page snapshot and, for incremental updates, its commit. */
 export type PageSessionListener = (snapshot: PageSessionSnapshot, committed?: CommittedPageOperation) => void;
 /** Receives the current annotation snapshot and optional incremental commit. */
@@ -53,6 +74,17 @@ export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: 
   return url.toString();
 }
 
+/** Fetches one immutable source using optional host transport hooks. */
+export function fetchRelaySource(
+  relayUrl: string,
+  sessionId: string,
+  documentId: string,
+  transport: CollaborationTransport = {},
+): Promise<Response> {
+  const url = (transport.resolveSourceUrl ?? relaySourceUrl)(relayUrl, sessionId, documentId);
+  return transport.fetch ? transport.fetch(url) : globalThis.fetch(url);
+}
+
 /**
  * Uploads one immutable PDF source to the reference relay's HTTP endpoint.
  * @throws `Error` when the relay rejects or cannot store the source.
@@ -62,12 +94,15 @@ export async function uploadRelaySource(
   sessionId: string,
   documentId: string,
   bytes: ArrayBuffer,
+  transport: CollaborationTransport = {},
 ): Promise<void> {
-  const response = await fetch(relaySourceUrl(relayUrl, sessionId, documentId), {
+  const url = (transport.resolveSourceUrl ?? relaySourceUrl)(relayUrl, sessionId, documentId);
+  const init: RequestInit = {
     method: 'PUT',
     headers: { 'Content-Type': 'application/pdf' },
     body: bytes,
-  });
+  };
+  const response = transport.fetch ? await transport.fetch(url, init) : await globalThis.fetch(url, init);
   if (!response.ok) throw new Error(`PDF source upload failed (${response.status}): ${await response.text()}`);
 }
 

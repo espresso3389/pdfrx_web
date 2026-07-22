@@ -17,7 +17,12 @@ import {
 import type { PdfAnnotationChange, PdfDocument, PdfFormField, PdfFormFieldValue } from '@pdfrx/engine';
 import type { PagePlacementOperation } from '@pdfrx/viewer-core';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { PageCollaborationClient, relaySourceUrl, uploadRelaySource } from './client.js';
+import {
+  fetchRelaySource,
+  PageCollaborationClient,
+  uploadRelaySource,
+  type CollaborationTransport,
+} from './client.js';
 import { applyPagePlacementsToViewer, PageSourceRegistry } from './page-adapter.js';
 import { encodeCollaborativePdf } from './export-composer.js';
 import type { PageSessionSnapshot } from './protocol.js';
@@ -56,6 +61,8 @@ export interface CollaborativePdfViewerProps {
   readonly wasmModulesUrl?: string;
   /** Additional class applied to the outer `.collab-pane` element. */
   readonly className?: string;
+  /** Authentication and routing hooks for relay WebSocket and source requests. */
+  readonly transport?: CollaborationTransport;
 }
 
 /**
@@ -74,6 +81,7 @@ export function CollaborativePdfViewer({
   src,
   wasmModulesUrl = '/pdfium/',
   className,
+  transport,
 }: CollaborativePdfViewerProps): ReactNode {
   const displayName = name ?? actorId;
   return (
@@ -91,6 +99,7 @@ export function CollaborativePdfViewer({
           actorId={actorId}
           relayUrl={relayUrl}
           sessionId={sessionId}
+          transport={transport}
         />
       </PdfrxProvider>
     </section>
@@ -102,11 +111,13 @@ function CollaborativeViewerContent({
   actorId,
   relayUrl,
   sessionId,
+  transport,
 }: {
   name: string;
   actorId: string;
   relayUrl: string;
   sessionId: string;
+  transport?: CollaborationTransport;
 }): ReactNode {
   const viewer = usePdfrxViewer();
   const documentState = usePdfDocument();
@@ -130,7 +141,7 @@ function CollaborativeViewerContent({
     const existing = sourceOpensRef.current.get(documentId);
     if (existing) return existing;
     const opening = (async () => {
-      const response = await fetch(relaySourceUrl(relayUrl, sessionId, documentId));
+      const response = await fetchRelaySource(relayUrl, sessionId, documentId, transport);
       if (!response.ok) throw new Error(`共有PDFを取得できません (${response.status})`);
       const document = await viewer.engine.openData(await response.arrayBuffer(), { sourceName: `${documentId}.pdf` });
       sources.register(documentId, document);
@@ -144,12 +155,12 @@ function CollaborativeViewerContent({
     } finally {
       sourceOpensRef.current.delete(documentId);
     }
-  }, [relayUrl, sessionId, viewer]);
+  }, [relayUrl, sessionId, transport, viewer]);
 
   useEffect(() => {
     const document = viewer?.document;
     if (!document || documentState.isLoading) return;
-    const client = new PageCollaborationClient(actorId);
+    const client = new PageCollaborationClient(actorId, undefined, transport?.createWebSocket);
     clientRef.current = client;
     const sources = new PageSourceRegistry();
     sources.register('main', document);
@@ -279,7 +290,7 @@ function CollaborativeViewerContent({
       for (const sourceDocument of sourceDocumentsRef.current.splice(0)) void sourceDocument.dispose();
       sourceOpensRef.current.clear();
     };
-  }, [actorId, documentState.isLoading, ensureSource, viewer, viewer?.document]);
+  }, [actorId, documentState.isLoading, ensureSource, transport, viewer, viewer?.document]);
 
   const submit = useCallback(async (operation: PagePlacementOperation): Promise<void> => {
     setPending(true);
@@ -323,7 +334,7 @@ function CollaborativeViewerContent({
         const bytes = isImageFile(file)
           ? Uint8Array.from(await imageBytesToPdf(viewer.engine, fileBytes)).buffer
           : fileBytes;
-        await uploadRelaySource(relayUrl, sessionId, documentId, bytes);
+        await uploadRelaySource(relayUrl, sessionId, documentId, bytes, transport);
         const sourceDocument = await ensureSource(documentId);
         for (let pageIndex = 0; pageIndex < sourceDocument.pages.length; pageIndex += 1) {
           const placementId = crypto.randomUUID();
@@ -354,7 +365,7 @@ function CollaborativeViewerContent({
       const bytes = isImageFile(file)
         ? Uint8Array.from(await imageBytesToPdf(viewer.engine, fileBytes)).buffer
         : fileBytes;
-      await uploadRelaySource(relayUrl, sessionId, documentId, bytes);
+      await uploadRelaySource(relayUrl, sessionId, documentId, bytes, transport);
       const sourceDocument = await ensureSource(documentId);
       await client.submit({
         type: 'page.replace',
