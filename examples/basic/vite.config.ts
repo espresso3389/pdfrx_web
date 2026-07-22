@@ -11,6 +11,8 @@ export default defineConfig({
   resolve: { alias: pdfrxSrcAliases },
   plugins: [pdfiumAssets()],
   server: {
+    port: 5173,
+    strictPort: true,
     // Listen on every interface, not just loopback, so the example can be
     // opened on a phone over Tailscale — testing touch behaviour needs a real
     // device. Without this `npm run dev` binds to localhost, the request never

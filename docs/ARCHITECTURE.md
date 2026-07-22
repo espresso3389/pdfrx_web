@@ -264,7 +264,8 @@ has but this port does not yet — and which are deliberately out of scope — s
 
 ## Collaborative applications
 
-Networking and session identity stay above the reusable viewer packages. See
-[COLLABORATION.md](COLLABORATION.md) for the implemented page/annotation/form
-session model, stable page-placement protocol, client-local application model,
-and mixed-source export policy used by the private collaboration workspace.
+Networking and session identity stay above the core viewer packages.
+`@pdfrx/colab` provides the reusable React component, browser relay client,
+stable page-placement protocol, client-local application model, and mixed-source
+export composition. The private `examples/colab` workspace supplies only the
+reference relay and two-participant example; see [COLLABORATION.md](COLLABORATION.md).

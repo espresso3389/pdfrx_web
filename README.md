@@ -34,6 +34,10 @@ It renders pages, text selection, links, and search highlights onto a single
 **[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
 React viewer, runs entirely in your browser.
 
+The collaboration source example is in [`examples/colab`](examples/colab/README.md) and
+runs locally with `npm run dev:colab`; it starts the two-viewer UI together with
+its reference WebSocket relay.
+
 It has a search bar, thumbnails/outline sidebar, print/download buttons, form
 filling, annotation tools, page editing, and opening local files (button or drag
 & drop) — and switches between the three
@@ -64,11 +68,15 @@ built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
   `renderPageThumbnail()`, `createTextSearcher()`), but the surrounding UI —
   the thumbnail strip, the outline tree, the search box — is yours to build.
   That extra UI is exactly what `@pdfrx/react` packages up for React.
+- **Collaborative React app?** Use **[`@pdfrx/colab`](packages/colab)** — a
+  session-aware viewer that synchronizes page arrangements, annotations, and
+  form values through an application-hosted relay.
 
 ## Installation
 
 ```sh
 npm install @pdfrx/react     # React apps
+npm install @pdfrx/colab     # Collaborative React apps
 # or
 npm install @pdfrx/viewer    # everything else
 ```
@@ -162,6 +170,7 @@ Password-protected files are supported by passing a
 | Package | npm | Description |
 |---|---|---|
 | [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks: [`<PdfrxViewerApp>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html), composable parts, and headless hooks. |
+| [`@pdfrx/colab`](packages/colab) | npm (first release pending) | Collaborative React viewer, browser relay client, session protocols, virtual-page adapter, and mixed-source export composition. |
 | [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
 | [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed WASM-worker client: rendering, text/links/outline, forms, annotations, fonts, page arrangement, and encoding. |

@@ -1,0 +1,51 @@
+{
+  "name": "@pdfrx/colab",
+  "version": "0.8.0",
+  "description": "Collaborative React PDF viewer components and session protocol for pdfrx",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "files": ["dist", "styles.css", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pdfrx/engine": "^0.8.0",
+    "@pdfrx/react": "^0.8.0",
+    "@pdfrx/viewer": "^0.8.0",
+    "@pdfrx/viewer-core": "^0.8.0",
+    "pdf-lib": "^1.17.1"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT",
+  "author": "Takashi Kawasaki <espresso3389@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espresso3389/pdfrx_web.git",
+    "directory": "packages/colab"
+  },
+  "homepage": "https://espresso3389.github.io/pdfrx_web/",
+  "bugs": { "url": "https://github.com/espresso3389/pdfrx_web/issues" },
+  "keywords": ["pdf", "pdfium", "viewer", "react", "collaboration", "pdfrx"],
+  "publishConfig": { "access": "public" }
+}

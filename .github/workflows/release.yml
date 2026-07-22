@@ -34,7 +34,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for pkg in engine viewer-core viewer react; do
+          for pkg in engine viewer-core viewer react colab; do
             version=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::@pdfrx/$pkg is $version but the tag says $tag"

@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "name": "pdfrx_web",
   "entryPointStrategy": "packages",
-  "entryPoints": ["packages/engine", "packages/viewer-core", "packages/viewer", "packages/react"],
+  "entryPoints": ["packages/engine", "packages/viewer-core", "packages/viewer", "packages/react", "packages/colab"],
   "out": "docs-site",
   "readme": "README.md",
   "includeVersion": true,

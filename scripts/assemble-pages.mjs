@@ -15,6 +15,7 @@ const docsSite = join(repoRoot, 'docs-site');
 const demos = [
   { example: 'basic', out: 'demo' },
   { example: 'react', out: 'demo-react' },
+  { example: 'colab', out: 'demo-colab' },
 ];
 
 if (!existsSync(docsSite)) {

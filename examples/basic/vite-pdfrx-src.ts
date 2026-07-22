@@ -19,7 +19,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
  * subpaths like `@pdfrx/react/styles.css` still resolve through the workspace
  * symlink in `node_modules`.
  */
-export const pdfrxSrcAliases: Alias[] = ['engine', 'viewer-core', 'viewer', 'react'].map((name) => ({
+export const pdfrxSrcAliases: Alias[] = ['engine', 'viewer-core', 'viewer', 'react', 'colab'].map((name) => ({
   find: new RegExp(`^@pdfrx/${name}$`),
   replacement: resolve(repoRoot, `packages/${name}/src/index.ts`),
 }));

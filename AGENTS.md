@@ -5,7 +5,7 @@ release, or package layout changes.
 
 ## What this repo is
 
-`pdfrx_web` — a canvas-based PDF viewer for the browser, published as four npm
+`pdfrx_web` — a canvas-based PDF viewer for the browser, published as five npm
 packages from one workspace. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the layering, the worker protocol, and coordinate conventions; don't
 duplicate that here.
@@ -16,25 +16,53 @@ duplicate that here.
 | `@pdfrx/viewer-core` | DOM-free geometry / layout / selection logic. |
 | `@pdfrx/viewer` | The `<canvas>` viewer shell + `<pdfrx-viewer>` element. |
 | `@pdfrx/react` | React components and hooks over `@pdfrx/viewer`. |
+| `@pdfrx/colab` | Collaborative React viewer and browser session client. |
 
 Dependency order (build and publish must respect it):
-`engine → viewer-core → viewer → react`.
+`engine → viewer-core → viewer → react → colab`.
 
-Examples live in `examples/basic` (vanilla) and `examples/react`. Both are
-private (`"private": true`) and never published.
+Examples live in `examples/basic` (vanilla), `examples/react`, and
+`examples/colab`. They are private (`"private": true`) and never published.
+
+The two-viewer collaboration example and reference relay live in
+`examples/colab`. They are private and non-published; the reusable browser
+client, protocol, adapter, export composer, and React component live in the
+published `@pdfrx/colab` package.
 
 ## Commands
 
 ```sh
 npm install
-npm run build        # tsc for all four packages (no bundler)
-npm test             # vitest: viewer-core + react
+npm run build        # tsc: five published packages + colab example
+npm test             # vitest: viewer-core + react + colab + colab example
 npm run test:visual  # Playwright: PDFium vs SVG annotation pixel diffs
 npm run dev          # examples/basic  (http://localhost:5173)
 npm run dev:react    # examples/react  (http://localhost:5173)
+npm run dev:colab    # two-viewer collaboration example + WS relay
 npm run docs         # typedoc -> docs-site/
-npm run build:pages  # build + docs + both example builds + assemble
+npm run build:pages  # build + docs + all example builds + assemble
 ```
+
+### Development-server safety
+
+Use only the repository's `npm run dev*` scripts to start verification servers.
+Do not invoke Vite directly, start `relay-server.ts` independently, or assemble
+an ad-hoc replacement server: those bypass the workspace's asset, alias, and
+relay lifecycle configuration and can interfere with the developer's existing
+environment.
+
+Before starting a server, check whether its configured HTTP and auxiliary ports
+are already listening. If the expected app is already running, reuse it and
+reload the browser instead of starting another instance. If the occupant cannot
+be identified as the expected app, report the conflict; do not kill it or move
+to another port without the user's direction. Likewise, stop only a process
+started by the current task—never terminate a pre-existing development server.
+
+All Vite configs set a fixed port with `strictPort: true`. This is intentional:
+an `npm run dev*` command must fail visibly on a conflict instead of silently
+starting on 5174 (or another port) and leaving multiple servers behind. The
+colab script also owns its reference relay on port 5191; do not start a
+second relay separately.
 
 Per-package: `npm run build --workspace=@pdfrx/<name>` and
 `npm run typecheck --workspace=@pdfrx/<name>`.
@@ -81,11 +109,11 @@ added to CI once the trusted publisher exists. (`@pdfrx/react` 0.2.2 was
 published this way; from 0.3.0 its trusted publisher is set up and CI publishes
 all four.)
 
-**All four packages share one version, and it must equal the tag.** The workflow
+**All five packages share one version, and it must equal the tag.** The workflow
 refuses to publish if any `packages/*/package.json` version disagrees with the
 tag (`v0.2.1` → every package must be `0.2.1`). To cut a release:
 
-1. Bump `version` in **all four** `packages/*/package.json` to the new number.
+1. Bump `version` in **all five** `packages/*/package.json` to the new number.
 2. Bump the hard-coded CDN version strings (see the checklist below) to match.
 3. Add a `## [X.Y.Z]` section (with today's date) to [CHANGELOG.md](CHANGELOG.md)
    summarizing the release, and add its `compare` link at the bottom. Derive the

@@ -21,6 +21,13 @@
       "runtimeArgs": ["run", "dev", "--workspace", "@pdfrx/example-react"],
       "port": 5201,
       "autoPort": true
+    },
+    {
+      "name": "pdfrx-colab-example",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:colab"],
+      "port": 5202,
+      "autoPort": true
     }
   ]
 }

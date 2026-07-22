@@ -1,0 +1,32 @@
+{
+  "name": "@pdfrx/example-colab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pdfrx/colab": "0.8.0",
+    "@pdfrx/react": "^0.8.0",
+    "@pdfrx/viewer-core": "0.8.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.4.3",
+    "vitest": "^3.0.0"
+  }
+}

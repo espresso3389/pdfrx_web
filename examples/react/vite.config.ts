@@ -12,6 +12,8 @@ export default defineConfig({
   resolve: { alias: pdfrxSrcAliases },
   plugins: [react(), pdfiumAssets()],
   server: {
+    port: 5173,
+    strictPort: true,
     // See the note in examples/basic/vite.config.ts: listening on every
     // interface is what makes it possible to test touch behaviour on a real
     // phone over Tailscale.
