@@ -81,7 +81,10 @@ export function CollaborativePdfViewer({
       <PdfrxProvider
         src={src}
         wasmModulesUrl={wasmModulesUrl}
-        editing={{ pages: true, annotations: true, history: true, actorId }}
+        // Local history stores page positions and annotation snapshots that can
+        // become stale after another participant edits the session. Keep it
+        // disabled until collaborative undo is expressed as relay operations.
+        editing={{ pages: true, annotations: true, history: false, actorId }}
       >
         <CollaborativeViewerContent
           name={displayName}
@@ -425,7 +428,6 @@ function CollaborativeViewerContent({
       {annotating && (
         <div className="pdfrx-toolbar pdfrx-toolbar-annot collab-annotation-toolbar">
           <PdfAnnotationToolbar
-            tools={['ink', 'rectangle', 'ellipse', 'line', 'arrow', 'freeText', 'note']}
             onClose={() => setAnnotating(false)}
           />
         </div>

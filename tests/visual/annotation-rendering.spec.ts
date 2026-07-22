@@ -133,6 +133,21 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
     },
     maxMismatchRatio: 0.025,
   },
+  {
+    name: 'rotated free text appearance',
+    spec: {
+      subtype: 'freeText',
+      // Deliberately non-square: this catches regressions where the rotated
+      // text's clip is rotated too and only the middle of the line survives.
+      rect: { left: 72, top: 184, right: 216, bottom: 76 },
+      color: rgba(30, 90, 180, 255),
+      borderWidth: 1,
+      contents: 'Rotated text',
+      textOrientation: { rotation: 90, behavior: 'page' },
+      geometry: { kind: 'none' },
+    },
+    maxMismatchRatio: 0.035,
+  },
 ];
 
 for (const visualCase of cases) {
@@ -544,7 +559,10 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   const renderedText = page.locator('g[data-annot-id] text');
   await expect(renderedText.locator('tspan').first()).toBeAttached();
   expect(await renderedText.locator('tspan').count()).toBeGreaterThan(5);
-  await expect(renderedText).toHaveAttribute('clip-path', /^url\(#pdfrx-free-text-/);
+  const clippedText = page.locator('g[data-annot-id] g[clip-path]');
+  await expect(clippedText).toHaveCount(1);
+  await expect(clippedText).toHaveAttribute('clip-path', /^url\(#pdfrx-free-text-/);
+  await expect(clippedText.locator(':scope > text')).toHaveCount(1);
   const roundTrip = await page.evaluate(() => {
     const api = (
       window as unknown as {

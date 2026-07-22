@@ -131,6 +131,8 @@ export interface WireFormField {
   flags: number;
   /** Widget rectangle in raw page coordinates (not yet bounding-box adjusted). */
   rect: WireRect;
+  /** Persisted text orientation for this widget. */
+  textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   /** Current field value (`/V`). */
   value: string;
   /** Alternate name / tooltip (`/TU`). */
@@ -183,6 +185,7 @@ export interface WireAnnotationObject {
   author: string | null;
   actorId: string | null;
   revision: number;
+  textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   fontFace: string | null;
   appearanceLines: string[] | null;
   appearanceRuns: {
@@ -233,6 +236,7 @@ export interface WireAnnotationSpec {
   author?: string | null;
   actorId?: string | null;
   revision?: number;
+  textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   /** Registered worker font face used to build a FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines for the generated FreeText appearance. */

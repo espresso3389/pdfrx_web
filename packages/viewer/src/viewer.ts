@@ -21,6 +21,7 @@ import {
   type PdfFormField,
   type PdfLink,
   type PdfPage,
+  type PdfTextOrientation,
   type PdfPageChangeOrigin,
   type PdfPageMutationOptions,
   type PdfOpenOptions,
@@ -33,6 +34,7 @@ import {
   adjustBoundaryMargins,
   anchorPoint,
   calcTransformFor,
+  composeTextRotation,
   calcTransformForRect,
   calcVisibleRect,
   clampToBoundary,
@@ -87,6 +89,11 @@ interface ArrangementViewportAnchor {
   readonly xRatio: number;
   readonly yRatio: number;
   readonly zoom: number;
+}
+
+/** Clockwise text angle in the already-rotated page overlay coordinate space. */
+function effectiveTextRotation(orientation: PdfTextOrientation, page: PageGeometry): 0 | 90 | 180 | 270 {
+  return composeTextRotation(orientation.rotation, orientation.behavior, (page.rotation * 90) as 0 | 90 | 180 | 270);
 }
 
 /** Construction options for {@link PdfrxViewer}. */
@@ -809,6 +816,7 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
     author: a.author,
     actorId: a.actorId,
     revision: a.revision,
+    textOrientation: a.textOrientation,
     fontFace: a.fontFace,
     appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
     appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
@@ -843,6 +851,7 @@ function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec)
     flags: spec.flags ?? base.flags,
     contents: spec.contents === undefined ? base.contents : spec.contents,
     author: spec.author === undefined ? base.author : spec.author,
+    textOrientation: spec.textOrientation ?? base.textOrientation,
     geometry: spec.geometry ?? base.geometry,
   };
 }
@@ -4045,6 +4054,29 @@ export class PdfrxViewer {
       el.style.boxSizing = 'border-box';
       el.style.pointerEvents = 'auto';
     };
+    const orientTextControl = (el: HTMLElement, box: Rect, orientation: PdfTextOrientation): Rect => {
+      const rotation = effectiveTextRotation(orientation, pageGeom);
+      if (rotation === 0) return box;
+      const centreX = (box.left + box.right) / 2;
+      const centreY = (box.top + box.bottom) / 2;
+      const quarterTurn = rotation === 90 || rotation === 270;
+      const width = quarterTurn ? rectHeight(box) : rectWidth(box);
+      const height = quarterTurn ? rectWidth(box) : rectHeight(box);
+      el.style.left = `${centreX - width / 2}px`;
+      el.style.top = `${centreY - height / 2}px`;
+      el.style.width = `${Math.max(width, 1)}px`;
+      el.style.height = `${Math.max(height, 1)}px`;
+      el.style.transformOrigin = 'center';
+      el.style.transform = `rotate(${rotation}deg)`;
+      // Return the control's pre-transform box. Typography must use this
+      // logical height rather than the tall displayed bounding box at 90°.
+      return {
+        left: centreX - width / 2,
+        top: centreY - height / 2,
+        right: centreX + width / 2,
+        bottom: centreY + height / 2,
+      };
+    };
     // Native checkbox/radio glyphs don't stretch, so center them in a square.
     const centeredSquare = (box: Rect): Rect => {
       const side = Math.min(rectWidth(box), rectHeight(box));
@@ -4063,8 +4095,9 @@ export class PdfrxViewer {
         const el = field.multiline ? document.createElement('textarea') : document.createElement('input');
         if (el instanceof HTMLInputElement) el.type = 'text';
         place(el, box0);
+        const logicalBox = orientTextControl(el, box0, field.textOrientations[0]!);
         el.value = field.value;
-        el.style.font = fontPx(box0);
+        el.style.font = fontPx(logicalBox);
         el.style.padding = '0 2px';
         el.style.border = '1px solid rgba(60, 90, 160, 0.6)';
         el.style.background = '#fff';
@@ -4117,7 +4150,8 @@ export class PdfrxViewer {
       case 'listBox': {
         const el = document.createElement('select');
         place(el, box0);
-        el.style.font = fontPx(box0);
+        const logicalBox = orientTextControl(el, box0, field.textOrientations[0]!);
+        el.style.font = fontPx(logicalBox);
         el.style.border = '1px solid rgba(60, 90, 160, 0.6)';
         el.style.background = '#fff';
         el.style.color = '#000';
@@ -4663,6 +4697,18 @@ export class PdfrxViewer {
             add(rect);
           }
           if (a.contents) {
+            const textRotation = effectiveTextRotation(a.textOrientation, pageGeom);
+            const quarterTurn = textRotation === 90 || textRotation === 270;
+            const centreX = (box.left + box.right) / 2;
+            const centreY = (box.top + box.bottom) / 2;
+            const logicalWidth = quarterTurn ? rectHeight(box) : rectWidth(box);
+            const logicalHeight = quarterTurn ? rectWidth(box) : rectHeight(box);
+            const logicalBox: Rect = {
+              left: centreX - logicalWidth / 2,
+              top: centreY - logicalHeight / 2,
+              right: centreX + logicalWidth / 2,
+              bottom: centreY + logicalHeight / 2,
+            };
             const appearanceText = hasCalloutAppearance ? a.appearanceTextStyles[0] : undefined;
             const appearanceOrigin = appearanceText ? toPx(appearanceText.origin) : null;
             const fontSize = appearanceText?.fontSize || FREE_TEXT_FONT_SIZE;
@@ -4677,15 +4723,15 @@ export class PdfrxViewer {
             clipPath.appendChild(clipRect);
             add(clipPath);
             const text = document.createElementNS(SVG_NS, 'text');
-            const textX = appearanceOrigin?.x ?? box.left + width + FREE_TEXT_PADDING;
-            const textY = appearanceOrigin?.y ?? box.top + width + FREE_TEXT_PADDING + fontSize;
+            const textX = appearanceOrigin?.x ?? logicalBox.left + width + FREE_TEXT_PADDING;
+            const textY = appearanceOrigin?.y ?? logicalBox.top + width + FREE_TEXT_PADDING + fontSize;
             text.setAttribute('x', `${textX}`);
             text.setAttribute('y', `${textY}`);
             text.setAttribute('fill', colorCss(appearanceText?.fillColor ?? null, '#000') ?? '#000');
             text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
             text.setAttribute('font-size', `${fontSize}`);
-            text.setAttribute('clip-path', `url(#${clipId})`);
-            const lines = a.appearanceLines ?? wrapFreeText(a.contents, rectWidth(box) - width * 2, fontSize);
+            if (textRotation !== 0) text.setAttribute('transform', `rotate(${textRotation} ${centreX} ${centreY})`);
+            const lines = a.appearanceLines ?? wrapFreeText(a.contents, logicalWidth - width * 2, fontSize);
             lines.forEach((line, index) => {
               const tspan = document.createElementNS(SVG_NS, 'tspan');
               tspan.setAttribute('x', `${textX}`);
@@ -4693,7 +4739,13 @@ export class PdfrxViewer {
               tspan.textContent = line || '\u00a0';
               text.appendChild(tspan);
             });
-            add(text);
+            // Keep clipping in displayed-page coordinates. Putting both the
+            // transform and clip-path on `text` rotates the clip as well,
+            // turning a tall 90-degree box into a short horizontal window.
+            const clippedText = document.createElementNS(SVG_NS, 'g');
+            clippedText.setAttribute('clip-path', `url(#${clipId})`);
+            clippedText.appendChild(text);
+            add(clippedText);
           }
         } else {
           const inset = a.subtype === 'square' ? width / 2 : 0;
@@ -6019,7 +6071,15 @@ export class PdfrxViewer {
         const interiorColor = this.annotationStyle.fillColor
           ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
           : undefined;
-        return { subtype: 'freeText', rect: r, color, interiorColor, borderWidth, contents: '' };
+        return {
+          subtype: 'freeText',
+          rect: r,
+          color,
+          interiorColor,
+          borderWidth,
+          contents: '',
+          textOrientation: { rotation: 0, behavior: 'page' },
+        };
       }
     }
   }

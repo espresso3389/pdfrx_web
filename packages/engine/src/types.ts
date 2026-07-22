@@ -146,6 +146,17 @@ export type PdfFormFieldType =
   | 'textField'
   | 'signature';
 
+/** Whether text follows page rotation or remains upright in the viewport. */
+export type PdfTextOrientationBehavior = 'page' | 'upright';
+
+/** Intrinsic clockwise text rotation and its relationship to page rotation. */
+export interface PdfTextOrientation {
+  /** Clockwise rotation intrinsic to the text/widget. */
+  readonly rotation: PdfPageRotation;
+  /** `page` follows page rotation; `upright` ignores it. */
+  readonly behavior: PdfTextOrientationBehavior;
+}
+
 /** Maps a raw `FPDF_FORMFIELD_*` code to a {@link PdfFormFieldType}. */
 export const pdfFormFieldTypeFromCode = (code: number): PdfFormFieldType => {
   switch (code) {
@@ -207,6 +218,8 @@ export interface PdfFormField {
   readonly pageNumber: number;
   /** Widget rectangles in PDF page coordinates (one per widget). */
   readonly rects: readonly PdfRect[];
+  /** Text orientation for each widget, parallel to {@link rects}. */
+  readonly textOrientations: readonly PdfTextOrientation[];
   /** Current value (`/V`): the text, the selected export value, or `''` for buttons. */
   readonly value: string;
   /** Alternate name / tooltip (`/TU`), or `null`. */
@@ -470,6 +483,8 @@ export interface PdfAnnotationObject {
   readonly actorId: string | null;
   /** Monotonic per-annotation revision used for optimistic synchronization. */
   readonly revision: number;
+  /** Text direction for FreeText content; harmless metadata on other subtypes. */
+  readonly textOrientation: PdfTextOrientation;
   readonly fontFace: string | null;
   readonly appearanceLines: readonly string[] | null;
   readonly appearanceRuns: readonly (readonly {
@@ -553,6 +568,8 @@ export interface PdfAnnotationSpec {
   author?: string | null;
   actorId?: string | null;
   revision?: number;
+  /** Text direction for FreeText content. Defaults to page-relative, unrotated. */
+  textOrientation?: PdfTextOrientation;
   /** Font face registered with the engine for a generated FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines used by the generated FreeText appearance. */

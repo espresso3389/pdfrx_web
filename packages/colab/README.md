@@ -23,6 +23,11 @@ The package contains the browser client, shared protocol types, virtual-page
 adapter, and mixed-source export composer. Hosting, authentication, persistence,
 authorization, and the WebSocket relay remain application responsibilities.
 
+`CollaborativePdfViewer` currently disables viewer-local Undo/Redo. Remote edits
+can invalidate stored page positions and annotation snapshots, so collaborative
+undo must be implemented as validated inverse relay operations rather than by
+replaying stale client state.
+
 The bundled client expects the reference relay protocol and source endpoints
 documented by the exported wire types. A production application may instead use
 the lower-level protocol and adapter exports with its own transport.

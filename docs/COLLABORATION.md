@@ -194,6 +194,11 @@ without echoing it or adding it to the local user's Undo/Redo stack. The local
 descriptors intentionally contain engine-process source identities, not session
 placement IDs.
 
+The ready-made `CollaborativePdfViewer` currently disables viewer-local
+Undo/Redo entirely. A local entry can become stale after another participant
+moves a page or updates the same annotation. Collaborative undo must instead
+submit a validated inverse operation addressed by placement and annotation id.
+
 Stable placement IDs should initially remain in the collaboration adapter,
 because they are session identity rather than PDF identity. The
 network-independent `PagePlacement` model and pure reducer live in

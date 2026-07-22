@@ -68,6 +68,7 @@ describe('annotation snapshot serialization', () => {
           subtype: 'freeText',
           actorId: 'user-42',
           revision: 7,
+          textOrientation: { rotation: 270, behavior: 'upright' },
           appearanceRuns: [[{
             text: '日本語',
             fontFace: null,

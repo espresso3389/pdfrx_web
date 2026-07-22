@@ -59,6 +59,7 @@ import {
   type PdfPageArrangementEntry,
   type PdfPageMutationOptions,
   type PdfPageRotation,
+  type PdfTextOrientation,
   type PdfPasswordProvider,
   PdfPermissions,
   type PdfRect,
@@ -78,6 +79,7 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
     author: annotation.author,
     actorId: annotation.actorId,
     revision: annotation.revision,
+    textOrientation: structuredClone(annotation.textOrientation),
     fontFace: annotation.fontFace,
     appearanceLines: annotation.appearanceLines ? [...annotation.appearanceLines] : undefined,
     appearanceRuns: annotation.appearanceRuns?.map((line) => line.map((run) => structuredClone(run))),
@@ -1897,6 +1899,7 @@ export class PdfPage {
       author: a.author,
       actorId: a.actorId,
       revision: a.revision,
+      textOrientation: textOrientationFromWire(a.textOrientation),
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines,
       appearanceRuns: a.appearanceRuns,
@@ -1963,6 +1966,7 @@ export class PdfPage {
       author: spec.author,
       actorId: spec.actorId,
       revision: spec.revision,
+      textOrientation: spec.textOrientation,
       fontFace: spec.fontFace,
       appearanceLines: spec.appearanceLines,
       appearanceRuns: spec.appearanceRuns,
@@ -2119,6 +2123,7 @@ function buildFormField(group: WireFormField[], page: PdfPage): PdfFormField {
     type,
     pageNumber: page.pageNumber,
     rects,
+    textOrientations: group.map((widget) => textOrientationFromWire(widget.textOrientation)),
     value: first.value,
     alternateName: first.alternateName || null,
     flags,
@@ -2142,6 +2147,14 @@ function buildFormField(group: WireFormField[], page: PdfPage): PdfFormField {
     return { ...base, multiline: (first.flags & 0x1000) !== 0 };
   }
   return base;
+}
+
+/** Normalizes optional persisted text-orientation metadata from older PDFs. */
+function textOrientationFromWire(
+  value: { rotation: number; behavior: 'page' | 'upright' } | undefined,
+): PdfTextOrientation {
+  const rotation = value?.rotation === 90 || value?.rotation === 180 || value?.rotation === 270 ? value.rotation : 0;
+  return { rotation, behavior: value?.behavior === 'upright' ? 'upright' : 'page' };
 }
 
 /**

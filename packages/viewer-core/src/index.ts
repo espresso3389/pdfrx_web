@@ -35,5 +35,6 @@ export * from './layout.js';
 export * from './page-arrangement.js';
 export * from './selection.js';
 export * from './text.js';
+export * from './text-orientation.js';
 export * from './text-formatter.js';
 export * from './transform.js';

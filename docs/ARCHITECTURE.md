@@ -43,6 +43,13 @@ outline, metadata, or name-tree dictionaries. Notable client behaviors:
 
 ## Coordinate conventions
 
+Text orientation is independent from page placement rotation. `PdfTextOrientation`
+stores an intrinsic clockwise `rotation` plus a `behavior`: `page` composes with
+the current page rotation, while `upright` remains viewport-upright. FreeText
+annotations carry one orientation in `PdfAnnotationSpec`; AcroForm fields carry
+one per Widget, parallel to their rectangles. Older PDFs and snapshots default
+to `{ rotation: 0, behavior: 'page' }`.
+
 - **PDF page space** (`PdfRect`/`PdfPoint`): points (1/72"), origin at the
   bottom-left, y-up; `top >= bottom`.
 - **Document space** (`Rect`/`Offset`): y-down, unzoomed coordinates of the

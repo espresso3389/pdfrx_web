@@ -3188,6 +3188,7 @@ function _readWidgetField(formHandle, annot) {
     fieldType,
     flags: w.FPDFAnnot_GetFormFieldFlags(formHandle, annot),
     rect: _getWidgetRect(annot),
+    textOrientation: _readTextOrientation(annot),
     value: _getFormString(w.FPDFAnnot_GetFormFieldValue, formHandle, annot),
     alternateName: _getFormString(w.FPDFAnnot_GetFormFieldAlternateName, formHandle, annot),
   };
@@ -3206,6 +3207,19 @@ function _readWidgetField(formHandle, annot) {
     field.options = options;
   }
   return field;
+}
+
+/** Reads pdfrx text orientation metadata, defaulting older PDFs to page-relative text. */
+function _readTextOrientation(annot) {
+  const value = _getAnnotField('pdfrx:TextOrientation', annot);
+  if (!value) return { rotation: 0, behavior: 'page' };
+  try {
+    const parsed = JSON.parse(value);
+    const rotation = parsed.rotation === 90 || parsed.rotation === 180 || parsed.rotation === 270 ? parsed.rotation : 0;
+    return { rotation, behavior: parsed.behavior === 'upright' ? 'upright' : 'page' };
+  } catch {
+    return { rotation: 0, behavior: 'page' };
+  }
 }
 
 /**
@@ -3853,6 +3867,7 @@ function _readAnnotationObject(annot, index) {
     author: content ? content.title : null,
     actorId: _getAnnotField(ANNOT_ACTOR_ID_KEY, annot) || null,
     revision: Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, annot), 10) || 0,
+    textOrientation: _readTextOrientation(annot),
     fontFace: _getAnnotField(ANNOT_FONT_FACE_KEY, annot) || null,
     appearanceLines: (() => {
       const value = _getAnnotField('pdfrx:FreeTextLines', annot);
@@ -3954,11 +3969,18 @@ function _applyAnnotSpec(annot, spec, docHandle) {
     _setAnnotStringKey(annot, ANNOT_INTERIOR_COLOR_KEY, _colorToKey(c));
   }
   if (typeof spec.borderWidth === 'number') w.FPDFAnnot_SetBorder(annot, 0, 0, spec.borderWidth);
-  if (typeof spec.flags === 'number') w.FPDFAnnot_SetFlags(annot, spec.flags);
+  if (typeof spec.flags === 'number' || spec.textOrientation?.behavior === 'upright') {
+    const flags = (spec.flags ?? w.FPDFAnnot_GetFlags(annot)) |
+      (spec.textOrientation?.behavior === 'upright' ? 16 : 0); // FPDF_ANNOT_FLAG_NOROTATE
+    w.FPDFAnnot_SetFlags(annot, flags);
+  }
   if (spec.contents != null) _setAnnotStringKey(annot, 'Contents', spec.contents);
   if (spec.author != null) _setAnnotStringKey(annot, 'T', spec.author);
   if (spec.actorId != null) _setAnnotStringKey(annot, ANNOT_ACTOR_ID_KEY, spec.actorId);
   _setAnnotStringKey(annot, ANNOT_REVISION_KEY, String(spec.revision ?? 1));
+  if (spec.textOrientation) {
+    _setAnnotStringKey(annot, 'pdfrx:TextOrientation', JSON.stringify(spec.textOrientation));
+  }
   if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
   if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
   if (spec.appearanceRuns) {
@@ -3999,6 +4021,18 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
   const borderWidth = Math.max(0, spec.borderWidth ?? 0);
   const fill = spec.interiorColor;
   const stroke = spec.color;
+  const intrinsicRotation = spec.textOrientation?.rotation ?? 0;
+  const centreX = (left + right) / 2;
+  const centreY = (top + bottom) / 2;
+  const rotatePoint = (x, y) => {
+    if (!intrinsicRotation) return [x, y];
+    const radians = (-intrinsicRotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dx = x - centreX;
+    const dy = y - centreY;
+    return [centreX + cos * dx - sin * dy, centreY + sin * dx + cos * dy];
+  };
   if (fill || (stroke && borderWidth > 0)) {
     const path = w.FPDFPageObj_CreateNewRect(left, bottom, width, height);
     if (path) {
@@ -4047,6 +4081,9 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
             run.image,
             left + borderWidth + 3 + (run.x ?? 0),
             top - borderWidth - 3 - index * lineHeight,
+            intrinsicRotation,
+            centreX,
+            centreY,
           );
           continue;
         }
@@ -4073,15 +4110,14 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
           StringUtils.freeUTF8(value);
         }
         w.FPDFPageObj_SetFillColor(text, 0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255);
-        w.FPDFPageObj_Transform(
-          text,
-          1,
-          0,
-          0,
-          1,
+        const radians = (-intrinsicRotation * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const position = rotatePoint(
           left + borderWidth + 3 + (run.x ?? 0),
           top - borderWidth - 3 - fontSize - index * lineHeight,
         );
+        w.FPDFPageObj_Transform(text, cos, sin, -sin, cos, position[0], position[1]);
         if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);
       }
     }
@@ -4090,7 +4126,7 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
   }
 }
 
-function _appendFreeTextImage(docHandle, pageHandle, annot, image, x, top) {
+function _appendFreeTextImage(docHandle, pageHandle, annot, image, x, top, rotation = 0, centreX = 0, centreY = 0) {
   const w = Pdfium.wasmExports;
   const stride = image.width * 4;
   const buffer = w.malloc(stride * image.height);
@@ -4121,7 +4157,17 @@ function _appendFreeTextImage(docHandle, pageHandle, annot, image, x, top) {
     const height = image.height / scale;
     const matrix = w.malloc(24);
     try {
-      new Float32Array(Pdfium.memory.buffer, matrix, 6).set([width, 0, 0, height, x, top - height]);
+      const radians = (-rotation * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const lowerY = top - height;
+      const dx = x - centreX;
+      const dy = lowerY - centreY;
+      const tx = centreX + cos * dx - sin * dy;
+      const ty = centreY + sin * dx + cos * dy;
+      new Float32Array(Pdfium.memory.buffer, matrix, 6).set([
+        width * cos, width * sin, -height * sin, height * cos, tx, ty,
+      ]);
       w.FPDFPageObj_SetMatrix(object, matrix);
     } finally {
       w.free(matrix);
