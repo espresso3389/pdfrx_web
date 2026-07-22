@@ -40,7 +40,7 @@ npm run dev          # examples/basic  (http://localhost:5173)
 npm run dev:react    # examples/react  (http://localhost:5173)
 npm run dev:colab    # two-viewer collaboration example + WS relay
 npm run docs         # typedoc -> docs-site/
-npm run build:pages  # build + docs + all example builds + assemble
+npm run build:pages  # build + docs + static Pages-compatible examples + assemble
 ```
 
 ### Development-server safety

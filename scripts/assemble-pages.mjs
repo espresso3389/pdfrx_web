@@ -15,8 +15,11 @@ const docsSite = join(repoRoot, 'docs-site');
 const demos = [
   { example: 'basic', out: 'demo' },
   { example: 'react', out: 'demo-react' },
-  { example: 'colab', out: 'demo-colab' },
 ];
+
+// The colab example owns a WebSocket relay and cannot run as a static Pages
+// artifact. Remove output from older builds so it is not accidentally deployed.
+rmSync(join(docsSite, 'demo-colab'), { recursive: true, force: true });
 
 if (!existsSync(docsSite)) {
   console.error(`docs-site/ not found — run \`npm run docs\` (typedoc) first.`);

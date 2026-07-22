@@ -5,7 +5,8 @@ import '@pdfrx/react/styles.css';
 import './styles.css';
 
 function CollaborationDemo() {
-  const relayUrl = `ws://${location.hostname}:5191`;
+  const relayProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const relayUrl = `${relayProtocol}//${location.hostname}:5191`;
   return (
     <main className="collab-app">
       <header className="collab-header">
@@ -16,8 +17,22 @@ function CollaborationDemo() {
         <span className="collab-session">session: demo</span>
       </header>
       <div className="collab-grid">
-        <CollaborativePdfViewer name="Alice" actorId="alice" relayUrl={relayUrl} sessionId="demo" src="/hello.pdf" />
-        <CollaborativePdfViewer name="Bob" actorId="bob" relayUrl={relayUrl} sessionId="demo" src="/hello.pdf" />
+        <CollaborativePdfViewer
+          name="Alice"
+          actorId="alice"
+          relayUrl={relayUrl}
+          sessionId="demo"
+          src="hello.pdf"
+          wasmModulesUrl="pdfium/"
+        />
+        <CollaborativePdfViewer
+          name="Bob"
+          actorId="bob"
+          relayUrl={relayUrl}
+          sessionId="demo"
+          src="hello.pdf"
+          wasmModulesUrl="pdfium/"
+        />
       </div>
     </main>
   );
