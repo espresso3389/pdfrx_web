@@ -70,7 +70,11 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
       <button className="pdfrx-button" onClick={() => fitToPage(undefined, 200)} title={strings.fitPage}>
         <IconFitPage />
       </button>
-      <button className="pdfrx-button" onClick={() => fitToWidth(undefined, 200)} title={strings.fitWidth}>
+      <button
+        className="pdfrx-button pdfrx-fit-width-button"
+        onClick={() => fitToWidth(undefined, 200)}
+        title={strings.fitWidth}
+      >
         <IconFitWidth />
       </button>
     </span>

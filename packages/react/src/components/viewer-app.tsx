@@ -19,7 +19,10 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   /** Show the toolbar. Defaults to `true`. */
   toolbar?: boolean;
   /** Extra props for the toolbar, e.g. to hide the print button. Pass extra controls as `children` instead. */
-  toolbarProps?: Omit<PdfToolbarProps, 'showSidebarToggle' | 'onToggleSidebar' | 'sidebarTogglePosition' | 'children'>;
+  toolbarProps?: Omit<
+    PdfToolbarProps,
+    'showSidebarToggle' | 'onToggleSidebar' | 'sidebarTogglePosition' | 'beforeSearch' | 'children'
+  >;
   /** Show the thumbnails/outline sidebar. Defaults to `true`. */
   sidebar?: boolean;
   /** Extra props for the sidebar, e.g. `defaultTab`. */
@@ -301,7 +304,7 @@ function PdfrxViewerAppChrome({
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
           // Put the hamburger next to the sidebar it controls.
           sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
-          afterSearch={(enableAnnotations || enablePageEditing) ? (
+          beforeSearch={(enableAnnotations || enablePageEditing) ? (
             <>
               <button
                 type="button"
