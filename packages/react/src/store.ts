@@ -331,7 +331,7 @@ export class PdfrxViewerStore {
     this.#passwordProvider = provider;
   }
 
-  /** Sets the fallback used only when no app provider was supplied (see {@link #fallbackPasswordProvider}). */
+  /** Sets the fallback used only when no app password provider was supplied. */
   setFallbackPasswordProvider(provider: PdfPasswordProvider | undefined): void {
     this.#fallbackPasswordProvider = provider;
   }

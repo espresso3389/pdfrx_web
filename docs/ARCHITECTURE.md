@@ -1,6 +1,6 @@
 # Architecture
 
-pdfrx_web is a canvas-based PDF viewer for the browser, split into three
+pdfrx_web is a canvas-based PDF viewer for the browser, split into four
 layered packages over a WASM rendering engine that runs in a Web Worker.
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
@@ -10,9 +10,10 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 | Layer | Package / files | Responsibility |
 |---|---|---|
 | Engine core | `packages/engine/assets/pdfium_worker.js` + `pdfium.wasm` (vendored) | The WASM rendering engine, run in a Web Worker. |
-| Engine client | `@pdfrx/engine` (`protocol.ts`, `communicator.ts`, `document.ts`) | Typed `postMessage` client: open/render/text/links/outline/fonts. |
+| Engine client | `@pdfrx/engine` (`protocol.ts`, `communicator.ts`, `document.ts`) | Typed `postMessage` client: open/render/text/links/outline, fonts, forms, annotations, and page editing. |
 | Core logic | `@pdfrx/viewer-core` | DOM-free geometry, layout, viewport math, text flow, selection. |
-| Viewer shell | `@pdfrx/viewer` | The `<canvas>` shell: rendering, gestures, selection, search, printing. |
+| Viewer shell | `@pdfrx/viewer` | The `<canvas>` shell plus HTML/SVG overlays: rendering, gestures, selection, search, forms, annotations, and printing. |
+| React bindings | `@pdfrx/react` | All-in-one and composable viewer UI, localized controls, and headless hooks. |
 
 ### The worker protocol
 

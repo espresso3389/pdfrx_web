@@ -43,7 +43,7 @@ Upstream API names are given so you can find the reference implementation.
 |---|---|---|
 | Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.setPages(pages)` / `setPage(n, page)` express every edit — reorder, rotate (`page.rotatedCW90()`), remove, duplicate, and import from another document — synchronously over proxy pages. `assemblePages()` writes the arrangement back into the PDF (pages reload, `pageStatusChanged` fires); `encodePdf()` calls it first, so it reflects the edits (verified by re-opening the encoded bytes). |
 | Custom random-access source | ❌ | Upstream `PdfDocument.openCustom({read, fileSize, …})` — supply bytes on demand via a read callback. pdfrx_web opens only via `openUrl` / `openData`. |
-| Render cancellation | ❌ | Upstream `page.render(cancellationToken:)` + `PdfPageRenderCancellationToken`. pdfrx_web renders are fire-and-forget (the viewer's cache mitigates this internally, but there is no public cancel). |
+| Render cancellation | ✅ | `PdfPage.createCancellationToken()` creates a `PdfPageRenderCancellationToken`; pass it as `render({ cancellationToken })`. Cancelling drops a queued render before it starts and makes `render` resolve to `null`. |
 | Permission helpers | ✅ | `PdfPermissions` now exposes `allowsCopying`, `allowsDocumentAssembly`, `allowsPrinting`, and `allowsModifyAnnotations`, using the same bit masks as upstream pdfrx so a document evaluates identically in both. |
 | Rich page-status events | ◐ | Upstream `pageStatusChanged` reports per-page `moved(oldPageNumber)` / `modified`. pdfrx_web emits `{pageNumbers}` only. |
 | Font management model | ◐ | Different design. Upstream ships `PdfFontManager` with pluggable resolvers, OS font discovery (`.windows/.linux/.macos`), `loadMissingFonts`, charset metadata, and local font files. pdfrx_web covers the same *need* with `addFontData` / `reloadFonts` / `clearAllFontData` + the built-in `googleFontsResolver`. Full manager API is not ported. |
@@ -92,7 +92,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 | Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
 | Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
 | Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |
-| Loading / progress / error UI hooks | ◐ | Upstream `loadingBannerBuilder` (with download progress), `errorBannerBuilder`. pdfrx_web's `<pdfrx-viewer>` emits `load` / `error` events but ships no progress/error UI and no download-progress surfacing in the viewer. |
+| Loading / progress / error UI hooks | ◐ | The viewer ships a spinner/progress bar (`loadingIndicator`) and exposes `isLoading`, `loadingProgress`, and `addLoadingChangeListener`; `<pdfrx-viewer>` emits `loadingchange`, `load`, and `error`, while React exposes progress/error state and a dismissible error banner. Upstream's arbitrary loading/error banner builders are not ported. |
 | Custom scroll physics | ⏸️ | Upstream `scrollPhysics` + Instant/Physics delegates. pdfrx_web has a fixed inertia model. |
 
 ---
@@ -116,7 +116,7 @@ on-demand text/geometry. Remaining gaps:
 |---|---|---|
 | Programmatic selection set / restore | ✅ | `PdfrxViewer.setTextSelection(range)` sets/restores an arbitrary range (the same `PdfTextSelectionRange` shape `selection.range` returns, so save/restore round-trips), and `selectWordAtPoint(viewPoint)` selects a word programmatically. `null` clears. |
 | Copy-permission gating | ✅ | `PdfrxViewer.isCopyAllowed` (from document permissions) gates `copySelection()` and disables the context-menu **Copy** item. Matches upstream: unencrypted documents allow copying; encrypted ones allow it unless permissions forbid it. |
-| Context-menu customization | ◐ | pdfrx_web shows a fixed Copy / Select-All menu. Upstream `buildContextMenu` / `customizeContextMenuItems` let the app replace/extend it. |
+| Context-menu customization | ✅ | `PdfrxViewerOptions.contextMenuBuilder` replaces or suppresses the raw viewer menu. React supplies a localized Copy / Select All / Highlight menu and exports `buildDefaultContextMenu` so apps can extend it. |
 | Selection-handle / magnifier customization | ◐ | pdfrx_web styling is fixed (`selectionColor`, `handleColor`). Upstream `buildSelectionHandle`, `calcSelectionHandleOffset`, and `PdfViewerSelectionMagnifierParams` are extensively customizable. |
 | Selection-handle pan callbacks | ❌ | Upstream `onSelectionHandlePanStart/Update/End`. |
 | Text semantics / accessibility | ⏸️ | Tied to the deliberate **no-DOM-text-layer** design: selection is painted on the canvas, so there is no selectable/greppable DOM text or screen-reader text semantics (upstream `forceEnableTextSemantics`). This is a conscious trade-off, not an oversight. |
@@ -186,4 +186,4 @@ been ported (see the ✅ rows above):
 
 The remaining gaps in the tables above are lower-priority (`◐` partials and
 narrower `❌` items); the biggest still-open ones are custom-source open
-(`openCustom`), render cancellation, and richer per-page status events.
+(`openCustom`) and richer per-page status events.

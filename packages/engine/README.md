@@ -40,15 +40,16 @@ console.log(`${doc.pages.length} pages`);
 
 // Render page 1 at 2x into a canvas
 const page = doc.pages[0];
+if (!page) throw new Error('The document has no pages');
 const image = await page.render({
   fullWidth: page.width * 2,
   fullHeight: page.height * 2,
 });
-canvasContext.putImageData(image.toImageData(), 0, 0);
+if (image) canvasContext.putImageData(image.toImageData(), 0, 0);
 
 // Text with per-character rects (PDF page coordinates, y-up)
 const text = await page.loadText();
-console.log(text.fullText);
+console.log(text?.fullText ?? '');
 
 const links = await page.loadLinks();
 const outline = await doc.loadOutline();
@@ -72,9 +73,11 @@ const engine = new PdfrxEngine();
 const doc = await engine.openData(await readFile('manual.pdf'));
 
 const page = doc.pages[0];
+if (!page) throw new Error('The document has no pages');
 const image = await page.render({ fullWidth: page.width * 2, fullHeight: page.height * 2 });
 // image.pixels is plain RGBA — hand it to sharp, jimp, or whatever encodes for you
-console.log((await page.loadText()).fullText);
+if (image) console.log(image.width, image.height);
+console.log((await page.loadText())?.fullText ?? '');
 
 await doc.dispose();
 engine.dispose(); // terminates the worker, which otherwise keeps the process alive

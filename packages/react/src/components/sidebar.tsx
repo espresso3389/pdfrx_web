@@ -21,9 +21,9 @@ export interface PdfSidebarProps {
   onNavigate?: () => void;
   /** Extra controls drawn over each thumbnail. See {@link PdfThumbnailList}. */
   renderPageActions?: (pageNumber: number) => ReactNode;
-  /** Enables drop-to-insert on the thumbnail strip. See {@link PdfThumbnailList.onInsertFiles}. */
+  /** Enables drop-to-insert on the thumbnail strip. Passed to {@link PdfThumbnailList}. */
   onInsertFiles?: (files: File[], index: number) => void;
-  /** Enables drag-to-reorder on the thumbnail strip. See {@link PdfThumbnailList.onMovePage}. */
+  /** Enables drag-to-reorder on the thumbnail strip. Passed to {@link PdfThumbnailList}. */
   onMovePage?: (fromPageNumber: number, toIndex: number) => void;
 }
 

@@ -546,7 +546,7 @@ export class PdfDocument {
   /** Encryption/permission info, or `null` if the document is not encrypted. */
   readonly permissions: PdfPermissions | null;
 
-  /** Whether the document is encrypted (equivalently, {@link permissions} is non-null). */
+  /** Whether the document is encrypted (equivalently, `permissions` is non-null). */
   get isEncrypted(): boolean {
     return this.permissions !== null;
   }
@@ -1475,9 +1475,9 @@ export class PdfPage {
   readonly sourcePageIndex: number;
   /** Reserved for internal use only. Rotation baked into the PDF for the physical page. @internal */
   readonly sourceRotation: PdfPageRotation;
-  /** Left of the page's bounding box; text/link rects are shifted by it in {@link rectFromWire}. @internal */
+  /** Left of the page's bounding box; text/link rects are shifted by it internally. @internal */
   private readonly bbLeft: number;
-  /** Bottom of the page's bounding box; text/link rects are shifted by it in {@link rectFromWire}. @internal */
+  /** Bottom of the page's bounding box; text/link rects are shifted by it internally. @internal */
   private readonly bbBottom: number;
 
   /** Whether this page is a proxy over {@link basePage} rather than a real page. */
@@ -1890,7 +1890,7 @@ export class PdfPage {
 
   /**
    * Reserved for internal use only. Converts a wire rect to a bounding-box-relative
-   * {@link PdfRect} (see {@link rectFromWire}); used by the form invalidate relay.
+   * {@link PdfRect}; used by the form invalidate relay.
    * @internal
    */
   wireRectToPdf(r: WireRect): PdfRect {

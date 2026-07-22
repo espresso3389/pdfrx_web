@@ -58,7 +58,7 @@ export class PdfPermissions {
   constructor(
     /** Raw permission flags from the PDF security handler. */
     readonly permissions: number,
-    /** Revision of the standard security handler that produced {@link permissions}. */
+    /** Revision of the standard security handler that produced `permissions`. */
     readonly securityHandlerRevision: number,
   ) {}
 

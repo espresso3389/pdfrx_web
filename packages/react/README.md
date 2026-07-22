@@ -20,7 +20,8 @@ Pick the one that matches how much of the UI you want to own.
 
 ### 1. All-in-one
 
-Toolbar, thumbnails/outline sidebar, search, print — the whole thing:
+Toolbar, thumbnails/outline sidebar, search, print, form filling, and annotation
+editing — the whole thing:
 
 ```tsx
 import { PdfrxViewerApp } from '@pdfrx/react';
@@ -56,7 +57,7 @@ import '@pdfrx/react/styles.css';
 
 Individually available: `PdfToolbar`, `PdfSidebar`, `PdfThumbnailList`,
 `PdfOutlineTree`, `PdfSearchBox`, `PdfPageIndicator`, `PdfZoomControls`,
-`PdfPrintButton`, `PdfLoadingBar`.
+`PdfPrintButton`, `PdfLoadingBar`, `PdfAnnotationToolbar`, and `PdfSaveButton`.
 
 ### 3. Headless hooks
 
@@ -78,6 +79,7 @@ function Toolbar() {
 | `usePdfNavigation()` | Current page, page count, `goToPage`/`goToDest` |
 | `usePdfZoom()` | Zoom level, zoom/fit actions, whether the limits are reached |
 | `usePdfOutline()` | The bookmark tree, reloaded per document |
+| `useFormFields()` | AcroForm fields, live values, loading state, and `setValue()` |
 | `usePdfSearch()` | Query, matches, current index, next/previous |
 | `usePdfSelection()` | Selected range, resolved text and rects, copy |
 | `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
@@ -233,8 +235,9 @@ your own components the active strings so they translate alongside the rest.
 
 ## Context menu
 
-The right-click / long-press menu (Copy / Select All) is themed and localized
-out of the box. Pass `contextMenuBuilder` to customize it — it receives the
+The right-click / long-press menu (Copy / Select All / Highlight) is themed and
+localized out of the box. Highlight opens a color palette when text can be
+converted to a markup annotation. Pass `contextMenuBuilder` to customize it — it receives the
 event context plus `{ viewer, strings }`, so you can reuse the built-in
 `buildDefaultContextMenu` and append your own items:
 
@@ -244,7 +247,7 @@ import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
 <PdfrxViewerApp
   src="/manual.pdf"
   contextMenuBuilder={(context, { viewer, strings }) => {
-    // Start from the default localized Copy / Select All menu…
+    // Start from the default localized Copy / Select All / Highlight menu…
     const menu = buildDefaultContextMenu(viewer, strings, context);
 
     // …then add your own item (reuse the built-in classes for the styling).

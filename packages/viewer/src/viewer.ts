@@ -1834,7 +1834,7 @@ export class PdfrxViewer {
    * Whether copying the document's text is permitted. Mirrors pdfrx: a document
    * with no encryption/permissions allows copying, and an encrypted document
    * allows it unless its permissions explicitly forbid it
-   * ({@link PdfPermissions.allowsCopying} is `false`).
+   * (`PdfPermissions.allowsCopying` is `false`).
    */
   get isCopyAllowed(): boolean {
     return this.doc?.permissions?.allowsCopying !== false;
@@ -1844,8 +1844,8 @@ export class PdfrxViewer {
    * Copies the current selection to the system clipboard.
    *
    * Works in non-secure contexts too (a phone hitting a dev server by its LAN
-   * IP over plain HTTP has no `navigator.clipboard`); see
-   * {@link writeTextToClipboard}.
+   * IP over plain HTTP has no `navigator.clipboard`); the viewer falls back to
+   * a temporary selection and `document.execCommand('copy')`.
    *
    * @returns `true` if there was text to copy (and the write was attempted),
    *   `false` if the selection was empty or the document forbids copying.

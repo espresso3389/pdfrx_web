@@ -18,6 +18,10 @@ a framework-agnostic custom element or a plain class.
 - Printing
 - Automatic missing-font fallback via Google Fonts
 - Password-protected documents
+- Interactive AcroForm filling through accessible native HTML controls
+- SVG annotation editing: ink, shapes, notes/free text, text markup,
+  multi-selection, duplication, and undo/redo
+- Built-in loading spinner/progress bar with observable loading state
 
 ## Installation
 
@@ -83,6 +87,9 @@ Each symbol links directly to its entry in the
 - [`options.contextMenuBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#contextmenubuilder) — replace the built-in right-click / long-press menu (Copy / Select All, in English). Return your own menu element (the viewer positions and dismisses it); this is the hook for localizing or customizing it. `@pdfrx/react` uses it to render a themed, localized menu
 - [`addPageChangeListener(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addpagechangelistener) — notified (deduplicated) when the current page changes; [`viewToDocumentPoint(p)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#viewtodocumentpoint) / [`documentToViewPoint(p)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#documenttoviewpoint) convert between view and document space, and [`getPageHitTestResult(viewPoint)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#getpagehittestresult) maps a screen point to a page and a [PDF-page point](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfPageHitTestResult.html)
 - [`setPages(pages)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpages) / [`setPage(pageNumber, page)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpage) — history-aware page insertion, deletion, reorder and rotation; use these instead of calling the same-named `PdfDocument` methods when the edit must participate in the viewer's shared annotation/page Undo/Redo history
+- [`options.interactiveForms`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveforms) — native HTML controls over AcroForm widgets (on by default), synchronized with `PdfDocument.setFormFieldValue()` and included when the PDF is encoded
+- [`options.interactiveAnnotations`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveannotations) — SVG annotation display/editing (on by default); choose drawing or object-selection modes with `setAnnotationTool()` / `setAnnotationSelectMode()`, configure new annotations with `setAnnotationStyle()`, and use `undoAnnotation()` / `redoAnnotation()` for the shared edit history
+- [`isLoading`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#isloading) / [`loadingProgress`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadingprogress) / `addLoadingChangeListener(fn)` — observe document opening; `options.loadingIndicator` controls the built-in spinner/progress bar
 - [`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) / [`renderPageThumbnail(n, width)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail)
 - [`print({ dpi? })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#print)
 - [`options.fontResolver`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#fontresolver) — missing-font fallback (defaults to Google Fonts; pass `null` to disable)
