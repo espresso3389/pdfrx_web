@@ -6,7 +6,8 @@ Collaborative PDF editing for the
 `@pdfrx/colab` provides a ready-made React viewer, a strict-revision browser
 client, shared page/annotation/form protocols, stable virtual-page adapters,
 and mixed-source PDF export. Each participant renders and mutates its own local
-`PdfDocument`; the relay sequences small semantic operations instead of
+[`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html);
+the relay sequences small semantic operations instead of
 streaming rendered pages or repeatedly transferring the complete PDF.
 
 **[Local example](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab)** ·
@@ -15,6 +16,62 @@ streaming rendered pages or repeatedly transferring the complete PDF.
 ```sh
 npm install @pdfrx/colab @pdfrx/react react react-dom
 ```
+
+## Before you start: provide a relay
+
+`relayUrl` is the URL of an **application-hosted WebSocket server** that
+implements the `@pdfrx/colab` wire protocol. It is not a hosted pdfrx service,
+and the npm package does not start or bundle a production server.
+
+For local development in this repository, run:
+
+```sh
+npm run dev:colab
+```
+
+That command starts both the Vite example at `http://localhost:5173` and the
+reference in-memory relay at `ws://localhost:5191`. The example therefore uses:
+
+```tsx
+<CollaborativePdfViewer
+  relayUrl="ws://localhost:5191"
+  sessionId="demo"
+  // ...
+/>
+```
+
+The reference implementation lives in
+[`examples/colab/src/relay-server.ts`](https://github.com/espresso3389/pdfrx_web/blob/master/examples/colab/src/relay-server.ts).
+It is deliberately an example rather than a package export: it keeps sessions
+and uploaded PDFs only in memory and has no authentication, authorization, or
+durable storage.
+
+For production, deploy an equivalent service yourself and pass its public
+WebSocket URL, for example `wss://relay.example.com/collaboration`. The server
+must provide both:
+
+1. A WebSocket endpoint implementing the exported
+   [`ClientRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ClientRelayMessage.html)
+   and
+   [`ServerRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ServerRelayMessage.html)
+   messages. It joins sessions, validates base revisions, sequences operations,
+   and broadcasts authoritative page, annotation, and form commits.
+2. HTTP `PUT` and `GET` endpoints for immutable source PDFs at
+   `/sessions/:sessionId/sources/:documentId` on the same host. The helper
+   [`relaySourceUrl()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html)
+   converts `ws:` to `http:` (or `wss:` to `https:`) and constructs this path.
+
+Thus, for `relayUrl="wss://relay.example.com/collaboration"`, uploaded source
+PDFs are stored and fetched through URLs such as:
+
+```text
+https://relay.example.com/sessions/<sessionId>/sources/<documentId>
+```
+
+The WebSocket path itself may be chosen by the host, but the current
+`relaySourceUrl()` contract places source endpoints at the host root. Configure
+the reverse proxy accordingly. Browsers also require `wss:` when the viewer is
+served over HTTPS.
 
 ## What is synchronized
 
@@ -70,10 +127,13 @@ pages from every other source in the session.
 
 ### Component props
 
+See [`CollaborativePdfViewerProps`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborativePdfViewerProps.html)
+for the complete source definition.
+
 | Prop | Type | Meaning |
 |---|---|---|
 | `actorId` | `string` | Stable participant ID attached to submitted operations. |
-| `relayUrl` | `string` | WebSocket endpoint implementing the relay wire protocol. |
+| `relayUrl` | `string` | Application-hosted `ws:`/`wss:` endpoint described in [Provide a relay](#before-you-start-provide-a-relay). |
 | `sessionId` | `string` | Shared room/session identifier. Treat it as untrusted input, not authorization. |
 | `src` | `string \| URL \| ArrayBuffer \| Uint8Array \| Blob` | Initial PDF registered as the session's `main` source. |
 | `name` | `string?` | Accessible display label; defaults to `actorId`. |
@@ -92,7 +152,9 @@ served from the package CDN:
 
 ## Architecture
 
-The PDF is virtualized as an ordered list of stable placements:
+The PDF is virtualized as an ordered list of stable
+[`PagePlacement`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer-core.PagePlacement.html)
+values:
 
 ```ts
 interface PagePlacement {
@@ -131,8 +193,12 @@ opened locally before placements that reference them are applied.
 
 ## Relay requirements
 
-`CollaborativePdfViewer` and `PageCollaborationClient` expect the exported
-`ClientRelayMessage` / `ServerRelayMessage` protocol:
+[`CollaborativePdfViewer`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.CollaborativePdfViewer.html)
+and [`PageCollaborationClient`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageCollaborationClient.html)
+expect the exported
+[`ClientRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ClientRelayMessage.html) /
+[`ServerRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ServerRelayMessage.html)
+protocol:
 
 - WebSocket join and authoritative session snapshots
 - Strict `baseRevision` validation for page, annotation, and form operations
@@ -141,10 +207,13 @@ opened locally before placements that reference them are applied.
 - An immutable source endpoint at
   `PUT/GET /sessions/:sessionId/sources/:documentId`
 
-Use `parseClientRelayMessage()` and `parseServerRelayMessage()` at trust
-boundaries rather than accepting arbitrary parsed JSON. `relaySourceUrl()`
+Use [`parseClientRelayMessage()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.parseClientRelayMessage.html)
+and [`parseServerRelayMessage()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.parseServerRelayMessage.html)
+at trust boundaries rather than accepting arbitrary parsed JSON.
+[`relaySourceUrl()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html)
 derives the HTTP source URL from the WebSocket relay URL, and
-`uploadRelaySource()` uploads a PDF using the expected content type.
+[`uploadRelaySource()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.uploadRelaySource.html)
+uploads a PDF using the expected content type.
 
 The repository contains a small in-memory reference relay and a two-participant
 example in `examples/colab`:
@@ -162,8 +231,8 @@ avoid treating a random session URL as the sole access-control mechanism.
 
 ## Using the lower-level client
 
-Use `PageCollaborationClient` when the UI or transport integration should be
-yours:
+Use [`PageCollaborationClient`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageCollaborationClient.html)
+when the UI or transport integration should be yours:
 
 ```ts
 import {
@@ -203,38 +272,50 @@ unsubscribeForms();
 client.close();
 ```
 
-`RelayOperationError` exposes the relay error `code` and optional
+[`RelayOperationError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.RelayOperationError.html)
+exposes the relay error `code` and optional
 `currentRevision`, allowing a host to refresh or explain a stale operation.
 The constructor accepts injectable operation-ID and WebSocket factories for
 tests and non-browser hosts.
 
 ## Page source adapter
 
-`PageSourceRegistry` maps session document IDs to open local `PdfDocument`
-instances. `createPagePlacements()` creates stable initial placements,
-`resolvePagePlacements()` converts an authoritative snapshot into local
-`PdfPage` proxies, and `applyPagePlacementsToViewer()` applies the arrangement
+[`PageSourceRegistry`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageSourceRegistry.html)
+maps session document IDs to open local
+[`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html)
+instances. [`createPagePlacements()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.createPagePlacements.html)
+creates stable initial placements,
+[`resolvePagePlacements()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.resolvePagePlacements.html)
+converts an authoritative snapshot into local `PdfPage` proxies, and
+[`applyPagePlacementsToViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyPagePlacementsToViewer.html)
+applies the arrangement
 without publishing it as another local edit.
 
 Pure page-operation helpers are also exported:
 
 | API | Purpose |
 |---|---|
-| `rotatePlacement()` | Produce an absolute rotation operation from a delta. |
-| `duplicatePlacement()` | Insert another placement for the same source page. |
-| `movePlacementToIndex()` | Express a drag/reorder using stable anchors. |
-| `describePageOperation()` | Produce a concise activity label. |
-| `commitPageOperation()` | Server-side validation and revision assignment. |
-| `applyCommittedPageOperation()` | Apply an authoritative commit to a snapshot. |
+| [`rotatePlacement()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.rotatePlacement.html) | Produce an absolute rotation operation from a delta. |
+| [`duplicatePlacement()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.duplicatePlacement.html) | Insert another placement for the same source page. |
+| [`movePlacementToIndex()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.movePlacementToIndex.html) | Express a drag/reorder using stable anchors. |
+| [`describePageOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.describePageOperation.html) | Produce a concise activity label. |
+| [`commitPageOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitPageOperation.html) | Server-side validation and revision assignment. |
+| [`applyCommittedPageOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedPageOperation.html) | Apply an authoritative commit to a snapshot. |
 
-Equivalent `commit*` and `applyCommitted*` reducers are exported for annotation
-and form streams. They are transport-independent and suitable for a relay,
-tests, persistence replay, or an alternative networking stack.
+Equivalent reducers are exported for annotations
+([`commitAnnotationOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitAnnotationOperation.html),
+[`applyCommittedAnnotationOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedAnnotationOperation.html))
+and forms
+([`commitFormOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitFormOperation.html),
+[`applyCommittedFormOperation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedFormOperation.html)).
+They are transport-independent and suitable for a relay, tests, persistence
+replay, or an alternative networking stack.
 
 ## Collaborative export
 
 The displayed document may contain pages owned by several source PDFs.
-`encodeCollaborativePdf()` materializes the authoritative arrangement without
+[`encodeCollaborativePdf()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.encodeCollaborativePdf.html)
+materializes the authoritative arrangement without
 mutating the live viewer document:
 
 ```ts
@@ -268,7 +349,8 @@ operations. Operations targeting a removed placement are errors rather than
 silent no-ops. Applications can choose a more advanced transformation policy,
 but must still broadcast one canonical committed operation.
 
-`CollaborativePdfViewer` disables viewer-local Undo/Redo. Local history entries
+[`CollaborativePdfViewer`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.CollaborativePdfViewer.html)
+disables viewer-local Undo/Redo. Local history entries
 contain page positions and annotation snapshots that can become stale after a
 remote edit. Safe collaborative undo should submit a validated inverse relay
 operation against stable placement/annotation IDs; replaying old client state
@@ -278,14 +360,14 @@ could overwrite another participant's work.
 
 | Area | Main exports |
 |---|---|
-| React | `CollaborativePdfViewer`, `CollaborativePdfViewerProps` |
-| Browser client | `PageCollaborationClient`, `RelayOperationError`, `relaySourceUrl`, `uploadRelaySource` |
-| Page protocol | `PageSessionSnapshot`, `commitPageOperation`, `applyCommittedPageOperation`, `PageProtocolError` |
-| Annotation protocol | `AnnotationSessionSnapshot`, `SharedAnnotationChange`, `commitAnnotationOperation`, `applyCommittedAnnotationOperation` |
-| Form protocol | `FormSessionSnapshot`, `SharedFormFieldChange`, `commitFormOperation`, `applyCommittedFormOperation` |
-| Source adapter | `PageSourceRegistry`, `createPagePlacements`, `resolvePagePlacements`, `applyPagePlacementsToViewer` |
-| Export | `encodeCollaborativePdf`, `MappedOutlineNode` |
-| Wire format | `ClientRelayMessage`, `ServerRelayMessage`, `parseClientRelayMessage`, `parseServerRelayMessage` |
+| React | [`CollaborativePdfViewer`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.CollaborativePdfViewer.html), [`CollaborativePdfViewerProps`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborativePdfViewerProps.html) |
+| Browser client | [`PageCollaborationClient`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageCollaborationClient.html), [`RelayOperationError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.RelayOperationError.html), [`relaySourceUrl`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html), [`uploadRelaySource`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.uploadRelaySource.html) |
+| Page protocol | [`PageSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.PageSessionSnapshot.html), [`commitPageOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitPageOperation.html), [`applyCommittedPageOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedPageOperation.html), [`PageProtocolError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageProtocolError.html) |
+| Annotation protocol | [`AnnotationSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.AnnotationSessionSnapshot.html), [`SharedAnnotationChange`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.SharedAnnotationChange.html), [`commitAnnotationOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitAnnotationOperation.html), [`applyCommittedAnnotationOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedAnnotationOperation.html) |
+| Form protocol | [`FormSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.FormSessionSnapshot.html), [`SharedFormFieldChange`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.SharedFormFieldChange.html), [`commitFormOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitFormOperation.html), [`applyCommittedFormOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedFormOperation.html) |
+| Source adapter | [`PageSourceRegistry`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageSourceRegistry.html), [`createPagePlacements`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.createPagePlacements.html), [`resolvePagePlacements`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.resolvePagePlacements.html), [`applyPagePlacementsToViewer`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyPagePlacementsToViewer.html) |
+| Export | [`encodeCollaborativePdf`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.encodeCollaborativePdf.html), [`MappedOutlineNode`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.MappedOutlineNode.html) |
+| Wire format | [`ClientRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ClientRelayMessage.html), [`ServerRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ServerRelayMessage.html), [`parseClientRelayMessage`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.parseClientRelayMessage.html), [`parseServerRelayMessage`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.parseServerRelayMessage.html) |
 
 See the full
 [`@pdfrx/colab` API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_colab.html)

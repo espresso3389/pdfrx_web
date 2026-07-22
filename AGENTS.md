@@ -84,6 +84,40 @@ throw `does not provide an export named …`.) Editing a package's source alone 
 enough for the examples; a full `npm run build` is still what CI and publishing
 use.
 
+### README and API-reference links
+
+Package READMEs should link public classes, interfaces, types, functions, and
+components to their specific TypeDoc pages wherever those APIs are introduced
+in prose or API tables. A module-level API-reference link is useful, but it is
+not a substitute for direct symbol links. Code fences do not need embedded
+links.
+
+Do this link pass whenever public exports are added, renamed, or substantially
+documented, whenever a package README is expanded, and again during release
+preparation. Run `npm run docs` first and derive links from the files actually
+generated under `docs-site/{classes,interfaces,types,functions,...}`; do not
+guess TypeDoc filenames or anchors. Before finishing, mechanically verify that
+every `https://espresso3389.github.io/pdfrx_web/...` API link in the changed
+README maps to a generated local path. `docs-site/` remains ignored build
+output and must not be committed.
+
+For a new or renamed public API, use a two-stage update so the README never
+points at a symbol that has not reached the public API reference yet:
+
+1. Add the export and its TypeDoc comments, run the normal build/tests and
+   `npm run docs`, then commit and push that API change.
+2. Wait for the `Docs` GitHub Actions workflow triggered by that push to
+   succeed, and verify the symbol's final URL on the deployed API reference.
+3. Add or update the package README using that verified public URL, validate
+   the links against the local `docs-site/` output, then commit and push the
+   README change separately.
+4. Do not create the release tag until both pushes are complete and the README
+   links resolve publicly.
+
+Existing, already-deployed symbols do not require an artificial preliminary
+commit; link them directly and include the README update in the current docs
+change.
+
 ## TypeScript conventions
 
 Set in [tsconfig.base.json](tsconfig.base.json); the build will reject
