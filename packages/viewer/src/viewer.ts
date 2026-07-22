@@ -637,6 +637,11 @@ interface AnnotationCommand {
   after: PdfAnnotationSpec | null;
 }
 
+/** One chronological undo/redo entry shared by annotations and page edits. */
+type HistoryEntry =
+  | { kind: 'annotations'; commands: AnnotationCommand[] }
+  | { kind: 'pages'; before: readonly PdfPage[]; after: readonly PdfPage[] };
+
 /** One object stored in the viewer-local annotation clipboard. */
 interface AnnotationClipboardEntry {
   pageNumber: number;
@@ -1368,13 +1373,10 @@ export class PdfrxViewer {
   private annotationDuplicateQueue: Promise<void> = Promise.resolve();
   /** In-progress drawing gesture, or null. */
   private drawState: DrawState | null = null;
-  /**
-   * Annotation undo/redo stack. Each entry is a *group* of one or more commands
-   * applied/undone atomically (a multi-object move/resize/delete is one step).
-   * Entries `[0, historyIndex)` are applied.
-   */
-  private annotationHistory: AnnotationCommand[][] = [];
-  private annotationHistoryIndex = 0;
+  /** Chronological annotation and page-edit history. Entries before the index are applied. */
+  private history: HistoryEntry[] = [];
+  private historyIndex = 0;
+  private readonly historyChangeListeners = new Set<() => void>();
   /** Merge key attached to the latest history entry (used by slider gestures). */
   private annotationHistoryMergeKey: string | null = null;
   /** Keeps annotation style writes single-flight. */
@@ -2322,8 +2324,9 @@ export class PdfrxViewer {
     this.cache = new PageRenderCache(doc, () => this.invalidate(), () => this.canvasAnnotationRenderingMode());
     this.pageLinks.clear();
     this.hoveredLink = null;
-    this.annotationHistory = [];
-    this.annotationHistoryIndex = 0;
+    this.history = [];
+    this.historyIndex = 0;
+    this.notifyHistoryChanged();
     this.selectedAnnotationIds.clear();
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
@@ -3341,14 +3344,14 @@ export class PdfrxViewer {
     const cmd = e.ctrlKey || e.metaKey;
     const k = PdfrxViewer.SCROLL_BY_ARROW_KEY;
     const handled = ((): boolean => {
-      // Annotation undo/redo: Ctrl/Cmd+Z, and Ctrl/Cmd+Shift+Z or Ctrl+Y to redo.
+      // Undo/redo: Ctrl/Cmd+Z, and Ctrl/Cmd+Shift+Z or Ctrl+Y to redo.
       if (cmd && e.key.toLowerCase() === 'z') {
-        if (e.shiftKey) void this.redoAnnotation();
-        else void this.undoAnnotation();
+        if (e.shiftKey) void this.redo();
+        else void this.undo();
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'y') {
-        void this.redoAnnotation();
+        void this.redo();
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'd' && this.canRepeatAnnotationDuplicate()) {
@@ -4942,50 +4945,130 @@ export class PdfrxViewer {
     if (
       mergeKey !== undefined &&
       mergeKey === this.annotationHistoryMergeKey &&
-      this.annotationHistoryIndex === this.annotationHistory.length &&
-      this.annotationHistoryIndex > 0
+      this.historyIndex === this.history.length &&
+      this.historyIndex > 0 &&
+      this.history[this.historyIndex - 1]?.kind === 'annotations'
     ) {
-      const previous = this.annotationHistory[this.annotationHistoryIndex - 1]!;
-      const previousById = new Map(previous.map((cmd) => [`${cmd.pageNumber}:${cmd.id}`, cmd]));
-      this.annotationHistory[this.annotationHistoryIndex - 1] = group.map((cmd) => {
+      const previous = this.history[this.historyIndex - 1]!;
+      if (previous.kind !== 'annotations') return; // narrowed by the condition above
+      const previousById = new Map(previous.commands.map((cmd) => [`${cmd.pageNumber}:${cmd.id}`, cmd]));
+      previous.commands = group.map((cmd) => {
         const first = previousById.get(`${cmd.pageNumber}:${cmd.id}`);
         return first ? { ...cmd, before: first.before } : cmd;
       });
+      this.notifyHistoryChanged();
       return;
     }
-    this.annotationHistory.length = this.annotationHistoryIndex;
-    this.annotationHistory.push(group);
-    this.annotationHistoryIndex++;
+    this.recordHistoryEntry({ kind: 'annotations', commands: group });
     this.annotationHistoryMergeKey = mergeKey ?? null;
   }
 
-  /** Whether an annotation edit can be undone. */
-  canUndoAnnotation(): boolean {
-    return this.annotationHistoryIndex > 0;
+  private recordHistoryEntry(entry: HistoryEntry): void {
+    this.history.length = this.historyIndex;
+    this.history.push(entry);
+    this.historyIndex++;
+    this.notifyHistoryChanged();
   }
 
-  /** Whether an undone annotation edit can be redone. */
-  canRedoAnnotation(): boolean {
-    return this.annotationHistoryIndex < this.annotationHistory.length;
-  }
-
-  /** Undoes the last annotation edit (a whole group at once). */
-  async undoAnnotation(): Promise<void> {
-    if (!this.canUndoAnnotation()) return;
-    const group = this.annotationHistory[--this.annotationHistoryIndex]!;
-    this.setSelectedAnnotations([]);
-    for (let i = group.length - 1; i >= 0; i--) {
-      const cmd = group[i]!;
-      await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.before);
+  private notifyHistoryChanged(): void {
+    for (const listener of this.historyChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in history change listener:', e);
+      }
     }
   }
 
-  /** Redoes the last undone annotation edit (a whole group at once). */
-  async redoAnnotation(): Promise<void> {
-    if (!this.canRedoAnnotation()) return;
-    const group = this.annotationHistory[this.annotationHistoryIndex++]!;
+  /** Subscribes to changes in the common annotation/page-edit history. */
+  addHistoryChangeListener(listener: () => void): () => void {
+    this.historyChangeListeners.add(listener);
+    return () => this.historyChangeListeners.delete(listener);
+  }
+
+  /** Whether an annotation or page edit can be undone. */
+  canUndo(): boolean {
+    return this.historyIndex > 0;
+  }
+
+  /** Whether an undone annotation or page edit can be redone. */
+  canRedo(): boolean {
+    return this.historyIndex < this.history.length;
+  }
+
+  /** Backwards-compatible alias for {@link canUndo}. */
+  canUndoAnnotation(): boolean {
+    return this.canUndo();
+  }
+
+  /** Backwards-compatible alias for {@link canRedo}. */
+  canRedoAnnotation(): boolean {
+    return this.canRedo();
+  }
+
+  /** Undoes the latest annotation or page edit. */
+  async undo(): Promise<void> {
+    if (!this.canUndo()) return;
+    const entry = this.history[--this.historyIndex]!;
     this.setSelectedAnnotations([]);
-    for (const cmd of group) await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.after);
+    if (entry.kind === 'pages') {
+      this.doc?.setPages(entry.before);
+    } else {
+      for (let i = entry.commands.length - 1; i >= 0; i--) {
+        const cmd = entry.commands[i]!;
+        await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.before);
+      }
+    }
+    this.annotationHistoryMergeKey = null;
+    this.notifyHistoryChanged();
+  }
+
+  /** Redoes the next undone annotation or page edit. */
+  async redo(): Promise<void> {
+    if (!this.canRedo()) return;
+    const entry = this.history[this.historyIndex++]!;
+    this.setSelectedAnnotations([]);
+    if (entry.kind === 'pages') {
+      this.doc?.setPages(entry.after);
+    } else {
+      for (const cmd of entry.commands) await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.after);
+    }
+    this.annotationHistoryMergeKey = null;
+    this.notifyHistoryChanged();
+  }
+
+  /** Backwards-compatible alias for {@link undo}. */
+  async undoAnnotation(): Promise<void> {
+    await this.undo();
+  }
+
+  /** Backwards-compatible alias for {@link redo}. */
+  async redoAnnotation(): Promise<void> {
+    await this.redo();
+  }
+
+  /** Replaces the page arrangement and records it as one undoable edit. */
+  setPages(pages: readonly PdfPage[]): void {
+    if (!this.doc) return;
+    const before = this.doc.pages.slice();
+    if (
+      before.length === pages.length &&
+      before.every((page, index) => page.renderKey === pages[index]?.renderKey)
+    ) return;
+    this.doc.setPages(pages);
+    this.recordHistoryEntry({ kind: 'pages', before, after: this.doc.pages.slice() });
+    this.annotationHistoryMergeKey = null;
+  }
+
+  /** Replaces one page slot and records it as one undoable edit. */
+  setPage(pageNumber: number, page: PdfPage): void {
+    if (!this.doc) return;
+    if (pageNumber < 1 || pageNumber > this.doc.pages.length) {
+      throw new RangeError(`pageNumber ${pageNumber} out of range (1..${this.doc.pages.length})`);
+    }
+    const pages = this.doc.pages.slice();
+    pages[pageNumber - 1] = page;
+    this.setPages(pages);
   }
 
   /**

@@ -82,6 +82,68 @@ function Toolbar() {
 | `usePdfSelection()` | Selected range, resolved text and rects, copy |
 | `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
 | `usePdfPrint()` | `print()` plus an `isPrinting` flag |
+| `useAnnotations()` | Annotation data and the shared annotation/page-edit Undo/Redo state |
+
+## Editing history and page mutations
+
+The built-in annotation editor and the page controls enabled by
+`enablePageEditing` use one chronological Undo/Redo history. Page insertion,
+deletion, rotation and thumbnail drag-reordering are each recorded as one
+operation. `Ctrl`/`Cmd`+`Z`, `Ctrl`/`Cmd`+`Shift`+`Z` and `Ctrl`+`Y` follow that
+same history, as do `undo()` and `redo()` returned by `useAnnotations()`.
+
+Page history stores the complete page arrangement before and after an edit.
+Undoing a page edit therefore restores the page numbering that existed when an
+earlier annotation edit was recorded. This ordering is the invariant that keeps
+annotation commands, which refer to 1-based page numbers, consistent.
+
+When building custom React page controls, mutate the arrangement through the
+viewer returned by `usePdfrxViewer()`:
+
+```tsx
+const viewer = usePdfrxViewer();
+
+function rotatePage(pageNumber: number) {
+  const page = viewer?.document?.pages[pageNumber - 1];
+  if (page) viewer?.setPage(pageNumber, page.rotatedCW90());
+}
+
+function deletePage(pageNumber: number) {
+  const pages = viewer?.document?.pages;
+  if (viewer && pages && pages.length > 1) {
+    viewer.setPages(pages.filter((_, index) => index !== pageNumber - 1));
+  }
+}
+```
+
+Do not call the underlying document methods for an operation that is expected
+to participate in this history:
+
+```tsx
+// The viewer redraws, but these changes bypass its Undo/Redo history.
+viewer.document?.setPage(pageNumber, page.rotatedCW90());
+viewer.document?.setPages(nextPages);
+```
+
+`PdfDocument` still emits `pagesRearranged` for those direct calls, so React
+thumbnails and layout remain visually current. The event is emitted after the
+mutation and does not contain the previous arrangement, however, so it cannot
+retroactively create a correct history entry. After a history-bypassing page
+mutation, existing Undo/Redo entries may no longer describe the document state
+they were recorded against. Either route every editable page mutation through
+`PdfrxViewer.setPage()` / `setPages()`, or treat a direct document mutation as
+an external state replacement and do not continue using the existing history.
+
+The same distinction applies to annotations: edits made with the built-in
+annotation UI are recorded, while direct `PdfDocument.addAnnotation()`,
+`updateAnnotation()` and `removeAnnotation()` calls are not. The `add`, `update`
+and `remove` functions from `useAnnotations()` currently expose those direct
+document operations, so use them for externally managed annotation state, not
+as entries in the viewer's Undo/Redo sequence.
+
+Opening another document clears the history. Calling `viewer.undo()` or
+`viewer.redo()` programmatically is asynchronous because an entry may contain
+annotation writes; await it before starting another programmatic edit.
 
 ## Two things your app must provide
 

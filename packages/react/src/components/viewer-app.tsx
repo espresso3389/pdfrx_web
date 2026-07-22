@@ -232,7 +232,7 @@ function PdfrxViewerAppChrome({
       if (inserted.length === 0) return;
       const pages = document.pages;
       const at = Math.max(0, Math.min(index, pages.length));
-      document.setPages([...pages.slice(0, at), ...inserted, ...pages.slice(at)]);
+      viewer.setPages([...pages.slice(0, at), ...inserted, ...pages.slice(at)]);
     },
     [viewer, store],
   );
@@ -251,7 +251,7 @@ function PdfrxViewerAppChrome({
       if (!moved) return;
       pages.splice(from, 1);
       pages.splice(toIndex > from ? toIndex - 1 : toIndex, 0, moved);
-      document.setPages(pages);
+      viewer.setPages(pages);
     },
     [viewer],
   );
@@ -384,12 +384,12 @@ function PageActions({ pageNumber }: { pageNumber: number }): ReactNode {
   const rotate = (): void => {
     const document = viewer?.document;
     const page = document?.pages[pageNumber - 1];
-    if (document && page) document.setPage(pageNumber, page.rotatedCW90());
+    if (document && page) viewer?.setPage(pageNumber, page.rotatedCW90());
   };
   const remove = (): void => {
     const document = viewer?.document;
     if (!document || document.pages.length <= 1) return;
-    document.setPages(document.pages.filter((p) => p.pageNumber !== pageNumber));
+    viewer?.setPages(document.pages.filter((p) => p.pageNumber !== pageNumber));
   };
 
   return (

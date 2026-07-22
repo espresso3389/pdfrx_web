@@ -15,13 +15,13 @@ export interface PdfAnnotationsState {
   update: (pageNumber: number, id: string, spec: PdfAnnotationSpec) => Promise<string | undefined>;
   /** Removes the annotation `id` from `pageNumber`. */
   remove: (pageNumber: number, id: string) => Promise<void>;
-  /** Undoes the last annotation edit (create / delete / move / reshape). */
+  /** Undoes the latest annotation or page edit. */
   undo: () => Promise<void>;
-  /** Redoes the last undone annotation edit. */
+  /** Redoes the latest undone annotation or page edit. */
   redo: () => Promise<void>;
-  /** Whether an annotation edit can be undone. */
+  /** Whether an annotation or page edit can be undone. */
   canUndo: boolean;
-  /** Whether an undone annotation edit can be redone. */
+  /** Whether an undone annotation or page edit can be redone. */
   canRedo: boolean;
   /** Forces a reload of the annotation list. */
   reload: () => void;
@@ -63,8 +63,8 @@ export function useAnnotations(): PdfAnnotationsState {
     }
     let cancelled = false;
     const syncHistory = (): void => {
-      setCanUndo(viewer?.canUndoAnnotation() ?? false);
-      setCanRedo(viewer?.canRedoAnnotation() ?? false);
+      setCanUndo(viewer?.canUndo() ?? false);
+      setCanRedo(viewer?.canRedo() ?? false);
     };
     const load = (): void => {
       setIsLoading(true);
@@ -90,9 +90,11 @@ export function useAnnotations(): PdfAnnotationsState {
     const unsubscribe = doc.addEventListener('annotationsChanged', () => {
       if (!cancelled) load();
     });
+    const unsubscribeHistory = viewer?.addHistoryChangeListener(syncHistory);
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribeHistory?.();
     };
   }, [doc, viewer, generation, reloadNonce]);
 
@@ -112,10 +114,10 @@ export function useAnnotations(): PdfAnnotationsState {
     [doc],
   );
   const undo = useCallback(async (): Promise<void> => {
-    await viewer?.undoAnnotation();
+    await viewer?.undo();
   }, [viewer]);
   const redo = useCallback(async (): Promise<void> => {
-    await viewer?.redoAnnotation();
+    await viewer?.redo();
   }, [viewer]);
 
   return { annotations, isLoading, add, update, remove, undo, redo, canUndo, canRedo, reload };
