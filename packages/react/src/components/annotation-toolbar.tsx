@@ -86,7 +86,7 @@ export function PdfAnnotationToolbar({
   const { undo, redo, canUndo, canRedo } = useAnnotations();
   // One active mode at a time: 'text' = normal text-selection viewing,
   // 'select' = object select (marquee/multi-select), a tool name = draw.
-  const [active, setActive] = useState<ToolbarMode>('text');
+  const [active, setActive] = useState<ToolbarMode>('select');
   const [color, setColor] = useState(colors[0] ?? '#e53935');
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [fillColor, setFillColor] = useState<string | null>(null);
@@ -111,12 +111,12 @@ export function PdfAnnotationToolbar({
     return gesture?.key === key ? `${key}:${gesture.sequence}` : undefined;
   };
 
-  // Start in text mode when the toolbar appears, and return to it when it
-  // unmounts (so closing the toolbar restores normal text selection).
+  // Start in object-select mode when the toolbar appears, and return to text
+  // mode when it unmounts (so closing it restores normal text selection).
   useEffect(() => {
     if (!viewer) return;
     const syncMode = (mode: AnnotationMode): void => setActive(mode ?? 'text');
-    viewer.setAnnotationTool(null);
+    viewer.setAnnotationSelectMode(true);
     syncMode(viewer.getAnnotationMode());
     const unsubscribe = viewer.addAnnotationModeChangeListener(syncMode);
     return () => {
