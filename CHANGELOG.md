@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `@pdfrx/colab` now accepts injectable collaboration transport hooks for
+  authenticated/custom WebSocket creation, credentialed source fetches, and
+  application-specific source URL routing.
+
 ## [0.9.0] - 2026-07-23
 
 ### Added

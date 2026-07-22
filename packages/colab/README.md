@@ -73,6 +73,71 @@ The WebSocket path itself may be chosen by the host, but the current
 the reverse proxy accordingly. Browsers also require `wss:` when the viewer is
 served over HTTPS.
 
+### Authentication transport hooks
+
+Same-origin `Secure`/`HttpOnly` cookies can work with the defaults because the
+browser supplies them to same-origin WebSocket and HTTP requests. For
+cross-origin credentials, bearer-protected source endpoints, custom proxy
+paths, or a WebSocket ticket, pass a stable
+[`CollaborationTransport`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborationTransport.html)
+through the viewer's `transport` prop.
+
+Use `useMemo` (or a module-level constant) so React does not interpret a newly
+allocated transport object as a reason to reconnect:
+
+```tsx
+import { useMemo } from 'react';
+import type { CollaborationTransport } from '@pdfrx/colab';
+
+function AuthenticatedReviewRoom({ accessToken }: { accessToken: string }) {
+  const transport = useMemo<CollaborationTransport>(() => ({
+    // Covers cross-origin cookies and bearer-protected source GET/PUT.
+    fetch: (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set('Authorization', `Bearer ${accessToken}`);
+      return fetch(input, { ...init, headers, credentials: 'include' });
+    },
+
+    // Use an application-specific source route instead of the default root path.
+    resolveSourceUrl: (_relayUrl, sessionId, documentId) =>
+      `https://api.example.com/collaboration/${encodeURIComponent(sessionId)}` +
+      `/sources/${encodeURIComponent(documentId)}`,
+  }), [accessToken]);
+
+  return (
+    <CollaborativePdfViewer
+      actorId="user-42"
+      relayUrl="wss://relay.example.com/collaboration"
+      sessionId="review-123"
+      src="/documents/review.pdf"
+      transport={transport}
+    />
+  );
+}
+```
+
+Browser WebSockets cannot attach an arbitrary `Authorization` header. Obtain a
+short-lived, single-use connection ticket over authenticated HTTPS before
+rendering, then inject the socket factory:
+
+```tsx
+const transport = useMemo<CollaborationTransport>(() => ({
+  createWebSocket: (url) => {
+    const socketUrl = new URL(url);
+    socketUrl.searchParams.set('ticket', oneTimeWebSocketTicket);
+    return new WebSocket(socketUrl);
+  },
+  fetch: authenticatedFetch,
+}), [oneTimeWebSocketTicket]);
+```
+
+Do not put a long-lived access token in a WebSocket URL: URLs are commonly
+captured by proxies and logs. The server must validate the authenticated user
+against the requested session on the WebSocket join and on every source
+GET/PUT. Client-supplied `actorId` is display/operation metadata, not proof of
+identity; validate it against the authenticated principal or replace it when
+creating committed operations.
+
 ## What is synchronized
 
 - Page insertion, removal, movement, duplication, and rotation
@@ -139,6 +204,7 @@ for the complete source definition.
 | `name` | `string?` | Accessible display label; defaults to `actorId`. |
 | `wasmModulesUrl` | `string?` | Directory containing `pdfium_worker.js` and `pdfium.wasm`; defaults to `/pdfium/`. |
 | `className` | `string?` | Additional class on the outer `.collab-pane`. |
+| `transport` | [`CollaborationTransport`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborationTransport.html)`?` | Optional WebSocket, authenticated fetch, and source-URL hooks. Keep its object identity stable. |
 
 The PDFium assets can be copied from `node_modules/@pdfrx/engine/assets/`, or
 served from the package CDN:
@@ -361,7 +427,7 @@ could overwrite another participant's work.
 | Area | Main exports |
 |---|---|
 | React | [`CollaborativePdfViewer`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.CollaborativePdfViewer.html), [`CollaborativePdfViewerProps`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborativePdfViewerProps.html) |
-| Browser client | [`PageCollaborationClient`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageCollaborationClient.html), [`RelayOperationError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.RelayOperationError.html), [`relaySourceUrl`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html), [`uploadRelaySource`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.uploadRelaySource.html) |
+| Browser client | [`PageCollaborationClient`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageCollaborationClient.html), [`CollaborationTransport`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborationTransport.html), [`RelayOperationError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.RelayOperationError.html), [`fetchRelaySource`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.fetchRelaySource.html), [`relaySourceUrl`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html), [`uploadRelaySource`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.uploadRelaySource.html) |
 | Page protocol | [`PageSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.PageSessionSnapshot.html), [`commitPageOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitPageOperation.html), [`applyCommittedPageOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedPageOperation.html), [`PageProtocolError`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_colab.PageProtocolError.html) |
 | Annotation protocol | [`AnnotationSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.AnnotationSessionSnapshot.html), [`SharedAnnotationChange`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.SharedAnnotationChange.html), [`commitAnnotationOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitAnnotationOperation.html), [`applyCommittedAnnotationOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedAnnotationOperation.html) |
 | Form protocol | [`FormSessionSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.FormSessionSnapshot.html), [`SharedFormFieldChange`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.SharedFormFieldChange.html), [`commitFormOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.commitFormOperation.html), [`applyCommittedFormOperation`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyCommittedFormOperation.html) |
