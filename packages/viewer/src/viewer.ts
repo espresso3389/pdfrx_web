@@ -2324,9 +2324,7 @@ export class PdfrxViewer {
     this.cache = new PageRenderCache(doc, () => this.invalidate(), () => this.canvasAnnotationRenderingMode());
     this.pageLinks.clear();
     this.hoveredLink = null;
-    this.history = [];
-    this.historyIndex = 0;
-    this.notifyHistoryChanged();
+    this.clearHistory();
     this.selectedAnnotationIds.clear();
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
@@ -4984,6 +4982,14 @@ export class PdfrxViewer {
   addHistoryChangeListener(listener: () => void): () => void {
     this.historyChangeListeners.add(listener);
     return () => this.historyChangeListeners.delete(listener);
+  }
+
+  /** Clears all Undo/Redo entries without changing the document. */
+  clearHistory(): void {
+    this.history = [];
+    this.historyIndex = 0;
+    this.annotationHistoryMergeKey = null;
+    this.notifyHistoryChanged();
   }
 
   /** Whether an annotation or page edit can be undone. */

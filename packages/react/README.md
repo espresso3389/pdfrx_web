@@ -82,7 +82,8 @@ function Toolbar() {
 | `usePdfSelection()` | Selected range, resolved text and rects, copy |
 | `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
 | `usePdfPrint()` | `print()` plus an `isPrinting` flag |
-| `useAnnotations()` | Annotation data and the shared annotation/page-edit Undo/Redo state |
+| `useAnnotations()` | Annotation data and direct add/update/remove operations |
+| `useEditHistory()` | Shared annotation/page-edit `undo`, `redo`, availability and `clearHistory` |
 
 ## Editing history and page mutations
 
@@ -90,7 +91,7 @@ The built-in annotation editor and the page controls enabled by
 `enablePageEditing` use one chronological Undo/Redo history. Page insertion,
 deletion, rotation and thumbnail drag-reordering are each recorded as one
 operation. `Ctrl`/`Cmd`+`Z`, `Ctrl`/`Cmd`+`Shift`+`Z` and `Ctrl`+`Y` follow that
-same history, as do `undo()` and `redo()` returned by `useAnnotations()`.
+same history, as do `undo()` and `redo()` returned by `useEditHistory()`.
 
 Page history stores the complete page arrangement before and after an edit.
 Undoing a page edit therefore restores the page numbering that existed when an
@@ -141,9 +142,50 @@ and `remove` functions from `useAnnotations()` currently expose those direct
 document operations, so use them for externally managed annotation state, not
 as entries in the viewer's Undo/Redo sequence.
 
-Opening another document clears the history. Calling `viewer.undo()` or
-`viewer.redo()` programmatically is asynchronous because an entry may contain
-annotation writes; await it before starting another programmatic edit.
+Opening another document clears the history. For custom controls, use
+`useEditHistory()`:
+
+```tsx
+const { undo, redo, canUndo, canRedo, clearHistory } = useEditHistory();
+```
+
+`undo()` and `redo()` are asynchronous because an entry may contain annotation
+writes; await them before starting another programmatic edit.
+
+### Saving, page assembly and history
+
+Undo/Redo page entries retain the `PdfPage` proxies from before and after each
+operation. `PdfDocument.assemblePages()` replaces the PDF's physical page tree
+and reloads its pages, so those saved proxies can no longer be used to restore
+the earlier arrangement reliably. `encodePdf()` calls `assemblePages()`
+automatically and has the same consequence. Calling either while retaining the
+history can therefore leave Undo/Redo inconsistent with the live document.
+
+The built-in download buttons avoid this by using
+`PdfDocument.encodePdfCopy()`. Assembly happens on a temporary document, while
+the live document and its history remain intact. Custom editor save UI should
+normally do the same:
+
+```tsx
+await viewer.flushAnnotationTextEdit();
+const data = await viewer.document!.encodePdfCopy();
+```
+
+The temporary native document and its encoded buffers increase peak memory
+usage during the save. For memory-constrained applications, it can instead be
+reasonable to make assembly an explicit, irreversible history boundary: clear
+the history first, then encode the live document.
+
+```tsx
+const { clearHistory } = useEditHistory();
+
+await viewer.flushAnnotationTextEdit();
+clearHistory();                 // The current state becomes the new baseline.
+const data = await viewer.document!.encodePdf(); // Assembles the live document.
+```
+
+Clearing first is important. Do not call `assemblePages()` or `encodePdf()` and
+then leave older Undo/Redo entries available.
 
 ## Two things your app must provide
 

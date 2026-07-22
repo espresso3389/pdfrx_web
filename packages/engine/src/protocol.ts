@@ -461,6 +461,11 @@ export interface WorkerCommandMap {
     };
     result: { data: ArrayBuffer };
   };
+  /** Creates an independent native copy of a document without changing it. */
+  cloneDocument: {
+    params: { docHandle: number };
+    result: WireDocument | WireError;
+  };
   /** Enumerates the AcroForm widget fields on one page. */
   loadFormFields: {
     params: { docHandle: number; formHandle: number; pageIndex: number };

@@ -87,6 +87,7 @@ export { usePdfZoom, type PdfZoom } from './hooks/use-pdf-zoom.js';
 export { usePdfOutline, type PdfOutlineState } from './hooks/use-pdf-outline.js';
 export { useFormFields, type PdfFormFieldsState } from './hooks/use-form-fields.js';
 export { useAnnotations, type PdfAnnotationsState } from './hooks/use-annotations.js';
+export { useEditHistory, type PdfEditHistory } from './hooks/use-edit-history.js';
 export { usePdfSearch, type PdfSearch } from './hooks/use-pdf-search.js';
 export { usePdfSelection, type PdfSelection } from './hooks/use-pdf-selection.js';
 export { usePdfPageThumbnail, type PdfPageThumbnail } from './hooks/use-pdf-page-thumbnail.js';

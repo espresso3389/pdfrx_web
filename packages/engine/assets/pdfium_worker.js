@@ -1158,7 +1158,7 @@ async function loadDocumentFromUrlWithRangeAccess(params) {
     }
     if (!docHandle) {
       dispose();
-      return _loadDocument(docHandle, params.useProgressiveLoading, () => {});
+      return _loadDocument(docHandle, params.useProgressiveLoading, () => {}, params.password);
     }
 
     const formResult = await _waitForPdfAvailability(
@@ -1196,7 +1196,7 @@ async function loadDocumentFromUrlWithRangeAccess(params) {
       }
     }
 
-    return _loadDocument(docHandle, params.useProgressiveLoading, dispose);
+    return _loadDocument(docHandle, params.useProgressiveLoading, dispose, params.password);
   } catch (e) {
     if (docHandle) {
       try {
@@ -1315,7 +1315,7 @@ function loadDocumentFromData(params) {
     const passwordPtr = StringUtils.allocateUTF8(password);
     const docHandle = Pdfium.wasmExports.FPDF_LoadMemDocument(buffer, data.byteLength, passwordPtr);
     StringUtils.freeUTF8(passwordPtr);
-    return _loadDocument(docHandle, useProgressiveLoading, () => Pdfium.wasmExports.free(buffer));
+    return _loadDocument(docHandle, useProgressiveLoading, () => Pdfium.wasmExports.free(buffer), password);
   }
 
   const tempFileName = params.url ?? '/tmp/temp.pdf';
@@ -1326,11 +1326,13 @@ function loadDocumentFromData(params) {
   const docHandle = Pdfium.wasmExports.FPDF_LoadDocument(fileNamePtr, passwordPtr);
   StringUtils.freeUTF8(passwordPtr);
   StringUtils.freeUTF8(fileNamePtr);
-  return _loadDocument(docHandle, useProgressiveLoading, () => fileSystem.unregisterFile(tempFileName));
+  return _loadDocument(docHandle, useProgressiveLoading, () => fileSystem.unregisterFile(tempFileName), password);
 }
 
 /** @type {Object<number, function():void>} */
 const disposers = {};
+/** @type {Object<number, string>} Password used to open each live document. */
+const documentPasswords = {};
 
 /** @typedef {{face: string, weight: number, italic: boolean, charset: number, pitch_family: number}} FontQuery
  * @typedef {Object<string, FontQuery>} FontQueries
@@ -1528,7 +1530,7 @@ function _disposeFormContext(docHandle) {
  * @param {function():void} onDispose
  * @returns {PdfDocument|PdfError}
  */
-function _loadDocument(docHandle, useProgressiveLoading, onDispose) {
+function _loadDocument(docHandle, useProgressiveLoading, onDispose, password = '') {
   let formInfo = 0;
   let formHandle = 0;
   try {
@@ -1573,6 +1575,7 @@ function _loadDocument(docHandle, useProgressiveLoading, onDispose) {
       }
     }
     disposers[docHandle] = onDispose;
+    documentPasswords[docHandle] = password;
     _updateMissingFonts(docHandle);
 
     return {
@@ -1591,6 +1594,7 @@ function _loadDocument(docHandle, useProgressiveLoading, onDispose) {
     _disposeFormContext(docHandle); // [pdfrx_web: form support]
     Pdfium.wasmExports.free(formInfo);
     delete disposers[docHandle];
+    delete documentPasswords[docHandle];
     onDispose();
     throw e;
   }
@@ -1790,6 +1794,7 @@ function closeDocument(params) {
   Pdfium.wasmExports.FPDF_CloseDocument(params.docHandle);
   disposers[params.docHandle]();
   delete disposers[params.docHandle];
+  delete documentPasswords[params.docHandle];
   delete missingFonts[params.docHandle];
   return { message: 'Document closed' };
 }
@@ -2907,6 +2912,25 @@ function encodePdf(params) {
   } finally {
     Pdfium.removeFunction(writeCallback);
   }
+}
+
+/**
+ * Creates an independent in-memory copy of a live document. The copy contains
+ * native annotation/form changes but not the caller-side proxy arrangement.
+ * @param {{docHandle: number}} params
+ * @returns {PdfDocument|PdfError}
+ */
+function cloneDocument(params) {
+  const encoded = encodePdf({ docHandle: params.docHandle, incremental: false, removeSecurity: false }).result;
+  const data = encoded.data;
+  const buffer = Pdfium.wasmExports.malloc(data.byteLength);
+  if (buffer === 0) throw new Error(`Failed to allocate memory for cloned PDF (${data.byteLength} bytes)`);
+  new Uint8Array(Pdfium.memory.buffer, buffer, data.byteLength).set(new Uint8Array(data));
+  const password = documentPasswords[params.docHandle] ?? '';
+  const passwordPtr = StringUtils.allocateUTF8(password);
+  const docHandle = Pdfium.wasmExports.FPDF_LoadMemDocument(buffer, data.byteLength, passwordPtr);
+  StringUtils.freeUTF8(passwordPtr);
+  return _loadDocument(docHandle, false, () => Pdfium.wasmExports.free(buffer), password);
 }
 
 /**
@@ -4284,6 +4308,7 @@ const functions = {
   clearAllFontData,
   assemble,
   encodePdf,
+  cloneDocument,
   // [pdfrx_web: form support]
   loadFormFields,
   loadFormCalculations,

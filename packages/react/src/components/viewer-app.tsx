@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Drag
 import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
 import { isImageFile, isPdfFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
+import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
-import { IconAnnotate, IconClose, IconOpenFile, IconRotate, IconSave, IconTrash } from './icons.js';
+import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconRotate, IconSave, IconTrash, IconUndo } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
 
@@ -172,6 +173,7 @@ function PdfrxViewerAppChrome({
   const store = usePdfrxStore();
   const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();
+  const { undo, redo, canUndo, canRedo } = useEditHistory();
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [annotating, setAnnotating] = useState(false);
@@ -299,19 +301,41 @@ function PdfrxViewerAppChrome({
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
           // Put the hamburger next to the sidebar it controls.
           sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
-          afterSearch={
-            enableAnnotations ? (
+          afterSearch={(enableAnnotations || enablePageEditing) ? (
+            <>
               <button
-                className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
-                aria-pressed={annotating}
-                onClick={() => setAnnotating((v) => !v)}
-                title={strings.annotate}
-                aria-label={strings.annotate}
+                type="button"
+                className="pdfrx-button"
+                onClick={() => void undo()}
+                disabled={!canUndo}
+                title="Undo (Ctrl+Z)"
+                aria-label="Undo"
               >
-                <IconAnnotate />
+                <IconUndo />
               </button>
-            ) : undefined
-          }
+              <button
+                type="button"
+                className="pdfrx-button"
+                onClick={() => void redo()}
+                disabled={!canRedo}
+                title="Redo (Ctrl+Shift+Z)"
+                aria-label="Redo"
+              >
+                <IconRedo />
+              </button>
+              {enableAnnotations && (
+                <button
+                  className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
+                  aria-pressed={annotating}
+                  onClick={() => setAnnotating((v) => !v)}
+                  title={strings.annotate}
+                  aria-label={strings.annotate}
+                >
+                  <IconAnnotate />
+                </button>
+              )}
+            </>
+          ) : undefined}
         >
           {showOpenButton && (
             <>
@@ -417,8 +441,8 @@ function SaveButton(): ReactNode {
     setIsSaving(true);
     try {
       await viewer.flushAnnotationTextEdit();
-      // Materializes any proxy arrangement into the PDF, then serializes it.
-      const data = await document.encodePdf();
+      // Assemble a temporary copy so saving does not invalidate editing history.
+      const data = await document.encodePdfCopy();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;

@@ -1,6 +1,5 @@
 import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { useAnnotations } from '../hooks/use-annotations.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import {
   IconArrowTool,
@@ -13,11 +12,9 @@ import {
   IconOpacity,
   IconPen,
   IconRectangle,
-  IconRedo,
   IconSelectObject,
   IconTextBox,
   IconThickness,
-  IconUndo,
 } from './icons.js';
 
 /** The mutually-exclusive interaction modes offered by the toolbar. */
@@ -68,8 +65,8 @@ const TOOL_TITLE: Record<AnnotationTool, string> = {
 
 /**
  * The annotation mode bar: mutually-exclusive toggles for text selection,
- * object selection and each drawing tool, plus color/width pickers and
- * undo/redo — wired to {@link PdfrxViewer.setAnnotationTool} /
+ * object selection and each drawing tool, plus color/width pickers — wired to
+ * {@link PdfrxViewer.setAnnotationTool} /
  * `setAnnotationSelectMode` / `setAnnotationStyle`. Requires a
  * {@link PdfrxProvider} ancestor and the viewer's `interactiveAnnotations`
  * option (on by default). Import `@pdfrx/react/styles.css` for the default
@@ -83,7 +80,6 @@ export function PdfAnnotationToolbar({
   onClose,
 }: PdfAnnotationToolbarProps): ReactNode {
   const viewer = usePdfrxViewer();
-  const { undo, redo, canUndo, canRedo } = useAnnotations();
   // One active mode at a time: 'text' = normal text-selection viewing,
   // 'select' = object select (marquee/multi-select), a tool name = draw.
   const [active, setActive] = useState<ToolbarMode>('select');
@@ -360,37 +356,19 @@ export function PdfAnnotationToolbar({
           )}
         </span>
       </span>
-      <span className="pdfrx-toolbar-separator" aria-hidden />
-      <button
-        type="button"
-        className="pdfrx-button"
-        onClick={() => void undo()}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-      >
-        <IconUndo />
-      </button>
-      <button
-        type="button"
-        className="pdfrx-button"
-        onClick={() => void redo()}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-      >
-        <IconRedo />
-      </button>
       {onClose && (
-        <button
-          type="button"
-          className="pdfrx-button pdfrx-annot-close"
-          onClick={onClose}
-          title="Close annotation toolbar"
-          aria-label="Close annotation toolbar"
-        >
-          <IconClose />
-        </button>
+        <>
+          <span className="pdfrx-toolbar-separator" aria-hidden />
+          <button
+            type="button"
+            className="pdfrx-button pdfrx-annot-close"
+            onClick={onClose}
+            title="Close annotation toolbar"
+            aria-label="Close annotation toolbar"
+          >
+            <IconClose />
+          </button>
+        </>
       )}
     </div>
   );

@@ -1009,6 +1009,34 @@ export class PdfDocument {
   }
 
   /**
+   * Serializes the current page arrangement through a temporary document,
+   * leaving this document and any outstanding page proxies untouched. The
+   * temporary copy is always disposed before this method returns.
+   */
+  async encodePdfCopy(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    const result = await this.sendCommand('cloneDocument', { docHandle: this.docHandle });
+    if (isWireError(result)) {
+      throw new Error(`Failed to clone document ${this.sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
+    }
+    const copy = new PdfDocument(this.comm, result, `${this.sourceName} (copy)`, null);
+    try {
+      const pages = this._pages.map((page) => {
+        if (page.document.docHandle !== this.docHandle) return page;
+        const copiedSource = copy.pages[page.sourcePageIndex];
+        if (!copiedSource) {
+          throw new Error(`Source page ${page.sourcePageIndex + 1} is missing from the document copy`);
+        }
+        return copiedSource.rotatedTo(page.rotation);
+      });
+      copy.setPages(pages);
+      return await copy.encodePdf(options);
+    } finally {
+      await copy.dispose();
+    }
+  }
+
+  /**
    * Loads all AcroForm fields across the document's currently loaded pages,
    * grouped by fully-qualified name (widgets that share a name — e.g. a radio
    * group — merge into one field). Returns an empty array for documents without

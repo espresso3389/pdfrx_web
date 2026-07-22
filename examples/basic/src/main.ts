@@ -581,8 +581,8 @@ document.getElementById('saveBtn')!.addEventListener('click', async () => {
   const doc = el.viewer?.document;
   if (!doc) return;
   try {
-    // Materializes any proxy arrangement into the PDF, then serializes it.
-    const data = await doc.encodePdf();
+    // Assemble a temporary copy so saving leaves the live arrangement intact.
+    const data = await doc.encodePdfCopy();
     // sourceName may be a URL ("uri%http://host/dir/file.pdf") or a file name.
     const name = doc.sourceName.split(/[/\\]/).pop()!.split('?')[0]!.replace(/\.pdf$/i, '') || 'document';
     const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));

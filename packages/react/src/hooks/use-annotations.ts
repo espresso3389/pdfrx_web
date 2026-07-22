@@ -15,14 +15,6 @@ export interface PdfAnnotationsState {
   update: (pageNumber: number, id: string, spec: PdfAnnotationSpec) => Promise<string | undefined>;
   /** Removes the annotation `id` from `pageNumber`. */
   remove: (pageNumber: number, id: string) => Promise<void>;
-  /** Undoes the latest annotation or page edit. */
-  undo: () => Promise<void>;
-  /** Redoes the latest undone annotation or page edit. */
-  redo: () => Promise<void>;
-  /** Whether an annotation or page edit can be undone. */
-  canUndo: boolean;
-  /** Whether an undone annotation or page edit can be redone. */
-  canRedo: boolean;
   /** Forces a reload of the annotation list. */
   reload: () => void;
 }
@@ -46,8 +38,6 @@ export function useAnnotations(): PdfAnnotationsState {
   const [annotations, setAnnotations] = useState<readonly PdfAnnotationObject[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
 
   const doc = viewer?.document ?? null;
 
@@ -57,25 +47,17 @@ export function useAnnotations(): PdfAnnotationsState {
     if (!doc) {
       setAnnotations([]);
       setIsLoading(false);
-      setCanUndo(false);
-      setCanRedo(false);
       return;
     }
     let cancelled = false;
-    const syncHistory = (): void => {
-      setCanUndo(viewer?.canUndo() ?? false);
-      setCanRedo(viewer?.canRedo() ?? false);
-    };
     const load = (): void => {
       setIsLoading(true);
-      syncHistory();
       void doc
         .loadAnnotations()
         .then((a) => {
           if (!cancelled) {
             setAnnotations(a);
             setIsLoading(false);
-            syncHistory();
           }
         })
         .catch((e: unknown) => {
@@ -90,11 +72,9 @@ export function useAnnotations(): PdfAnnotationsState {
     const unsubscribe = doc.addEventListener('annotationsChanged', () => {
       if (!cancelled) load();
     });
-    const unsubscribeHistory = viewer?.addHistoryChangeListener(syncHistory);
     return () => {
       cancelled = true;
       unsubscribe();
-      unsubscribeHistory?.();
     };
   }, [doc, viewer, generation, reloadNonce]);
 
@@ -113,12 +93,5 @@ export function useAnnotations(): PdfAnnotationsState {
     },
     [doc],
   );
-  const undo = useCallback(async (): Promise<void> => {
-    await viewer?.undo();
-  }, [viewer]);
-  const redo = useCallback(async (): Promise<void> => {
-    await viewer?.redo();
-  }, [viewer]);
-
-  return { annotations, isLoading, add, update, remove, undo, redo, canUndo, canRedo, reload };
+  return { annotations, isLoading, add, update, remove, reload };
 }

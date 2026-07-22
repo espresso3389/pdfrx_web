@@ -15,9 +15,9 @@ export interface PdfSaveButtonProps {
 }
 
 /**
- * Serializes the current document with {@link PdfDocument.encodePdf} — including
- * any annotation and page edits — and downloads it as a PDF. Requires a
- * {@link PdfrxProvider} ancestor.
+ * Serializes a temporary copy of the current document — including any
+ * annotation and page edits — and downloads it as a PDF without materializing
+ * the live document's page arrangement or invalidating its editing history.
  */
 export function PdfSaveButton({ className, style, fileName, children }: PdfSaveButtonProps): ReactNode {
   const viewer = usePdfrxViewer();
@@ -31,7 +31,7 @@ export function PdfSaveButton({ className, style, fileName, children }: PdfSaveB
     setIsSaving(true);
     try {
       await viewer.flushAnnotationTextEdit();
-      const data = await doc.encodePdf();
+      const data = await doc.encodePdfCopy();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;
