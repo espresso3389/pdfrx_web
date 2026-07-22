@@ -685,6 +685,8 @@ interface DrawState {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** On-screen diameter (px) of an annotation drag anchor, held constant across zoom. */
 const ANCHOR_SCREEN_PX = 8;
+/** Touch handles need a finger-sized hit target while remaining visually compact. */
+const TOUCH_ANCHOR_SCREEN_PX = 24;
 
 /** `x,y` for an SVG points list. */
 function offsetPair(o: Offset): string {
@@ -1070,6 +1072,69 @@ function freeTextRunKind(text: string): FreeTextRunKind {
 
 const FREE_TEXT_FONT_SIZE = 12;
 const FREE_TEXT_PADDING = 3;
+/** Minimum on-screen box created by a click or very short FreeText drag. */
+const FREE_TEXT_MIN_SCREEN_WIDTH = 120;
+const FREE_TEXT_MIN_SCREEN_HEIGHT = 48;
+/** Minimum on-screen dimensions for click/short-drag geometry tools. */
+const SHAPE_MIN_SCREEN_SIZE = 72;
+const LINE_MIN_SCREEN_LENGTH = 96;
+
+/** Expands a y-down drag rectangle to a minimum size and keeps it inside the page. */
+function minimumDrawRect(a: Offset, b: Offset, minWidth: number, minHeight: number, bounds: Size): Rect {
+  let left = Math.min(a.x, b.x);
+  let right = Math.max(a.x, b.x);
+  let top = Math.min(a.y, b.y);
+  let bottom = Math.max(a.y, b.y);
+  if (right - left < minWidth) {
+    if (b.x < a.x) left = a.x - minWidth;
+    else right = a.x + minWidth;
+  }
+  if (bottom - top < minHeight) {
+    if (b.y < a.y) top = a.y - minHeight;
+    else bottom = a.y + minHeight;
+  }
+  if (left < 0) {
+    right -= left;
+    left = 0;
+  }
+  if (right > bounds.width) {
+    left -= right - bounds.width;
+    right = bounds.width;
+  }
+  if (top < 0) {
+    bottom -= top;
+    top = 0;
+  }
+  if (bottom > bounds.height) {
+    top -= bottom - bounds.height;
+    bottom = bounds.height;
+  }
+  return { left, top, right, bottom };
+}
+
+/** Extends a short line in its drag direction and shifts it wholly inside the page. */
+function minimumDrawLine(a: Offset, b: Offset, minLength: number, bounds: Size): [Offset, Offset] {
+  let dx = b.x - a.x;
+  let dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  if (length < minLength) {
+    if (length < 0.01) {
+      dx = a.x + minLength <= bounds.width ? minLength : -minLength;
+      dy = 0;
+    } else {
+      const scale = minLength / length;
+      dx *= scale;
+      dy *= scale;
+    }
+  }
+  let start = { ...a };
+  let end = { x: a.x + dx, y: a.y + dy };
+  const shiftX = Math.min(0, bounds.width - Math.max(start.x, end.x)) - Math.min(0, Math.min(start.x, end.x));
+  const shiftY = Math.min(0, bounds.height - Math.max(start.y, end.y)) - Math.min(0, Math.min(start.y, end.y));
+  start = { x: start.x + shiftX, y: start.y + shiftY };
+  end = { x: end.x + shiftX, y: end.y + shiftY };
+  return [start, end];
+}
 
 function renderFreeTextEmoji(text: string): { width: number; height: number; scale: number; pixels: Uint8Array } | undefined {
   const scale = 3;
@@ -4103,10 +4168,26 @@ export class PdfrxViewer {
         overlay.container.style.pointerEvents = capturing ? 'auto' : 'none';
         overlay.svg.style.pointerEvents = capturing ? 'auto' : 'none';
         overlay.svg.style.cursor = drawing ? 'crosshair' : this.isAnnotationSelectMode() ? 'default' : '';
+        // Existing annotation shapes are genuine hit targets only in explicit
+        // object-select mode. Otherwise make them click-through so normal
+        // viewing can pan/select text even when a gesture starts over a shape.
+        for (const child of Array.from(overlay.svg.children)) {
+          const g = child as SVGGElement;
+          const id = g.dataset.annotId;
+          if (!id) continue;
+          const annotation = overlay.annotations.get(id);
+          const selected = this.selectedAnnotationIds.has(id);
+          g.style.pointerEvents = this.isAnnotationSelectMode()
+            ? selected || annotation?.subtype === 'freeText'
+              ? 'bounding-box'
+              : 'auto'
+            : 'none';
+          g.style.cursor = this.isAnnotationSelectMode() ? 'pointer' : '';
+        }
         // Keep the selection anchors + bounding box a constant on-screen size as
         // the zoom changes.
         if (overlay.anchorLayer.childElementCount) {
-          const r = `${ANCHOR_SCREEN_PX / 2 / t.zoom}`;
+          const r = `${this.annotationAnchorScreenPx() / 2 / t.zoom}`;
           const dash = `${4 / t.zoom} ${3 / t.zoom}`;
           for (const child of overlay.anchorLayer.children) {
             if (child.tagName === 'circle') {
@@ -4149,7 +4230,12 @@ export class PdfrxViewer {
     svg.setAttribute('width', `${pageSize.width}`);
     svg.setAttribute('height', `${pageSize.height}`);
     svg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
-    svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
+    // Prevent the browser from converting a touch drag into page scrolling and
+    // cancelling our pointer stream. Empty page areas remain click-through when
+    // annotation drawing/select mode is inactive, so normal viewer panning is
+    // unaffected.
+    svg.style.cssText =
+      'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;touch-action:none;';
     const highlightSvg = document.createElementNS(SVG_NS, 'svg');
     highlightSvg.setAttribute('width', `${pageSize.width}`);
     highlightSvg.setAttribute('height', `${pageSize.height}`);
@@ -4207,6 +4293,7 @@ export class PdfrxViewer {
     a: PdfAnnotationObject,
     pageGeom: PageGeometry,
     pageSize: Size,
+    geometryPreview = false,
   ): SVGGElement | null {
     const toPx = (p: { x: number; y: number }): Offset =>
       pdfPointToOffset(p, { page: pageGeom, scaledPageSize: pageSize });
@@ -4261,7 +4348,17 @@ export class PdfrxViewer {
     };
 
     const g2 = a.geometry;
-    if ((a.subtype === 'ink' || a.subtype === 'polygon' || a.subtype === 'polyline') && addAppearancePaths()) return g;
+    // PDF appearance paths are authoritative for settled annotations, but they
+    // still describe the pre-drag shape during a live edit. Build previews from
+    // the changing geometry so ink, straight lines and arrows follow their
+    // anchors immediately.
+    if (
+      !geometryPreview &&
+      (a.subtype === 'ink' || a.subtype === 'polygon' || a.subtype === 'polyline') &&
+      addAppearancePaths()
+    ) {
+      return g;
+    }
     switch (g2.kind) {
       case 'ink': {
         const kind = inkStrokeKind(g2);
@@ -4531,7 +4628,8 @@ export class PdfrxViewer {
   /**
    * Enters (or leaves) annotation *select* mode: dragging on empty page area
    * rubber-band-selects every overlapping annotation, and a multi-selection can
-   * be moved/resized as a group. Single-click selection works with or without it.
+   * be moved/resized as a group. Annotation selection and editing are disabled
+   * outside this mode, leaving annotations display-only during normal viewing.
    */
   setAnnotationSelectMode(on: boolean): void {
     this.setAnnotationMode(on ? 'select' : null);
@@ -4550,6 +4648,7 @@ export class PdfrxViewer {
 
   private setAnnotationMode(mode: AnnotationMode): void {
     if (mode === this.annotationMode) return;
+    if (mode !== 'select') this.setSelectedAnnotations([]);
     this.annotationMode = mode;
     this.invalidate();
     for (const listener of this.annotationModeChangeListeners) {
@@ -4928,11 +5027,22 @@ export class PdfrxViewer {
       const g = child as SVGGElement;
       if (!g.dataset.annotId) continue;
       const selected = this.selectedAnnotationIds.has(g.dataset.annotId);
+      const annotation = overlay.annotations.get(g.dataset.annotId);
+      // Once selected, let the complete annotation bounds start a move. Touch
+      // users can therefore drag from the interior/empty part of a shape rather
+      // than having to hit its painted stroke again. Unselected annotations keep
+      // their precise hit testing so overlapping objects remain distinguishable.
+      g.style.pointerEvents = selected || annotation?.subtype === 'freeText' ? 'bounding-box' : 'auto';
       g.style.filter = multi && selected ? 'drop-shadow(0 0 2px #2196f3)' : '';
     }
     const sel = this.selectedAnnotationsOn(overlay);
     if (sel.length === 1) this.renderAnnotationAnchors(overlay, sel[0]!);
     else if (sel.length > 1) this.renderGroupSelection(overlay, sel);
+  }
+
+  /** Finger-friendly anchors after a touch selection; compact anchors for mouse/pen. */
+  private annotationAnchorScreenPx(): number {
+    return this.lastPointerType === 'touch' ? TOUCH_ANCHOR_SCREEN_PX : ANCHOR_SCREEN_PX;
   }
 
   /**
@@ -4958,7 +5068,7 @@ export class PdfrxViewer {
     box.style.pointerEvents = 'none';
     overlay.anchorLayer.appendChild(box);
     // Eight scaling handles around the group box.
-    const r = ANCHOR_SCREEN_PX / 2 / zoom;
+    const r = this.annotationAnchorScreenPx() / 2 / zoom;
     boundingBoxHandlePoints(b).forEach((pt, index) => {
       const px = pdfPointToOffset(pt, opts);
       const c = document.createElementNS(SVG_NS, 'circle');
@@ -4971,7 +5081,7 @@ export class PdfrxViewer {
       c.style.pointerEvents = 'auto';
       c.style.cursor = 'grab';
       c.addEventListener('pointerdown', (e) => {
-        if (this.drawingTool() || e.button !== 0) return;
+        if (!this.isAnnotationSelectMode() || e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         this.beginGroupResize(overlay, sel, b, index, c, e.pointerId);
@@ -4986,7 +5096,7 @@ export class PdfrxViewer {
     // The overlay is scaled by zoom, so divide by it to keep a constant on-screen
     // handle size regardless of zoom (updateAnnotationOverlays keeps it in sync).
     const zoom = this.transform.zoom;
-    const r = ANCHOR_SCREEN_PX / 2 / zoom;
+    const r = this.annotationAnchorScreenPx() / 2 / zoom;
     // A dashed bounding rectangle guides scaling of shapes whose bounds are not
     // already obvious from the shape (freehand pen, ellipse — not a rectangle,
     // not line/arrow).
@@ -5019,7 +5129,7 @@ export class PdfrxViewer {
       c.style.pointerEvents = 'auto';
       c.style.cursor = 'grab';
       c.addEventListener('pointerdown', (e) => {
-        if (this.drawingTool() || e.button !== 0) return;
+        if (!this.isAnnotationSelectMode() || e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         this.beginAnchorDrag(overlay, annotation, index, c, e.pointerId);
@@ -5080,7 +5190,7 @@ export class PdfrxViewer {
       (c) => (c as SVGGElement).dataset?.annotId === base.id,
     ) as SVGGElement | undefined;
     if (!old) return;
-    const fresh = this.buildAnnotationShape(syntheticAnnotation(base, spec), overlay.pageGeom, overlay.pageSize);
+    const fresh = this.buildAnnotationShape(syntheticAnnotation(base, spec), overlay.pageGeom, overlay.pageSize, true);
     if (!fresh) return;
     fresh.dataset.annotId = base.id;
     fresh.style.pointerEvents = 'auto';
@@ -5156,6 +5266,7 @@ export class PdfrxViewer {
     // when a tool is active, rubber-band-select in select mode.
     svg.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      this.lastPointerType = e.pointerType;
       const start = this.clientToPagePx(svg, e.clientX, e.clientY);
       if (this.drawingTool()) {
         e.preventDefault();
@@ -5182,15 +5293,16 @@ export class PdfrxViewer {
       const g = child as SVGGElement;
       const id = g.dataset.annotId;
       if (!id) continue;
-      // Shapes stay interactive even while the SVG surface is click-through, so
-      // they can be selected without blocking pan/text-select on empty areas.
+      // Select mode makes shapes interactive while normal viewing leaves them
+      // click-through (synchronized by updateAnnotationOverlays).
       const annotation = overlay.annotations.get(id);
       // An unfilled FreeText box otherwise only receives events on its glyphs
       // and stroke. Treat its complete rectangular bounds as the hit target.
       g.style.pointerEvents = annotation?.subtype === 'freeText' ? 'bounding-box' : 'auto';
-      g.style.cursor = 'pointer';
+      g.style.cursor = this.isAnnotationSelectMode() ? 'pointer' : '';
       g.addEventListener('pointerdown', (e) => {
-        if (this.drawingTool() || e.button !== 0) return; // drawing mode handled above
+        if (!this.isAnnotationSelectMode() || e.button !== 0) return;
+        this.lastPointerType = e.pointerType;
         e.preventDefault();
         e.stopPropagation();
         const start = this.clientToPagePx(svg, e.clientX, e.clientY);
@@ -5220,6 +5332,7 @@ export class PdfrxViewer {
         }
       });
       g.addEventListener('dblclick', (e) => {
+        if (!this.isAnnotationSelectMode()) return;
         const annotation = overlay.annotations.get(id);
         if (!annotation || (annotation.subtype !== 'text' && annotation.subtype !== 'freeText')) return;
         e.preventDefault();
@@ -5587,21 +5700,33 @@ export class PdfrxViewer {
         return { subtype: 'ink', rect: bboxOfPoints(stroke), color, borderWidth, geometry: { kind: 'ink', strokes: [stroke] } };
       }
       case 'line': {
-        const stroke = [toPdf(start), toPdf(end)];
+        const minimum = LINE_MIN_SCREEN_LENGTH / this.transform.zoom;
+        const [lineStart, lineEnd] = minimumDrawLine(start, end, minimum, s.pageSize);
+        const stroke = [toPdf(lineStart), toPdf(lineEnd)];
         return { subtype: 'ink', rect: bboxOfPoints(stroke), color, borderWidth, geometry: { kind: 'ink', strokes: [stroke] } };
       }
       case 'arrow': {
-        const strokes = arrowInkStrokes(toPdf(start), toPdf(end));
+        const minimum = LINE_MIN_SCREEN_LENGTH / this.transform.zoom;
+        const [lineStart, lineEnd] = minimumDrawLine(start, end, minimum, s.pageSize);
+        const strokes = arrowInkStrokes(toPdf(lineStart), toPdf(lineEnd));
         return { subtype: 'ink', rect: bboxOfPoints(strokes.flat()), color, borderWidth, geometry: { kind: 'ink', strokes } };
       }
       case 'rectangle':
       case 'ellipse': {
+        const minimum = SHAPE_MIN_SCREEN_SIZE / this.transform.zoom;
+        const box = minimumDrawRect(
+          start,
+          end,
+          Math.min(s.pageSize.width, minimum),
+          Math.min(s.pageSize.height, minimum),
+          s.pageSize,
+        );
         const interiorColor = this.annotationStyle.fillColor
           ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
           : undefined;
         return {
           subtype: s.tool === 'rectangle' ? 'square' : 'circle',
-          rect: rectOf(start, end),
+          rect: rectOf({ x: box.left, y: box.top }, { x: box.right, y: box.bottom }),
           color,
           interiorColor,
           borderWidth,
@@ -5637,7 +5762,14 @@ export class PdfrxViewer {
         };
       }
       case 'freeText': {
-        const r = rectOf(start, end);
+        // A click (or an imprecise short touch drag) would otherwise create a
+        // zero/tiny PDF rect even though the inline editor itself has a usable
+        // size. Expand in the gesture direction, then shift the box back inside
+        // the page while preserving a zoom-independent minimum on screen.
+        const minWidth = Math.min(s.pageSize.width, FREE_TEXT_MIN_SCREEN_WIDTH / this.transform.zoom);
+        const minHeight = Math.min(s.pageSize.height, FREE_TEXT_MIN_SCREEN_HEIGHT / this.transform.zoom);
+        const box = minimumDrawRect(start, end, minWidth, minHeight, s.pageSize);
+        const r = rectOf({ x: box.left, y: box.top }, { x: box.right, y: box.bottom });
         const interiorColor = this.annotationStyle.fillColor
           ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
           : undefined;

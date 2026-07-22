@@ -791,6 +791,24 @@
   margin-inline-start: auto;
 }
 
+/* Give annotation controls finger-sized targets without enlarging the desktop
+   toolbar. The bar already wraps, so this remains usable on narrow screens. */
+@media (pointer: coarse) {
+  .pdfrx-annot-toolbar .pdfrx-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pdfrx-annot-popup {
+    grid-template-columns: repeat(6, 28px);
+  }
+
+  .pdfrx-annot-swatch {
+    width: 28px;
+    height: 28px;
+  }
+}
+
 /* --- Context menu (right-click / long-press) ----------------------------- */
 
 .pdfrx-context-menu {
