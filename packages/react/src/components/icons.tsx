@@ -55,8 +55,8 @@ export const IconFitPage = (): ReactNode => (
 /** @internal */
 export const IconFitWidth = (): ReactNode => (
   <Icon>
-    <rect x="4" y="5" width="16" height="14" rx="2" />
-    <path d="M2 12h3M19 12h3" />
+    <rect x="4" y="5" width="16" height="14" rx="1" />
+    <path d="M7 12h10M7 12l3-3M7 12l3 3M17 12l-3-3M17 12l-3 3" />
   </Icon>
 );
 
