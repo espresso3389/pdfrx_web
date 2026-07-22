@@ -87,6 +87,23 @@ function Toolbar() {
 | `useAnnotations()` | Annotation data and direct add/update/remove operations |
 | `useEditHistory()` | Shared annotation/page-edit `undo`, `redo`, availability and `clearHistory` |
 
+For an annotation-only collaboration viewer, disable page edits and local
+Undo/Redo while attaching a stable user id to mutations:
+
+```tsx
+<PdfrxViewerApp
+  src="/document.pdf"
+  editing={{ annotations: true, pages: false, history: false, actorId: currentUser.id }}
+/>
+```
+
+The annotation toolbar remains available, page-edit controls and history
+buttons are hidden, and `viewer.setPages()` / `setPage()` reject edits. Subscribe
+to `document.addEventListener('annotationsChanged', ...)` to publish its exact
+`changes` batch. Apply an incoming batch with
+`document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`;
+the `origin` lets the publisher ignore it and avoid a synchronization echo.
+
 ## Editing history and page mutations
 
 The built-in annotation editor and the page controls enabled by

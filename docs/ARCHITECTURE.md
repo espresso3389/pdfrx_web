@@ -178,6 +178,13 @@ The engine surfaces `PdfPage.loadAnnotations()`,
 `removeAnnotation()` / `importAnnotations()`, and an `annotationsChanged` event;
 `@pdfrx/react` exposes the `useAnnotations` hook and a `PdfAnnotationToolbar`.
 
+External collaboration uses a versioned `PdfAnnotationSnapshot` for full
+save/restore and `PdfAnnotationChange[]` for incremental synchronization. IDs
+are preserved in `/NM`; the private `pdfrx:ActorId` and `pdfrx:Revision` keys
+retain the last editor and monotonic revision without conflating application
+identity with the PDF `/T` author display field. Change events include an
+`origin` and optional transaction id so remote application does not echo back.
+
 **Painted through an SVG overlay, not the canvas.** Like forms, `@pdfrx/viewer`
 lays a per-page `<svg>` over each page in a dedicated `annotationOverlayRoot`
 layer, positioned in point-space and transformed to follow pan/zoom exactly like

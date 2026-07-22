@@ -34,10 +34,14 @@ import {
   type PdfAnnotationColor,
   type PdfAnnotationGeometry,
   type PdfAnnotationObject,
+  type PdfAnnotationChange,
+  type PdfAnnotationMutationOptions,
+  type PdfAnnotationSnapshot,
   type PdfAnnotationPoint,
   type PdfAnnotationQuad,
   type PdfAnnotationRenderingMode,
   type PdfAnnotationSpec,
+  type PdfRestoreAnnotationsOptions,
   type PdfAnnotationSubtype,
   type PdfDest,
   type PdfDocumentEventMap,
@@ -57,6 +61,27 @@ import {
   PdfPermissions,
   type PdfRect,
 } from './types.js';
+
+/** Converts the richer read model into the complete writable/persistable shape. */
+export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnnotationSpec {
+  return {
+    id: annotation.id,
+    subtype: annotation.subtype,
+    rect: structuredClone(annotation.rect),
+    color: annotation.color ? structuredClone(annotation.color) : null,
+    interiorColor: annotation.interiorColor ? structuredClone(annotation.interiorColor) : null,
+    borderWidth: annotation.borderWidth,
+    flags: annotation.flags,
+    contents: annotation.contents,
+    author: annotation.author,
+    actorId: annotation.actorId,
+    revision: annotation.revision,
+    fontFace: annotation.fontFace,
+    appearanceLines: annotation.appearanceLines ? [...annotation.appearanceLines] : undefined,
+    appearanceRuns: annotation.appearanceRuns?.map((line) => line.map((run) => structuredClone(run))),
+    geometry: structuredClone(annotation.geometry),
+  };
+}
 
 /** Options for constructing a {@link PdfrxEngine} (currently the same as {@link WorkerCommunicatorOptions}). */
 export interface PdfrxEngineOptions extends WorkerCommunicatorOptions {}
@@ -1140,17 +1165,21 @@ export class PdfDocument {
    * id (the `/NM` key). The worker generates the annotation's appearance stream,
    * so it is included by {@link encodePdf} and renders in other PDF viewers.
    * Only ink / markup / square / circle / freeText / text geometries are honored
-   * — see {@link PdfAnnotationSpec}. Fires `annotationsChanged` (`source: 'api'`).
+   * — see {@link PdfAnnotationSpec}. Fires `annotationsChanged` with an exact add change.
    */
-  async addAnnotation(pageNumber: number, spec: PdfAnnotationSpec): Promise<string> {
+  async addAnnotation(pageNumber: number, spec: PdfAnnotationSpec, options: PdfAnnotationMutationOptions = {}): Promise<string> {
     if (this._isDisposed) throw new Error('Document is disposed');
     const page = this.pageForAnnotation(pageNumber);
+    const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
+      ? { ...spec, actorId: options.actorId ?? spec.actorId }
+      : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
     const result = await this.sendCommand('addAnnotation', {
       docHandle: this.docHandle,
       pageIndex: page.sourcePageIndex,
-      spec: page.annotationSpecToWire(spec),
+      spec: page.annotationSpecToWire(effectiveSpec),
     });
-    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
+    this.emitAnnotationChanges([{ type: 'add', id: result.id, pageNumber, spec: storedSpec }], options);
     return result.id;
   }
 
@@ -1158,26 +1187,30 @@ export class PdfDocument {
    * Replaces the annotation `id` on `pageNumber` with a fresh one built from
    * `spec`, keeping the same id. Geometry has no in-place setter, so an edit is a
    * remove + recreate; pass the full new spec (e.g. moved/resized geometry).
-   * Fires `annotationsChanged` (`source: 'api'`).
+   * Fires `annotationsChanged` with an exact update change.
    */
-  async updateAnnotation(pageNumber: number, id: string, spec: PdfAnnotationSpec): Promise<string> {
+  async updateAnnotation(pageNumber: number, id: string, spec: PdfAnnotationSpec, options: PdfAnnotationMutationOptions = {}): Promise<string> {
     if (this._isDisposed) throw new Error('Document is disposed');
     const page = this.pageForAnnotation(pageNumber);
+    const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
+      ? { ...spec, actorId: options.actorId ?? spec.actorId }
+      : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
     const result = await this.sendCommand('updateAnnotation', {
       docHandle: this.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
-      spec: page.annotationSpecToWire(spec),
+      spec: page.annotationSpecToWire(effectiveSpec),
     });
-    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
+    this.emitAnnotationChanges([{ type: 'update', id: result.id, pageNumber, spec: storedSpec }], options);
     return result.id;
   }
 
   /**
    * Removes the annotation `id` from `pageNumber`. Returns whether it was found.
-   * Fires `annotationsChanged` (`source: 'api'`).
+   * Fires `annotationsChanged` with an exact remove change.
    */
-  async removeAnnotation(pageNumber: number, id: string): Promise<boolean> {
+  async removeAnnotation(pageNumber: number, id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
     if (this._isDisposed) throw new Error('Document is disposed');
     const page = this.pageForAnnotation(pageNumber);
     const result = await this.sendCommand('removeAnnotation', {
@@ -1185,7 +1218,7 @@ export class PdfDocument {
       pageIndex: page.sourcePageIndex,
       id,
     });
-    this.emit('annotationsChanged', { source: 'api', pageNumbers: [pageNumber] });
+    if (result.ok) this.emitAnnotationChanges([{ type: 'remove', id, pageNumber }], options);
     return result.ok;
   }
 
@@ -1197,6 +1230,87 @@ export class PdfDocument {
     const ids: string[] = [];
     for (const item of items) ids.push(await this.addAnnotation(item.pageNumber, item.spec));
     return ids;
+  }
+
+  /** Exports a versioned, structured-cloneable snapshot with stable ids. */
+  async exportAnnotations(): Promise<PdfAnnotationSnapshot> {
+    const annotations = await this.loadAnnotations();
+    return {
+      version: 1,
+      annotations: annotations.map((annotation) => ({
+        id: annotation.id,
+        pageNumber: annotation.pageNumber,
+        spec: annotationObjectToSpec(annotation),
+      })),
+    };
+  }
+
+  /** Restores a snapshot while preserving ids and emitting one atomic change batch. */
+  async restoreAnnotations(snapshot: PdfAnnotationSnapshot, options: PdfRestoreAnnotationsOptions = {}): Promise<void> {
+    if (snapshot.version !== 1) throw new Error(`Unsupported annotation snapshot version: ${String(snapshot.version)}`);
+    const origin = options.origin ?? 'restore';
+    const existing = await this.loadAnnotations();
+    const incomingIds = new Set(snapshot.annotations.map((item) => item.id));
+    const changes: PdfAnnotationChange[] = [];
+    if ((options.mode ?? 'replace') === 'replace') {
+      for (const annotation of existing) {
+        if (!incomingIds.has(annotation.id) && await this.removeAnnotationRaw(annotation.pageNumber, annotation.id)) {
+          changes.push({ type: 'remove', id: annotation.id, pageNumber: annotation.pageNumber });
+        }
+      }
+    }
+    const existingIds = new Set(existing.map((annotation) => annotation.id));
+    for (const item of snapshot.annotations) {
+      const spec = { ...structuredClone(item.spec), id: item.id };
+      const page = this.pageForAnnotation(item.pageNumber);
+      const result = await this.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
+        docHandle: this.docHandle,
+        pageIndex: page.sourcePageIndex,
+        ...(existingIds.has(item.id) ? { id: item.id } : {}),
+        spec: page.annotationSpecToWire(spec),
+      } as never);
+      changes.push({ type: existingIds.has(item.id) ? 'update' : 'add', id: result.id, pageNumber: item.pageNumber, spec });
+    }
+    this.emitAnnotationChanges(changes, { origin, transactionId: options.transactionId, actorId: options.actorId });
+  }
+
+  /** Applies a remote/local change batch atomically for synchronization. */
+  async applyAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions = {}): Promise<void> {
+    const applied: PdfAnnotationChange[] = [];
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        if (await this.removeAnnotationRaw(change.pageNumber, change.id)) applied.push(change);
+        continue;
+      }
+      const page = this.pageForAnnotation(change.pageNumber);
+      const spec = { ...structuredClone(change.spec), id: change.id };
+      const command = change.type === 'add' ? 'addAnnotation' : 'updateAnnotation';
+      const result = await this.sendCommand(command, {
+        docHandle: this.docHandle,
+        pageIndex: page.sourcePageIndex,
+        ...(command === 'updateAnnotation' ? { id: change.id } : {}),
+        spec: page.annotationSpecToWire(spec),
+      } as never);
+      applied.push({ ...change, id: result.id, spec });
+    }
+    this.emitAnnotationChanges(applied, options);
+  }
+
+  private async removeAnnotationRaw(pageNumber: number, id: string): Promise<boolean> {
+    const page = this.pageForAnnotation(pageNumber);
+    const result = await this.sendCommand('removeAnnotation', { docHandle: this.docHandle, pageIndex: page.sourcePageIndex, id });
+    return result.ok;
+  }
+
+  private emitAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions): void {
+    if (changes.length === 0) return;
+    this.emit('annotationsChanged', {
+      origin: options.origin ?? 'api',
+      transactionId: options.transactionId,
+      actorId: options.actorId,
+      changes,
+      pageNumbers: [...new Set(changes.map((change) => change.pageNumber))],
+    });
   }
 
   /**
@@ -1736,6 +1850,8 @@ export class PdfPage {
       flags: a.flags,
       contents: a.contents,
       author: a.author,
+      actorId: a.actorId,
+      revision: a.revision,
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines,
       appearanceRuns: a.appearanceRuns,
@@ -1790,6 +1906,7 @@ export class PdfPage {
    */
   annotationSpecToWire(spec: PdfAnnotationSpec): WireAnnotationSpec {
     return {
+      id: spec.id,
       subtype: spec.subtype,
       rect: spec.rect ? this.rectToWire(spec.rect) : undefined,
       color: spec.color === undefined ? undefined : spec.color === null ? null : colorToWire(spec.color),
@@ -1799,6 +1916,8 @@ export class PdfPage {
       flags: spec.flags,
       contents: spec.contents,
       author: spec.author,
+      actorId: spec.actorId,
+      revision: spec.revision,
       fontFace: spec.fontFace,
       appearanceLines: spec.appearanceLines,
       appearanceRuns: spec.appearanceRuns,

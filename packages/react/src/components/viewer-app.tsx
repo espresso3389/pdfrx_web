@@ -110,6 +110,9 @@ export function PdfrxViewerApp({
   children,
   ...providerProps
 }: PdfrxViewerAppProps): ReactNode {
+  const pageEditingEnabled = enablePageEditing && providerProps.editing?.pages !== false;
+  const annotationEditingEnabled = enableAnnotations && providerProps.editing?.annotations !== false;
+  const historyEnabled = providerProps.editing?.history !== false;
   return (
     <PdfrxProvider {...providerProps}>
       <PdfrxViewerAppChrome
@@ -122,11 +125,12 @@ export function PdfrxViewerApp({
         sidebarWidth={sidebarWidth}
         sidebarSide={sidebarSide}
         enableFileOpen={enableFileOpen}
-        enablePageEditing={enablePageEditing}
+        enablePageEditing={pageEditingEnabled}
         // Each button follows its capability flag unless overridden.
         showOpenButton={showOpenButton ?? enableFileOpen}
-        showDownloadButton={showDownloadButton ?? enablePageEditing}
-        enableAnnotations={enableAnnotations}
+        showDownloadButton={showDownloadButton ?? pageEditingEnabled}
+        enableAnnotations={annotationEditingEnabled}
+        historyEnabled={historyEnabled}
       >
         {children}
       </PdfrxViewerAppChrome>
@@ -150,7 +154,7 @@ type ChromeProps = Pick<
   | 'showDownloadButton'
   | 'enableAnnotations'
   | 'children'
->;
+> & { historyEnabled: boolean };
 
 /**
  * The chrome, rendered inside the provider so it can use the hooks. Split out
@@ -170,6 +174,7 @@ function PdfrxViewerAppChrome({
   showOpenButton,
   showDownloadButton,
   enableAnnotations,
+  historyEnabled,
   children,
 }: ChromeProps): ReactNode {
   const { open, error, clearError } = usePdfDocument();
@@ -306,7 +311,7 @@ function PdfrxViewerAppChrome({
           sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
           beforeSearch={(enableAnnotations || enablePageEditing) ? (
             <>
-              <button
+              {historyEnabled ? <><button
                 type="button"
                 className="pdfrx-button"
                 onClick={() => void undo()}
@@ -325,7 +330,7 @@ function PdfrxViewerAppChrome({
                 aria-label={strings.redo}
               >
                 <IconRedo />
-              </button>
+              </button></> : null}
               {enableAnnotations && (
                 <button
                   className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}

@@ -466,6 +466,10 @@ export interface PdfAnnotationObject {
   readonly contents: string | null;
   /** `/T` author/title. */
   readonly author: string | null;
+  /** Stable application/user id of the last editor, separate from the display author. */
+  readonly actorId: string | null;
+  /** Monotonic per-annotation revision used for optimistic synchronization. */
+  readonly revision: number;
   readonly fontFace: string | null;
   readonly appearanceLines: readonly string[] | null;
   readonly appearanceRuns: readonly (readonly {
@@ -537,6 +541,8 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  * `contents`. Coordinates are bounding-box-relative page coordinates (y-up).
  */
 export interface PdfAnnotationSpec {
+  /** Stable external id (`/NM`). Omit only when creating a new local annotation. */
+  id?: string;
   subtype: PdfAnnotationSubtype;
   rect?: PdfRect;
   color?: PdfAnnotationColor | null;
@@ -545,6 +551,8 @@ export interface PdfAnnotationSpec {
   flags?: number;
   contents?: string | null;
   author?: string | null;
+  actorId?: string | null;
+  revision?: number;
   /** Font face registered with the engine for a generated FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines used by the generated FreeText appearance. */
@@ -557,6 +565,43 @@ export interface PdfAnnotationSpec {
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[][];
   geometry?: PdfAnnotationGeometry;
+}
+
+/** A portable annotation record suitable for structured cloning or external storage. */
+export interface PdfStoredAnnotation {
+  readonly id: string;
+  readonly pageNumber: number;
+  readonly spec: PdfAnnotationSpec;
+}
+
+/** Versioned external representation returned by {@link PdfDocument.exportAnnotations}. */
+export interface PdfAnnotationSnapshot {
+  readonly version: 1;
+  readonly annotations: readonly PdfStoredAnnotation[];
+}
+
+/** Where an annotation mutation originated; remote changes can be ignored by sync publishers. */
+export type PdfAnnotationChangeOrigin = 'user' | 'api' | 'remote' | 'restore' | 'history';
+
+/** One synchronization-friendly annotation mutation. */
+export type PdfAnnotationChange =
+  | { readonly type: 'add' | 'update'; readonly id: string; readonly pageNumber: number; readonly spec: PdfAnnotationSpec }
+  | { readonly type: 'remove'; readonly id: string; readonly pageNumber: number };
+
+/** Options shared by annotation mutation APIs. */
+export interface PdfAnnotationMutationOptions {
+  /** Defaults to `api`. */
+  readonly origin?: PdfAnnotationChangeOrigin;
+  /** Application-defined id used to correlate or deduplicate a batch across viewers. */
+  readonly transactionId?: string;
+  /** Stable application/user id responsible for the mutation. */
+  readonly actorId?: string;
+}
+
+/** Options for restoring an external snapshot. */
+export interface PdfRestoreAnnotationsOptions extends PdfAnnotationMutationOptions {
+  /** `merge` upserts snapshot records; `replace` also removes records absent from it. Default: `replace`. */
+  readonly mode?: 'merge' | 'replace';
 }
 
 /**
@@ -676,13 +721,17 @@ export interface PdfDocumentEventMap {
    */
   formFieldsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
   /**
-   * Annotations were added, updated or removed. `source` is `'api'` for
-   * {@link PdfDocument.addAnnotation} / {@link PdfDocument.updateAnnotation} /
-   * {@link PdfDocument.removeAnnotation} and `'user'` for interactive edits in
-   * the viewer. `pageNumbers` lists the affected pages when known. Reload with
-   * {@link PdfDocument.loadAnnotations} when this fires.
+   * Annotations were added, updated or removed. The exact synchronization-ready
+   * changes are included. `origin: 'remote'` identifies changes that should not
+   * be published back to the same synchronization channel.
    */
-  annotationsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
+  annotationsChanged: {
+    origin: PdfAnnotationChangeOrigin;
+    transactionId?: string;
+    actorId?: string;
+    changes: readonly PdfAnnotationChange[];
+    pageNumbers: number[];
+  };
 }
 
 /** Union of the event names in {@link PdfDocumentEventMap}. */

@@ -3597,6 +3597,8 @@ function _generateAnnotId() {
 const ANNOT_COLOR_KEY = 'pdfrx:C';
 const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
 const ANNOT_FONT_FACE_KEY = 'pdfrx:FontFace';
+const ANNOT_ACTOR_ID_KEY = 'pdfrx:ActorId';
+const ANNOT_REVISION_KEY = 'pdfrx:Revision';
 /** Bitmap backing stores retained until FPDFPage_GenerateContent consumes them. */
 let _pendingAnnotImageBitmaps = [];
 
@@ -3849,6 +3851,8 @@ function _readAnnotationObject(annot, index) {
     flags: w.FPDFAnnot_GetFlags(annot),
     contents: content ? content.content : null,
     author: content ? content.title : null,
+    actorId: _getAnnotField(ANNOT_ACTOR_ID_KEY, annot) || null,
+    revision: Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, annot), 10) || 0,
     fontFace: _getAnnotField(ANNOT_FONT_FACE_KEY, annot) || null,
     appearanceLines: (() => {
       const value = _getAnnotField('pdfrx:FreeTextLines', annot);
@@ -3953,6 +3957,8 @@ function _applyAnnotSpec(annot, spec, docHandle) {
   if (typeof spec.flags === 'number') w.FPDFAnnot_SetFlags(annot, spec.flags);
   if (spec.contents != null) _setAnnotStringKey(annot, 'Contents', spec.contents);
   if (spec.author != null) _setAnnotStringKey(annot, 'T', spec.author);
+  if (spec.actorId != null) _setAnnotStringKey(annot, ANNOT_ACTOR_ID_KEY, spec.actorId);
+  _setAnnotStringKey(annot, ANNOT_REVISION_KEY, String(spec.revision ?? 1));
   if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
   if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
   if (spec.appearanceRuns) {
@@ -4233,7 +4239,7 @@ function addAnnotation(params) {
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     _releasePendingAnnotImageBitmaps();
-    return { id };
+    return { id, revision: spec.revision ?? 1 };
   } finally {
     _releasePendingAnnotImageBitmaps();
     w.FPDF_ClosePage(pageHandle);
@@ -4248,18 +4254,30 @@ function addAnnotation(params) {
  * @returns {{id: string}}
  */
 function updateAnnotation(params) {
-  const { docHandle, pageIndex, id, spec } = params;
+  const { docHandle, pageIndex, id } = params;
+  let { spec } = params;
   const w = Pdfium.wasmExports;
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
   if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
   try {
+    const existingIndex = _findAnnotIndexById(pageHandle, id);
+    let existingRevision = 0;
+    if (existingIndex >= 0) {
+      const existing = w.FPDFPage_GetAnnot(pageHandle, existingIndex);
+      if (existing) {
+        existingRevision = Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, existing), 10) || 0;
+        w.FPDFPage_CloseAnnot(existing);
+      }
+    }
+    const revision = spec.revision ?? existingRevision + 1;
+    spec = { ...spec, revision };
     _removeAnnotById(pageHandle, `${id}:appearance`);
     _removeAnnotById(pageHandle, id);
     const newId = _createAnnotOnPage(docHandle, pageHandle, spec, spec.id || id);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     _releasePendingAnnotImageBitmaps();
-    return { id: newId };
+    return { id: newId, revision };
   } finally {
     _releasePendingAnnotImageBitmaps();
     w.FPDF_ClosePage(pageHandle);

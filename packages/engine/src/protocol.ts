@@ -181,6 +181,8 @@ export interface WireAnnotationObject {
   contents: string | null;
   /** `/T` author/title. */
   author: string | null;
+  actorId: string | null;
+  revision: number;
   fontFace: string | null;
   appearanceLines: string[] | null;
   appearanceRuns: {
@@ -229,6 +231,8 @@ export interface WireAnnotationSpec {
   flags?: number;
   contents?: string | null;
   author?: string | null;
+  actorId?: string | null;
+  revision?: number;
   /** Registered worker font face used to build a FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines for the generated FreeText appearance. */
@@ -556,12 +560,12 @@ export interface WorkerCommandMap {
    */
   addAnnotation: {
     params: { docHandle: number; pageIndex: number; spec: WireAnnotationSpec };
-    result: { id: string };
+    result: { id: string; revision: number };
   };
   /** Replaces the annotation identified by `id` with a fresh one built from `spec` (same id). */
   updateAnnotation: {
     params: { docHandle: number; pageIndex: number; id: string; spec: WireAnnotationSpec };
-    result: { id: string };
+    result: { id: string; revision: number };
   };
   /** Removes the annotation identified by `id` (its `/NM` key, or `@<index>`). */
   removeAnnotation: {

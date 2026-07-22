@@ -42,6 +42,7 @@ export {
   type PdfRawImage,
 } from './image-source.js';
 export { PdfPageRenderCancellationToken } from './render-queue.js';
+export { deserializeAnnotationSnapshot, serializeAnnotationSnapshot } from './annotation-storage.js';
 export {
   parseCalcAction,
   evaluateCalc,
