@@ -47,3 +47,6 @@ jobs:
       - run: npm publish --workspace=@pdfrx/viewer-core
       - run: npm publish --workspace=@pdfrx/viewer
       - run: npm publish --workspace=@pdfrx/react
+      # @pdfrx/colab 0.9.0 is its first release. Publish it manually, configure
+      # this workflow as its npm trusted publisher, then add its publish step
+      # for the next release.

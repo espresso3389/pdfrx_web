@@ -41,7 +41,7 @@ As a custom element:
 
 <pdfrx-viewer
   src="/documents/manual.pdf"
-  wasm-modules-url="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.8.0/assets/"
+  wasm-modules-url="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.9.0/assets/"
   style="width: 100%; height: 100vh"
 ></pdfrx-viewer>
 ```
@@ -53,7 +53,7 @@ import { PdfrxViewer } from '@pdfrx/viewer';
 
 const viewer = new PdfrxViewer(document.getElementById('container')!, {
   engineOptions: {
-    wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.8.0/assets/',
+    wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.9.0/assets/',
   },
 });
 await viewer.openUrl('/documents/manual.pdf');

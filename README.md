@@ -154,7 +154,7 @@ Both entry points need two things:
    simply use the jsDelivr CDN (any origin works):
 
    ```ts
-   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.8.0/assets/' }
+   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.9.0/assets/' }
    ```
 
 2. **CORS for remote PDFs.** [`openUrl`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) fetches the document, so PDFs on
@@ -170,7 +170,7 @@ Password-protected files are supported by passing a
 | Package | npm | Description |
 |---|---|---|
 | [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks: [`<PdfrxViewerApp>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html), composable parts, and headless hooks. |
-| [`@pdfrx/colab`](packages/colab) | npm (first release pending) | Collaborative React viewer, browser relay client, session protocols, virtual-page adapter, and mixed-source export composition. |
+| [`@pdfrx/colab`](packages/colab) | [npm](https://www.npmjs.com/package/@pdfrx/colab) | Collaborative React viewer, browser relay client, session protocols, virtual-page adapter, and mixed-source export composition. |
 | [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
 | [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
 | [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed WASM-worker client: rendering, text/links/outline, forms, annotations, fonts, page arrangement, and encoding. |

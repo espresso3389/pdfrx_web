@@ -2,12 +2,42 @@
 
 All notable changes to the `@pdfrx/*` packages are documented here.
 
-The four packages (`@pdfrx/engine`, `@pdfrx/viewer-core`, `@pdfrx/viewer`,
-`@pdfrx/react`) share one version, so each entry below covers the whole
-workspace. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+The five packages (`@pdfrx/engine`, `@pdfrx/viewer-core`, `@pdfrx/viewer`,
+`@pdfrx/react`, and `@pdfrx/colab`) share one version, so each entry below
+covers the whole workspace. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.9.0] - 2026-07-23
+
+### Added
+
+- Published `@pdfrx/colab`, a reusable React collaboration viewer package with
+  relay-session protocols, stable virtual-page placement, annotation and form
+  synchronization, mixed-source PDF export, outline merging, and the
+  `CollaborativePdfViewer` component. The two-client playground now lives in
+  `examples/colab` and runs through `npm run dev:colab`.
+- Added external annotation synchronization APIs, including annotation snapshot
+  serialization, actor/revision metadata, mutation origins, and import support
+  for applying remote changes without creating feedback loops.
+- Added virtual page-editing primitives across the engine, viewer core, viewer,
+  and React packages. Applications can insert, remove, rotate, and reorder
+  stable page placements while preserving document generation and export state.
+- Added explicit page-relative or upright text orientation metadata for FreeText
+  annotations and form widgets. Generated appearances, SVG overlays, native form
+  controls, and collaborative transport now preserve the intended orientation
+  through page rotation.
+- Added a light/dark/system theme switcher to the React example.
+
+### Fixed
+
+- Corrected rotated FreeText clipping and layout for non-square annotation
+  rectangles.
+- Corrected native form-control sizing and font calculation after 90°/270° page
+  rotation.
+- Kept the colab example within the viewport and aligned its editing toolbar and
+  history policy with the standard React viewer configuration.
 
 ## [0.8.0] - 2026-07-22
 
@@ -186,7 +216,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.5.0...v0.6.0
