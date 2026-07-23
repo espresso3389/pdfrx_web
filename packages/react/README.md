@@ -85,7 +85,7 @@ function Toolbar() {
 | `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
 | `usePdfPrint()` | `print()` plus an `isPrinting` flag |
 | `useAnnotations()` | Annotation data and direct add/update/remove operations |
-| `useEditHistory()` | Shared annotation/page-edit `undo`, `redo`, availability and `clearHistory` |
+| `useEditHistory()` | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
 
 For an annotation-only collaboration viewer, disable page edits and local
 Undo/Redo while attaching a stable user id to mutations:
@@ -119,9 +119,9 @@ Objects that leave the marquee are removed from the selection; holding
 The same modifier toggles objects on click. Annotation body and anchor drags
 snap to nearby coordinates on other annotations and display alignment guides.
 
-## Editing history and page mutations
+## Editing history and document mutations
 
-The built-in annotation editor and the page controls enabled by
+The built-in annotation editor, form controls, and the page controls enabled by
 `enablePageEditing` use one chronological Undo/Redo history. Page insertion,
 deletion, rotation and thumbnail drag-reordering are each recorded as one
 operation. `Ctrl`/`Cmd`+`Z`, `Ctrl`/`Cmd`+`Shift`+`Z` and `Ctrl`+`Y` follow that
@@ -145,8 +145,9 @@ controls and submit stable operations to their relay:
 />
 ```
 
-When building other custom React page controls, mutate the arrangement through
-the viewer returned by `usePdfrxViewer()`:
+When building other custom React page controls, either mutate through the viewer
+returned by `usePdfrxViewer()` or call the attached document directly. Both
+paths participate in the same history:
 
 ```tsx
 const viewer = usePdfrxViewer();
@@ -164,30 +165,25 @@ function deletePage(pageNumber: number) {
 }
 ```
 
-Do not call the underlying document methods for an operation that is expected
-to participate in this history:
-
 ```tsx
-// The viewer redraws, but these changes bypass its Undo/Redo history.
 viewer.document?.setPage(pageNumber, page.rotatedCW90());
 viewer.document?.setPages(nextPages);
 ```
 
-`PdfDocument` still emits `pagesRearranged` for those direct calls, so React
-thumbnails and layout remain visually current. The event is emitted after the
-mutation and does not contain the previous arrangement, however, so it cannot
-retroactively create a correct history entry. After a history-bypassing page
-mutation, existing Undo/Redo entries may no longer describe the document state
-they were recorded against. Either route every editable page mutation through
-`PdfrxViewer.setPage()` / `setPages()`, or treat a direct document mutation as
-an external state replacement and do not continue using the existing history.
+`PdfDocument.pagesRearranged` carries both arrangements, while
+`annotationsChanged.historyChanges` carries complete before/after annotation
+specs. The viewer consumes those events for direct `PdfPage.addAnnotation()`,
+`updateAnnotation()` and `removeAnnotation()` calls, including the `add`,
+`update`, and `remove` functions from `useAnnotations()`.
 
-The same distinction applies to annotations: edits made with the built-in
-annotation UI are recorded, while direct `PdfPage.addAnnotation()`,
-`updateAnnotation()` and `removeAnnotation()` calls are not. The `add`, `update`
-and `remove` functions from `useAnnotations()` expose those direct page
-operations, so use them for externally managed annotation state, not as entries
-in the viewer's Undo/Redo sequence.
+Direct form writes also participate.
+[`setFormFieldValues()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalues)
+changes several inputs as one transaction, runs form calculations once, and
+reports direct and calculated before/after values together, so the viewer records one Undo/Redo step. Changes
+marked `remote`, `restore`, or `history` are applied and redrawn without entering
+local history; page materialization is likewise excluded via its dedicated
+`materialize` origin. Raw-object edits remain outside this model because they can
+alter arbitrary PDF structures without semantic inverse operations.
 
 Opening another document clears the history. For custom controls, use
 `useEditHistory()`:
@@ -197,7 +193,7 @@ const { undo, redo, canUndo, canRedo, clearHistory } = useEditHistory();
 ```
 
 `undo()` and `redo()` are asynchronous because an entry may contain annotation
-writes; await them before starting another programmatic edit.
+or form writes; await them before starting another programmatic edit.
 
 ### Saving, page assembly and history
 
