@@ -117,6 +117,11 @@ export function PdfrxProvider({
   store.setContextMenuBuilder(contextMenuBuilder);
   store.setPasswordProvider(passwordProvider);
 
+  options.annotationEditorPlaceholders = {
+    text: mergedStrings.annotationTextPlaceholder,
+    note: mergedStrings.annotationNotePlaceholder,
+    ...options.annotationEditorPlaceholders,
+  };
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };
   }

@@ -16,6 +16,7 @@ const host = document.querySelector<HTMLElement>('#viewer')!;
 const viewer = new PdfrxViewer(host, {
   engineOptions: { baseUrl: `${location.origin}/`, wasmModulesUrl: 'pdfium/' },
   interactiveAnnotations: true,
+  annotationEditorPlaceholders: { text: 'Localized text', note: 'Localized note' },
   margin: 0,
   pageDropShadow: null,
 });
@@ -282,11 +283,23 @@ async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
   viewer.setSelectedAnnotations([]);
 }
 
+async function setupSnapGesture(specs: PdfAnnotationSpec[]): Promise<string[]> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  await clearAnnotations();
+  const ids: string[] = [];
+  for (const spec of specs) ids.push(await doc.addAnnotation(1, spec));
+  for (const id of ids) await waitForShape(id);
+  viewer.setAnnotationSelectMode(true);
+  viewer.setSelectedAnnotation(ids[0] ?? null);
+  return ids;
+}
+
 function readViewTransform(): { xZoomed: number; yZoomed: number; zoom: number } {
   return viewer.currentTransform;
 }
 
-async function setupTextTool(tool: 'note' | 'freeText', strokeWidth?: number): Promise<void> {
+async function setupTextTool(tool: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void> {
   await clearAnnotations();
   if (strokeWidth !== undefined) viewer.setAnnotationStyle({ strokeWidth });
   viewer.setAnnotationTool(tool);
@@ -440,6 +453,7 @@ declare global {
       setupDuplicateGesture: typeof setupDuplicateGesture;
       readDuplicateState: typeof readDuplicateState;
       setupSelectAllTest: typeof setupSelectAllTest;
+      setupSnapGesture: typeof setupSnapGesture;
       readViewTransform: typeof readViewTransform;
       setupTextTool: typeof setupTextTool;
       readTextAnnotations: typeof readTextAnnotations;
@@ -459,6 +473,7 @@ window.annotationVisualTest = {
   setupDuplicateGesture,
   readDuplicateState,
   setupSelectAllTest,
+  setupSnapGesture,
   readViewTransform,
   setupTextTool,
   readTextAnnotations,

@@ -224,6 +224,136 @@ test('annotation overlay is atomically replaced after move/resize', async ({ pag
   expect(result.missingFrames, 'the edited annotation disappeared for one or more animation frames').toBe(0);
 });
 
+test('annotation move snaps to nearby object guides and shows the active guide', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const specs: AnnotationSpec[] = [
+    {
+      subtype: 'square',
+      rect: { left: 40, top: 216, right: 88, bottom: 168 },
+      color: rgba(30, 136, 229),
+      borderWidth: 4,
+    },
+    {
+      subtype: 'square',
+      rect: { left: 184, top: 216, right: 232, bottom: 168 },
+      color: rgba(229, 57, 53),
+      borderWidth: 4,
+    },
+  ];
+  const ids = await page.evaluate(async (annotations) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupSnapGesture(s: unknown[]): Promise<string[]> };
+      }
+    ).annotationVisualTest;
+    return api.setupSnapGesture(annotations);
+  }, specs);
+  const source = page.locator(`g[data-annot-id="${ids[0]}"]`);
+  const target = page.locator(`g[data-annot-id="${ids[1]}"]`);
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error('Snap test annotations are not visible');
+  const start = { x: sourceBox.x + sourceBox.width / 2, y: sourceBox.y + sourceBox.height / 2 };
+  const nearTargetDx = targetBox.x - (sourceBox.x + sourceBox.width) - 3;
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + nearTargetDx, start.y, { steps: 4 });
+  await expect(page.locator('.pdfrx-annotation-snap-guide')).not.toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator('.pdfrx-annotation-snap-guide')).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const moved = await source.boundingBox();
+      return moved ? Math.abs(moved.x + moved.width - targetBox.x) : Infinity;
+    })
+    .toBeLessThan(1.5);
+});
+
+test('annotation anchors never snap to the object being edited', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 64, top: 208, right: 160, bottom: 112 },
+    color: rgba(30, 136, 229),
+    borderWidth: 4,
+  };
+  await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupSnapGesture(s: unknown[]): Promise<string[]> };
+      }
+    ).annotationVisualTest;
+    await api.setupSnapGesture([annotation]);
+  }, spec);
+  const anchors = page.locator('.pdfrx-anchors circle');
+  const anchorCount = await anchors.count();
+  expect(anchorCount).toBeGreaterThan(0);
+  const anchor = anchors.nth(0);
+  const before = await anchor.boundingBox();
+  if (!before) throw new Error('Annotation anchor is not visible');
+  const start = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 3, start.y + 3);
+  await expect(page.locator('.pdfrx-annotation-snap-guide')).toHaveCount(0);
+  const during = await anchor.boundingBox();
+  if (!during) throw new Error('Annotation anchor disappeared while dragging');
+  expect(during.x - before.x).toBeCloseTo(3, 0);
+  expect(during.y - before.y).toBeCloseTo(3, 0);
+  await page.mouse.up();
+});
+
+test('edge-center anchors only snap along their movable axis', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const specs: AnnotationSpec[] = [
+    {
+      subtype: 'square',
+      rect: { left: 64, top: 208, right: 160, bottom: 112 },
+      color: rgba(30, 136, 229),
+      borderWidth: 4,
+    },
+    {
+      // Same horizontal center as the source, but far away vertically. The
+      // source's top-center handle must not emit an X guide to this object.
+      subtype: 'square',
+      rect: { left: 88, top: 80, right: 136, bottom: 32 },
+      color: rgba(229, 57, 53),
+      borderWidth: 4,
+    },
+  ];
+  await page.evaluate(async (annotations) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupSnapGesture(s: unknown[]): Promise<string[]> };
+      }
+    ).annotationVisualTest;
+    await api.setupSnapGesture(annotations);
+  }, specs);
+  const anchors = page.locator('.pdfrx-anchors circle');
+  expect(await anchors.count()).toBe(8);
+  const topCenter = anchors.nth(1);
+  const before = await topCenter.boundingBox();
+  if (!before) throw new Error('Top-center annotation anchor is not visible');
+  const start = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x, start.y + 10);
+  const hasVerticalGuide = await page.evaluate(() =>
+    [...document.querySelectorAll<SVGLineElement>('.pdfrx-annotation-snap-guide')].some(
+      (line) => line.getAttribute('x1') === line.getAttribute('x2'),
+    ),
+  );
+  expect(hasVerticalGuide).toBe(false);
+  const during = await topCenter.boundingBox();
+  if (!during) throw new Error('Top-center annotation anchor disappeared while dragging');
+  expect(during.x).toBeCloseTo(before.x, 5);
+  expect(during.y - before.y).toBeCloseTo(10, 0);
+  await page.mouse.up();
+});
+
 test('selected annotations can be copied, cut, pasted and undone', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
@@ -450,6 +580,85 @@ test('wheel scrolling and browser-safe zoom work while the annotation SVG captur
   await expect.poll(async () => (await transform()).zoom).toBeGreaterThan(beforeZoom.zoom);
 });
 
+test('the box tool switches automatically between rectangle and FreeText', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          setupTextTool(t: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void>;
+        };
+      }
+    ).annotationVisualTest.setupTextTool('rectangle', 5),
+  );
+  const read = (): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]> =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          annotationVisualTest: {
+            readTextAnnotations(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]>;
+          };
+        }
+      ).annotationVisualTest.readTextAnnotations(),
+    );
+
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(200, 230, { steps: 3 });
+  await page.mouse.up();
+  const editor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(editor).toHaveCount(1);
+  await expect(editor).toHaveAttribute('placeholder', 'Localized text');
+  expect(
+    await editor.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
+    }),
+  ).toEqual({ width: '5px', style: 'solid', color: 'rgb(229, 57, 53)' });
+  await editor.press('Control+Enter');
+  await expect.poll(async () => (await read())[0]?.subtype).toBe('square');
+  expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
+
+  const box = page.locator('g[data-annot-id]');
+  await box.dblclick();
+  await expect(editor).toHaveCount(1);
+  await editor.fill('Text inside the box');
+  await editor.press('Control+Enter');
+  await expect.poll(async () => (await read())[0]?.subtype).toBe('freeText');
+  expect(await read()).toEqual([{ subtype: 'freeText', contents: 'Text inside the box', borderWidth: 5 }]);
+
+  await box.dblclick();
+  await expect(editor).toHaveValue('Text inside the box');
+  await editor.fill('   ');
+  await editor.press('Control+Enter');
+  await expect.poll(async () => (await read())[0]?.subtype).toBe('square');
+  expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
+
+  await page.reload();
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          setupTextTool(t: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void>;
+        };
+      }
+    ).annotationVisualTest.setupTextTool('rectangle', 0),
+  );
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(200, 230, { steps: 3 });
+  await page.mouse.up();
+  await expect(editor).toHaveCount(1);
+  expect(
+    await editor.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { width: style.borderTopWidth, style: style.borderTopStyle };
+    }),
+  ).toEqual({ width: '0px', style: 'none' });
+});
+
 test('note and FreeText use inline editors instead of browser prompts', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
@@ -479,6 +688,7 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await page.mouse.click(120, 80);
   const noteEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(noteEditor).toHaveCount(1);
+  await expect(noteEditor).toHaveAttribute('placeholder', 'Localized note');
   await noteEditor.evaluate((element) => {
     element.style.width = '80px';
     element.style.height = '72px';

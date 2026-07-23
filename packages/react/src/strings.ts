@@ -78,6 +78,10 @@ export interface PdfrxStrings {
   highlighterTool: string;
   noteTool: string;
   textBoxTool: string;
+  /** Placeholder shown while editing text inside a box. */
+  annotationTextPlaceholder: string;
+  /** Placeholder shown while editing a sticky note. */
+  annotationNotePlaceholder: string;
   strokeColor: string;
   noStroke: string;
   fillColor: string;
@@ -153,6 +157,8 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   highlighterTool: 'Highlighter',
   noteTool: 'Note',
   textBoxTool: 'Text box',
+  annotationTextPlaceholder: 'Text',
+  annotationNotePlaceholder: 'Note',
   strokeColor: 'Stroke color',
   noStroke: 'No stroke',
   fillColor: 'Fill color',

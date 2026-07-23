@@ -14,7 +14,6 @@ import {
   IconPen,
   IconRectangle,
   IconSelectObject,
-  IconTextBox,
   IconThickness,
 } from './icons.js';
 
@@ -25,7 +24,10 @@ type ToolbarMode = 'text' | 'select' | AnnotationTool;
 export interface PdfAnnotationToolbarProps {
   className?: string;
   style?: CSSProperties;
-  /** Which tools to show, in order. Note remains available as an opt-in tool. */
+  /**
+   * Which tools to show, in order. `rectangle` and legacy `freeText` both map
+   * to the same box tool and are de-duplicated. Note remains opt-in.
+   */
   tools?: readonly AnnotationTool[];
   /** Preset colors offered in the color picker. */
   colors?: readonly string[];
@@ -38,7 +40,7 @@ export interface PdfAnnotationToolbarProps {
 
 // Highlight is not a drawing tool here — it is applied to a text selection via
 // the right-click context menu (a Highlight markup over the selected text).
-const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow', 'freeText'];
+const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow'];
 
 const DEFAULT_COLORS: readonly string[] = ['#e53935', '#1e88e5', '#43a047', '#fbc02d', '#8e24aa', '#000000'];
 
@@ -50,7 +52,7 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
   arrow: IconArrowTool,
   highlight: IconHighlighter,
   note: IconNote,
-  freeText: IconTextBox,
+  freeText: IconRectangle,
 };
 
 /**
@@ -79,8 +81,11 @@ export function PdfAnnotationToolbar({
     arrow: strings.arrowTool,
     highlight: strings.highlighterTool,
     note: strings.noteTool,
-    freeText: strings.textBoxTool,
+    freeText: strings.rectangleTool,
   };
+  const visibleTools = tools
+    .map((tool) => (tool === 'freeText' ? 'rectangle' : tool))
+    .filter((tool, index, all) => all.indexOf(tool) === index);
   // One active mode at a time: 'text' = normal text-selection viewing,
   // 'select' = object select (marquee/multi-select), a tool name = draw.
   const [active, setActive] = useState<ToolbarMode>('select');
@@ -185,7 +190,7 @@ export function PdfAnnotationToolbar({
         <IconSelectObject />
       </ModeButton>
       <span className="pdfrx-toolbar-separator" aria-hidden />
-      {tools.map((tool) => {
+      {visibleTools.map((tool) => {
         const ToolIcon = TOOL_ICON[tool];
         return (
           <ModeButton key={tool} mode={tool} active={active} onClick={applyMode} title={toolTitles[tool]}>

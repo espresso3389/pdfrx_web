@@ -296,6 +296,14 @@ export interface PdfrxViewerOptions {
    */
   interactiveAnnotations?: boolean;
   /**
+   * Placeholder text shown by the inline annotation editors. Defaults to
+   * `{ text: 'Text', note: 'Note' }`; localized UI wrappers can override it.
+   */
+  annotationEditorPlaceholders?: {
+    text?: string;
+    note?: string;
+  };
+  /**
    * Extra scrollable margin, in document units, added around the document so it
    * can be panned past its edges. Default: `0` (edges are hard boundaries).
    */
@@ -657,8 +665,17 @@ interface AnnotationPageOverlay {
 interface AnnotationAnchor {
   /** Current position in bounding-box-relative PDF page coordinates. */
   point: PdfAnnotationPoint;
+  /** Axes this handle can actually change; omitted when both axes are movable. */
+  movableAxes?: { x: boolean; y: boolean };
   /** Produces the full updated spec when this anchor is dragged to `to`. */
   reshape: (to: PdfAnnotationPoint) => PdfAnnotationSpec;
+}
+
+/** Page-local result of independently snapping X and Y to nearby annotation guides. */
+interface AnnotationSnapResult {
+  point: Offset;
+  guideX?: number;
+  guideY?: number;
 }
 
 /**
@@ -729,6 +746,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_SCREEN_PX = 8;
 /** Touch handles need a finger-sized hit target while remaining visually compact. */
 const TOUCH_ANCHOR_SCREEN_PX = 24;
+/** Maximum on-screen distance at which annotation smart guides engage. */
+const ANNOTATION_SNAP_SCREEN_PX = 6;
 
 /** `x,y` for an SVG points list. */
 function offsetPair(o: Offset): string {
@@ -895,6 +914,14 @@ function boundingBoxHandlePoints(b: PdfRect): PdfAnnotationPoint[] {
   ];
 }
 
+/** Movable axes for a bounding-box handle in {@link boundingBoxHandlePoints} order. */
+function boundingBoxHandleAxes(index: number): { x: boolean; y: boolean } {
+  return {
+    x: index !== 1 && index !== 5,
+    y: index !== 3 && index !== 7,
+  };
+}
+
 /** Applies a bounding-box handle drag (by index) to `box`, returning the new box (normalized). */
 function resizeBoxByHandle(box: PdfRect, index: number, to: PdfAnnotationPoint): PdfRect {
   const edges = [
@@ -975,6 +1002,7 @@ function boundingBoxAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
   const b = annotationBounds(a);
   return boundingBoxHandlePoints(b).map((point, index) => ({
     point,
+    movableAxes: boundingBoxHandleAxes(index),
     reshape: (to) => scaleAnnotationSpec(a, b, resizeBoxByHandle(b, index, to)),
   }));
 }
@@ -5444,10 +5472,13 @@ export class PdfrxViewer {
       /* ignore */
     }
     circle.style.cursor = 'crosshair';
+    const excludedIds = new Set([annotation.id]);
     let lastSpec: PdfAnnotationSpec | null = null;
     const move = (e: PointerEvent): void => {
-      const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
-      const to = offsetToPdfPoint(px, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const snapped = this.snapAnnotationPoint(overlay, raw, excludedIds, anchor.movableAxes);
+      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
+      const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
       lastSpec = anchor.reshape(to);
       const display = syntheticAnnotation(annotation, lastSpec);
       this.previewAnnotationShape(overlay, annotation, lastSpec);
@@ -5459,6 +5490,7 @@ export class PdfrxViewer {
       circle.removeEventListener('pointerup', up);
       circle.removeEventListener('pointercancel', up);
       circle.style.cursor = 'crosshair';
+      this.renderAnnotationSnapGuides(overlay);
       if (!lastSpec || !this.doc) return;
       const before = annotationToSpec(annotation);
       const after = lastSpec;
@@ -5633,7 +5665,12 @@ export class PdfrxViewer {
       g.addEventListener('dblclick', (e) => {
         if (!this.isAnnotationSelectMode()) return;
         const annotation = overlay.annotations.get(id);
-        if (!annotation || (annotation.subtype !== 'text' && annotation.subtype !== 'freeText')) return;
+        if (
+          !annotation ||
+          (annotation.subtype !== 'text' && annotation.subtype !== 'freeText' && annotation.subtype !== 'square')
+        ) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         this.trackAnnotationTextEdit(this.editTextAnnotation(overlay, annotation));
@@ -5744,13 +5781,14 @@ export class PdfrxViewer {
     s.preview.remove();
     const spec = this.buildSpecFromDraw(s, end);
     if (!spec) return;
-    if (spec.subtype === 'text' || spec.subtype === 'freeText') {
+    if (spec.subtype === 'text') {
       const contents = await this.requestAnnotationText(overlay, spec);
       if (contents === null) return;
       spec.contents = contents;
-      if (spec.subtype === 'freeText') {
-        await this.prepareFreeTextAppearance(spec);
-      }
+    } else if (s.tool === 'rectangle' || s.tool === 'freeText') {
+      const contents = await this.requestAnnotationText(overlay, spec);
+      if (contents === null) return;
+      await this.applyBoxContents(spec, contents);
     }
     const id = await this.doc.addAnnotation(s.pageNumber, spec, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
@@ -5903,13 +5941,22 @@ export class PdfrxViewer {
     foreign.style.pointerEvents = 'auto';
     const textarea = document.createElement('textarea');
     textarea.value = spec.contents ?? '';
-    textarea.placeholder = isNote ? 'Note' : 'Text';
+    textarea.placeholder = isNote
+      ? (this.options.annotationEditorPlaceholders?.note ?? 'Note')
+      : (this.options.annotationEditorPlaceholders?.text ?? 'Text');
+    const strokeWidth = spec.borderWidth ?? 0;
+    const stroke = spec.color;
+    const editorBorder = isNote
+      ? '1px solid #2196f3'
+      : strokeWidth > 0 && stroke
+        ? `${strokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
+        : 'none';
     textarea.style.cssText =
       `box-sizing:border-box;width:100%;height:100%;resize:both;min-width:40px;min-height:28px;` +
       `max-width:${Math.max(40, overlay.pageSize.width - editorX)}px;` +
       `max-height:${Math.max(28, overlay.pageSize.height - editorY)}px;padding:5px;` +
       'font:12px Arial,Helvetica,sans-serif;color:#111;background:rgba(255,255,255,.96);' +
-      'border:1px solid #2196f3;border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);';
+      `border:${editorBorder};border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);`;
     textarea.addEventListener('pointerdown', (event) => event.stopPropagation());
     foreign.appendChild(textarea);
     overlay.svg.appendChild(foreign);
@@ -5971,17 +6018,36 @@ export class PdfrxViewer {
     });
   }
 
-  /** Reopens the inline editor and records the contents change as one undo step. */
+  /** Chooses rectangle or FreeText representation from a GUI box's contents. */
+  private async applyBoxContents(spec: PdfAnnotationSpec, contents: string): Promise<void> {
+    if (contents.trim().length > 0) {
+      spec.subtype = 'freeText';
+      spec.contents = contents;
+      spec.textOrientation ??= { rotation: 0, behavior: 'page' };
+      await this.prepareFreeTextAppearance(spec);
+      return;
+    }
+    spec.subtype = 'square';
+    spec.contents = '';
+    spec.textOrientation = undefined;
+    spec.fontFace = undefined;
+    spec.appearanceLines = undefined;
+    spec.appearanceRuns = undefined;
+    // Rectangles are defined by `rect`; stale FreeText/non-rect geometry must
+    // not survive a conversion back to a plain box.
+    spec.geometry = undefined;
+  }
+
+  /** Reopens the inline editor and records a note/box contents change as one undo step. */
   private async editTextAnnotation(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): Promise<void> {
     if (!this.doc) return;
     const before = annotationToSpec(annotation);
     const contents = await this.requestAnnotationText(overlay, before);
-    if (contents === null || contents === (before.contents ?? '')) return;
+    if (contents === null) return;
     const after = structuredClone(before);
-    after.contents = contents;
-    if (after.subtype === 'freeText') {
-      await this.prepareFreeTextAppearance(after);
-    }
+    if (before.subtype === 'text') after.contents = contents;
+    else await this.applyBoxContents(after, contents);
+    if (contents === (before.contents ?? '') && after.subtype === before.subtype) return;
     await this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
   }
@@ -6111,6 +6177,8 @@ export class PdfrxViewer {
     const annotation = overlay.annotations.get(id);
     if (!annotation) return;
     const display = this.annotationDisplayGroup(overlay, id, g);
+    const sourceBox = this.annotationPxBounds(annotation, overlay);
+    const excludedIds = new Set([id]);
     try {
       g.setPointerCapture(pointerId);
     } catch {
@@ -6123,7 +6191,7 @@ export class PdfrxViewer {
       preview.style.pointerEvents = 'none';
       display.parentNode?.insertBefore(preview, display.nextSibling);
     }
-    const displacement = (e: PointerEvent): Offset => {
+    const rawDisplacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
       let dx = cur.x - start.x;
       let dy = cur.y - start.y;
@@ -6133,8 +6201,15 @@ export class PdfrxViewer {
       }
       return { x: dx, y: dy };
     };
+    const displacement = (e: PointerEvent): AnnotationSnapResult => {
+      const raw = rawDisplacement(e);
+      if (duplicate || !sourceBox) return { point: raw };
+      return this.snapAnnotationTranslation(overlay, sourceBox, raw, excludedIds);
+    };
     const move = (e: PointerEvent): void => {
-      const delta = displacement(e);
+      const snapped = displacement(e);
+      const delta = snapped.point;
+      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
       const transform = `translate(${delta.x} ${delta.y})`;
       preview.setAttribute('transform', transform);
       // Move the anchors + bounding box rigidly with the shape.
@@ -6144,10 +6219,12 @@ export class PdfrxViewer {
       g.removeEventListener('pointermove', move);
       g.removeEventListener('pointerup', up);
       g.removeEventListener('pointercancel', up);
-      const delta = displacement(e);
+      const raw = rawDisplacement(e);
+      const delta = displacement(e).point;
+      this.renderAnnotationSnapGuides(overlay);
       const dxPx = delta.x;
       const dyPx = delta.y;
-      if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
+      if (Math.abs(raw.x) < 0.5 && Math.abs(raw.y) < 0.5) {
         // A click, not a move: undo the (tiny) live transform.
         preview.removeAttribute('transform');
         if (duplicate) preview.remove();
@@ -6321,6 +6398,128 @@ export class PdfrxViewer {
     return { left: Math.min(p1.x, p2.x), top: Math.min(p1.y, p2.y), right: Math.max(p1.x, p2.x), bottom: Math.max(p1.y, p2.y) };
   }
 
+  /** Alignment coordinates contributed by every non-excluded annotation on a page. */
+  private annotationSnapTargets(
+    overlay: AnnotationPageOverlay,
+    excludedIds: ReadonlySet<string>,
+  ): { x: number[]; y: number[] } {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (const [id, annotation] of overlay.annotations) {
+      // Check both representations defensively: overlay maps normally use the
+      // annotation id as their key, but the object id is the authoritative
+      // identity and must never contribute guides for the object being edited.
+      if (excludedIds.has(id) || excludedIds.has(annotation.id)) continue;
+      const box = this.annotationPxBounds(annotation, overlay);
+      if (!box) continue;
+      x.push(box.left, (box.left + box.right) / 2, box.right);
+      y.push(box.top, (box.top + box.bottom) / 2, box.bottom);
+    }
+    return { x, y };
+  }
+
+  /** Snaps a page-local point independently on each axis. */
+  private snapAnnotationPoint(
+    overlay: AnnotationPageOverlay,
+    point: Offset,
+    excludedIds: ReadonlySet<string>,
+    movableAxes: { x: boolean; y: boolean } = { x: true, y: true },
+  ): AnnotationSnapResult {
+    const targets = this.annotationSnapTargets(overlay, excludedIds);
+    const threshold = ANNOTATION_SNAP_SCREEN_PX / this.transform.zoom;
+    let x = point.x;
+    let y = point.y;
+    let xDistance = threshold;
+    let yDistance = threshold;
+    let guideX: number | undefined;
+    let guideY: number | undefined;
+    if (movableAxes.x) {
+      for (const target of targets.x) {
+        const distance = Math.abs(target - point.x);
+        if (distance < xDistance) {
+          xDistance = distance;
+          x = target;
+          guideX = target;
+        }
+      }
+    }
+    if (movableAxes.y) {
+      for (const target of targets.y) {
+        const distance = Math.abs(target - point.y);
+        if (distance < yDistance) {
+          yDistance = distance;
+          y = target;
+          guideY = target;
+        }
+      }
+    }
+    return { point: { x, y }, ...(guideX === undefined ? {} : { guideX }), ...(guideY === undefined ? {} : { guideY }) };
+  }
+
+  /** Snaps a translated box's left/center/right and top/center/bottom guides. */
+  private snapAnnotationTranslation(
+    overlay: AnnotationPageOverlay,
+    box: Rect,
+    delta: Offset,
+    excludedIds: ReadonlySet<string>,
+  ): AnnotationSnapResult {
+    const targets = this.annotationSnapTargets(overlay, excludedIds);
+    const threshold = ANNOTATION_SNAP_SCREEN_PX / this.transform.zoom;
+    const sourceX = [box.left + delta.x, (box.left + box.right) / 2 + delta.x, box.right + delta.x];
+    const sourceY = [box.top + delta.y, (box.top + box.bottom) / 2 + delta.y, box.bottom + delta.y];
+    let dx = delta.x;
+    let dy = delta.y;
+    let xDistance = threshold;
+    let yDistance = threshold;
+    let guideX: number | undefined;
+    let guideY: number | undefined;
+    for (const source of sourceX) {
+      for (const target of targets.x) {
+        const distance = Math.abs(target - source);
+        if (distance < xDistance) {
+          xDistance = distance;
+          dx = delta.x + target - source;
+          guideX = target;
+        }
+      }
+    }
+    for (const source of sourceY) {
+      for (const target of targets.y) {
+        const distance = Math.abs(target - source);
+        if (distance < yDistance) {
+          yDistance = distance;
+          dy = delta.y + target - source;
+          guideY = target;
+        }
+      }
+    }
+    return {
+      point: { x: dx, y: dy },
+      ...(guideX === undefined ? {} : { guideX }),
+      ...(guideY === undefined ? {} : { guideY }),
+    };
+  }
+
+  /** Shows the active vertical/horizontal smart guides, or clears them. */
+  private renderAnnotationSnapGuides(overlay: AnnotationPageOverlay, guideX?: number, guideY?: number): void {
+    overlay.svg.querySelectorAll('.pdfrx-annotation-snap-guide').forEach((line) => line.remove());
+    const add = (x1: number, y1: number, x2: number, y2: number): void => {
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('class', 'pdfrx-annotation-snap-guide');
+      line.setAttribute('x1', `${x1}`);
+      line.setAttribute('y1', `${y1}`);
+      line.setAttribute('x2', `${x2}`);
+      line.setAttribute('y2', `${y2}`);
+      line.setAttribute('stroke', '#e91e63');
+      line.setAttribute('stroke-width', `${1 / this.transform.zoom}`);
+      line.setAttribute('stroke-dasharray', `${4 / this.transform.zoom} ${3 / this.transform.zoom}`);
+      line.style.pointerEvents = 'none';
+      overlay.svg.appendChild(line);
+    };
+    if (guideX !== undefined) add(guideX, 0, guideX, overlay.pageSize.height);
+    if (guideY !== undefined) add(0, guideY, overlay.pageSize.width, guideY);
+  }
+
   /** Drags the whole multi-selection rigidly, committing one grouped move. */
   private beginGroupMove(
     overlay: AnnotationPageOverlay,
@@ -6330,6 +6529,18 @@ export class PdfrxViewer {
     duplicate: boolean,
   ): void {
     const svg = overlay.svg;
+    const selectedIds = new Set(sel.map((annotation) => annotation.id));
+    const selectedBoxes = sel
+      .map((annotation) => this.annotationPxBounds(annotation, overlay))
+      .filter((box): box is Rect => box !== null);
+    const sourceBox = selectedBoxes.length
+      ? {
+          left: Math.min(...selectedBoxes.map((box) => box.left)),
+          top: Math.min(...selectedBoxes.map((box) => box.top)),
+          right: Math.max(...selectedBoxes.map((box) => box.right)),
+          bottom: Math.max(...selectedBoxes.map((box) => box.bottom)),
+        }
+      : null;
     const groups = new Map<string, SVGGElement>();
     for (const child of Array.from(svg.children)) {
       const g = child as SVGGElement;
@@ -6353,7 +6564,7 @@ export class PdfrxViewer {
     } catch {
       /* best-effort */
     }
-    const displacement = (e: PointerEvent): Offset => {
+    const rawDisplacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
       let dx = cur.x - start.x;
       let dy = cur.y - start.y;
@@ -6363,8 +6574,15 @@ export class PdfrxViewer {
       }
       return { x: dx, y: dy };
     };
+    const displacement = (e: PointerEvent): AnnotationSnapResult => {
+      const raw = rawDisplacement(e);
+      if (duplicate || !sourceBox) return { point: raw };
+      return this.snapAnnotationTranslation(overlay, sourceBox, raw, selectedIds);
+    };
     const move = (e: PointerEvent): void => {
-      const delta = displacement(e);
+      const snapped = displacement(e);
+      const delta = snapped.point;
+      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
       const transform = `translate(${delta.x} ${delta.y})`;
       for (const g of previews) g.setAttribute('transform', transform);
       if (!duplicate) overlay.anchorLayer.setAttribute('transform', transform);
@@ -6373,10 +6591,12 @@ export class PdfrxViewer {
       svg.removeEventListener('pointermove', move);
       svg.removeEventListener('pointerup', up);
       svg.removeEventListener('pointercancel', up);
-      const delta = displacement(e);
+      const raw = rawDisplacement(e);
+      const delta = displacement(e).point;
+      this.renderAnnotationSnapGuides(overlay);
       const dxPx = delta.x;
       const dyPx = delta.y;
-      if (Math.abs(dxPx) < 0.5 && Math.abs(dyPx) < 0.5) {
+      if (Math.abs(raw.x) < 0.5 && Math.abs(raw.y) < 0.5) {
         for (const g of previews) {
           if (duplicate) g.remove();
           else g.removeAttribute('transform');
@@ -6418,10 +6638,13 @@ export class PdfrxViewer {
       /* best-effort */
     }
     circle.style.cursor = 'crosshair';
+    const selectedIds = new Set(sel.map((annotation) => annotation.id));
     let newBox: PdfRect | null = null;
     const move = (e: PointerEvent): void => {
-      const px = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
-      const to = offsetToPdfPoint(px, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      const snapped = this.snapAnnotationPoint(overlay, raw, selectedIds, boundingBoxHandleAxes(index));
+      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
+      const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
       newBox = resizeBoxByHandle(box, index, to);
       // Live-preview every member scaled into the new group box.
       for (const a of sel) this.previewAnnotationShape(overlay, a, scaleAnnotationSpec(a, box, newBox));
@@ -6432,6 +6655,7 @@ export class PdfrxViewer {
       circle.removeEventListener('pointerup', up);
       circle.removeEventListener('pointercancel', up);
       circle.style.cursor = 'crosshair';
+      this.renderAnnotationSnapGuides(overlay);
       if (!newBox) return;
       const target = newBox;
       void this.commitGroupTransform(overlay, sel, (a) => scaleAnnotationSpec(a, box, target));
