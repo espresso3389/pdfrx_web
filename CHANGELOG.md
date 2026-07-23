@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-23
+
 ### Changed
 
 - The private collaboration example now uses Node.js for its standard
@@ -251,7 +253,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.7.0...v0.8.0
