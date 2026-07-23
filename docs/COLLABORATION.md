@@ -31,7 +31,10 @@ The transport and protocol remain application concerns. The prototype exposes
 their React integration as a reusable `CollaborativePdfViewer` component: it
 sends commands to the same engine/viewer mutations used by local UI and applies
 remote commands with a remote origin so they are not echoed. The demo app only
-mounts two instances of this component.
+mounts two instances of this component. See
+[COLLABORATION-PROTOCOL.md](COLLABORATION-PROTOCOL.md) for the complete
+WebSocket envelopes, sequencing rules, rejection codes, transient annotation
+previews, and source-PDF HTTP endpoints.
 
 ## Why the collaboration adapter is still required
 
@@ -97,6 +100,12 @@ are converted from page numbers to placement IDs, committed by the relay, and
 converted back against each participant's current arrangement. Remote applies
 use `origin: 'remote'`, preventing echo loops; the relay snapshot lets a later
 participant reconstruct the current shared annotation set.
+
+During object movement and anchor/group resizing, the viewer also broadcasts
+non-persistent annotation previews. These update the other participants' SVG
+overlays immediately but do not change the PDF, annotation revision, snapshot,
+or undo history. Pointer release submits the final full annotation spec through
+the normal strict-revision operation stream.
 
 Forms use a third strict revision stream. A field is addressed by immutable
 source `documentId` plus its fully-qualified AcroForm field name; values retain

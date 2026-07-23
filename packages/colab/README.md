@@ -11,7 +11,8 @@ the relay sequences small semantic operations instead of
 streaming rendered pages or repeatedly transferring the complete PDF.
 
 **[Local example](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab)** ·
-**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_colab.html)**
+**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_colab.html)** ·
+**[Wire protocol specification](https://github.com/espresso3389/pdfrx_web/blob/master/docs/COLLABORATION-PROTOCOL.md)**
 
 ```sh
 npm install @pdfrx/colab @pdfrx/react react react-dom
@@ -142,6 +143,7 @@ creating committed operations.
 
 - Page insertion, removal, movement, duplication, and rotation
 - FreeText, ink, shape, markup, and note annotations
+- Live non-persistent previews while annotations are moved or resized
 - AcroForm text, choice, checkbox, and radio values
 - Imported PDF and image sources through stable source and placement IDs
 - The authoritative page, annotation, and form revisions used by late joiners
@@ -253,6 +255,12 @@ client sends one operation per stream at a time and resolves its promise only
 after receiving the relay's authoritative commit. It does not optimistically
 apply a second copy of an operation that the local viewer already performed.
 
+Annotation movement and resizing additionally use best-effort transient
+previews. They are broadcast to the other participants without consuming an
+annotation revision, changing the authoritative snapshot, or entering the PDF
+and edit history. The final pointer-up geometry is still submitted and
+broadcast as a normal authoritative annotation operation.
+
 Remote PDF mutations are applied with `origin: 'remote'`, which prevents
 annotation and form event feedback loops. Missing source PDFs are fetched and
 opened locally before placements that reference them are applied.
@@ -270,6 +278,8 @@ protocol:
 - Strict `baseRevision` validation for page, annotation, and form operations
 - Globally unique operation IDs and stable actor IDs
 - Broadcast of committed operations to every participant, including the sender
+- Broadcast of transient annotation previews to every participant except the
+  sender, without materializing them into the annotation snapshot
 - An immutable source endpoint at
   `PUT/GET /sessions/:sessionId/sources/:documentId`
 
@@ -280,6 +290,11 @@ at trust boundaries rather than accepting arbitrary parsed JSON.
 derives the HTTP source URL from the WebSocket relay URL, and
 [`uploadRelaySource()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.uploadRelaySource.html)
 uploads a PDF using the expected content type.
+
+The complete transport contract—including all envelopes, independent revision
+streams, preview semantics, recovery rules, error codes, and source endpoint
+responses—is in the
+[collaboration relay protocol specification](https://github.com/espresso3389/pdfrx_web/blob/master/docs/COLLABORATION-PROTOCOL.md).
 
 The repository contains a small in-memory reference relay and a two-participant
 example in `examples/colab`:

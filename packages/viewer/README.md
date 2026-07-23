@@ -20,7 +20,7 @@ a framework-agnostic custom element or a plain class.
 - Password-protected documents
 - Interactive AcroForm filling through accessible native HTML controls
 - SVG annotation editing: ink, shapes, notes/free text, text markup,
-  multi-selection, duplication, and undo/redo
+  live marquee multi-selection, duplication, snapping guides, and undo/redo
 - Built-in loading spinner/progress bar with observable loading state
 
 ## Installation
@@ -89,7 +89,8 @@ Each symbol links directly to its entry in the
 - [`setPages(pages)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpages) / [`setPage(pageNumber, page)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpage) — history-aware page insertion, deletion, reorder and rotation; use these instead of calling the same-named `PdfDocument` methods when the edit must participate in the viewer's shared annotation/page Undo/Redo history
 - [`options.interactiveForms`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveforms) — native HTML controls over AcroForm widgets (on by default), synchronized with the owning source document's `setFormFieldValue()`. A single-source encode preserves the form; mixed-source catalog merging is an application export policy rather than a viewer operation
 - FreeText and form controls compose explicit text orientation with page rotation, allowing text to follow the page or remain upright without rewriting annotation coordinates
-- [`options.interactiveAnnotations`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveannotations) — SVG annotation display/editing (on by default); choose drawing or object-selection modes with `setAnnotationTool()` / `setAnnotationSelectMode()`, configure new annotations with `setAnnotationStyle()`, and use `undoAnnotation()` / `redoAnnotation()` for the shared edit history
+- [`options.interactiveAnnotations`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveannotations) — SVG annotation display/editing (on by default); choose drawing or object-selection modes with `setAnnotationTool()` / `setAnnotationSelectMode()`, configure stroke, fill, opacity, thickness, text color, and font size with `setAnnotationStyle()`, and use `undoAnnotation()` / `redoAnnotation()` for the shared edit history. `Ctrl`/`Cmd` adds or toggles object selections; a marquee updates selection while it is dragged. Body and anchor drags snap each movable axis to nearby annotation coordinates and show alignment guides
+- Rectangle and FreeText annotations are one editing concept in the GUI: double-click either to edit text. Non-empty text stores the result as FreeText; clearing it stores a square. Placing a rectangle selects it without immediately opening text input. FreeText wrapping and clipping follow resize and movement previews in real time
 - [`isLoading`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#isloading) / [`loadingProgress`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadingprogress) / `addLoadingChangeListener(fn)` — observe document opening; `options.loadingIndicator` controls the built-in spinner/progress bar
 - [`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) / [`renderPageThumbnail(n, width)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail)
 - [`print({ dpi? })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#print)

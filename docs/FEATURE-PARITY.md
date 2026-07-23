@@ -33,7 +33,9 @@ Upstream API names are given so you can find the reference implementation.
 > `addAnnotation()` / `updateAnnotation()` / `removeAnnotation()` /
 > `importAnnotations()`, the `annotationsChanged` event, the `interactiveAnnotations`
 > viewer option with `setAnnotationTool()`, and the React `useAnnotations` hook +
-> `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text).
+> `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text, independent
+> text color/font size, live marquee selection, snapping guides, and unified
+> rectangle/FreeText editing).
 
 ---
 

@@ -226,12 +226,31 @@ per page as a single undo group. `canHighlightSelection()` gates the menu item.
 
 **Select mode & multi-selection.** `setAnnotationSelectMode(true)` (the toolbar's
 Select button) enters a mode where dragging empty page area draws a rubber-band
-marquee and selects every overlapping annotation; single-click select still works
-with or without it. The selection is a `Set<id>`. A single selection shows the
+marquee and continuously selects every overlapping annotation while the pointer
+moves; objects that leave it are removed. Holding Ctrl/Cmd preserves the
+pre-drag selection and adds intersections, and modifier-click toggles one
+object. Single-click select still works with or without select mode. The
+selection is a `Set<id>`. A single selection shows the
 annotation's own handles; a multi-selection shows one group bounding box whose
 eight handles scale every member together (`scaleAnnotationSpec` maps each
 member's own rect/geometry through the group's affine transform) and whose body
-drag moves them all. Anchors follow live during both.
+drag moves them all. Anchors and FreeText wrapping/clipping follow live during
+both. Body and anchor drags snap each movable X/Y axis to nearby coordinates on
+other annotations and paint alignment guides. Edge-midpoint handles participate
+only on their normal axis, and the dragged annotation's own anchors are excluded.
+
+**Rectangle text editing.** Square and FreeText remain distinct PDF annotation
+subtypes but are one GUI object. Double-clicking either opens the same inline
+editor; non-blank content writes a FreeText spec and clearing it writes a square
+spec. Rectangle placement itself only creates and selects an empty square. Both
+forms preserve stroke/fill/opacity/thickness plus independent text color and
+font size. The input border follows the annotation stroke unless that stroke is
+disabled.
+
+Collaborative hosts may subscribe to transient full-spec preview updates during
+body and anchor/group drags. Preview geometry updates only the remote SVG
+overlay; it does not mutate PDF state or history. The final engine update at
+pointer release remains the authoritative annotation change.
 
 **Undo/redo** is unlimited and lives in the viewer as a stack of command
 *groups* — each group is one or more `{pageNumber, id, before, after}` commands

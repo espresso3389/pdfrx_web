@@ -104,6 +104,21 @@ to `document.addEventListener('annotationsChanged', ...)` to publish its exact
 `document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`;
 the `origin` lets the publisher ignore it and avoid a synchronization echo.
 
+The standard annotation toolbar orders text controls after line thickness and
+provides independent text color and font-size settings. Rectangle and text-box
+tools share the same on-page behavior: placing a rectangle does not
+automatically start typing, while double-clicking either a rectangle or
+FreeText annotation opens localized inline editing. Adding non-blank text
+converts the rectangle to FreeText; clearing all text converts it back to a
+plain square. The inline editor follows the annotation stroke, text color,
+font size, wrapping, and clipping while it is resized.
+
+Object-select mode updates a marquee selection continuously during its drag.
+Objects that leave the marquee are removed from the selection; holding
+`Ctrl`/`Cmd` preserves the existing selection and adds intersecting objects.
+The same modifier toggles objects on click. Annotation body and anchor drags
+snap to nearby coordinates on other annotations and display alignment guides.
+
 ## Editing history and page mutations
 
 The built-in annotation editor and the page controls enabled by
