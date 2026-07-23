@@ -87,6 +87,7 @@ export class PdfrxViewerStore {
   #pagesRevision = 0;
 
   #unsubscribeDocumentChange: (() => void) | null = null;
+  #unsubscribeRefresh: (() => void) | null = null;
   #unsubscribePagesRearranged: (() => void) | null = null;
 
   /** Shared by every `usePdfPageThumbnail` under this provider. */
@@ -189,6 +190,15 @@ export class PdfrxViewerStore {
       this.#bindPagesRearranged();
       this.#notify();
     });
+    this.#unsubscribeRefresh = this.#viewer.addRefreshListener(() => {
+      // The PdfDocument identity may be unchanged, but every hook/cache derived
+      // from its contents must observe the explicit viewer refresh.
+      this.#documentGeneration++;
+      this.#pagesRevision++;
+      this.#searcher = this.#viewer?.createTextSearcher() ?? null;
+      this.thumbnails.reset(this.#viewer?.document ?? null);
+      this.#notify();
+    });
     this.#bindPagesRearranged();
     this.#notify();
     if (this.#source) void this.#openCurrent();
@@ -225,6 +235,8 @@ export class PdfrxViewerStore {
     this.#pendingDispose = null;
     this.#unsubscribeDocumentChange?.();
     this.#unsubscribeDocumentChange = null;
+    this.#unsubscribeRefresh?.();
+    this.#unsubscribeRefresh = null;
     this.#unsubscribePagesRearranged?.();
     this.#unsubscribePagesRearranged = null;
     this.#viewer = null;

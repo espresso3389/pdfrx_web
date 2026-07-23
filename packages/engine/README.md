@@ -14,9 +14,11 @@ Node, Bun, and Deno with no extra configuration — see
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
 The rendering engine is bundled in this package: `assets/pdfium.wasm` is a
-prebuilt [PDFium](https://pdfium.googlesource.com/pdfium/) WebAssembly binary
-from [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries),
-and `assets/pdfium_worker.js` is the worker that drives it (see
+custom [PDFium](https://pdfium.googlesource.com/pdfium/) WebAssembly build based
+on the [espresso3389/pdfium-binaries](https://github.com/espresso3389/pdfium-binaries/)
+backend/toolchain. That build adds the small raw PDF-object C API used by
+`PdfDocument`'s custom object inspection and editing features;
+`assets/pdfium_worker.js` is the worker that drives it (see
 [`assets/UPSTREAM.md`](assets/UPSTREAM.md) for provenance).
 
 ## Installation

@@ -372,6 +372,33 @@ export interface PdfLoadingProgress {
   bytesTotal: number | null;
 }
 
+/** Viewer caches that can be invalidated after low-level PDF object edits. */
+export type PdfViewerPageContent = 'render' | 'text' | 'links' | 'forms' | 'annotations' | 'overlays';
+
+/** Options for {@link PdfrxViewer.refreshPages}. */
+export interface PdfViewerRefreshPagesOptions {
+  /** 1-based page numbers to refresh. Default: every page. */
+  pageNumbers?: readonly number[];
+  /**
+   * Also ask PDFium to recreate page objects and reload page size, rotation,
+   * bounding-box and load-state metadata. Enable this after editing page
+   * dictionaries or page-tree structure.
+   */
+  reloadMetadata?: boolean;
+  /**
+   * Cache categories to discard. Default: all categories. Choose a subset when
+   * the raw edit's effects are known—for example `['render']` after changing
+   * only a page content stream.
+   */
+  content?: readonly PdfViewerPageContent[];
+}
+
+/** Notification emitted after an explicit page/document cache refresh. */
+export interface PdfViewerRefreshEvent {
+  readonly scope: 'pages' | 'document';
+  readonly pageNumbers: readonly number[];
+}
+
 /**
  * Constrains drag-panning to an axis (see {@link PdfrxViewerOptions.panAxis}).
  * `'aligned'` locks each gesture to the axis it first moves along.
@@ -1566,6 +1593,7 @@ export class PdfrxViewer {
   private loadingProgressValue: PdfLoadingProgress | null = null;
   private readonly loadingChangeListeners = new Set<() => void>();
   private readonly documentChangeListeners = new Set<() => void>();
+  private readonly refreshListeners = new Set<(event: PdfViewerRefreshEvent) => void>();
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
@@ -1726,6 +1754,37 @@ export class PdfrxViewer {
   addDocumentChangeListener(listener: () => void): () => void {
     this.documentChangeListeners.add(listener);
     return () => this.documentChangeListeners.delete(listener);
+  }
+
+  /**
+   * Registers a listener for explicit {@link refreshPages} and
+   * {@link refreshDocument} operations. Document replacement is reported
+   * separately by {@link addDocumentChangeListener}.
+   */
+  addRefreshListener(listener: (event: PdfViewerRefreshEvent) => void): () => void {
+    this.refreshListeners.add(listener);
+    return () => this.refreshListeners.delete(listener);
+  }
+
+  /** Notifies document-derived consumers after replacement or explicit refresh. */
+  private notifyDocumentChanged(): void {
+    for (const listener of this.documentChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in document change listener:', e);
+      }
+    }
+  }
+
+  private notifyRefreshed(event: PdfViewerRefreshEvent): void {
+    for (const listener of this.refreshListeners) {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('Error in refresh listener:', e);
+      }
+    }
   }
 
   /**
@@ -2241,6 +2300,114 @@ export class PdfrxViewer {
   }
 
   /**
+   * Invalidates selected viewer caches after low-level edits to the current PDF.
+   *
+   * The viewer cannot infer which GUI data a raw dictionary/array/stream edit
+   * affects. Call this method after `PdfDocument.editRawObjects()` when the
+   * affected pages and cache categories are known. This does not reopen the PDF.
+   *
+   * `reloadMetadata` recreates PDFium page objects before repainting. It is
+   * normally unnecessary for content-stream-only edits, but is appropriate
+   * after changing page dictionaries, dimensions, rotations, or the page tree.
+   * For document-level structures or an unknown impact, use
+   * {@link refreshDocument}; if PDFium itself must be reconstructed, use
+   * {@link reloadDocument}.
+  */
+  async refreshPages(options: PdfViewerRefreshPagesOptions = {}): Promise<void> {
+    await this.refreshPagesInternal(options, 'pages');
+  }
+
+  private async refreshPagesInternal(
+    options: PdfViewerRefreshPagesOptions,
+    scope: PdfViewerRefreshEvent['scope'],
+    reloadAllMetadata = false,
+  ): Promise<void> {
+    const doc = this.doc;
+    if (!doc) return;
+    const pageNumbers = options.pageNumbers
+      ? [...new Set(options.pageNumbers)]
+      : doc.pages.map((page) => page.pageNumber);
+    for (const pageNumber of pageNumbers) {
+      if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > doc.pages.length) {
+        throw new RangeError(`pageNumber ${pageNumber} out of range (1..${doc.pages.length})`);
+      }
+    }
+    const content = new Set<PdfViewerPageContent>(
+      options.content ?? ['render', 'text', 'links', 'forms', 'annotations', 'overlays'],
+    );
+
+    // Invalidate promises already loading data under the affected page numbers.
+    this.arrangementGeneration++;
+    if (content.has('render')) this.cache?.clearPages(pageNumbers);
+    for (const pageNumber of pageNumbers) {
+      if (content.has('text')) this.pageTexts.delete(pageNumber);
+      if (content.has('links')) {
+        this.pageLinks.delete(pageNumber);
+        this.hoveredLink = null;
+      }
+      if (content.has('forms')) this.pageFormFields.delete(pageNumber);
+      if (content.has('annotations')) this.pageAnnotations.delete(pageNumber);
+    }
+    if (content.has('text')) {
+      this.clearSelection();
+      this.searcher?.onPagesRearranged();
+    }
+    if (content.has('forms')) this.clearFormOverlays();
+    if (content.has('annotations')) {
+      this.annotationReloadGeneration++;
+      this.annotationSnapshots.clear();
+      for (const pageNumber of pageNumbers) {
+        if (this.annotationOverlays.has(pageNumber)) this.dirtyAnnotationOverlayPages.add(pageNumber);
+      }
+    }
+    if (content.has('overlays')) this.refreshOverlays();
+
+    if (options.reloadMetadata) {
+      await (reloadAllMetadata ? doc.reloadPages() : doc.reloadPages(pageNumbers));
+    }
+    this.invalidate();
+    this.notifyRefreshed({ scope, pageNumbers });
+  }
+
+  /**
+   * Rebuilds every viewer-side representation of the current `PdfDocument`
+   * without reopening PDFium.
+   *
+   * Use this after raw edits to document-level structures (for example the
+   * outline, AcroForm, name trees, or page tree), or whenever their exact GUI
+   * impact is unknown. All page render/data caches, search state, thumbnails,
+   * React document-derived hooks, page overlays, and viewer overlays are
+   * refreshed. The current zoom and viewport are retained.
+   *
+   * This calls `PdfDocument.reloadPages()` to recreate page metadata, but it
+   * does not reconstruct the native PDFium document. Use {@link reloadDocument}
+   * for that stronger boundary.
+   */
+  async refreshDocument(): Promise<void> {
+    await this.refreshPagesInternal({ reloadMetadata: true }, 'document', true);
+    this.refreshViewerOverlays();
+  }
+
+  /**
+   * Fully reconstructs the current PDFium document and all viewer state.
+   *
+   * The current document is encoded into an independent native copy, which is
+   * then installed as the viewer's document; the previous document is disposed.
+   * This is the most reliable refresh after arbitrary raw edits, but it copies
+   * and reparses the whole PDF, so its time and peak-memory costs grow with
+   * document size. Zoom and viewport are retained where the new layout allows.
+   */
+  async reloadDocument(): Promise<void> {
+    const doc = this.doc;
+    if (!doc) return;
+    const transform = { ...this.transform };
+    const replacement = await doc.createPdfCopy();
+    this.currentSource = null;
+    await this.setDocument(replacement);
+    this.setTransform(transform);
+  }
+
+  /**
    * Creates a text searcher whose matches are highlighted by this viewer.
    * The previous searcher (if any) is disposed.
    */
@@ -2475,13 +2642,7 @@ export class PdfrxViewer {
     doc.addEventListener('annotationsChanged', () => this.onAnnotationsChanged());
     this.resetView();
     this.buildViewerOverlays();
-    for (const listener of this.documentChangeListeners) {
-      try {
-        listener();
-      } catch (e) {
-        console.error('Error in document change listener:', e);
-      }
-    }
+    this.notifyDocumentChanged();
     try {
       this.options.onViewerReady?.();
     } catch (e) {

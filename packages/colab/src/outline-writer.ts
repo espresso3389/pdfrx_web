@@ -1,240 +1,620 @@
 import {
-  PDFArray,
-  PDFDocument,
-  PDFHexString,
-  PDFDict,
-  PDFName,
-  PDFNull,
-  PDFNumber,
-  PDFRef,
-  PDFString,
-} from 'pdf-lib';
+  parseCalcAction,
+  type PdfDocument,
+  type PdfRawCreatedObject,
+  type PdfRawObjectEditor,
+  type WireRawPdfObject,
+  type WireRawPdfPatchOperation,
+  type WireRawPdfPatchValue,
+  type WireRawPdfTarget,
+} from '@pdfrx/engine';
 import type { PagePlacement } from '@pdfrx/viewer-core';
-import { parseCalcAction } from '@pdfrx/engine';
 import type { MappedOutlineNode } from './export-composer.js';
 
-/** Replaces the encoded PDF's outline catalog with mapped bookmark nodes. */
-export async function writeOutline(bytes: Uint8Array, nodes: readonly MappedOutlineNode[]): Promise<Uint8Array> {
-  const pdf = await PDFDocument.load(bytes);
-  const context = pdf.context;
-  const outline = context.obj({ Type: 'Outlines' });
-  const outlineRef = context.register(outline);
-  const top = buildSiblings(pdf, nodes, outlineRef);
-  if (!top) return bytes;
-  outline.set(PDFName.of('First'), top.first);
-  outline.set(PDFName.of('Last'), top.last);
-  outline.set(PDFName.of('Count'), PDFNumber.of(top.count));
-  pdf.catalog.set(PDFName.of('Outlines'), outlineRef);
-  pdf.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
-  return pdf.save({ useObjectStreams: false });
-}
+type RawDictionary = Extract<WireRawPdfObject, { kind: 'dictionary' }>;
 
-function buildSiblings(
-  pdf: PDFDocument,
-  nodes: readonly MappedOutlineNode[],
-  parent: PDFRef,
-): { readonly first: PDFRef; readonly last: PDFRef; readonly count: number } | null {
-  if (nodes.length === 0) return null;
-  const context = pdf.context;
-  const entries = nodes.map((node) => {
-    const dictionary = context.obj({ Title: PDFHexString.fromText(node.title), Parent: parent });
-    const ref = context.register(dictionary);
-    return { node, dictionary, ref };
-  });
-  let descendantCount = 0;
-  entries.forEach((entry, index) => {
-    const previous = entries[index - 1];
-    const next = entries[index + 1];
-    if (previous) entry.dictionary.set(PDFName.of('Prev'), previous.ref);
-    if (next) entry.dictionary.set(PDFName.of('Next'), next.ref);
-    if (entry.node.dest) {
-      const destination = PDFArray.withContext(context);
-      destination.push(pdf.getPage(entry.node.dest.pageIndex).ref);
-      destination.push(PDFName.of(destinationCommand(entry.node.dest.command)));
-      for (const param of entry.node.dest.params) destination.push(param === null ? PDFNull : PDFNumber.of(param));
-      entry.dictionary.set(PDFName.of('Dest'), destination);
-    }
-    const children = buildSiblings(pdf, entry.node.children, entry.ref);
-    if (children) {
-      entry.dictionary.set(PDFName.of('First'), children.first);
-      entry.dictionary.set(PDFName.of('Last'), children.last);
-      entry.dictionary.set(PDFName.of('Count'), PDFNumber.of(children.count));
-      descendantCount += children.count;
-    }
-  });
-  return { first: entries[0]!.ref, last: entries.at(-1)!.ref, count: entries.length + descendantCount };
-}
+const name = (value: string): WireRawPdfObject => ({ kind: 'name', value });
+const nullObject = (): WireRawPdfObject => ({ kind: 'null' });
+const integer = (value: number): WireRawPdfObject => ({ kind: 'integer', value });
+const number = (value: number): WireRawPdfObject => ({ kind: 'number', value });
+const reference = (objectNumber: number): WireRawPdfObject => ({
+  kind: 'reference',
+  objectNumber,
+  generationNumber: 0,
+});
+const localReference = (id: string): WireRawPdfPatchValue => ({ kind: 'localReference', id });
+const array = (items: WireRawPdfObject[]): WireRawPdfObject => ({ kind: 'array', items });
+const dictionary = (entries: Record<string, WireRawPdfObject>): WireRawPdfObject => ({ kind: 'dictionary', entries });
+const string = (value: string): WireRawPdfObject => ({ kind: 'string', value: encodePdfText(value) });
 
-function destinationCommand(command: string): string {
-  const names: Record<string, string> = {
-    xyz: 'XYZ', fit: 'Fit', fitb: 'FitB', fith: 'FitH', fitbh: 'FitBH', fitv: 'FitV', fitbv: 'FitBV', fitr: 'FitR',
+/** Replaces the document's outline catalog with mapped bookmark nodes. */
+export async function writeOutline(document: PdfDocument, nodes: readonly MappedOutlineNode[]): Promise<void> {
+  if (nodes.length === 0) return;
+  const pageRefs = await loadPageReferences(document);
+  const flat: { id: string; node: MappedOutlineNode; parent: string; previous?: string; next?: string }[] = [];
+  let sequence = 0;
+  const visit = (siblings: readonly MappedOutlineNode[], parent: string): void => {
+    const ids = siblings.map(() => `outline-${sequence++}`);
+    siblings.forEach((node, index) => {
+      const id = ids[index]!;
+      flat.push({
+        id,
+        node,
+        parent,
+        ...(ids[index - 1] ? { previous: ids[index - 1] } : {}),
+        ...(ids[index + 1] ? { next: ids[index + 1] } : {}),
+      });
+      visit(node.children, id);
+    });
   };
-  return names[command.toLowerCase()] ?? 'Fit';
+  visit(nodes, 'outline-root');
+
+  const operations: WireRawPdfPatchOperation[] = [
+    { op: 'dictionarySet', target: { root: true }, key: 'Outlines', value: localReference('outline-root') },
+    { op: 'dictionarySet', target: { root: true }, key: 'PageMode', value: name('UseOutlines') },
+    { op: 'dictionarySet', target: localTarget('outline-root'), key: 'Type', value: name('Outlines') },
+    { op: 'dictionarySet', target: localTarget('outline-root'), key: 'First', value: localReference(flat[0]!.id) },
+    { op: 'dictionarySet', target: localTarget('outline-root'), key: 'Last', value: localReference(lastTopLevelId(nodes, flat)) },
+    { op: 'dictionarySet', target: localTarget('outline-root'), key: 'Count', value: integer(flat.length) },
+  ];
+  for (const entry of flat) {
+    operations.push(
+      { op: 'dictionarySet', target: localTarget(entry.id), key: 'Title', value: string(entry.node.title) },
+      { op: 'dictionarySet', target: localTarget(entry.id), key: 'Parent', value: localReference(entry.parent) },
+    );
+    if (entry.previous) operations.push({
+      op: 'dictionarySet', target: localTarget(entry.id), key: 'Prev', value: localReference(entry.previous),
+    });
+    if (entry.next) operations.push({
+      op: 'dictionarySet', target: localTarget(entry.id), key: 'Next', value: localReference(entry.next),
+    });
+    if (entry.node.dest) {
+      const pageRef = pageRefs[entry.node.dest.pageIndex];
+      if (pageRef !== undefined) {
+        operations.push({
+          op: 'dictionarySet',
+          target: localTarget(entry.id),
+          key: 'Dest',
+          value: array([
+            reference(pageRef),
+            name(destinationCommand(entry.node.dest.command)),
+            ...entry.node.dest.params.map((param) => param === null ? nullObject() : number(param)),
+          ]),
+        });
+      }
+    }
+    const children = flat.filter((candidate) => candidate.parent === entry.id);
+    if (children.length > 0) {
+      operations.push(
+        { op: 'dictionarySet', target: localTarget(entry.id), key: 'First', value: localReference(children[0]!.id) },
+        { op: 'dictionarySet', target: localTarget(entry.id), key: 'Last', value: localReference(children.at(-1)!.id) },
+        { op: 'dictionarySet', target: localTarget(entry.id), key: 'Count', value: integer(descendantCount(entry.id, flat)) },
+      );
+    }
+  }
+  await applyPatchWithLocals(document, flat.map((entry) => entry.id).concat('outline-root'), operations);
 }
 
 /**
  * Rebuilds the catalog AcroForm from Widget annotations already copied with
- * the final pages. Each source receives a prefix so equal field names from
- * different PDFs remain independent.
- * @returns Re-encoded PDF bytes containing the merged AcroForm catalog.
+ * the final pages. Each source receives a prefix so equal field names remain independent.
  */
 export async function mergeAcroForms(
-  bytes: Uint8Array,
+  document: PdfDocument,
   placements: readonly PagePlacement[],
-  sourcePdfs: readonly { readonly documentId: string; readonly bytes: Uint8Array }[] = [],
-): Promise<Uint8Array> {
-  const pdf = await PDFDocument.load(bytes);
-  const context = pdf.context;
-  const fields = PDFArray.withContext(context);
-  const roots = new Set<string>();
+  sourceDocuments: ReadonlyMap<string, PdfDocument>,
+): Promise<void> {
+  const pageRefs = await loadPageReferences(document);
+  await rebuildImportedFieldParents(document, placements, sourceDocuments, pageRefs);
   const sourceOrder = [...new Set(placements.map((page) => page.source.documentId))];
   const prefixes = new Map(sourceOrder.map((documentId, index) => [documentId, `source_${index + 1}`]));
-  const fieldRefs = new Map<string, PDFRef>();
+  const roots = new Set<number>();
+  const fields: number[] = [];
+  const fieldRefs = new Map<string, number>();
   const calculatedFields = new Map<string, string[]>();
+  const operations: WireRawPdfPatchOperation[] = [];
 
-  pdf.getPages().forEach((page, pageIndex) => {
+  for (let pageIndex = 0; pageIndex < pageRefs.length; pageIndex++) {
     const placement = placements[pageIndex];
-    if (!placement) return;
-    const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
-    if (!annots) return;
-    for (let index = 0; index < annots.size(); index += 1) {
-      const widgetRef = annots.get(index);
-      if (!(widgetRef instanceof PDFRef)) continue;
-      const widget = context.lookup(widgetRef, PDFDict);
-      if (widget.get(PDFName.of('Subtype'))?.toString() !== '/Widget') continue;
-      const { ref: rootRef, dictionary: root } = fieldRoot(context, widgetRef, widget);
-      const key = rootRef.toString();
-      if (roots.has(key)) continue;
-      roots.add(key);
-      const currentName = decodePdfString(root.get(PDFName.of('T'))) ?? `field_${roots.size}`;
+    if (!placement) continue;
+    const page = await readDictionary(document, pageRefs[pageIndex]!);
+    const annots = page.entries.Annots;
+    if (!annots || annots.kind !== 'array') continue;
+    for (const annot of annots.items) {
+      if (annot.kind !== 'reference') continue;
+      const widget = await readDictionary(document, annot.objectNumber);
+      if (widget.entries.Subtype?.kind !== 'name' || widget.entries.Subtype.value !== 'Widget') continue;
+      const rootRef = await fieldRoot(document, annot.objectNumber);
+      if (roots.has(rootRef)) continue;
+      roots.add(rootRef);
+      fields.push(rootRef);
+      const root = await readDictionary(document, rootRef);
+      const currentName = decodePdfString(root.entries.T) ?? `field_${roots.size}`;
       const prefix = prefixes.get(placement.source.documentId)!;
-      collectAndRewriteCalculations(
-        context,
+      await collectAndRewriteCalculations(
+        document,
         rootRef,
         '',
         prefix,
         placement.source.documentId,
         fieldRefs,
         calculatedFields,
+        operations,
       );
-      root.set(PDFName.of('T'), PDFHexString.fromText(`${prefix}.${currentName}`));
-      fields.push(rootRef);
+      operations.push({
+        op: 'dictionarySet',
+        target: { objectNumber: rootRef },
+        key: 'T',
+        value: string(`${prefix}.${currentName}`),
+      });
     }
+  }
+  if (fields.length === 0) return;
+
+  const catalog = await readRoot(document);
+  const existingAcroForm = catalog.entries.AcroForm;
+  const createIds: string[] = [];
+  let acroTarget: WireRawPdfTarget;
+  if (existingAcroForm?.kind === 'reference') {
+    acroTarget = { objectNumber: existingAcroForm.objectNumber };
+  } else if (existingAcroForm?.kind === 'dictionary') {
+    acroTarget = { root: true, path: ['AcroForm'] };
+  } else {
+    createIds.push('acro-form');
+    acroTarget = localTarget('acro-form');
+    operations.push({
+      op: 'dictionarySet',
+      target: { root: true },
+      key: 'AcroForm',
+      value: localReference('acro-form'),
+    });
+  }
+  operations.push(
+    { op: 'dictionarySet', target: acroTarget, key: 'Fields', value: array(fields.map(reference)) },
+    { op: 'dictionarySet', target: acroTarget, key: 'NeedAppearances', value: { kind: 'boolean', value: true } },
+  );
+  const acroForm = existingAcroForm?.kind === 'reference'
+    ? await readDictionary(document, existingAcroForm.objectNumber)
+    : existingAcroForm?.kind === 'dictionary' ? existingAcroForm : null;
+  if (!acroForm?.entries.DR) {
+    createIds.push('acro-font');
+    operations.push({
+      op: 'dictionarySet',
+      target: localTarget('acro-font'),
+      key: 'Type',
+      value: name('Font'),
+    }, {
+      op: 'dictionarySet',
+      target: localTarget('acro-font'),
+      key: 'Subtype',
+      value: name('Type1'),
+    }, {
+      op: 'dictionarySet',
+      target: localTarget('acro-font'),
+      key: 'BaseFont',
+      value: name('Helvetica'),
+    }, {
+      op: 'dictionarySet',
+      target: localTarget('acro-font'),
+      key: 'Encoding',
+      value: name('WinAnsiEncoding'),
+    }, {
+      op: 'dictionarySet',
+      target: acroTarget,
+      key: 'DR',
+      value: {
+        kind: 'dictionary',
+        entries: { Font: { kind: 'dictionary', entries: { Helv: localReference('acro-font') } } },
+      },
+    });
+  }
+  if (!acroForm?.entries.DA) operations.push({
+    op: 'dictionarySet', target: acroTarget, key: 'DA', value: string('/Helv 0 Tf 0 g'),
   });
 
-  if (fields.size() === 0) return bytes;
-  const existing = pdf.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
-  const acroForm = existing ?? context.obj({});
-  acroForm.set(PDFName.of('Fields'), fields);
-  acroForm.set(PDFName.of('NeedAppearances'), context.obj(true));
-  if (!acroForm.has(PDFName.of('DR'))) {
-    const helvetica = context.register(context.obj({
-      Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding',
-    }));
-    acroForm.set(PDFName.of('DR'), context.obj({ Font: { Helv: helvetica } }));
-  }
-  if (!acroForm.has(PDFName.of('DA'))) acroForm.set(PDFName.of('DA'), PDFString.of('/Helv 0 Tf 0 g'));
-  const calculationOrder = PDFArray.withContext(context);
-  for (const source of sourcePdfs) {
-    const orderedNames = await loadCalculationOrder(source.bytes);
-    const fallbackNames = calculatedFields.get(source.documentId) ?? [];
-    for (const name of [...orderedNames, ...fallbackNames]) {
-      const ref = fieldRefs.get(`${source.documentId}\u0000${name}`);
-      if (ref && !calculationOrder.asArray().some((item) => item === ref)) calculationOrder.push(ref);
+  const calculationOrder: number[] = [];
+  for (const [documentId, source] of sourceDocuments) {
+    const orderedNames = await loadCalculationOrder(source);
+    const fallbackNames = calculatedFields.get(documentId) ?? [];
+    for (const fieldName of [...orderedNames, ...fallbackNames]) {
+      const ref = fieldRefs.get(`${documentId}\u0000${fieldName}`);
+      if (ref !== undefined && !calculationOrder.includes(ref)) calculationOrder.push(ref);
     }
   }
-  if (calculationOrder.size() > 0) acroForm.set(PDFName.of('CO'), calculationOrder);
-  if (!existing) pdf.catalog.set(PDFName.of('AcroForm'), context.register(acroForm));
-  return pdf.save({ useObjectStreams: false });
+  if (calculationOrder.length > 0) operations.push({
+    op: 'dictionarySet', target: acroTarget, key: 'CO', value: array(calculationOrder.map(reference)),
+  });
+  await applyPatchWithLocals(document, createIds, operations);
 }
 
-function collectAndRewriteCalculations(
-  context: PDFDocument['context'],
-  ref: PDFRef,
+const FIELD_KEYS = new Set([
+  'FT', 'Ff', 'V', 'DV', 'Opt', 'AA', 'DA', 'Q', 'MaxLen', 'TI', 'I', 'Lock', 'SV',
+]);
+
+async function rebuildImportedFieldParents(
+  document: PdfDocument,
+  placements: readonly PagePlacement[],
+  sourceDocuments: ReadonlyMap<string, PdfDocument>,
+  finalPageRefs: readonly number[],
+): Promise<void> {
+  const sourcePageRefs = new Map<string, number[]>();
+  const groups = new Map<string, {
+    id: string;
+    name: string;
+    entries: Record<string, WireRawPdfObject>;
+    widgets: number[];
+  }>();
+  const widgetParents: { widget: number; groupId: string }[] = [];
+
+  for (let pageIndex = 0; pageIndex < finalPageRefs.length; pageIndex++) {
+    const placement = placements[pageIndex];
+    if (!placement) continue;
+    const source = sourceDocuments.get(placement.source.documentId);
+    if (!source) continue;
+    let refs = sourcePageRefs.get(placement.source.documentId);
+    if (!refs) {
+      refs = await loadPageReferences(source);
+      sourcePageRefs.set(placement.source.documentId, refs);
+    }
+    const sourcePageRef = refs[placement.source.pageIndex];
+    if (sourcePageRef === undefined) continue;
+    const finalWidgets = await pageWidgetReferences(document, finalPageRefs[pageIndex]!);
+    const sourceWidgets = await pageWidgetReferences(source, sourcePageRef);
+    for (let index = 0; index < Math.min(finalWidgets.length, sourceWidgets.length); index++) {
+      const descriptor = await sourceFieldDescriptor(source, sourceWidgets[index]!);
+      if (!descriptor.name) continue;
+      const key = `${placement.source.documentId}\u0000${descriptor.name}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          id: `field-${groups.size}`,
+          name: descriptor.name,
+          entries: descriptor.entries,
+          widgets: [],
+        };
+        groups.set(key, group);
+      }
+      group.widgets.push(finalWidgets[index]!);
+      widgetParents.push({ widget: finalWidgets[index]!, groupId: group.id });
+    }
+  }
+  if (groups.size === 0) return;
+  const createIds = [...groups.values()].map((group) => group.id);
+  const operations: WireRawPdfPatchOperation[] = [];
+  for (const group of groups.values()) {
+    for (const [key, value] of Object.entries(group.entries)) {
+      operations.push({ op: 'dictionarySet', target: localTarget(group.id), key, value });
+    }
+    operations.push(
+      { op: 'dictionarySet', target: localTarget(group.id), key: 'T', value: string(group.name) },
+      {
+        op: 'dictionarySet',
+        target: localTarget(group.id),
+        key: 'Kids',
+        value: array(group.widgets.map(reference)),
+      },
+    );
+  }
+  for (const item of widgetParents) {
+    operations.push({
+      op: 'dictionarySet',
+      target: { objectNumber: item.widget },
+      key: 'Parent',
+      value: localReference(item.groupId),
+    });
+  }
+  await applyPatchWithLocals(document, createIds, operations);
+}
+
+async function pageWidgetReferences(document: PdfDocument, pageRef: number): Promise<number[]> {
+  const page = await readDictionary(document, pageRef);
+  const annots = page.entries.Annots;
+  if (!annots || annots.kind !== 'array') return [];
+  const widgets: number[] = [];
+  for (const annot of annots.items) {
+    if (annot.kind !== 'reference') continue;
+    const value = await readDictionary(document, annot.objectNumber);
+    if (value.entries.Subtype?.kind === 'name' && value.entries.Subtype.value === 'Widget') {
+      widgets.push(annot.objectNumber);
+    }
+  }
+  return widgets;
+}
+
+async function sourceFieldDescriptor(
+  document: PdfDocument,
+  widgetRef: number,
+): Promise<{ name: string; entries: Record<string, WireRawPdfObject> }> {
+  const chain: RawDictionary[] = [];
+  let ref: number | null = widgetRef;
+  const visited = new Set<number>();
+  while (ref !== null && !visited.has(ref)) {
+    visited.add(ref);
+    const field = await readDictionary(document, ref);
+    chain.unshift(field);
+    const parent = field.entries.Parent;
+    ref = parent?.kind === 'reference' ? parent.objectNumber : null;
+  }
+  const names = chain.map((field) => decodePdfString(field.entries.T)).filter((item): item is string => Boolean(item));
+  const entries: Record<string, WireRawPdfObject> = {};
+  for (const field of chain) {
+    for (const [key, value] of Object.entries(field.entries)) {
+      if (FIELD_KEYS.has(key)) entries[key] = await cloneRawValue(document, value);
+    }
+  }
+  return { name: names.join('.'), entries };
+}
+
+async function cloneRawValue(
+  document: PdfDocument,
+  value: WireRawPdfObject,
+  visited = new Set<number>(),
+): Promise<WireRawPdfObject> {
+  if (value.kind === 'reference') {
+    if (visited.has(value.objectNumber)) return { kind: 'null' };
+    const nextVisited = new Set(visited).add(value.objectNumber);
+    const resolved = (await document.getRawObject(value.objectNumber)).object;
+    return resolved ? cloneRawValue(document, resolved, nextVisited) : { kind: 'null' };
+  }
+  if (value.kind === 'array') {
+    return { ...value, items: await Promise.all(value.items.map((item) => cloneRawValue(document, item, visited))) };
+  }
+  if (value.kind === 'dictionary' || value.kind === 'stream') {
+    return {
+      ...value,
+      entries: Object.fromEntries(await Promise.all(
+        Object.entries(value.entries).map(async ([key, item]) => [key, await cloneRawValue(document, item, visited)]),
+      )),
+    };
+  }
+  return value;
+}
+
+function localTarget(id: string): WireRawPdfTarget {
+  return { localId: id };
+}
+
+async function applyPatchWithLocals(
+  document: PdfDocument,
+  createIds: string[],
+  operations: WireRawPdfPatchOperation[],
+): Promise<void> {
+  await document.editRawObjects((editor) => {
+    const created = new Map<string, PdfRawCreatedObject>();
+    for (const id of createIds) created.set(id, editor.createDictionary());
+    for (const operation of operations) {
+      const target = resolveEditorTarget(editor, operation.target, created);
+      if (operation.op === 'dictionarySet') {
+        editor.setDictionaryValue(target, operation.key, resolveEditorValue(operation.value, created));
+      } else if (operation.op === 'dictionaryRemove') {
+        editor.removeDictionaryValue(target, operation.key);
+      } else if (operation.op === 'arrayAppend') {
+        editor.appendArrayValue(target, resolveEditorValue(operation.value, created));
+      } else if (operation.op === 'arraySet') {
+        editor.setArrayValue(target, operation.index, resolveEditorValue(operation.value, created));
+      } else if (operation.op === 'arrayRemove') {
+        editor.removeArrayValue(target, operation.index);
+      } else {
+        editor.setStreamData(target, operation.data);
+      }
+    }
+  });
+}
+
+function resolveEditorTarget(
+  editor: PdfRawObjectEditor,
+  target: WireRawPdfTarget,
+  created: ReadonlyMap<string, PdfRawCreatedObject>,
+): WireRawPdfTarget {
+  let result: WireRawPdfTarget;
+  if (target.root) {
+    result = editor.catalog();
+  } else if (target.localId) {
+    const local = created.get(target.localId);
+    if (!local) throw new Error(`Unknown local raw PDF object: ${target.localId}`);
+    result = local;
+  } else if (target.objectNumber !== undefined) {
+    result = editor.object(target.objectNumber);
+  } else {
+    throw new Error('Raw PDF target has no root, object number, or local object');
+  }
+  return target.path?.length ? editor.at(result, ...target.path) : result;
+}
+
+function resolveEditorValue(
+  value: WireRawPdfPatchValue,
+  created: ReadonlyMap<string, PdfRawCreatedObject>,
+): WireRawPdfPatchValue {
+  if (value.kind === 'localReference') {
+    const local = created.get(value.id);
+    if (!local) throw new Error(`Unknown local raw PDF reference: ${value.id}`);
+    return local.reference;
+  }
+  if (value.kind === 'array') {
+    return { ...value, items: value.items.map((item) => resolveEditorValue(item, created)) };
+  }
+  if (value.kind === 'dictionary' || value.kind === 'stream') {
+    return {
+      ...value,
+      entries: Object.fromEntries(
+        Object.entries(value.entries).map(([key, item]) => [key, resolveEditorValue(item, created)]),
+      ),
+    };
+  }
+  return value;
+}
+
+async function loadPageReferences(document: PdfDocument): Promise<number[]> {
+  const root = await readRoot(document);
+  const pages = root.entries.Pages;
+  if (!pages || pages.kind !== 'reference') throw new Error('PDF catalog has no indirect /Pages tree');
+  const refs: number[] = [];
+  const visit = async (objectNumber: number): Promise<void> => {
+    const node = await readDictionary(document, objectNumber);
+    if (node.entries.Type?.kind === 'name' && node.entries.Type.value === 'Page') {
+      refs.push(objectNumber);
+      return;
+    }
+    const kids = node.entries.Kids;
+    if (!kids || kids.kind !== 'array') return;
+    for (const kid of kids.items) if (kid.kind === 'reference') await visit(kid.objectNumber);
+  };
+  await visit(pages.objectNumber);
+  return refs;
+}
+
+async function readRoot(document: PdfDocument): Promise<RawDictionary> {
+  const result = await document.getCatalogObject();
+  if (!result.object || result.object.kind !== 'dictionary') throw new Error('PDF catalog is not a dictionary');
+  return result.object;
+}
+
+async function readDictionary(document: PdfDocument, objectNumber: number): Promise<RawDictionary> {
+  const result = await document.getRawObject(objectNumber);
+  if (!result.object || result.object.kind !== 'dictionary') {
+    throw new Error(`PDF object ${objectNumber} is not a dictionary`);
+  }
+  return result.object;
+}
+
+async function fieldRoot(document: PdfDocument, initialRef: number): Promise<number> {
+  let ref = initialRef;
+  const visited = new Set<number>();
+  while (!visited.has(ref)) {
+    visited.add(ref);
+    const field = await readDictionary(document, ref);
+    const parent = field.entries.Parent;
+    if (!parent || parent.kind !== 'reference') break;
+    ref = parent.objectNumber;
+  }
+  return ref;
+}
+
+async function collectAndRewriteCalculations(
+  document: PdfDocument,
+  ref: number,
   parentName: string,
   prefix: string,
   documentId: string,
-  fieldRefs: Map<string, PDFRef>,
+  fieldRefs: Map<string, number>,
   calculatedFields: Map<string, string[]>,
-): void {
-  const field = context.lookup(ref, PDFDict);
-  const partialName = decodePdfString(field.get(PDFName.of('T')));
-  const name = partialName ? (parentName ? `${parentName}.${partialName}` : partialName) : parentName;
-  if (name) fieldRefs.set(`${documentId}\u0000${name}`, ref);
-  const aa = field.lookupMaybe(PDFName.of('AA'), PDFDict);
-  const action = aa?.lookupMaybe(PDFName.of('C'), PDFDict);
-  const jsObject = action?.get(PDFName.of('JS'));
-  const js = decodePdfString(jsObject);
+  operations: WireRawPdfPatchOperation[],
+): Promise<void> {
+  const field = await readDictionary(document, ref);
+  const partialName = decodePdfString(field.entries.T);
+  const fieldName = partialName ? (parentName ? `${parentName}.${partialName}` : partialName) : parentName;
+  if (fieldName) fieldRefs.set(`${documentId}\u0000${fieldName}`, ref);
+  const aa = await resolveDictionaryEntry(document, field.entries.AA);
+  const action = await resolveDictionaryEntry(document, aa?.entries.C);
+  const js = decodePdfString(action?.entries.JS);
   const spec = parseCalcAction(js);
-  if (action && spec && name) {
-    const rewrittenFields = spec.fields.map((fieldName) => `${prefix}.${fieldName}`);
-    action.set(
-      PDFName.of('JS'),
-      PDFString.of(`AFSimple_Calculate("${spec.op}", new Array(${rewrittenFields.map((item) => JSON.stringify(item)).join(', ')}));`),
-    );
+  if (action && spec && fieldName) {
+    const rewrittenFields = spec.fields.map((item) => `${prefix}.${item}`);
+    operations.push({
+      op: 'dictionarySet',
+      target: { objectNumber: ref, path: ['AA', 'C'] },
+      key: 'JS',
+      value: string(
+        `AFSimple_Calculate("${spec.op}", new Array(${rewrittenFields.map((item) => JSON.stringify(item)).join(', ')}));`,
+      ),
+    });
     const names = calculatedFields.get(documentId) ?? [];
-    names.push(name);
+    names.push(fieldName);
     calculatedFields.set(documentId, names);
   }
-  const kids = field.lookupMaybe(PDFName.of('Kids'), PDFArray);
-  if (!kids) return;
-  for (let index = 0; index < kids.size(); index += 1) {
-    const kid = kids.get(index);
-    if (kid instanceof PDFRef) collectAndRewriteCalculations(context, kid, name, prefix, documentId, fieldRefs, calculatedFields);
+  const kids = field.entries.Kids;
+  if (!kids || kids.kind !== 'array') return;
+  for (const kid of kids.items) {
+    if (kid.kind === 'reference') {
+      await collectAndRewriteCalculations(
+        document, kid.objectNumber, fieldName, prefix, documentId, fieldRefs, calculatedFields, operations,
+      );
+    }
   }
 }
 
-async function loadCalculationOrder(bytes: Uint8Array): Promise<string[]> {
-  const pdf = await PDFDocument.load(bytes);
-  const acroForm = pdf.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
-  const order = acroForm?.lookupMaybe(PDFName.of('CO'), PDFArray);
-  if (!order) return [];
+async function resolveDictionaryEntry(
+  document: PdfDocument,
+  value: WireRawPdfObject | undefined,
+): Promise<RawDictionary | null> {
+  if (!value) return null;
+  if (value.kind === 'dictionary') return value;
+  if (value.kind === 'reference') return readDictionary(document, value.objectNumber);
+  return null;
+}
+
+async function loadCalculationOrder(document: PdfDocument): Promise<string[]> {
+  const root = await readRoot(document);
+  const acroForm = await resolveDictionaryEntry(document, root.entries.AcroForm);
+  const order = acroForm?.entries.CO;
+  if (!order || order.kind !== 'array') return [];
   const names: string[] = [];
-  for (let index = 0; index < order.size(); index += 1) {
-    const ref = order.get(index);
-    if (!(ref instanceof PDFRef)) continue;
-    const name = qualifiedFieldName(pdf.context, ref);
-    if (name) names.push(name);
+  for (const item of order.items) {
+    if (item.kind !== 'reference') continue;
+    const fieldName = await qualifiedFieldName(document, item.objectNumber);
+    if (fieldName) names.push(fieldName);
   }
   return names;
 }
 
-function qualifiedFieldName(context: PDFDocument['context'], initialRef: PDFRef): string | null {
+async function qualifiedFieldName(document: PdfDocument, initialRef: number): Promise<string | null> {
   const parts: string[] = [];
-  let ref: PDFRef | null = initialRef;
-  const visited = new Set<string>();
-  while (ref && !visited.has(ref.toString())) {
-    visited.add(ref.toString());
-    const field: PDFDict | undefined = context.lookupMaybe(ref, PDFDict);
-    if (!field) break;
-    const name = decodePdfString(field.get(PDFName.of('T')));
-    if (name) parts.unshift(name);
-    const parent: unknown = field.get(PDFName.of('Parent'));
-    ref = parent instanceof PDFRef ? parent : null;
+  let ref: number | null = initialRef;
+  const visited = new Set<number>();
+  while (ref !== null && !visited.has(ref)) {
+    visited.add(ref);
+    const field = await readDictionary(document, ref);
+    const fieldName = decodePdfString(field.entries.T);
+    if (fieldName) parts.unshift(fieldName);
+    const parent = field.entries.Parent;
+    ref = parent?.kind === 'reference' ? parent.objectNumber : null;
   }
   return parts.length > 0 ? parts.join('.') : null;
 }
 
-function fieldRoot(
-  context: PDFDocument['context'],
-  initialRef: PDFRef,
-  initial: PDFDict,
-): { readonly ref: PDFRef; readonly dictionary: PDFDict } {
-  let ref = initialRef;
-  let dictionary = initial;
-  const visited = new Set<string>();
-  while (!visited.has(ref.toString())) {
-    visited.add(ref.toString());
-    const parentRef = dictionary.get(PDFName.of('Parent'));
-    if (!(parentRef instanceof PDFRef)) break;
-    const parent = context.lookupMaybe(parentRef, PDFDict);
-    if (!parent) break;
-    ref = parentRef;
-    dictionary = parent;
+function decodePdfString(value: WireRawPdfObject | undefined): string | null {
+  if (!value || (value.kind !== 'string' && value.kind !== 'name')) return null;
+  if (value.kind === 'name') return value.value;
+  const bytes = value.value;
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    let result = '';
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      result += String.fromCharCode((bytes[index]! << 8) | bytes[index + 1]!);
+    }
+    return result;
   }
-  return { ref, dictionary };
+  return new TextDecoder('windows-1252').decode(bytes);
 }
 
-function decodePdfString(value: unknown): string | null {
-  return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : null;
+function encodePdfText(value: string): Uint8Array {
+  const bytes = new Uint8Array(2 + value.length * 2);
+  bytes[0] = 0xfe;
+  bytes[1] = 0xff;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    bytes[2 + index * 2] = code >> 8;
+    bytes[3 + index * 2] = code & 0xff;
+  }
+  return bytes;
+}
+
+function destinationCommand(command: string): string {
+  const names: Record<string, string> = {
+    xyz: 'XYZ', fit: 'Fit', fitb: 'FitB', fith: 'FitH', fitbh: 'FitBH',
+    fitv: 'FitV', fitbv: 'FitBV', fitr: 'FitR',
+  };
+  return names[command.toLowerCase()] ?? 'Fit';
+}
+
+function descendantCount(parent: string, flat: readonly { id: string; parent: string }[]): number {
+  const children = flat.filter((entry) => entry.parent === parent);
+  return children.length + children.reduce((sum, child) => sum + descendantCount(child.id, flat), 0);
+}
+
+function lastTopLevelId(
+  nodes: readonly MappedOutlineNode[],
+  flat: readonly { id: string; parent: string }[],
+): string {
+  const top = flat.filter((entry) => entry.parent === 'outline-root');
+  return top[Math.max(0, nodes.length - 1)]!.id;
 }

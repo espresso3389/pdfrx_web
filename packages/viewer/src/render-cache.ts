@@ -300,6 +300,33 @@ export class PageRenderCache {
     }
   }
 
+  /** @internal Drops rendered and queued work for the specified page positions. */
+  clearPages(pageNumbers: readonly number[]): void {
+    const pageSet = new Set(pageNumbers);
+    const keys = new Set(
+      pageNumbers
+        .map((pageNumber) => this.keyOf(pageNumber))
+        .filter((key): key is string => key !== null),
+    );
+    for (const key of keys) {
+      this.base.get(key)?.bitmap.close();
+      this.base.delete(key);
+      this.baseRendering.get(key)?.token.cancel();
+      this.baseRendering.delete(key);
+    }
+    for (const pageNumber of pageSet) {
+      this.patches.get(pageNumber)?.bitmap.close();
+      this.patches.delete(pageNumber);
+      this.patchRendering.get(pageNumber)?.cancel();
+      this.patchRendering.delete(pageNumber);
+    }
+    if (this.pendingPatchPage !== null && pageSet.has(this.pendingPatchPage)) {
+      if (this.patchTimer) clearTimeout(this.patchTimer);
+      this.patchTimer = null;
+      this.pendingPatchPage = null;
+    }
+  }
+
   /** @internal Drops all rendered bitmaps (e.g. after font registration changed glyphs). */
   clearAllRendered(): void {
     for (const { bitmap } of this.base.values()) bitmap.close();

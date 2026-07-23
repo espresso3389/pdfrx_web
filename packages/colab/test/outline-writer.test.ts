@@ -1,110 +1,228 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFString } from 'pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { PdfrxEngine, type PdfDocument, type WireRawPdfObject } from '@pdfrx/engine';
+import { afterAll, describe, expect, it } from 'vitest';
 import { mergeAcroForms, writeOutline } from '../src/outline-writer.js';
+
+const engine = new PdfrxEngine();
+afterAll(() => engine.dispose());
+
+describe('raw PDF object API', () => {
+  it('commits editor batches atomically and leaves the original untouched on either kind of failure', async () => {
+    const pixel = { pixels: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel]);
+    try {
+      const initialHandle = document.docHandle;
+      await expect(document.editRawObjects((editor) => {
+        editor.setDictionaryValue(editor.catalog(), 'CallbackMustNotCommit', { kind: 'boolean', value: true });
+        throw new Error('stop building');
+      })).rejects.toThrow('stop building');
+      expect((await document.getCatalogObject()).object).not.toMatchObject({
+        entries: { CallbackMustNotCommit: expect.anything() },
+      });
+      expect(document.docHandle).toBe(initialHandle);
+
+      await document.editRawObjects((editor) => {
+        editor.setDictionaryValue(editor.catalog(), 'DirectCommit', { kind: 'boolean', value: true });
+      });
+      expect((await document.getCatalogObject()).object).toMatchObject({
+        entries: { DirectCommit: { kind: 'boolean', value: true } },
+      });
+      expect(document.docHandle).toBe(initialHandle);
+
+      await expect(document.editRawObjects(
+        (editor) => {
+          editor.setDictionaryValue(editor.catalog(), 'WorkerMustNotCommit', { kind: 'boolean', value: true });
+          editor.setDictionaryValue(editor.object(999999), 'Missing', { kind: 'null' });
+        },
+        { atomic: true },
+      )).rejects.toThrow('Raw PDF patch target does not exist');
+      expect((await document.getCatalogObject()).object).not.toMatchObject({
+        entries: { WorkerMustNotCommit: expect.anything() },
+      });
+      expect(document.docHandle).toBe(initialHandle);
+
+      await document.editRawObjects(
+        (editor) => {
+          const metadata = editor.createDictionary({
+            Type: { kind: 'name', value: 'Metadata' },
+          });
+          editor.setDictionaryValue(editor.catalog(), 'PdfrxTest', metadata.reference);
+        },
+        { atomic: true },
+      );
+      expect(document.docHandle).not.toBe(initialHandle);
+      const catalog = (await document.getCatalogObject()).object;
+      expect(catalog).toMatchObject({
+        entries: {
+          PdfrxTest: { kind: 'reference' },
+        },
+      });
+      const reopened = await engine.openData(await document.encodePdf());
+      try {
+        expect((await reopened.getCatalogObject()).object).toMatchObject({
+          entries: {
+            PdfrxTest: { kind: 'reference' },
+          },
+        });
+      } finally {
+        await reopened.dispose();
+      }
+    } finally {
+      await document.dispose();
+    }
+  });
+
+  it('decodes, edits, saves, and reopens a stream object', async () => {
+    const pixel = { pixels: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel]);
+    try {
+      const page = await firstPageDictionary(document);
+      const contents = page.entries.Contents;
+      const streamRef = contents?.kind === 'reference'
+        ? contents.objectNumber
+        : contents?.kind === 'array' && contents.items[0]?.kind === 'reference'
+          ? contents.items[0].objectNumber
+          : null;
+      expect(streamRef).not.toBeNull();
+      const stream = await document.getRawObject(streamRef!, { includeRawStreamData: true });
+      expect(stream.object?.kind).toBe('stream');
+      if (!stream.object || stream.object.kind !== 'stream') throw new Error('Expected a content stream');
+      expect(stream.object.data.byteLength).toBeGreaterThan(0);
+      expect(stream.object.rawData?.byteLength).toBeGreaterThan(0);
+      const suffix = new TextEncoder().encode('\nq Q\n');
+      const updated = new Uint8Array(stream.object.data.byteLength + suffix.byteLength);
+      updated.set(stream.object.data);
+      updated.set(suffix, stream.object.data.byteLength);
+      await document.editRawObjects((editor) => {
+        editor.setStreamData(editor.object(streamRef!), updated);
+      });
+
+      const reopened = await engine.openData(await document.encodePdf());
+      try {
+        const reopenedPage = await firstPageDictionary(reopened);
+        const reopenedContents = reopenedPage.entries.Contents;
+        const reopenedRef = reopenedContents?.kind === 'reference'
+          ? reopenedContents.objectNumber
+          : reopenedContents?.kind === 'array' && reopenedContents.items[0]?.kind === 'reference'
+            ? reopenedContents.items[0].objectNumber
+            : null;
+        const reopenedStream = await reopened.getRawObject(reopenedRef!);
+        expect(reopenedStream.object?.kind).toBe('stream');
+        if (!reopenedStream.object || reopenedStream.object.kind !== 'stream') throw new Error('Expected a stream');
+        expect([...reopenedStream.object.data.slice(-suffix.byteLength)]).toEqual([...suffix]);
+      } finally {
+        await reopened.dispose();
+      }
+    } finally {
+      await document.dispose();
+    }
+  });
+});
 
 describe('collaborative outline export', () => {
   it('writes nested bookmarks with destinations in the final page order', async () => {
-    const seed = await PDFDocument.create();
-    seed.addPage([200, 300]);
-    seed.addPage([200, 300]);
-    const bytes = await writeOutline(await seed.save(), [
+    const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel, pixel]);
+    await writeOutline(document, [
       {
         title: 'Document A',
         dest: { pageIndex: 1, command: 'xyz', params: [10, 250, null] },
         children: [{ title: 'First section', dest: { pageIndex: 0, command: 'fit', params: [] }, children: [] }],
       },
     ]);
+    const bytes = await document.encodePdf();
+    await document.dispose();
 
-    const pdf = await PDFDocument.load(bytes);
-    const outlines = pdf.catalog.lookup(PDFName.of('Outlines'), PDFDict);
-    expect(outlines.lookup(PDFName.of('Count'), PDFNumber).asNumber()).toBe(2);
-    const first = outlines.lookup(PDFName.of('First'), PDFDict);
-    expect(first.lookup(PDFName.of('Title'), PDFHexString).decodeText()).toBe('Document A');
-    const destination = first.lookup(PDFName.of('Dest'), PDFArray);
-    expect(destination.get(0)).toEqual(pdf.getPage(1).ref);
-    const child = first.lookup(PDFName.of('First'), PDFDict);
-    expect(child.lookup(PDFName.of('Title'), PDFHexString).decodeText()).toBe('First section');
-    expect(child.lookup(PDFName.of('Dest'), PDFArray).get(0)).toEqual(pdf.getPage(0).ref);
+    const reopened = await engine.openData(bytes);
+    try {
+      const outline = await reopened.loadOutline();
+      expect(outline).toHaveLength(1);
+      expect(outline[0]?.title).toBe('Document A');
+      expect(outline[0]?.dest?.pageNumber).toBe(2);
+      expect(outline[0]?.children[0]?.title).toBe('First section');
+      expect(outline[0]?.children[0]?.dest?.pageNumber).toBe(1);
+    } finally {
+      await reopened.dispose();
+    }
   });
 });
 
 describe('collaborative AcroForm export', () => {
-  it('registers imported widgets under source-scoped field names', async () => {
-    const sourceA = await PDFDocument.create();
-    const pageA = sourceA.addPage([200, 300]);
-    const fieldA = sourceA.getForm().createTextField('name');
-    fieldA.setText('Alice');
-    fieldA.addToPage(pageA, { x: 20, y: 200, width: 100, height: 20 });
-    const sourceB = await PDFDocument.create();
-    const pageB = sourceB.addPage([200, 300]);
-    const fieldB = sourceB.getForm().createTextField('name');
-    fieldB.setText('Bob');
-    fieldB.addToPage(pageB, { x: 20, y: 200, width: 100, height: 20 });
+  it('registers imported widgets under source-scoped field names and rewrites calculations', async () => {
+    const first = await openFixture('form-a.pdf');
+    const second = await openFixture('form-b.pdf');
+    const merged = await first.createPdfCopy();
+    try {
+      merged.setPages([merged.pages[0]!, second.pages[0]!]);
+      await merged.assemblePages();
+      const placements = [
+        { placementId: 'a', source: { documentId: 'document-a', pageIndex: 0 }, rotation: 0 as const },
+        { placementId: 'b', source: { documentId: 'document-b', pageIndex: 0 }, rotation: 0 as const },
+      ];
+      await mergeAcroForms(
+        merged,
+        placements,
+        new Map([['document-a', first], ['document-b', second]]),
+      );
+      const bytes = await merged.encodePdf();
+      const reopened = await engine.openData(bytes);
+      try {
+        const fields = await reopened.loadFormFields();
+        expect(fields.map((field) => field.name).sort()).toEqual([
+          'source_1.input',
+          'source_1.total',
+          'source_2.input',
+          'source_2.total',
+        ]);
+        expect(await reopened.getFormFieldValue('source_1.input')).toBe('10');
+        expect(await reopened.getFormFieldValue('source_2.input')).toBe('20');
+        expect(await calculationOrderSize(reopened)).toBe(2);
 
-    const merged = await PDFDocument.create();
-    merged.addPage((await merged.copyPages(sourceA, [0]))[0]!);
-    merged.addPage((await merged.copyPages(sourceB, [0]))[0]!);
-    const bytes = await mergeAcroForms(await merged.save(), [
-      { placementId: 'a', source: { documentId: 'document-a', pageIndex: 0 }, rotation: 0 },
-      { placementId: 'b', source: { documentId: 'document-b', pageIndex: 0 }, rotation: 0 },
-    ]);
-
-    const reopened = await PDFDocument.load(bytes);
-    expect(reopened.getForm().getFields().map((field) => field.getName()).sort()).toEqual([
-      'source_1.name',
-      'source_2.name',
-    ]);
-    expect(reopened.getForm().getTextField('source_1.name').getText()).toBe('Alice');
-    expect(reopened.getForm().getTextField('source_2.name').getText()).toBe('Bob');
-  });
-
-  it('rewrites AFSimple_Calculate references and combines source calculation order', async () => {
-    const makeSource = async (value: string): Promise<{ pdf: PDFDocument; bytes: Uint8Array }> => {
-      const pdf = await PDFDocument.create();
-      const page = pdf.addPage([200, 300]);
-      const form = pdf.getForm();
-      const input = form.createTextField('input');
-      input.setText(value);
-      input.addToPage(page, { x: 20, y: 230, width: 100, height: 20 });
-      const total = form.createTextField('total');
-      total.setText(value);
-      total.addToPage(page, { x: 20, y: 190, width: 100, height: 20 });
-      const action = pdf.context.obj({
-        S: 'JavaScript',
-        JS: PDFString.of('AFSimple_Calculate("SUM", new Array("input"));'),
-      });
-      total.acroField.dict.set(PDFName.of('AA'), pdf.context.obj({ C: action }));
-      const acroForm = pdf.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
-      const order = PDFArray.withContext(pdf.context);
-      order.push(total.ref);
-      acroForm.set(PDFName.of('CO'), order);
-      return { pdf, bytes: await pdf.save() };
-    };
-    const first = await makeSource('10');
-    const second = await makeSource('20');
-    const merged = await PDFDocument.create();
-    merged.addPage((await merged.copyPages(first.pdf, [0]))[0]!);
-    merged.addPage((await merged.copyPages(second.pdf, [0]))[0]!);
-    const placements = [
-      { placementId: 'a', source: { documentId: 'document-a', pageIndex: 0 }, rotation: 0 as const },
-      { placementId: 'b', source: { documentId: 'document-b', pageIndex: 0 }, rotation: 0 as const },
-    ];
-    const bytes = await mergeAcroForms(await merged.save(), placements, [
-      { documentId: 'document-a', bytes: first.bytes },
-      { documentId: 'document-b', bytes: second.bytes },
-    ]);
-
-    const reopened = await PDFDocument.load(bytes);
-    const fields = reopened.getForm();
-    expect(fields.getTextField('source_1.input').getText()).toBe('10');
-    expect(fields.getTextField('source_2.input').getText()).toBe('20');
-    const acroForm = reopened.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
-    expect(acroForm.lookup(PDFName.of('CO'), PDFArray).size()).toBe(2);
-    for (const prefix of ['source_1', 'source_2']) {
-      const total = fields.getTextField(`${prefix}.total`);
-      const aa = total.acroField.dict.lookup(PDFName.of('AA'), PDFDict);
-      const calculate = aa.lookup(PDFName.of('C'), PDFDict);
-      expect(calculate.lookup(PDFName.of('JS'), PDFString).decodeText()).toContain(`"${prefix}.input"`);
+        await reopened.setFormFieldValue('source_1.input', '7');
+        expect(await reopened.getFormFieldValue('source_1.total')).toBe('7');
+        expect(await reopened.getFormFieldValue('source_2.total')).toBe('20');
+        await reopened.setFormFieldValue('source_2.input', '9');
+        expect(await reopened.getFormFieldValue('source_2.total')).toBe('9');
+      } finally {
+        await reopened.dispose();
+      }
+    } finally {
+      await merged.dispose();
+      await first.dispose();
+      await second.dispose();
     }
   });
 });
+
+async function openFixture(name: string): Promise<PdfDocument> {
+  return engine.openData(await readFile(new URL(`fixtures/${name}`, import.meta.url)));
+}
+
+async function calculationOrderSize(document: PdfDocument): Promise<number> {
+  const root = (await document.getCatalogObject()).object;
+  if (!root || root.kind !== 'dictionary') return 0;
+  const acroForm = await resolveObject(document, root.entries.AcroForm);
+  if (!acroForm || acroForm.kind !== 'dictionary') return 0;
+  const order = acroForm.entries.CO;
+  return order?.kind === 'array' ? order.items.length : 0;
+}
+
+async function resolveObject(
+  document: PdfDocument,
+  value: WireRawPdfObject | undefined,
+): Promise<WireRawPdfObject | null> {
+  if (!value) return null;
+  if (value.kind !== 'reference') return value;
+  return (await document.getRawObject(value.objectNumber)).object;
+}
+
+async function firstPageDictionary(document: PdfDocument): Promise<Extract<WireRawPdfObject, { kind: 'dictionary' }>> {
+  const root = (await document.getCatalogObject()).object;
+  if (!root || root.kind !== 'dictionary') throw new Error('Expected a catalog dictionary');
+  const pages = await resolveObject(document, root.entries.Pages);
+  if (!pages || pages.kind !== 'dictionary') throw new Error('Expected a page tree');
+  const first = pages.entries.Kids?.kind === 'array' ? pages.entries.Kids.items[0] : null;
+  const page = await resolveObject(document, first ?? undefined);
+  if (!page || page.kind !== 'dictionary') throw new Error('Expected a page dictionary');
+  return page;
+}

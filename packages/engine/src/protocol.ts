@@ -95,6 +95,52 @@ export interface WireOutlineNode {
   children: WireOutlineNode[];
 }
 
+/** Serialized PDF object value used by the raw object editing commands. */
+export type WireRawPdfObject =
+  | { kind: 'null' }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'integer'; value: number }
+  | { kind: 'number'; value: number }
+  | { kind: 'string'; value: Uint8Array }
+  | { kind: 'name'; value: string }
+  | { kind: 'reference'; objectNumber: number; generationNumber: number }
+  | { kind: 'array'; items: WireRawPdfObject[] }
+  | { kind: 'dictionary'; entries: Record<string, WireRawPdfObject> }
+  | {
+      kind: 'stream';
+      entries: Record<string, WireRawPdfObject>;
+      data: Uint8Array;
+      rawData?: Uint8Array;
+    };
+
+export interface WireRawPdfTarget {
+  root?: true;
+  objectNumber?: number;
+  localId?: string;
+  path?: (string | number)[];
+}
+
+/** Value accepted by a raw PDF patch, including references to dictionaries created in the same command. */
+export type WireRawPdfPatchValue =
+  | Exclude<WireRawPdfObject, { kind: 'array' | 'dictionary' | 'stream' }>
+  | { kind: 'localReference'; id: string }
+  | { kind: 'array'; items: WireRawPdfPatchValue[] }
+  | { kind: 'dictionary'; entries: Record<string, WireRawPdfPatchValue> }
+  | {
+      kind: 'stream';
+      entries: Record<string, WireRawPdfPatchValue>;
+      data: Uint8Array;
+      rawData?: Uint8Array;
+    };
+
+export type WireRawPdfPatchOperation =
+  | { op: 'dictionarySet'; target: WireRawPdfTarget; key: string; value: WireRawPdfPatchValue }
+  | { op: 'dictionaryRemove'; target: WireRawPdfTarget; key: string }
+  | { op: 'arrayAppend'; target: WireRawPdfTarget; value: WireRawPdfPatchValue }
+  | { op: 'arraySet'; target: WireRawPdfTarget; index: number; value: WireRawPdfPatchValue }
+  | { op: 'arrayRemove'; target: WireRawPdfTarget; index: number }
+  | { op: 'streamSetData'; target: WireRawPdfTarget; data: Uint8Array };
+
 /** Annotation metadata on the wire. Basis for `PdfAnnotation`. */
 export interface WireAnnotation {
   title?: string | null;
@@ -474,6 +520,20 @@ export interface WorkerCommandMap {
       removeSecurity?: boolean;
     };
     result: { data: ArrayBuffer };
+  };
+  /** Reads the catalog or one indirect PDF object without expanding references. */
+  rawGetObject: {
+    params: { docHandle: number; objectNumber?: number; includeRawStreamData?: boolean };
+    result: { object: WireRawPdfObject | null; objectNumber: number; generationNumber: number };
+  };
+  /** Adds indirect dictionaries and applies raw dictionary/array/stream mutations as one worker command. */
+  rawApplyPatch: {
+    params: {
+      docHandle: number;
+      createDictionaries?: string[];
+      operations: WireRawPdfPatchOperation[];
+    };
+    result: { created: Record<string, number> };
   };
   /** Creates an independent native copy of a document without changing it. */
   cloneDocument: {

@@ -27,9 +27,8 @@ export async function encodeCollaborativePdf(
   placements: readonly PagePlacement[],
   sources: PageSourceRegistry,
 ): Promise<Uint8Array> {
-  const bytes = await rootDocument.encodePdfCopy();
   const documentIds = [...new Set(placements.map((page) => page.source.documentId))];
-  if (documentIds.length <= 1) return bytes;
+  if (documentIds.length <= 1) return rootDocument.encodePdfCopy();
 
   const mapped: MappedOutlineNode[] = [];
   for (const documentId of documentIds) {
@@ -38,12 +37,18 @@ export async function encodeCollaborativePdf(
     mapped.push(...outline.map((node) => mapOutlineNode(node, documentId, placements)));
   }
   const { mergeAcroForms, writeOutline } = await import('./outline-writer.js');
-  const outlined = mapped.length > 0 ? await writeOutline(bytes, mapped) : bytes;
-  const formSources = await Promise.all(documentIds.map(async (documentId) => ({
-    documentId,
-    bytes: await sources.document(documentId).encodePdfCopy(),
-  })));
-  return mergeAcroForms(outlined, placements, formSources);
+  const copy = await rootDocument.createPdfCopy();
+  try {
+    if (mapped.length > 0) await writeOutline(copy, mapped);
+    await mergeAcroForms(
+      copy,
+      placements,
+      new Map(documentIds.map((documentId) => [documentId, sources.document(documentId)])),
+    );
+    return await copy.encodePdf();
+  } finally {
+    await copy.dispose();
+  }
 }
 
 function mapOutlineNode(

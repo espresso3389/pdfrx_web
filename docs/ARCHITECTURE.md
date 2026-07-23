@@ -10,7 +10,7 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 | Layer | Package / files | Responsibility |
 |---|---|---|
 | Engine core | `packages/engine/assets/pdfium_worker.js` + `pdfium.wasm` (vendored) | The WASM rendering engine, run in a Web Worker. |
-| Engine client | `@pdfrx/engine` (`protocol.ts`, `communicator.ts`, `document.ts`) | Typed `postMessage` client: open/render/text/links/outline, fonts, forms, annotations, and page editing. |
+| Engine client | `@pdfrx/engine` (`protocol.ts`, `communicator.ts`, `document.ts`) | Typed `postMessage` client: open/render/text/links/outline, fonts, forms, annotations, page editing, and raw PDF-object inspection/patching. |
 | Core logic | `@pdfrx/viewer-core` | DOM-free geometry, layout, viewport math, text flow, selection. |
 | Viewer shell | `@pdfrx/viewer` | The `<canvas>` shell plus HTML/SVG overlays: rendering, gestures, selection, search, forms, annotations, and printing. |
 | React bindings | `@pdfrx/react` | All-in-one and composable viewer UI, localized controls, and headless hooks. |
@@ -28,6 +28,24 @@ those edits. `encodePdfCopy()` normally clones the root document, but when its
 virtual arrangement contains pages from exactly one imported document it clones
 that source instead; PDFium page import does not copy document-level AcroForm,
 outline, metadata, or name-tree dictionaries. Notable client behaviors:
+
+- The custom PDFium build uses
+  [espresso3389/pdfium-binaries](https://github.com/espresso3389/pdfium-binaries/)
+  as its build backend/toolchain and exports the added `FPDFRaw_*` interface.
+  `rawGetObject` serializes PDF objects without expanding indirect references,
+  while the internal raw-patch command batches dictionary, array, and
+  decoded-stream mutations. These are the document-level primitives behind
+  `PdfDocument`'s custom object-editing API and collaboration export's outline
+  and AcroForm reconstruction.
+
+- Raw-object edits deliberately carry no inferred GUI invalidation: arbitrary
+  dictionary/array/stream changes do not reveal whether rendering, extracted
+  text, links, forms, annotations, outline, layout, or native PDFium caches are
+  affected. Callers explicitly choose `PdfrxViewer.refreshPages()` for known
+  page/cache scopes, `refreshDocument()` for all viewer-derived state, or
+  `reloadDocument()` to copy and reparse the PDF into a fresh native document.
+  React subscribes to these explicit refreshes and invalidates its outline,
+  form, annotation, search, and thumbnail state as well.
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
   the engine resolves relative document URLs against `document.baseURI` before

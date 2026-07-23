@@ -30,6 +30,9 @@ export {
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfPageRenderOptions,
+  type PdfRawCreatedObject,
+  type PdfRawObjectEditOptions,
+  type PdfRawObjectEditor,
   type PdfrxEngineOptions,
 } from './document.js';
 export {
@@ -74,5 +77,15 @@ export type {
   WirePageInfo,
   WirePixelFormat,
   WireRect,
+  WireRawPdfObject,
+  WireRawPdfPatchOperation,
+  WireRawPdfPatchValue,
+  WireRawPdfTarget,
 } from './protocol.js';
 export { isWireError, PdfErrorCode } from './protocol.js';
+export type {
+  WireRawPdfObject as PdfRawObject,
+  WireRawPdfPatchOperation as PdfRawPatchOperation,
+  WireRawPdfPatchValue as PdfRawPatchValue,
+  WireRawPdfTarget as PdfRawTarget,
+} from './protocol.js';

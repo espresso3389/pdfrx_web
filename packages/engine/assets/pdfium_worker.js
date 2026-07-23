@@ -4366,6 +4366,300 @@ function removeAnnotation(params) {
 }
 // [pdfrx_web: annotation support] }
 
+// [pdfrx_web: raw PDF object support]
+const RAW_OBJECT = {
+  UNKNOWN: 0,
+  BOOLEAN: 1,
+  NUMBER: 2,
+  STRING: 3,
+  NAME: 4,
+  ARRAY: 5,
+  DICTIONARY: 6,
+  STREAM: 7,
+  NULL: 8,
+  REFERENCE: 9,
+};
+
+const _rawTextEncoder = new TextEncoder();
+const _rawTextDecoder = new TextDecoder();
+
+function _rawWithBytes(bytes, callback) {
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (data.byteLength === 0) return callback(0, 0);
+  const ptr = Pdfium.wasmExports.malloc(data.byteLength);
+  try {
+    new Uint8Array(Pdfium.memory.buffer, ptr, data.byteLength).set(data);
+    return callback(ptr, data.byteLength);
+  } finally {
+    Pdfium.wasmExports.free(ptr);
+  }
+}
+
+function _rawReadBytes(read) {
+  const length = Number(read(0, 0));
+  if (length === 0) return new Uint8Array();
+  const ptr = Pdfium.wasmExports.malloc(length);
+  try {
+    if (Number(read(ptr, length)) !== length) throw new Error('Raw PDF byte read changed length');
+    return new Uint8Array(Pdfium.memory.buffer, ptr, length).slice();
+  } finally {
+    Pdfium.wasmExports.free(ptr);
+  }
+}
+
+function _rawReadString(object) {
+  return _rawReadBytes((ptr, length) => Pdfium.wasmExports.FPDFRaw_GetString(object, ptr, length));
+}
+
+function _rawDictionaryEntries(dictionary, options) {
+  const w = Pdfium.wasmExports;
+  const entries = {};
+  const count = Number(w.FPDFRaw_DictionaryGetCount(dictionary));
+  for (let index = 0; index < count; index++) {
+    const keyBytes = _rawReadBytes((ptr, length) => w.FPDFRaw_DictionaryGetKey(dictionary, index, ptr, length));
+    const key = _rawTextDecoder.decode(keyBytes);
+    const value = _rawWithBytes(keyBytes, (ptr, length) => w.FPDFRaw_DictionaryGet(dictionary, ptr, length));
+    if (!value) continue;
+    try {
+      entries[key] = _rawSerializeObject(value, options);
+    } finally {
+      w.FPDFRaw_CloseObject(value);
+    }
+  }
+  return entries;
+}
+
+function _rawSerializeObject(object, options = {}) {
+  const w = Pdfium.wasmExports;
+  const type = Number(w.FPDFRaw_GetObjectType(object));
+  switch (type) {
+    case RAW_OBJECT.NULL:
+      return { kind: 'null' };
+    case RAW_OBJECT.BOOLEAN:
+      return { kind: 'boolean', value: Boolean(w.FPDFRaw_GetBoolean(object)) };
+    case RAW_OBJECT.NUMBER: {
+      const integer = Number(w.FPDFRaw_GetInteger(object));
+      const number = Number(w.FPDFRaw_GetNumber(object));
+      return integer === number ? { kind: 'integer', value: integer } : { kind: 'number', value: number };
+    }
+    case RAW_OBJECT.STRING:
+      return { kind: 'string', value: _rawReadString(object) };
+    case RAW_OBJECT.NAME:
+      return { kind: 'name', value: _rawTextDecoder.decode(_rawReadString(object)) };
+    case RAW_OBJECT.REFERENCE:
+      return {
+        kind: 'reference',
+        objectNumber: Number(w.FPDFRaw_GetReferenceObjectNumber(object)),
+        generationNumber: Number(w.FPDFRaw_GetGenerationNumber(object)),
+      };
+    case RAW_OBJECT.ARRAY: {
+      const items = [];
+      const count = Number(w.FPDFRaw_ArrayGetCount(object));
+      for (let index = 0; index < count; index++) {
+        const item = w.FPDFRaw_ArrayGet(object, index);
+        if (!item) throw new Error(`Could not read raw PDF array item ${index}`);
+        try {
+          items.push(_rawSerializeObject(item, options));
+        } finally {
+          w.FPDFRaw_CloseObject(item);
+        }
+      }
+      return { kind: 'array', items };
+    }
+    case RAW_OBJECT.DICTIONARY:
+      return { kind: 'dictionary', entries: _rawDictionaryEntries(object, options) };
+    case RAW_OBJECT.STREAM: {
+      const dictionary = w.FPDFRaw_StreamGetDictionary(object);
+      if (!dictionary) throw new Error('Could not read raw PDF stream dictionary');
+      let entries;
+      try {
+        entries = _rawDictionaryEntries(dictionary, options);
+      } finally {
+        w.FPDFRaw_CloseObject(dictionary);
+      }
+      const data = _rawReadBytes((ptr, length) => w.FPDFRaw_StreamGetData(object, ptr, length));
+      const rawData = options.includeRawStreamData
+        ? _rawReadBytes((ptr, length) => w.FPDFRaw_StreamGetRawData(object, ptr, length))
+        : undefined;
+      return { kind: 'stream', entries, data, ...(rawData ? { rawData } : {}) };
+    }
+    default:
+      throw new Error(`Unsupported raw PDF object type ${type}`);
+  }
+}
+
+function rawGetObject(params) {
+  const w = Pdfium.wasmExports;
+  const object = params.objectNumber === undefined
+    ? w.FPDFRaw_GetRoot(params.docHandle)
+    : w.FPDFRaw_GetIndirectObject(params.docHandle, params.objectNumber);
+  if (!object) return { object: null, objectNumber: params.objectNumber ?? 0, generationNumber: 0 };
+  try {
+    return {
+      object: _rawSerializeObject(object, params),
+      objectNumber: Number(w.FPDFRaw_GetObjectNumber(object)),
+      generationNumber: Number(w.FPDFRaw_GetGenerationNumber(object)),
+    };
+  } finally {
+    w.FPDFRaw_CloseObject(object);
+  }
+}
+
+function _rawNewObject(document, value, locals) {
+  const w = Pdfium.wasmExports;
+  if (value.kind === 'localReference') {
+    const objectNumber = locals[value.id];
+    if (!objectNumber) throw new Error(`Unknown local raw PDF reference: ${value.id}`);
+    return w.FPDFRaw_NewReference(document, objectNumber);
+  }
+  switch (value.kind) {
+    case 'null':
+      return w.FPDFRaw_NewNull();
+    case 'boolean':
+      return w.FPDFRaw_NewBoolean(value.value ? 1 : 0);
+    case 'integer':
+      return w.FPDFRaw_NewInteger(value.value);
+    case 'number':
+      return w.FPDFRaw_NewNumber(value.value);
+    case 'string':
+      return _rawWithBytes(value.value, (ptr, length) => w.FPDFRaw_NewString(ptr, length));
+    case 'name': {
+      const bytes = _rawTextEncoder.encode(value.value);
+      return _rawWithBytes(bytes, (ptr, length) => w.FPDFRaw_NewName(ptr, length));
+    }
+    case 'reference':
+      return w.FPDFRaw_NewReference(document, value.objectNumber);
+    case 'array': {
+      const array = w.FPDFRaw_NewArray();
+      for (const item of value.items) {
+        const child = _rawNewObject(document, item, locals);
+        try {
+          if (!w.FPDFRaw_ArrayAppend(array, child)) throw new Error('Could not append raw PDF array item');
+        } finally {
+          w.FPDFRaw_CloseObject(child);
+        }
+      }
+      return array;
+    }
+    case 'dictionary': {
+      const dictionary = w.FPDFRaw_NewDictionary();
+      for (const [key, childValue] of Object.entries(value.entries)) {
+        _rawDictionarySet(document, dictionary, key, childValue, locals);
+      }
+      return dictionary;
+    }
+    case 'stream': {
+      const stream = _rawWithBytes(value.data, (ptr, length) => w.FPDFRaw_NewStream(ptr, length));
+      const dictionary = w.FPDFRaw_StreamGetDictionary(stream);
+      if (!dictionary) {
+        w.FPDFRaw_CloseObject(stream);
+        throw new Error('Could not obtain new raw PDF stream dictionary');
+      }
+      try {
+        for (const [key, childValue] of Object.entries(value.entries)) {
+          if (key !== 'Length' && key !== 'Filter' && key !== 'DecodeParms') {
+            _rawDictionarySet(document, dictionary, key, childValue, locals);
+          }
+        }
+      } finally {
+        w.FPDFRaw_CloseObject(dictionary);
+      }
+      return stream;
+    }
+    default:
+      throw new Error(`Unsupported raw PDF patch value: ${value.kind}`);
+  }
+}
+
+function _rawDictionarySet(document, dictionary, key, value, locals) {
+  const w = Pdfium.wasmExports;
+  const child = _rawNewObject(document, value, locals);
+  try {
+    const bytes = _rawTextEncoder.encode(key);
+    const ok = _rawWithBytes(bytes, (ptr, length) => w.FPDFRaw_DictionarySet(dictionary, ptr, length, child));
+    if (!ok) throw new Error(`Could not set raw PDF dictionary key /${key}`);
+  } finally {
+    w.FPDFRaw_CloseObject(child);
+  }
+}
+
+function _rawResolveTarget(document, target, locals) {
+  const w = Pdfium.wasmExports;
+  const handles = [];
+  const objectNumber = target.localId ? locals[target.localId] : target.objectNumber;
+  let object = target.root ? w.FPDFRaw_GetRoot(document) : w.FPDFRaw_GetIndirectObject(document, objectNumber);
+  if (!object) throw new Error('Raw PDF patch target does not exist');
+  handles.push(object);
+  for (const component of target.path ?? []) {
+    let direct = w.FPDFRaw_GetDirectObject(object);
+    if (!direct) throw new Error('Could not dereference raw PDF patch path');
+    handles.push(direct);
+    object = direct;
+    let child;
+    if (typeof component === 'string') {
+      const bytes = _rawTextEncoder.encode(component);
+      child = _rawWithBytes(bytes, (ptr, length) => w.FPDFRaw_DictionaryGet(object, ptr, length));
+    } else {
+      child = w.FPDFRaw_ArrayGet(object, component);
+    }
+    if (!child) throw new Error(`Raw PDF patch path component does not exist: ${String(component)}`);
+    handles.push(child);
+    object = child;
+  }
+  const direct = w.FPDFRaw_GetDirectObject(object);
+  if (direct) {
+    handles.push(direct);
+    object = direct;
+  }
+  return { object, close: () => handles.reverse().forEach((handle) => w.FPDFRaw_CloseObject(handle)) };
+}
+
+function rawApplyPatch(params) {
+  const w = Pdfium.wasmExports;
+  const locals = {};
+  for (const id of params.createDictionaries ?? []) {
+    if (locals[id]) throw new Error(`Duplicate local raw PDF object id: ${id}`);
+    const dictionary = w.FPDFRaw_NewDictionary();
+    try {
+      const objectNumber = Number(w.FPDFRaw_AddIndirectObject(params.docHandle, dictionary));
+      if (!objectNumber) throw new Error(`Could not create indirect raw PDF dictionary: ${id}`);
+      locals[id] = objectNumber;
+    } finally {
+      w.FPDFRaw_CloseObject(dictionary);
+    }
+  }
+  for (const operation of params.operations) {
+    const target = _rawResolveTarget(params.docHandle, operation.target, locals);
+    try {
+      if (operation.op === 'dictionarySet') {
+        _rawDictionarySet(params.docHandle, target.object, operation.key, operation.value, locals);
+      } else if (operation.op === 'dictionaryRemove') {
+        const bytes = _rawTextEncoder.encode(operation.key);
+        _rawWithBytes(bytes, (ptr, length) => w.FPDFRaw_DictionaryRemove(target.object, ptr, length));
+      } else if (operation.op === 'arrayAppend' || operation.op === 'arraySet') {
+        const child = _rawNewObject(params.docHandle, operation.value, locals);
+        try {
+          const ok = operation.op === 'arrayAppend'
+            ? w.FPDFRaw_ArrayAppend(target.object, child)
+            : w.FPDFRaw_ArraySet(target.object, operation.index, child);
+          if (!ok) throw new Error(`Could not apply raw PDF ${operation.op}`);
+        } finally {
+          w.FPDFRaw_CloseObject(child);
+        }
+      } else if (operation.op === 'arrayRemove') {
+        if (!w.FPDFRaw_ArrayRemove(target.object, operation.index)) throw new Error('Could not remove raw PDF array item');
+      } else if (operation.op === 'streamSetData') {
+        const ok = _rawWithBytes(operation.data, (ptr, length) => w.FPDFRaw_StreamSetData(target.object, ptr, length));
+        if (!ok) throw new Error('Could not replace raw PDF stream data');
+      }
+    } finally {
+      target.close();
+    }
+  }
+  return { created: locals };
+}
+// [pdfrx_web: raw PDF object support]
+
 /**
  * Functions that can be called from the main thread
  */
@@ -4388,6 +4682,8 @@ const functions = {
   clearAllFontData,
   assemble,
   encodePdf,
+  rawGetObject,
+  rawApplyPatch,
   cloneDocument,
   // [pdfrx_web: form support]
   loadFormFields,

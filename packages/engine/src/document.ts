@@ -17,6 +17,10 @@ import {
   type WireDocument,
   type WireFontQueries,
   type WireFormField,
+  type WireRawPdfObject,
+  type WireRawPdfPatchOperation,
+  type WireRawPdfPatchValue,
+  type WireRawPdfTarget,
   type WireFormNotification,
   type WireOutlineNode,
   type WirePageInfo,
@@ -117,6 +121,114 @@ export interface PdfOpenUrlOptions extends PdfOpenOptions {
   headers?: Record<string, string>;
   /** Whether the fetch includes credentials (cookies, HTTP auth). */
   withCredentials?: boolean;
+}
+
+/**
+ * Builds a batch of raw PDF-object edits for {@link PdfDocument.editRawObjects}.
+ *
+ * Methods only record operations while the callback runs. No document mutation
+ * occurs until the complete batch has been applied successfully to a temporary
+ * document.
+ */
+export interface PdfRawObjectEditor {
+  /** Targets the document catalog dictionary. */
+  catalog(): WireRawPdfTarget;
+  /** Targets an indirect object by object number. */
+  object(objectNumber: number): WireRawPdfTarget;
+  /** Targets a dictionary/array child below another target. */
+  at(target: WireRawPdfTarget, ...path: (string | number)[]): WireRawPdfTarget;
+  /** Creates an indirect dictionary and returns a target/reference for it. */
+  createDictionary(entries?: Record<string, WireRawPdfPatchValue>): PdfRawCreatedObject;
+  setDictionaryValue(target: WireRawPdfTarget, key: string, value: WireRawPdfPatchValue): void;
+  removeDictionaryValue(target: WireRawPdfTarget, key: string): void;
+  appendArrayValue(target: WireRawPdfTarget, value: WireRawPdfPatchValue): void;
+  setArrayValue(target: WireRawPdfTarget, index: number, value: WireRawPdfPatchValue): void;
+  removeArrayValue(target: WireRawPdfTarget, index: number): void;
+  setStreamData(target: WireRawPdfTarget, data: Uint8Array): void;
+}
+
+/** A newly-created indirect object usable both as an edit target and as a patch value. */
+export interface PdfRawCreatedObject extends WireRawPdfTarget {
+  readonly localId: string;
+  readonly reference: WireRawPdfPatchValue;
+}
+
+/** Options controlling how {@link PdfDocument.editRawObjects} commits its batch. */
+export interface PdfRawObjectEditOptions {
+  /**
+   * Whether to provide complete all-or-nothing behavior by applying the batch to
+   * an independent PDF copy and adopting it only after every operation succeeds.
+   *
+   * Default: `false`. Without this option, an exception thrown while the edit
+   * callback is building the batch is still safe—the worker is never called and
+   * no operation runs. Once the completed batch reaches PDFium, however, a later
+   * failing operation can leave earlier operations applied.
+   *
+   * Set this to `true` when failure must also roll back errors encountered while
+   * PDFium applies the batch. This copies and reloads the complete document, so
+   * its time and peak-memory cost grow with the PDF size.
+   */
+  atomic?: boolean;
+}
+
+class RawPdfObjectEditor implements PdfRawObjectEditor {
+  readonly operations: WireRawPdfPatchOperation[] = [];
+  readonly createDictionaries: string[] = [];
+  private nextLocalId = 1;
+
+  catalog(): WireRawPdfTarget {
+    return { root: true };
+  }
+
+  object(objectNumber: number): WireRawPdfTarget {
+    if (!Number.isInteger(objectNumber) || objectNumber <= 0) {
+      throw new RangeError('Raw PDF object numbers must be positive integers');
+    }
+    return { objectNumber };
+  }
+
+  at(target: WireRawPdfTarget, ...path: (string | number)[]): WireRawPdfTarget {
+    return { ...target, path: [...(target.path ?? []), ...path] };
+  }
+
+  createDictionary(entries: Record<string, WireRawPdfPatchValue> = {}): PdfRawCreatedObject {
+    const localId = `object${this.nextLocalId++}`;
+    this.createDictionaries.push(localId);
+    const target: PdfRawCreatedObject = {
+      localId,
+      reference: { kind: 'localReference', id: localId },
+    };
+    for (const [key, value] of Object.entries(entries)) this.setDictionaryValue(target, key, value);
+    return target;
+  }
+
+  setDictionaryValue(target: WireRawPdfTarget, key: string, value: WireRawPdfPatchValue): void {
+    this.operations.push({ op: 'dictionarySet', target: this.copyTarget(target), key, value });
+  }
+
+  removeDictionaryValue(target: WireRawPdfTarget, key: string): void {
+    this.operations.push({ op: 'dictionaryRemove', target: this.copyTarget(target), key });
+  }
+
+  appendArrayValue(target: WireRawPdfTarget, value: WireRawPdfPatchValue): void {
+    this.operations.push({ op: 'arrayAppend', target: this.copyTarget(target), value });
+  }
+
+  setArrayValue(target: WireRawPdfTarget, index: number, value: WireRawPdfPatchValue): void {
+    this.operations.push({ op: 'arraySet', target: this.copyTarget(target), index, value });
+  }
+
+  removeArrayValue(target: WireRawPdfTarget, index: number): void {
+    this.operations.push({ op: 'arrayRemove', target: this.copyTarget(target), index });
+  }
+
+  setStreamData(target: WireRawPdfTarget, data: Uint8Array): void {
+    this.operations.push({ op: 'streamSetData', target: this.copyTarget(target), data });
+  }
+
+  private copyTarget(target: WireRawPdfTarget): WireRawPdfTarget {
+    return { ...target, ...(target.path ? { path: [...target.path] } : {}) };
+  }
 }
 
 /**
@@ -540,14 +652,14 @@ export class PdfDocument {
    * Reserved for internal use only. Native handle of the document in the worker.
    * @internal
    */
-  readonly docHandle: number;
+  docHandle: number;
   /**
    * Reserved for internal use only. Native handle of the document's form
    * environment in the worker.
    * @internal
    */
-  readonly formHandle: number;
-  private readonly formInfo: number;
+  formHandle: number;
+  private formInfo: number;
   private readonly onDispose: (() => void) | null;
   private readonly listeners = new Map<PdfDocumentEventName, Set<Listener<PdfDocumentEventName>>>();
   private _pages: PdfPage[];
@@ -1062,6 +1174,145 @@ export class PdfDocument {
   }
 
   /**
+   * Reads the document catalog as a structured value.
+   * Indirect references remain references, so cyclic PDF graphs are never expanded.
+   * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
+   */
+  async getCatalogObject(
+    options: { includeRawStreamData?: boolean } = {},
+  ): Promise<{ object: WireRawPdfObject | null; objectNumber: number; generationNumber: number }> {
+    return this.sendCommand('rawGetObject', {
+      docHandle: this.docHandle,
+      ...(options.includeRawStreamData ? { includeRawStreamData: true } : {}),
+    });
+  }
+
+  /**
+   * Reads one indirect PDF object as a structured value.
+   * Indirect references remain references, so cyclic PDF graphs are never expanded.
+   * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
+   */
+  async getRawObject(
+    objectNumber: number,
+    options: { includeRawStreamData?: boolean } = {},
+  ): Promise<{ object: WireRawPdfObject | null; objectNumber: number; generationNumber: number }> {
+    return this.sendCommand('rawGetObject', {
+      docHandle: this.docHandle,
+      objectNumber,
+      ...(options.includeRawStreamData ? { includeRawStreamData: true } : {}),
+    });
+  }
+
+  /** Sends an editor's compiled operation batch to the worker. */
+  private async applyRawPatchInternal(
+    operations: WireRawPdfPatchOperation[],
+    options: { createDictionaries?: string[] } = {},
+  ): Promise<Record<string, number>> {
+    await this.assemblePages();
+    const result = await this.sendCommand('rawApplyPatch', {
+      docHandle: this.docHandle,
+      ...(options.createDictionaries ? { createDictionaries: options.createDictionaries } : {}),
+      operations,
+    });
+    return result.created;
+  }
+
+  /**
+   * Builds and applies a batch of convenient raw PDF-object edits.
+   *
+   * The callback only records operations. If it throws or rejects, the worker is
+   * never called and the document is unchanged. By default, the completed batch
+   * is then applied directly in one worker command. This avoids copying the PDF,
+   * but it is not a rollback boundary: if PDFium applies some operations and a
+   * later operation fails, the earlier changes can remain.
+   *
+   * Pass `{ atomic: true }` for complete all-or-nothing behavior. That mode
+   * applies the batch to an independent materialized copy and makes this
+   * `PdfDocument` adopt the copy only after every operation succeeds. It keeps
+   * the original native document on failure, at the cost of copying and
+   * reloading the entire PDF (with time and peak-memory costs proportional to
+   * document size).
+   *
+   * Atomic success replaces the native document and reconstructs {@link pages}.
+   * Existing `PdfPage` references continue to address the same page indices, but
+   * callers should prefer reading `document.pages` again afterward.
+   *
+   * Raw edits do not describe their GUI impact. A viewer displaying this
+   * document must therefore be refreshed explicitly—for `@pdfrx/viewer`, use
+   * `refreshPages()`, `refreshDocument()`, or `reloadDocument()` according to
+   * the scope and whether PDFium itself must be reconstructed.
+   */
+  async editRawObjects(
+    edit: (editor: PdfRawObjectEditor) => void | Promise<void>,
+    options: PdfRawObjectEditOptions = {},
+  ): Promise<void> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    const editor = new RawPdfObjectEditor();
+    await edit(editor);
+    if (editor.operations.length === 0 && editor.createDictionaries.length === 0) return;
+
+    if (!(options.atomic ?? false)) {
+      await this.applyRawPatchInternal(editor.operations, { createDictionaries: editor.createDictionaries });
+      return;
+    }
+
+    const copy = await this.createPdfCopy();
+    try {
+      await copy.applyRawPatchInternal(editor.operations, { createDictionaries: editor.createDictionaries });
+      await this.adoptTransactionalCopy(copy);
+    } catch (error) {
+      if (!copy.isDisposed) await copy.dispose();
+      throw error;
+    }
+  }
+
+  /** Replaces this instance's native document only after a prepared copy is complete. */
+  private async adoptTransactionalCopy(copy: PdfDocument): Promise<void> {
+    const replacementPages = copy.pages.map((page) => page.toWireInfo());
+    const oldHandles = {
+      docHandle: this.docHandle,
+      formHandle: this.formHandle,
+      formInfo: this.formInfo,
+    };
+
+    if (this.formNotifyCallbackId !== null) {
+      this.comm.unregisterCallback(this.formNotifyCallbackId);
+      this.formNotifyCallbackId = null;
+    }
+    try {
+      await this.comm.sendCommand('closeDocument', oldHandles);
+    } catch (error) {
+      this.ensureFormNotify();
+      throw error;
+    }
+
+    if (copy.formNotifyCallbackId !== null) {
+      this.comm.unregisterCallback(copy.formNotifyCallbackId);
+      copy.formNotifyCallbackId = null;
+    }
+    this.docHandle = copy.docHandle;
+    this.formHandle = copy.formHandle;
+    this.formInfo = copy.formInfo;
+    this._pages = replacementPages.map((page) => new PdfPage(this, page));
+    this.nativePageCount = this._pages.length;
+    this.arrangementDirty = false;
+    for (const lender of this.borrowedFrom) lender.borrowers.delete(this);
+    this.borrowedFrom.clear();
+    this.formFieldSourceIndex.clear();
+    this.calcSpecs = null;
+    this.ensureFormNotify();
+
+    // Transfer ownership of the replacement handles; disposing the temporary
+    // wrapper must not close the document now owned by this instance.
+    copy._isDisposed = true;
+    copy.listeners.clear();
+    copy.formInvalidateListeners.clear();
+    copy.borrowedFrom.clear();
+    copy.borrowers.clear();
+    this.emit('pageStatusChanged', { pageNumbers: this._pages.map((page) => page.pageNumber) });
+  }
+
+  /**
    * Serializes the current page arrangement through a temporary document,
    * leaving this document and any outstanding page proxies untouched. The
    * temporary copy is always disposed before this method returns.
@@ -1076,16 +1327,27 @@ export class PdfDocument {
    */
   async encodePdfCopy(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    const sourceDocuments = new Set(this._pages.map((page) => page.document));
-    const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
-    return baseDocument.encodeArrangementCopy(this._pages, options);
+    const copy = await this.createPdfCopy();
+    try {
+      return await copy.encodePdf(options);
+    } finally {
+      await copy.dispose();
+    }
   }
 
-  /** Encodes `pages` using this document as the document-level structure base. */
-  private async encodeArrangementCopy(
-    pagesToEncode: readonly PdfPage[],
-    options: { incremental?: boolean; removeSecurity?: boolean },
-  ): Promise<Uint8Array> {
+  /**
+   * Creates an independent document materializing the current virtual page
+   * arrangement. The caller owns the returned document and must dispose it.
+   */
+  async createPdfCopy(): Promise<PdfDocument> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    const sourceDocuments = new Set(this._pages.map((page) => page.document));
+    const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
+    return baseDocument.createArrangementCopy(this._pages);
+  }
+
+  /** Creates a materialized copy of `pages` using this document as its catalog base. */
+  private async createArrangementCopy(pagesToEncode: readonly PdfPage[]): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     const result = await this.sendCommand('cloneDocument', { docHandle: this.docHandle });
     if (isWireError(result)) {
@@ -1102,9 +1364,11 @@ export class PdfDocument {
         return copiedSource.rotatedTo(page.rotation);
       });
       copy.setPages(pages);
-      return await copy.encodePdf(options);
-    } finally {
+      await copy.assemblePages();
+      return copy;
+    } catch (error) {
       await copy.dispose();
+      throw error;
     }
   }
 
@@ -1642,6 +1906,20 @@ export class PdfPage {
   private readonly bbLeft: number;
   /** Bottom of the page's bounding box; text/link rects are shifted by it internally. @internal */
   private readonly bbBottom: number;
+
+  /** Recreates the worker page metadata when a transactional document copy is adopted. */
+  /** @internal */
+  toWireInfo(): WirePageInfo {
+    return {
+      pageIndex: this.sourcePageIndex,
+      width: this.width,
+      height: this.height,
+      rotation: pdfPageRotationToIndex(this.rotation),
+      isLoaded: this.isLoaded,
+      bbLeft: this.bbLeft,
+      bbBottom: this.bbBottom,
+    };
+  }
 
   /** Whether this page is a proxy over {@link basePage} rather than a real page. */
   get isProxy(): boolean {

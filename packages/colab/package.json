@@ -22,8 +22,7 @@
     "@pdfrx/engine": "^0.10.1",
     "@pdfrx/react": "^0.10.1",
     "@pdfrx/viewer": "^0.10.1",
-    "@pdfrx/viewer-core": "^0.10.1",
-    "pdf-lib": "^1.17.1"
+    "@pdfrx/viewer-core": "^0.10.1"
   },
   "peerDependencies": {
     "react": ">=18",

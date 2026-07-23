@@ -14,6 +14,7 @@ class FakeViewer {
   searcherCount = 0;
   document: unknown = null;
   #documentListeners = new Set<() => void>();
+  #refreshListeners = new Set<() => void>();
   openUrlError: unknown = null;
 
   constructor(
@@ -28,10 +29,19 @@ class FakeViewer {
     return () => this.#documentListeners.delete(listener);
   }
 
+  addRefreshListener(listener: () => void): () => void {
+    this.#refreshListeners.add(listener);
+    return () => this.#refreshListeners.delete(listener);
+  }
+
   /** Simulates a load completing, the way the real viewer does after openUrl. */
   emitDocumentChange(document: unknown = { pages: [], addEventListener: () => () => {} }): void {
     this.document = document;
     for (const listener of this.#documentListeners) listener();
+  }
+
+  emitRefresh(): void {
+    for (const listener of this.#refreshListeners) listener();
   }
 
   createTextSearcher(): { resetTextSearch: () => void; startTextSearch: () => void } {
@@ -178,6 +188,21 @@ describe('PdfrxViewerStore', () => {
     expect(store.documentGeneration).toBe(1);
     // A fresh searcher: the old one holds matches into pages that are gone.
     expect(viewer.searcherCount).toBe(searchersAfterAttach + 1);
+  });
+
+  it('invalidates document-derived React state after an explicit viewer refresh', () => {
+    const store = new PdfrxViewerStore();
+    store.attach(element);
+    const viewer = FakeViewer.instances[0]!;
+    const generation = store.documentGeneration;
+    const pagesRevision = store.pagesRevision;
+    const searchers = viewer.searcherCount;
+
+    viewer.emitRefresh();
+
+    expect(store.documentGeneration).toBe(generation + 1);
+    expect(store.pagesRevision).toBe(pagesRevision + 1);
+    expect(viewer.searcherCount).toBe(searchers + 1);
   });
 
   it('notifies subscribers and stops after unsubscribing', () => {
