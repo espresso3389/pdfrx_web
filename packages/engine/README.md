@@ -120,6 +120,29 @@ Each symbol links to its entry in the
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — materialize the arrangement into the live document and serialize it
 - [`doc.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy) — assemble and serialize through a temporary copy, preserving the live document's proxy arrangement
 - `encodePdfCopy()` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
+- Raw PDF-object inspection and editing: `getCatalogObject()` reads the catalog,
+  `getRawObject(objectNumber)` reads an indirect object without recursively
+  expanding references, and `editRawObjects(editor => { ... })` provides
+  dictionary, array, and decoded-stream helpers over the custom `FPDFRaw_*`
+  PDFium backend. Newly-created indirect dictionaries can be referenced within
+  the same batch without manually assigning object numbers.
+- `editRawObjects()` first builds the complete batch without touching the
+  document, so an exception in the callback applies nothing. The default commit
+  avoids copying the PDF and is fast, but a PDFium error during application may
+  leave earlier operations applied. Pass `{ atomic: true }` for complete
+  all-or-nothing behavior; this applies the batch to an independent PDF copy
+  and adopts it only after success, at a time and peak-memory cost proportional
+  to the PDF size.
+- Raw edits deliberately do not guess their GUI impact. When the document is
+  displayed by `@pdfrx/viewer`, application code explicitly calls
+  [`viewer.refreshPages(...)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshpages)
+  for known page/cache scopes,
+  [`viewer.refreshDocument()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshdocument)
+  when document-derived UI state may have changed, or
+  [`viewer.reloadDocument()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#reloaddocument)
+  when PDFium itself must be copied and reparsed.
+  These refreshes also invalidate React outline, form, annotation, search, and
+  thumbnail state.
 - AcroForm: `loadFormFields()` / `getFormFieldValue()` / `setFormFieldValue()`, `formFieldsChanged`, and JS-free `AFSimple_Calculate` support for SUM/PRD/AVG/MIN/MAX. Arbitrary field JavaScript is not executed.
 - Text orientation is explicit: FreeText specs expose `textOrientation`, and form fields expose `textOrientations` parallel to Widget rects. Intrinsic 0/90/180/270-degree rotation can follow the page or remain viewport-upright.
 - [`doc.permissions`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#permissions) — encrypted-document permissions with [`allowsCopying`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPermissions.html#allowscopying) / `allowsPrinting` / `allowsDocumentAssembly` / `allowsModifyAnnotations` helpers

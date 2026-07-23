@@ -1239,8 +1239,32 @@ export class PdfDocument {
    *
    * Raw edits do not describe their GUI impact. A viewer displaying this
    * document must therefore be refreshed explicitly—for `@pdfrx/viewer`, use
-   * `refreshPages()`, `refreshDocument()`, or `reloadDocument()` according to
-   * the scope and whether PDFium itself must be reconstructed.
+   * {@link https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshpages | PdfrxViewer.refreshPages()},
+   * {@link https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshdocument | PdfrxViewer.refreshDocument()},
+   * or
+   * {@link https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#reloaddocument | PdfrxViewer.reloadDocument()}
+   * according to the scope and whether PDFium itself must be reconstructed.
+   *
+   * @example Add a ViewerPreferences indirect dictionary to the catalog
+   * ```ts
+   * await document.editRawObjects(
+   *   (editor) => {
+   *     const preferences = editor.createDictionary({
+   *       HideToolbar: { kind: 'boolean', value: true },
+   *       DisplayDocTitle: { kind: 'boolean', value: true },
+   *     });
+   *     editor.setDictionaryValue(
+   *       editor.catalog(),
+   *       'ViewerPreferences',
+   *       preferences.reference,
+   *     );
+   *   },
+   *   { atomic: true },
+   * );
+   *
+   * // The engine cannot infer which viewer caches the raw edit affects.
+   * await viewer.refreshDocument();
+   * ```
    */
   async editRawObjects(
     edit: (editor: PdfRawObjectEditor) => void | Promise<void>,
