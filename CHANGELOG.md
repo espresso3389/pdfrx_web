@@ -9,11 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-23
+
 ### Added
 
 - `@pdfrx/colab` now accepts injectable collaboration transport hooks for
   authenticated/custom WebSocket creation, credentialed source fetches, and
   application-specific source URL routing.
+- Added a deployable single-viewer collaboration application with a persistent
+  Bun relay, invite links, source-PDF endpoints, reconnect recovery, and live
+  annotation drag previews.
+- Added right-button drag panning to the canvas viewer.
+
+### Changed
+
+- Annotation editing now provides live move/resize previews, snapping guides,
+  live marquee selection, unified rectangle/FreeText editing, independent text
+  styling, and more reliable selection controls.
+- Right-button and two-finger panning now honor `panEnabled`, `panAxis`,
+  `zoomEnabled`, and the interaction start/end callback lifecycle consistently.
+
+### Fixed
+
+- Ignored accidental pen clicks that did not produce a drawable stroke.
+- Initialized both touch points when a pinch starts, so the first two-finger
+  movement updates the view immediately.
 
 ## [0.9.0] - 2026-07-23
 
@@ -222,7 +242,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.6.0...v0.7.0
