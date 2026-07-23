@@ -1,12 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
 
 const processes: ChildProcess[] = [];
+const require = createRequire(import.meta.url);
+const viteBin = resolve(dirname(require.resolve('vite/package.json')), 'bin/vite.js');
 
 if (await isExpectedHttpServer('http://127.0.0.1:5191/api/health', (text) => text.includes('"ok":true'))) {
   console.log('Reusing the existing collaboration relay on port 5191.');
 } else {
   await assertPortAvailable('http://127.0.0.1:5191/api/health', 5191);
-  processes.push(spawn('bun', ['--watch', 'server/main.ts'], { stdio: 'inherit' }));
+  processes.push(spawn(process.execPath, ['--import', 'tsx', '--watch', 'server/main.ts'], { stdio: 'inherit' }));
 }
 
 if (await isExpectedHttpServer('http://127.0.0.1:5173/', (text) =>
@@ -14,18 +18,19 @@ if (await isExpectedHttpServer('http://127.0.0.1:5173/', (text) =>
   console.log('Reusing the existing collaboration client on port 5173.');
 } else {
   await assertPortAvailable('http://127.0.0.1:5173/', 5173);
-  processes.push(spawn('bun', ['x', 'vite'], { stdio: 'inherit' }));
+  processes.push(spawn(process.execPath, [viteBin], { stdio: 'inherit' }));
 }
 
-if (processes.length === 0) {
-  console.log('The collaboration client and relay are already running.');
-  await new Promise(() => undefined);
-}
+const keepAlive = processes.length === 0
+  ? setInterval(() => undefined, 60_000)
+  : null;
+if (keepAlive) console.log('The collaboration client and relay are already running.');
 
 let stopping = false;
 const stop = (): void => {
   if (stopping) return;
   stopping = true;
+  if (keepAlive) clearInterval(keepAlive);
   for (const child of processes) child.kill();
 };
 

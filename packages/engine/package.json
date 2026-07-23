@@ -21,7 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   },
   "license": "MIT",
   "author": "Takashi Kawasaki <espresso3389@gmail.com>",

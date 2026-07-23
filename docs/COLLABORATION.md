@@ -3,7 +3,7 @@
 This document records the boundary between the reusable `@pdfrx/*` packages
 and the collaborative PDF application in this repository. The browser-side
 integration is published as `@pdfrx/colab`; the deployable single-viewer client,
-persistent Bun relay, and reference test fixture remain in the private
+persistent relay, and reference test fixture remain in the private
 `examples/colab` workspace.
 
 The scope is page arrangement (insert, remove, move, duplicate, and rotate),
@@ -59,7 +59,7 @@ annotatable without first materializing the combined document.
 The application uploads an imported PDF once to the relay under a session-scoped
 source document ID. Page placements reference that ID and a physical page
 index; each participant downloads and opens a missing source before applying
-the committed placement. The Bun relay stores source PDFs on disk, persists
+the committed placement. The relay stores source PDFs on disk, persists
 materialized state using atomic file replacement, admits new devices after any
 connected member approves them, and defaults to a 50 MiB limit.
 Retention, malware scanning, per-user quotas, and multi-instance coordination
@@ -248,12 +248,12 @@ The strict protocol primitive accepts a command only at its declared
 sequence. A revision gap is treated as an error; production recovery must
 rejoin for a fresh snapshot rather than guessing at state. The browser client
 waits for page, annotation, and form snapshots before it reports a completed
-join or sends queued operations. The production Bun relay serializes each
+join or sends queued operations. The production relay serializes each
 session's operations, persists accepted state, and only then broadcasts the
 commit. `InMemoryPageRelay` remains as a fast integration-test fixture.
 
 Run `npm run dev:colab` for the end-to-end application. It starts the
-single-viewer session client and Bun relay. Users create a session from a PDF or
+single-viewer session client and Node.js relay. Users create a session from a PDF or
 request admission using its shared URL. Any connected member may approve.
 
 The same integration can be embedded without the demo shell:
@@ -275,7 +275,7 @@ import '@pdfrx/colab/styles.css';
 
 The app's `main.tsx` provides session creation/joining and the single-viewer
 shell. Viewer synchronization behavior lives in the published package; the
-Bun server remains application code because authentication, storage, retention,
+Relay server remains application code because authentication, storage, retention,
 and deployment policy belong to the host.
 
 The implemented application covers:

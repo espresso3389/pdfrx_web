@@ -23,7 +23,7 @@
     "@pdfrx/viewer-core": "^0.10.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   },
   "license": "MIT",
   "author": "Takashi Kawasaki <espresso3389@gmail.com>",

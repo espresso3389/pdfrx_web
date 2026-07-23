@@ -31,7 +31,7 @@ npm run dev:colab
 ```
 
 That command starts the Vite client at `http://localhost:5173` and the
-persistent Bun relay at `http://localhost:5191`. Vite proxies its local `/api`
+persistent relay at `http://localhost:5191`. Vite proxies its local `/api`
 and `/relay` routes to that process.
 
 ```tsx

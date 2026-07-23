@@ -39,7 +39,7 @@ React viewer, runs entirely in your browser.
 The deployable collaboration application is in
 [`examples/colab`](examples/colab/README.md) and runs locally with
 `npm run dev:colab`; it starts the single-viewer client together with its
-persistent Bun WebSocket relay.
+persistent WebSocket relay.
 The relay's JSON messages, strict revision streams, transient drag previews,
 and source-PDF endpoints are specified in
 [`docs/COLLABORATION-PROTOCOL.md`](docs/COLLABORATION-PROTOCOL.md).
@@ -194,7 +194,7 @@ npm run build     # tsc for all packages and the collaboration app
 npm test          # viewer-core + react + colab + relay tests (vitest)
 npm run dev       # vanilla example app (Vite)
 npm run dev:react # React example app (Vite)
-npm run dev:colab # collaboration app + Bun relay
+npm run dev:colab # collaboration app + Node.js relay
 ```
 
 The WASM engine assets (`packages/engine/assets/pdfium_worker.js`,

@@ -118,13 +118,13 @@ request instead of returning snapshots:
 The applicant resends `session.join` with the issued token and then receives
 the three snapshots. Tokens identify admitted devices, are not placed in the
 shared URL, and are sent to source HTTP endpoints through
-`X-Pdfrx-Member-Token`. Pending requests expire after ten minutes in the Bun
+`X-Pdfrx-Member-Token`. Pending requests expire after ten minutes in the
 relay. Approval, rejection, applicant disconnect, and expiry all broadcast a
 resolution so every member removes the corresponding prompt.
 
 After a rejection, the same `sessionId` / `actorId` pair cannot apply again
 until `retryAfterMs` has elapsed. Consecutive rejections increase that delay
-linearly: 5 seconds, 10 seconds, 15 seconds, and so on. The Bun relay enforces
+linearly: 5 seconds, 10 seconds, 15 seconds, and so on. The relay enforces
 the cooldown; the client also displays the remaining time.
 
 `session.presence` counts distinct connected `actorId` values, so multiple tabs

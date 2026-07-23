@@ -20,8 +20,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "license": "MIT",
   "author": "Takashi Kawasaki <espresso3389@gmail.com>",

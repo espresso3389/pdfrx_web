@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The private collaboration example now uses Node.js for its standard
+  development and relay start scripts.
+- Updated the development toolchain to TypeScript 7, Vite 8, Vitest 4,
+  jsdom 29, and the latest compatible React, type-definition, and test tooling
+  releases. TypeDoc uses an isolated TypeScript 6 installation until it adds
+  TypeScript 7 peer support.
+
 ## [0.10.0] - 2026-07-23
 
 ### Added
@@ -17,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authenticated/custom WebSocket creation, credentialed source fetches, and
   application-specific source URL routing.
 - Added a deployable single-viewer collaboration application with a persistent
-  Bun relay, invite links, source-PDF endpoints, reconnect recovery, and live
+  relay, invite links, source-PDF endpoints, reconnect recovery, and live
   annotation drag previews.
 - Added right-button drag panning to the canvas viewer.
 

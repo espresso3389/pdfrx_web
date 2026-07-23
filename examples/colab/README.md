@@ -1,23 +1,24 @@
 # Collaborative PDF application
 
 This workspace is a deployable single-viewer collaboration application, not a
-two-pane demo. It contains a static React client, a Bun-hosted WebSocket/HTTP
-relay, durable session/PDF storage, and member-approved admission. The
-old in-memory relay remains only as an integration-test fixture.
+two-pane demo. It contains a static React client, a Node.js WebSocket/HTTP
+relay, durable session/PDF storage, and member-approved admission. The relay
+and the old in-memory integration-test fixture remain application code.
 
 No deployment hostname, public path, or production port is committed here.
 Every deployment-specific value is supplied through environment variables.
 
 ## Local development
 
-Install Bun and run this from the repository root:
+Install dependencies with Node.js 20.19 or newer (or Node.js 22.13 or newer)
+and npm, then run this from the repository root:
 
 ```sh
 npm run dev:colab
 ```
 
-The command owns both fixed development ports: Vite on `5173` and the Bun relay
-on `5191`. Vite proxies `/api` and `/relay` to the relay. Development data is
+The command owns both fixed development ports: Vite on `5173` and the Node.js
+relay on `5191`. Vite proxies `/api` and `/relay` to the relay. Development data is
 stored under `var/colab/` and ignored by Git.
 
 Vite accepts hosts under `.ts.net`, so the complete local stack can be exposed
@@ -30,7 +31,7 @@ tailscale funnel --bg 5173
 ```
 
 The browser derives `wss://<current-host>/relay` when loaded over Funnel HTTPS,
-and Vite proxies that upgraded connection to the Bun relay.
+and Vite proxies that upgraded connection to the relay.
 
 The first screen creates a session from a PDF or requests admission to an
 existing session. Any currently connected member may approve a request. Each
@@ -84,7 +85,7 @@ npm run build --workspace=@pdfrx/example-colab
 Publish the complete `dist/` directory, including `pdfium/`. Values prefixed
 with `VITE_` are public client configuration and must never contain secrets.
 
-## Bun relay
+## Relay server
 
 Configure the process using environment variables:
 
@@ -102,6 +103,8 @@ Start it with:
 ```sh
 npm run start --workspace=@pdfrx/example-colab
 ```
+
+The npm script runs the TypeScript entry point on Node.js through `tsx`.
 
 The reverse proxy must forward HTTP requests under `PDFRX_API_PREFIX`, forward
 WebSocket upgrades at `PDFRX_RELAY_PATH`, terminate TLS, preserve request
@@ -130,7 +133,7 @@ but has not yet been implemented.
 
 ## Production boundary
 
-This application supports one Bun relay process with persistent local storage.
+This application supports one relay process with persistent local storage.
 Multiple instances against one directory are unsupported: operation sequencing
 and WebSocket membership are process-local. Multi-instance deployment requires
 a shared database, distributed sequencing, and pub/sub.
