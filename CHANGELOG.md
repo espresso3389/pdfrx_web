@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-24
+
+### Added
+
+- Added typed raw PDF-object inspection and transactional editing to
+  `@pdfrx/engine`, backed by the custom PDFium build from
+  `espresso3389/pdfium-binaries`. Convenience operations cover dictionaries,
+  arrays, streams, indirect objects, and references, with opt-in copy-based
+  atomic commits.
+- Added viewer refresh controls for page-level rerendering, document-level
+  cache and layout refresh, and full document reload after custom PDF edits.
+- The collaboration example now accepts JPEG, PNG, WebP, and GIF images as
+  single-page sessions, supports drag-and-drop session creation, and requests
+  passwords for protected PDFs. Passwords are shared with session clients for
+  decoding without being displayed in the UI.
+
+### Changed
+
+- Moved page-scoped annotation loading and CRUD from `PdfDocument` to
+  `PdfPage`. Document-level APIs now focus on arrangement-wide queries,
+  snapshots, synchronization batches, and change events.
+- Imported and duplicate page placements now share their source-page annotation
+  state while emitting changes for every affected arrangement placement.
+- Removed the public `PdfPage.withPageNumber()` helper. `setPages()` assigns
+  page numbers from array order, while the documented `rotated*()` helpers are
+  applied through `setPage()` or `setPages()`.
+- Simplified the collaboration entry screen: visitors without a session query
+  create a session directly instead of choosing between create and join.
+
+### Fixed
+
+- Open protected PDFs through `@pdfrx/engine` password handling instead of
+  rejecting valid files as `invalid-pdf`.
+
 ## [0.10.1] - 2026-07-23
 
 ### Changed
@@ -253,7 +287,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.8.0...v0.9.0

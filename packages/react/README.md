@@ -254,7 +254,7 @@ then leave older Undo/Redo entries available.
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.10.1/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.11.0/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other
