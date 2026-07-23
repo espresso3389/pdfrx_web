@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-24
+
+### Added
+
+- Added reversible engine mutation payloads for annotation and form changes,
+  including bulk `setFormFieldValues()` transactions that report direct and
+  calculated field before/after values together.
+
+### Changed
+
+- Direct local `PdfDocument` page edits and `PdfPage` annotation CRUD now join
+  an attached viewer's chronological annotation, form, and page Undo/Redo
+  history.
+- Form transactions are serialized, carry origin/transaction/actor metadata,
+  and are recorded as one viewer history entry, while remote, restore, replay,
+  and page-materialization changes remain outside local history.
+- Collaborative choice-field values now retain selected option labels as
+  arrays, including for single-select controls.
+
+### Fixed
+
+- Fixed Undo for combo/list fields whose PDF export value differs from the
+  displayed option label.
+
 ## [0.11.0] - 2026-07-24
 
 ### Added
@@ -287,7 +311,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.9.0...v0.10.0

@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/viewer",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Canvas-based PDF viewer component built on @pdfrx/engine and @pdfrx/viewer-core",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,8 +19,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@pdfrx/engine": "^0.11.0",
-    "@pdfrx/viewer-core": "^0.11.0"
+    "@pdfrx/engine": "^0.12.0",
+    "@pdfrx/viewer-core": "^0.12.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
