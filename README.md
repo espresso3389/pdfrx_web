@@ -36,14 +36,6 @@ It renders pages, text selection, links, and search highlights onto a single
 **[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
 React viewer, runs entirely in your browser.
 
-The deployable collaboration application is in
-[`examples/colab`](examples/colab/README.md) and runs locally with
-`npm run dev:colab`; it starts the single-viewer client together with its
-persistent WebSocket relay.
-The relay's JSON messages, independently ordered and revision-checked operation
-streams, transient drag previews, and source-PDF endpoints are specified in
-[`docs/COLLABORATION-PROTOCOL.md`](docs/COLLABORATION-PROTOCOL.md).
-
 It has a search bar, thumbnails/outline sidebar, print/download buttons, form
 filling, annotation tools, page editing, and opening local files (button or drag
 & drop) — and switches between the three
@@ -74,17 +66,20 @@ built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
   `renderPageThumbnail()`, `createTextSearcher()`), but the surrounding UI —
   the thumbnail strip, the outline tree, the search box — is yours to build.
   That extra UI is exactly what `@pdfrx/react` packages up for React.
-- **Collaborative React app?** Use **[`@pdfrx/colab`](packages/colab)** — a
-  session-aware viewer that synchronizes page arrangements, annotations, and
-  form values through an application-hosted relay.
+- **PDF engine without a viewer UI?** Use
+  **[`@pdfrx/engine`](packages/engine)** directly. It wraps PDFium/WASM behind a
+  typed, asynchronous, worker-backed API for page rendering, text and link
+  extraction, outlines, forms, annotations, page assembly, and PDF encoding.
+  PDF processing stays off the calling thread, making the package useful as a
+  standalone PDF engine rather than only as an implementation detail of the
+  viewer packages.
 
 ## Installation
 
 ```sh
 npm install @pdfrx/react     # React apps
-npm install @pdfrx/colab     # Collaborative React apps
-# or
-npm install @pdfrx/viewer    # everything else
+npm install @pdfrx/viewer    # framework-agnostic viewer UI
+npm install @pdfrx/engine    # asynchronous PDF engine, no viewer UI
 ```
 
 The higher-level packages pull in their lower-level dependencies automatically;
