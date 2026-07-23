@@ -460,7 +460,22 @@ export const PdfAnnotationFlag = {
  * geometry are in bounding-box-relative page coordinates (y-up).
  */
 export interface PdfAnnotationObject {
-  /** Stable id (`/NM` key, or `@<index>` for annotations that lack one). */
+  /**
+   * Identifier accepted by `PdfPage.updateAnnotation()` and
+   * `PdfPage.removeAnnotation()`.
+   *
+   * `/NM` is the PDF annotation dictionary's "annotation name": a PDF-standard
+   * string intended to distinguish an annotation from other annotations on the
+   * same page. It is an internal identity, not the visible annotation contents
+   * or its page number. The engine stores generated and caller-supplied ids in
+   * `/NM`, so they survive `PdfDocument.encodePdf()` and can correlate update,
+   * remove, snapshot, and collaboration operations.
+   *
+   * For an existing annotation without `/NM`, the engine returns a page-local
+   * `@<index>` fallback. That fallback is positional rather than stable: after
+   * adding, removing, or replacing annotations on the page, call
+   * `PdfPage.loadAnnotations()` again before using it.
+   */
   readonly id: string;
   /** 1-based page number the annotation belongs to. */
   readonly pageNumber: number;
@@ -560,7 +575,13 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  * `contents`. Coordinates are bounding-box-relative page coordinates (y-up).
  */
 export interface PdfAnnotationSpec {
-  /** Stable external id (`/NM`). Omit only when creating a new local annotation. */
+  /**
+   * Identity stored in the PDF annotation dictionary's `/NM` ("annotation
+   * name") entry. Use an application id here when the annotation must correlate
+   * with an external store or collaboration protocol. Omit it for a new local
+   * annotation and the engine generates an id; {@link PdfPage.addAnnotation}
+   * returns the generated value.
+   */
   id?: string;
   subtype: PdfAnnotationSubtype;
   rect?: PdfRect;

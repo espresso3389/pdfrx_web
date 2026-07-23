@@ -767,11 +767,12 @@ export class PdfDocument {
    * {@link assemblePages}.
    *
    * Nothing is sent to the worker and the PDF is not rebuilt: the pages are
-   * proxies ({@link PdfPage.rotatedTo}, {@link PdfPage.withPageNumber}) over
-   * pages that stay loaded, so reordering and rotating are immediate and free,
-   * and undo is just setting the previous array back. This is what GUI page
-   * editing wants; call {@link encodePdf} (or {@link assemblePages}) when the
-   * arrangement finally has to become a real PDF.
+   * proxies (including those returned by {@link PdfPage.rotatedTo}) over pages
+   * that stay loaded, so reordering and rotating are immediate and free, and
+   * undo is just setting the previous array back. Page numbers are assigned
+   * automatically from the array order. This is what GUI page editing wants;
+   * call {@link encodePdf} (or {@link assemblePages}) when the arrangement
+   * finally has to become a real PDF.
    *
    * Pages may come from other documents — those must stay open for as long as
    * they are referenced. Page numbers are reassigned to match the new order, so
@@ -1124,7 +1125,7 @@ export class PdfDocument {
       if (current.sourceDocument.docHandle !== this.docHandle) continue;
       const fresh = bySourceIndex.get(current.sourcePageIndex);
       if (!fresh) continue;
-      pages[i] = current.rebasedOn(fresh).withPageNumber(i + 1);
+      pages[i] = current.rebasedOn(fresh).placedIn(this, i + 1);
       pageNumbers.push(i + 1);
     }
     if (pageNumbers.length === 0) return;
@@ -1955,7 +1956,7 @@ export class PdfDocument {
 /**
  * Spec for constructing a *proxy* page: a stand-in that presents a different
  * page number and/or rotation for an existing page without touching the
- * underlying PDF. Built by {@link PdfPage.rotatedTo} and friends.
+ * underlying PDF. Built internally while arranging or rotating pages.
  * @internal
  */
 export interface PdfPageProxySpec {
@@ -1970,11 +1971,11 @@ export interface PdfPageProxySpec {
  * construct directly.
  *
  * A page has two identities that usually coincide but need not: where it sits
- * in the document ({@link pageNumber}, {@link rotation}) and which physical page
- * of which PDF it draws ({@link sourcePage}). {@link rotatedTo} /
- * {@link withPageNumber} return *proxy* pages that change the former while
- * sharing the latter, which is what makes {@link PdfDocument.setPages}
- * rearrangement free — see {@link PdfDocument.setPages}.
+ * in the document ({@link pageNumber}, its `rotation`) and which physical page
+ * of which PDF it draws ({@link sourcePage}). {@link rotatedTo} returns a
+ * *proxy* page that changes the effective rotation while sharing the physical
+ * page. {@link PdfDocument.setPages} similarly assigns placement and page
+ * numbers from array order, which is what makes rearrangement free.
  */
 export class PdfPage {
   /** @internal */
@@ -2024,9 +2025,9 @@ export class PdfPage {
   readonly document: PdfDocument;
   /** 1-based page number — the position in {@link PdfDocument.pages}, not in the PDF. */
   readonly pageNumber: number;
-  /** Page width in points (1/72 inch), at {@link rotation}. */
+  /** Page width in points (1/72 inch), at this page's `rotation`. */
   readonly width: number;
-  /** Page height in points (1/72 inch), at {@link rotation}. */
+  /** Page height in points (1/72 inch), at this page's `rotation`. */
   readonly height: number;
   /** Effective page rotation (clockwise); on a rotated proxy this differs from the rotation baked into the PDF. */
   readonly rotation: PdfPageRotation;
@@ -2092,20 +2093,6 @@ export class PdfPage {
     return `${this.sourceKey}:${this.rotation}`;
   }
 
-  /**
-   * Returns a page identical to this one but at `pageNumber`, or `this` if it is
-   * already there. Nothing is rendered or reloaded — see {@link PdfDocument.setPages}.
-   */
-  withPageNumber(pageNumber: number): PdfPage {
-    if (pageNumber === this.pageNumber) return this;
-    return new PdfPage(this.sourceDocument, {
-      basePage: this,
-      document: this.document,
-      pageNumber,
-      rotation: this.rotation,
-    });
-  }
-
   /** Returns a placement proxy owned by `document`. @internal */
   placedIn(document: PdfDocument, pageNumber: number): PdfPage {
     if (document === this.document && pageNumber === this.pageNumber) return this;
@@ -2113,9 +2100,25 @@ export class PdfPage {
   }
 
   /**
-   * Returns a page identical to this one but rotated to the absolute `rotation`,
-   * or `this` if it is already there. The PDF is untouched; only what the viewer
-   * draws changes. Chainable with {@link withPageNumber}.
+   * Creates a page-placement proxy with the requested absolute rotation.
+   *
+   * Calling this method alone does **not** modify the PDF or
+   * {@link PdfDocument.pages}. Pass the returned page to
+   * {@link PdfDocument.setPage} to replace one placement, or include it in the
+   * array passed to {@link PdfDocument.setPages}. Those methods update the
+   * in-memory arrangement synchronously; {@link PdfDocument.encodePdf} or
+   * {@link PdfDocument.assemblePages} later writes the arrangement into the
+   * physical PDF.
+   *
+   * `rotation` is clockwise and absolute: `90` means the page is displayed at
+   * 90 degrees regardless of the page's current `rotation` property. If it
+   * already has the requested rotation, this method returns `this`.
+   *
+   * @example Rotate the third page to an absolute 90 degrees
+   * ```ts
+   * const page = doc.pages[2]!;
+   * doc.setPage(3, page.rotatedTo(90));
+   * ```
    */
   rotatedTo(rotation: PdfPageRotation): PdfPage {
     if (rotation === this.rotation) return this;
@@ -2127,22 +2130,70 @@ export class PdfPage {
     });
   }
 
-  /** Returns this page rotated by `delta` clockwise, relative to its current {@link rotation}. */
+  /**
+   * Creates a page-placement proxy rotated clockwise by `delta` relative to its
+   * current `rotation` property.
+   *
+   * This does not modify the document by itself. Apply the returned proxy with
+   * {@link PdfDocument.setPage} or {@link PdfDocument.setPages}; use
+   * {@link PdfDocument.encodePdf} or {@link PdfDocument.assemblePages} only when
+   * the in-memory arrangement must be written into the physical PDF.
+   *
+   * @example Rotate the current first-page placement by 90 degrees
+   * ```ts
+   * doc.setPage(1, doc.pages[0]!.rotatedBy(90));
+   * ```
+   */
   rotatedBy(delta: PdfPageRotation): PdfPage {
     return this.rotatedTo(pdfPageRotationFromIndex((this.rotation + delta) / 90));
   }
 
-  /** Returns this page rotated 90° clockwise. */
+  /**
+   * Creates a page-placement proxy rotated 90 degrees clockwise relative to
+   * this page.
+   *
+   * Calling this method does not change {@link PdfDocument.pages}. Apply the
+   * result with {@link PdfDocument.setPage} or {@link PdfDocument.setPages}.
+   *
+   * @example
+   * ```ts
+   * doc.setPage(1, doc.pages[0]!.rotatedCW90());
+   * ```
+   */
   rotatedCW90(): PdfPage {
     return this.rotatedBy(90);
   }
 
-  /** Returns this page rotated 90° counter-clockwise. */
+  /**
+   * Creates a page-placement proxy rotated 90 degrees counter-clockwise
+   * relative to this page.
+   *
+   * Calling this method does not change {@link PdfDocument.pages}. Apply the
+   * result with {@link PdfDocument.setPage} or {@link PdfDocument.setPages}.
+   *
+   * @example
+   * ```ts
+   * doc.setPage(1, doc.pages[0]!.rotatedCCW90());
+   * ```
+   */
   rotatedCCW90(): PdfPage {
     return this.rotatedBy(270);
   }
 
-  /** Returns this page rotated 180°. */
+  /**
+   * Creates a page-placement proxy rotated 180 degrees relative to this page.
+   *
+   * Calling this method does not change {@link PdfDocument.pages}. Apply the
+   * result with {@link PdfDocument.setPage} or {@link PdfDocument.setPages}.
+   *
+   * @example Rotate several placements in one arrangement update
+   * ```ts
+   * const pages = doc.pages.map((page, index) =>
+   *   index === 0 || index === 2 ? page.rotated180() : page,
+   * );
+   * doc.setPages(pages);
+   * ```
+   */
   rotated180(): PdfPage {
     return this.rotatedBy(180);
   }
@@ -2347,7 +2398,16 @@ export class PdfPage {
   }
 
   /**
-   * Adds an annotation to this page and returns its stable `/NM` id.
+   * Adds an annotation to this page and returns its id.
+   *
+   * The id is stored in the PDF annotation dictionary's `/NM` ("annotation
+   * name") entry. `/NM` is a PDF-standard string intended to distinguish an
+   * annotation from the other annotations on the same page; it is not the
+   * visible annotation text or the page number. The engine generates one when
+   * {@link PdfAnnotationSpec.id} is omitted. Keep the returned value to pass to
+   * {@link updateAnnotation} or {@link removeAnnotation}, or to correlate the
+   * annotation with an external store or collaboration message. It is
+   * preserved when the PDF is encoded and opened again.
    *
    * The physical write is sent to {@link sourceDocument}; the
    * `annotationsChanged` event is emitted from the source document and every
@@ -2364,6 +2424,15 @@ export class PdfPage {
   /**
    * Replaces annotation `id` with a fresh annotation built from the complete
    * `spec`, preserving the id. PDFium has no in-place geometry setter.
+   *
+   * @param id The {@link PdfAnnotationObject.id} returned by
+   *   {@link loadAnnotations}, or the id returned by {@link addAnnotation}.
+   *   This is normally the annotation dictionary's `/NM` ("annotation name")
+   *   value: a PDF-standard string used to distinguish annotations on the
+   *   page. Existing PDFs whose annotation has no `/NM` use a page-local
+   *   `@<index>` fallback; use
+   *   that fallback only with the unchanged result from the most recent
+   *   `loadAnnotations()` call because page mutations can change the index.
    */
   async updateAnnotation(
     id: string,
@@ -2373,7 +2442,19 @@ export class PdfPage {
     return this.document.updateAnnotationForPage(this, id, spec, options);
   }
 
-  /** Removes annotation `id`; returns whether it was found. */
+  /**
+   * Removes the annotation identified by `id`; returns whether it was found.
+   *
+   * @param id The {@link PdfAnnotationObject.id} returned by
+   *   {@link loadAnnotations}, or the id returned by {@link addAnnotation}.
+   *   This is normally the annotation dictionary's stable `/NM` ("annotation
+   *   name") value, a PDF-standard string used to distinguish annotations on
+   *   the page.
+   *   For an existing annotation without `/NM`, `loadAnnotations()` returns a
+   *   page-local `@<index>` fallback instead. Such a fallback is positional,
+   *   so use it before any other annotation is added, removed, or replaced on
+   *   this page; otherwise load the annotations again and use the new id.
+   */
   async removeAnnotation(id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
     return this.document.removeAnnotationForPage(this, id, options);
   }
