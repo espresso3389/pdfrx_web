@@ -262,17 +262,23 @@ export interface PdfrxViewerOptions {
    * selects a word, the common text-viewer behavior).
    */
   doubleClickToZoom?: boolean;
-  /** Enables drag-to-pan (background drag / touch drag). Default: `true`. */
+  /**
+   * Enables drag-to-pan (primary-button background drag, right-button drag, or
+   * touch drag). Default: `true`.
+   */
   panEnabled?: boolean;
   /**
-   * Restricts drag-panning to one axis. `'free'` (default) pans in both;
-   * `'horizontal'` / `'vertical'` lock to that axis; `'aligned'` locks each pan
-   * gesture to whichever axis it starts moving along. Wheel/keyboard scrolling
-   * and programmatic navigation are unaffected.
+   * Restricts primary-button, right-button, and touch drag-panning to one axis.
+   * `'free'` (default) pans in both; `'horizontal'` / `'vertical'` lock to that
+   * axis; `'aligned'` locks each pan gesture to whichever axis it starts moving
+   * along. Wheel/keyboard scrolling and programmatic navigation are unaffected.
    */
   panAxis?: PanAxis;
-  /** Enables gesture zoom (pinch and ctrl/cmd + wheel). Programmatic zoom is
-   * unaffected. Default: `true`. */
+  /**
+   * Enables gesture zoom (pinch and ctrl/cmd + wheel). When disabled, a
+   * two-finger gesture can still pan if {@link panEnabled} is enabled.
+   * Programmatic zoom is unaffected. Default: `true`.
+   */
   zoomEnabled?: boolean;
   /** Enables mouse-wheel / trackpad scrolling. Default: `true`. */
   scrollByMouseWheel?: boolean;
@@ -629,6 +635,10 @@ type InteractionMode =
       startZoom: number;
       /** Document point held fixed under the pinch midpoint. */
       startDocCenter: Offset;
+      /** Initial midpoint in view space, used to constrain two-finger panning. */
+      startViewCenter: Offset;
+      /** For `panAxis: 'aligned'`: the axis this gesture locked onto once it moved. */
+      lockAxis?: 'x' | 'y';
     };
 
 /**
@@ -3206,8 +3216,12 @@ export class PdfrxViewer {
     this.velocitySamples.length = 0;
     const local = this.localPoint(e);
 
-    // Second pointer while panning -> pinch
-    if (this.mode.kind === 'pan' && e.pointerType === 'touch' && this.options.zoomEnabled !== false) {
+    // Second pointer while panning -> two-finger pan/pinch.
+    if (
+      this.mode.kind === 'pan'
+      && e.pointerType === 'touch'
+      && (this.options.panEnabled !== false || this.options.zoomEnabled !== false)
+    ) {
       this.cancelLongPress();
       const first = this.mode.pointerId;
       const firstPos = { x: this.mode.lastX, y: this.mode.lastY };
@@ -3219,7 +3233,10 @@ export class PdfrxViewer {
         startDistance: Math.max(distance, 1),
         startZoom: this.transform.zoom,
         startDocCenter: viewToDocument(this.transform, mid),
+        startViewCenter: mid,
       };
+      this.pinchPositions.set(first, firstPos);
+      this.pinchPositions.set(e.pointerId, local);
       this.capturePointer(e.pointerId);
       return;
     }
@@ -3360,11 +3377,27 @@ export class PdfrxViewer {
         if (!p0 || !p1) return;
         const distance = Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), 1);
         const mid = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-        const zoom = Math.min(Math.max((this.mode.startZoom * distance) / this.mode.startDistance, this.minZoom), this.maxZoom);
+        const zoom = this.options.zoomEnabled === false
+          ? this.mode.startZoom
+          : Math.min(
+              Math.max((this.mode.startZoom * distance) / this.mode.startDistance, this.minZoom),
+              this.maxZoom,
+            );
+        const [panX, panY] = this.options.panEnabled === false
+          ? [0, 0]
+          : this.constrainPan(
+              mid.x - this.mode.startViewCenter.x,
+              mid.y - this.mode.startViewCenter.y,
+              this.mode,
+            );
+        const center = {
+          x: this.mode.startViewCenter.x + panX,
+          y: this.mode.startViewCenter.y + panY,
+        };
         this.setTransform({
           zoom,
-          xZoomed: mid.x - this.mode.startDocCenter.x * zoom,
-          yZoomed: mid.y - this.mode.startDocCenter.y * zoom,
+          xZoomed: center.x - this.mode.startDocCenter.x * zoom,
+          yZoomed: center.y - this.mode.startDocCenter.y * zoom,
         });
         return;
       }
@@ -3426,7 +3459,7 @@ export class PdfrxViewer {
 
   /** Fires onInteractionStart/End when the gesture state crosses idle↔active. */
   private reconcileInteraction(): void {
-    const active = this.mode.kind !== 'none';
+    const active = this.mode.kind !== 'none' || this.selectTouchGesture !== null || this.rightPan !== null;
     if (active === this.interactionActive) return;
     this.interactionActive = active;
     const cb = active ? this.options.onInteractionStart : this.options.onInteractionEnd;
@@ -3529,6 +3562,8 @@ export class PdfrxViewer {
     startDistance: number;
     startZoom: number;
     startDocCenter: Offset;
+    startViewCenter: Offset;
+    lockAxis?: 'x' | 'y';
   } | null = null;
   private cancellingSelectTouch = false;
 
@@ -3539,14 +3574,26 @@ export class PdfrxViewer {
       target: event.target ?? this.canvas,
     });
     if (this.selectTouchGesture || this.selectTouchPoints.size !== 2) return;
+    if (this.options.panEnabled === false && this.options.zoomEnabled === false) return;
     const entries = [...this.selectTouchPoints.entries()];
     const first = entries[0];
     const second = entries[1];
     if (!first || !second) return;
 
+    const p0 = first[1].point;
+    const p1 = second[1].point;
+    const center = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+    this.selectTouchGesture = {
+      pointers: [first[0], second[0]],
+      startDistance: Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), 1),
+      startZoom: this.transform.zoom,
+      startDocCenter: viewToDocument(this.transform, center),
+      startViewCenter: center,
+    };
+
     // The first finger may already be moving an annotation or marquee. End
-    // that single-finger interaction before the two-finger viewport gesture
-    // takes ownership of both pointers.
+    // that single-finger interaction after registering the two-finger gesture,
+    // so interaction callbacks stay active across the ownership transfer.
     this.cancellingSelectTouch = true;
     try {
       first[1].target.dispatchEvent(new PointerEvent('pointercancel', {
@@ -3560,17 +3607,9 @@ export class PdfrxViewer {
       this.cancellingSelectTouch = false;
     }
 
-    const p0 = first[1].point;
-    const p1 = second[1].point;
-    const center = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-    this.selectTouchGesture = {
-      pointers: [first[0], second[0]],
-      startDistance: Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), 1),
-      startZoom: this.transform.zoom,
-      startDocCenter: viewToDocument(this.transform, center),
-    };
     this.stopFling();
     this.stopAnimation();
+    this.reconcileInteraction();
     event.preventDefault();
     event.stopImmediatePropagation();
   };
@@ -3591,10 +3630,21 @@ export class PdfrxViewer {
             Math.max((gesture.startZoom * distance) / gesture.startDistance, this.minZoom),
             this.maxZoom,
           );
+      const [panX, panY] = this.options.panEnabled === false
+        ? [0, 0]
+        : this.constrainPan(
+            center.x - gesture.startViewCenter.x,
+            center.y - gesture.startViewCenter.y,
+            gesture,
+          );
+      const constrainedCenter = {
+        x: gesture.startViewCenter.x + panX,
+        y: gesture.startViewCenter.y + panY,
+      };
       this.setTransform({
         zoom,
-        xZoomed: center.x - gesture.startDocCenter.x * zoom,
-        yZoomed: center.y - gesture.startDocCenter.y * zoom,
+        xZoomed: constrainedCenter.x - gesture.startDocCenter.x * zoom,
+        yZoomed: constrainedCenter.y - gesture.startDocCenter.y * zoom,
       });
     }
     event.preventDefault();
@@ -3607,6 +3657,7 @@ export class PdfrxViewer {
     this.selectTouchPoints.delete(event.pointerId);
     if (owned) {
       this.selectTouchGesture = null;
+      this.reconcileInteraction();
       event.preventDefault();
       event.stopImmediatePropagation();
     }
@@ -3619,11 +3670,12 @@ export class PdfrxViewer {
     last: Offset;
     moved: boolean;
     previousCursor: string;
+    lockAxis?: 'x' | 'y';
   } | null = null;
   private suppressRightPanContextMenu = false;
 
   private readonly onRightPanPointerDown = (event: PointerEvent): void => {
-    if (event.pointerType === 'touch' || event.button !== 2 || this.rightPan) return;
+    if (event.pointerType === 'touch' || event.button !== 2 || this.rightPan || this.options.panEnabled === false) return;
     const point = this.localPoint(event);
     this.rightPan = {
       pointerId: event.pointerId,
@@ -3634,6 +3686,7 @@ export class PdfrxViewer {
     };
     this.stopFling();
     this.stopAnimation();
+    this.reconcileInteraction();
     try {
       this.container.setPointerCapture(event.pointerId);
     } catch {
@@ -3643,21 +3696,18 @@ export class PdfrxViewer {
 
   private readonly onRightPanPointerMove = (event: PointerEvent): void => {
     const pan = this.rightPan;
-    if (!pan || event.pointerId !== pan.pointerId) return;
+    if (!pan || event.pointerId !== pan.pointerId || this.options.panEnabled === false) return;
     const point = this.localPoint(event);
     if (!pan.moved && Math.hypot(point.x - pan.start.x, point.y - pan.start.y) < TAP_SLOP) return;
     pan.moved = true;
     this.container.style.cursor = 'grabbing';
-    const dx = point.x - pan.last.x;
-    const dy = point.y - pan.last.y;
+    const [dx, dy] = this.constrainPan(point.x - pan.last.x, point.y - pan.last.y, pan);
     pan.last = point;
-    if (this.options.panEnabled !== false) {
-      this.setTransform({
-        zoom: this.transform.zoom,
-        xZoomed: this.transform.xZoomed + dx,
-        yZoomed: this.transform.yZoomed + dy,
-      });
-    }
+    this.setTransform({
+      zoom: this.transform.zoom,
+      xZoomed: this.transform.xZoomed + dx,
+      yZoomed: this.transform.yZoomed + dy,
+    });
     event.preventDefault();
     event.stopImmediatePropagation();
   };
@@ -3666,6 +3716,7 @@ export class PdfrxViewer {
     const pan = this.rightPan;
     if (!pan || event.pointerId !== pan.pointerId) return;
     this.rightPan = null;
+    this.reconcileInteraction();
     this.container.style.cursor = pan.previousCursor;
     try {
       this.container.releasePointerCapture(event.pointerId);
