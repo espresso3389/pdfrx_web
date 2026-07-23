@@ -1419,6 +1419,11 @@ export class PdfrxViewer {
     this.container.addEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.addEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.addEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
+    this.container.addEventListener('pointerdown', this.onRightPanPointerDown, { capture: true });
+    this.container.addEventListener('pointermove', this.onRightPanPointerMove, { capture: true });
+    this.container.addEventListener('pointerup', this.onRightPanPointerUp, { capture: true });
+    this.container.addEventListener('pointercancel', this.onRightPanPointerUp, { capture: true });
+    this.container.addEventListener('contextmenu', this.onRightPanContextMenu, { capture: true });
     this.canvas.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
   }
@@ -2384,6 +2389,11 @@ export class PdfrxViewer {
     this.container.removeEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.removeEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.removeEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
+    this.container.removeEventListener('pointerdown', this.onRightPanPointerDown, { capture: true });
+    this.container.removeEventListener('pointermove', this.onRightPanPointerMove, { capture: true });
+    this.container.removeEventListener('pointerup', this.onRightPanPointerUp, { capture: true });
+    this.container.removeEventListener('pointercancel', this.onRightPanPointerUp, { capture: true });
+    this.container.removeEventListener('contextmenu', this.onRightPanContextMenu, { capture: true });
     this.container.style.touchAction = this.previousContainerTouchAction;
     this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
@@ -3601,6 +3611,81 @@ export class PdfrxViewer {
       event.stopImmediatePropagation();
     }
     if (this.selectTouchPoints.size === 0) this.selectTouchGesture = null;
+  };
+
+  private rightPan: {
+    pointerId: number;
+    start: Offset;
+    last: Offset;
+    moved: boolean;
+    previousCursor: string;
+  } | null = null;
+  private suppressRightPanContextMenu = false;
+
+  private readonly onRightPanPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch' || event.button !== 2 || this.rightPan) return;
+    const point = this.localPoint(event);
+    this.rightPan = {
+      pointerId: event.pointerId,
+      start: point,
+      last: point,
+      moved: false,
+      previousCursor: this.container.style.cursor,
+    };
+    this.stopFling();
+    this.stopAnimation();
+    try {
+      this.container.setPointerCapture(event.pointerId);
+    } catch {
+      /* best effort */
+    }
+  };
+
+  private readonly onRightPanPointerMove = (event: PointerEvent): void => {
+    const pan = this.rightPan;
+    if (!pan || event.pointerId !== pan.pointerId) return;
+    const point = this.localPoint(event);
+    if (!pan.moved && Math.hypot(point.x - pan.start.x, point.y - pan.start.y) < TAP_SLOP) return;
+    pan.moved = true;
+    this.container.style.cursor = 'grabbing';
+    const dx = point.x - pan.last.x;
+    const dy = point.y - pan.last.y;
+    pan.last = point;
+    if (this.options.panEnabled !== false) {
+      this.setTransform({
+        zoom: this.transform.zoom,
+        xZoomed: this.transform.xZoomed + dx,
+        yZoomed: this.transform.yZoomed + dy,
+      });
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  private readonly onRightPanPointerUp = (event: PointerEvent): void => {
+    const pan = this.rightPan;
+    if (!pan || event.pointerId !== pan.pointerId) return;
+    this.rightPan = null;
+    this.container.style.cursor = pan.previousCursor;
+    try {
+      this.container.releasePointerCapture(event.pointerId);
+    } catch {
+      /* best effort */
+    }
+    if (!pan.moved) return;
+    this.suppressRightPanContextMenu = true;
+    window.setTimeout(() => {
+      this.suppressRightPanContextMenu = false;
+    }, 0);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  private readonly onRightPanContextMenu = (event: MouseEvent): void => {
+    if (!this.suppressRightPanContextMenu && !this.rightPan?.moved) return;
+    this.suppressRightPanContextMenu = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
   };
 
   /** Document-space distance scrolled per arrow-key press (view px). */
