@@ -604,11 +604,11 @@ export interface WorkerCommandMap {
       formHandle: number;
       pageIndex: number;
       fieldName: string;
-      /** Text value (text field, editable combo) or the export value to select (radio, single choice). */
+      /** Text value (text field/editable combo), radio export value, or one choice-option label. */
       value?: string;
       /** Checkbox desired state. */
       checked?: boolean;
-      /** Option labels to select (list/combo, supports multi-select). */
+      /** Option labels to select (list/combo, including single-select fields). */
       selectedLabels?: string[];
     };
     result: { ok: boolean };

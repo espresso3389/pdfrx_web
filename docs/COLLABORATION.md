@@ -18,7 +18,7 @@ The local editing stack supplies:
   Pages can be reordered, removed, duplicated, rotated, or borrowed from an
   open source document without rebuilding the PDF.
 - `PdfrxViewer.setPages()` and `setPage()` add page edits to the viewer's common
-  annotation/page undo history.
+  annotation/form/page undo history.
 - `pagesRearranged` invalidates position-keyed viewer and React state while the
   render and thumbnail caches remain keyed by page content.
 - annotations have stable PDF `/NM` IDs, full snapshot import/export, exact
@@ -115,6 +115,8 @@ addressed by immutable source `documentId` plus its fully-qualified AcroForm
 field name; values retain
 their `string | boolean | string[]` shape. The relay stores virtual field state,
 while every participant calls `setFormFieldValue()` on its own source document.
+Choice fields use selected option-label arrays, including single-select controls,
+so PDFs whose export values differ from display labels replay correctly.
 Remote applies are suppressed from publication to avoid echo loops. Because a
 virtual arrangement can contain pages owned by imported documents, the viewer
 subscribes to `formFieldsChanged` on every source document currently represented

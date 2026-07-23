@@ -39,6 +39,7 @@ import {
   type PdfAnnotationGeometry,
   type PdfAnnotationObject,
   type PdfAnnotationChange,
+  type PdfAnnotationHistoryChange,
   type PdfAnnotationMutationOptions,
   type PdfAnnotationSnapshot,
   type PdfAnnotationPoint,
@@ -53,7 +54,9 @@ import {
   type PdfDownloadProgressCallback,
   type PdfFontQuery,
   type PdfFormField,
+  type PdfFormFieldChange,
   type PdfFormFieldValue,
+  type PdfFormMutationOptions,
   type PdfHighlightObject,
   type PdfLink,
   type PdfLoadAnnotationsOptions,
@@ -666,7 +669,7 @@ export class PdfDocument {
   private handleFormNotification(notification: WireFormNotification): void {
     if (this._isDisposed) return;
     if (notification.kind === 'change') {
-      this.emit('formFieldsChanged', { source: 'user' });
+      if (this.formApiMutationDepth === 0) void this.captureInteractiveFormChange();
       return;
     }
     // invalidate: map the physical page index back onto the arrangement.
@@ -682,6 +685,26 @@ export class PdfDocument {
         console.error('Error in form invalidate listener:', e);
       }
     }
+  }
+
+  private async captureInteractiveFormChange(): Promise<void> {
+    const operation = this.formMutationLock.then(async () => {
+      const before = new Map(this.lastFormValues);
+      if (this.formCalculationEnabled) await this.runFormCalculations();
+      const afterFields = await this.loadFormFields();
+      const changes = this.diffFormValues(before, this.snapshotFormValues(afterFields));
+      if (changes.length === 0) return;
+      this.emit('formFieldsChanged', {
+        source: 'user',
+        origin: 'user',
+        changes,
+        pageNumbers: [...new Set(afterFields
+          .filter((field) => changes.some((change) => change.name === field.name))
+          .map((field) => field.pageNumber))],
+      });
+    });
+    this.formMutationLock = operation.catch(() => {});
+    await operation;
   }
 
   /**
@@ -720,12 +743,18 @@ export class PdfDocument {
   private readonly borrowers = new Set<PdfDocument>();
   private _isDisposed = false;
   private loadLock: Promise<void> = Promise.resolve();
+  /** Serializes form transactions so their before/after snapshots cannot overlap. */
+  private formMutationLock: Promise<void> = Promise.resolve();
   /** Callback id registered with the worker to relay form invalidate/change notifications. */
   private formNotifyCallbackId: number | null = null;
   /** Internal listeners (the viewer) wanting form dirty-region redraws. */
   private readonly formInvalidateListeners = new Set<(pageNumber: number, rect: PdfRect) => void>();
   /** Cache of field name → physical page index, populated by {@link loadFormFields}. */
   private readonly formFieldSourceIndex = new Map<string, number>();
+  /** Latest observed values, used as the before-state for native interactive edits. */
+  private lastFormValues = new Map<string, PdfFormFieldValue>();
+  /** Suppresses worker notifications caused by a programmatic form transaction. */
+  private formApiMutationDepth = 0;
   /** Lazily-loaded parsed `AFSimple_Calculate` specs (`null` until first needed). */
   private calcSpecs: { name: string; spec: FormCalcSpec }[] | null = null;
   /**
@@ -1472,7 +1501,9 @@ export class PdfDocument {
         }
       }
     }
-    return ordered.map(({ field, rects }) => ({ ...field, rects }));
+    const fields = ordered.map(({ field, rects }) => ({ ...field, rects }));
+    this.lastFormValues = this.snapshotFormValues(fields);
+    return fields;
   }
 
   /** Returns the current value of the named field, or `undefined` if it is not found. */
@@ -1486,15 +1517,97 @@ export class PdfDocument {
    * through the form-fill module so the widget appearance regenerates and the
    * change is visible on the next render. When {@link formCalculationEnabled} is
    * set (the default), dependent calculated fields (`AFSimple_Calculate`) are
-   * recomputed afterwards. Fires `formFieldsChanged` (`source: 'api'`). The
-   * interpretation of `value` depends on the field type — see
-   * {@link PdfFormFieldValue}.
+   * recomputed afterwards. Fires one `formFieldsChanged` event using the
+   * supplied mutation origin (`api` by default). The interpretation of `value`
+   * depends on the field type — see {@link PdfFormFieldValue}.
    */
-  async setFormFieldValue(name: string, value: PdfFormFieldValue): Promise<void> {
+  async setFormFieldValue(
+    name: string,
+    value: PdfFormFieldValue,
+    options: PdfFormMutationOptions = {},
+  ): Promise<void> {
+    await this.setFormFieldValues({ [name]: value }, options);
+  }
+
+  /**
+   * Applies several field values as one form transaction, runs calculations
+   * once, and emits one `formFieldsChanged` event containing the complete
+   * direct + calculated before/after diff.
+   */
+  async setFormFieldValues(
+    values: Readonly<Record<string, PdfFormFieldValue>>,
+    options: PdfFormMutationOptions = {},
+  ): Promise<void> {
+    const requestedValues = structuredClone(values);
+    const operation = this.formMutationLock.then(() => this.applyFormFieldValues(requestedValues, options));
+    this.formMutationLock = operation.catch(() => {});
+    await operation;
+  }
+
+  private async applyFormFieldValues(
+    values: Readonly<Record<string, PdfFormFieldValue>>,
+    options: PdfFormMutationOptions,
+  ): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
-    await this.sendSetFormFieldValue(name, value);
-    if (this.formCalculationEnabled) await this.runFormCalculations();
-    this.emit('formFieldsChanged', { source: 'api' });
+    this.formApiMutationDepth++;
+    try {
+      const before = this.snapshotFormValues(await this.loadFormFields());
+      for (const [name, value] of Object.entries(values)) {
+        await this.sendSetFormFieldValue(name, value);
+      }
+      if (this.formCalculationEnabled) await this.runFormCalculations();
+      const afterFields = await this.loadFormFields();
+      const after = this.snapshotFormValues(afterFields);
+      const changes = this.diffFormValues(before, after);
+      if (changes.length === 0) return;
+      const origin = options.origin ?? 'api';
+      this.emit('formFieldsChanged', {
+        source: origin === 'user' ? 'user' : 'api',
+        origin,
+        transactionId: options.transactionId,
+        actorId: options.actorId,
+        changes,
+        pageNumbers: [...new Set(afterFields
+          .filter((field) => changes.some((change) => change.name === field.name))
+          .map((field) => field.pageNumber))],
+      });
+    } finally {
+      this.formApiMutationDepth--;
+    }
+  }
+
+  private snapshotFormValues(fields: readonly PdfFormField[]): Map<string, PdfFormFieldValue> {
+    return new Map(fields.filter((field) => field.name).map((field) => {
+      let value: PdfFormFieldValue = field.value;
+      if (field.type === 'checkBox') value = !!field.isChecked;
+      else if (field.type === 'comboBox' || field.type === 'listBox') {
+        // Choice writes are restored through FORM_SetIndexSelected, whose API
+        // matches option labels rather than the field's export value. Keep the
+        // selected labels even for a single-select field: PDFs commonly use a
+        // different export value (e.g. "0") and display label (e.g. ideographic
+        // space), in which case replaying `field.value` cannot select the item.
+        value = field.options?.filter((option) => option.selected).map((option) => option.label) ?? [];
+      }
+      return [field.name, value] as const;
+    }));
+  }
+
+  private diffFormValues(
+    before: ReadonlyMap<string, PdfFormFieldValue>,
+    after: ReadonlyMap<string, PdfFormFieldValue>,
+  ): PdfFormFieldChange[] {
+    const equal = (a: PdfFormFieldValue, b: PdfFormFieldValue): boolean =>
+      Array.isArray(a) && Array.isArray(b)
+        ? a.length === b.length && a.every((value, index) => value === b[index])
+        : a === b;
+    const changes: PdfFormFieldChange[] = [];
+    for (const [name, afterValue] of after) {
+      const beforeValue = before.get(name);
+      if (beforeValue !== undefined && !equal(beforeValue, afterValue)) {
+        changes.push({ name, before: beforeValue, after: afterValue });
+      }
+    }
+    return changes;
   }
 
   /**
@@ -1561,6 +1674,7 @@ export class PdfDocument {
     page.sourceDocument.emitAnnotationSourceChange(
       page.sourcePageIndex,
       (pageNumber) => ({ type: 'add', id: result.id, pageNumber, spec: storedSpec }),
+      (pageNumber) => ({ id: result.id, pageNumber, before: null, after: storedSpec }),
       options,
     );
     return result.id;
@@ -1575,6 +1689,7 @@ export class PdfDocument {
   ): Promise<string> {
     if (this._isDisposed) throw new Error('Document is disposed');
     if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
+    const before = await this.loadAnnotationSpec(page, id);
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
@@ -1588,6 +1703,7 @@ export class PdfDocument {
     page.sourceDocument.emitAnnotationSourceChange(
       page.sourcePageIndex,
       (pageNumber) => ({ type: 'update', id: result.id, pageNumber, spec: storedSpec }),
+      (pageNumber) => ({ id: result.id, pageNumber, before, after: storedSpec }),
       options,
     );
     return result.id;
@@ -1601,6 +1717,7 @@ export class PdfDocument {
   ): Promise<boolean> {
     if (this._isDisposed) throw new Error('Document is disposed');
     if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
+    const before = await this.loadAnnotationSpec(page, id);
     const result = await page.sourceDocument.sendCommand('removeAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
@@ -1610,6 +1727,7 @@ export class PdfDocument {
       page.sourceDocument.emitAnnotationSourceChange(
         page.sourcePageIndex,
         (pageNumber) => ({ type: 'remove', id, pageNumber }),
+        (pageNumber) => ({ id, pageNumber, before, after: null }),
         options,
       );
     }
@@ -1667,7 +1785,11 @@ export class PdfDocument {
       } as never);
       changes.push({ type: existingIds.has(item.id) ? 'update' : 'add', id: result.id, pageNumber: item.pageNumber, spec });
     }
-    this.emitAnnotationChanges(changes, { origin, transactionId: options.transactionId, actorId: options.actorId });
+    this.emitAnnotationChanges(
+      changes,
+      this.annotationHistoryFromSnapshots(existing, changes),
+      { origin, transactionId: options.transactionId, actorId: options.actorId },
+    );
   }
 
   /**
@@ -1679,12 +1801,17 @@ export class PdfDocument {
    */
   async applyAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions = {}): Promise<void> {
     const applied: PdfAnnotationChange[] = [];
+    const historyChanges: PdfAnnotationHistoryChange[] = [];
     for (const change of changes) {
+      const page = this.pageForAnnotation(change.pageNumber);
+      const before = await this.loadAnnotationSpec(page, change.id);
       if (change.type === 'remove') {
-        if (await this.removeAnnotationRaw(change.pageNumber, change.id)) applied.push(change);
+        if (await this.removeAnnotationRaw(change.pageNumber, change.id)) {
+          applied.push(change);
+          historyChanges.push({ id: change.id, pageNumber: change.pageNumber, before, after: null });
+        }
         continue;
       }
-      const page = this.pageForAnnotation(change.pageNumber);
       const spec = { ...structuredClone(change.spec), id: change.id };
       const command = change.type === 'add' ? 'addAnnotation' : 'updateAnnotation';
       const result = await page.sourceDocument.sendCommand(command, {
@@ -1694,8 +1821,9 @@ export class PdfDocument {
         spec: page.annotationSpecToWire(spec),
       } as never);
       applied.push({ ...change, id: result.id, spec });
+      historyChanges.push({ id: result.id, pageNumber: change.pageNumber, before, after: spec });
     }
-    this.emitAnnotationChanges(applied, options);
+    this.emitAnnotationChanges(applied, historyChanges, options);
   }
 
   private async removeAnnotationRaw(pageNumber: number, id: string): Promise<boolean> {
@@ -1724,13 +1852,18 @@ export class PdfDocument {
     return result;
   }
 
-  private emitAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions): void {
+  private emitAnnotationChanges(
+    changes: readonly PdfAnnotationChange[],
+    historyChanges: readonly PdfAnnotationHistoryChange[],
+    options: PdfAnnotationMutationOptions,
+  ): void {
     if (changes.length === 0) return;
     this.emit('annotationsChanged', {
       origin: options.origin ?? 'api',
       transactionId: options.transactionId,
       actorId: options.actorId,
       changes,
+      historyChanges,
       pageNumbers: [...new Set(changes.map((change) => change.pageNumber))],
     });
   }
@@ -1743,6 +1876,7 @@ export class PdfDocument {
   private emitAnnotationSourceChange(
     sourcePageIndex: number,
     changeForPage: (pageNumber: number) => PdfAnnotationChange,
+    historyChangeForPage: (pageNumber: number) => PdfAnnotationHistoryChange,
     options: PdfAnnotationMutationOptions,
   ): void {
     for (const target of [this, ...this.borrowers]) {
@@ -1751,8 +1885,30 @@ export class PdfDocument {
           page.sourceDocument.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex
         )
         .map((page) => changeForPage(page.pageNumber));
-      target.emitAnnotationChanges(changes, options);
+      target.emitAnnotationChanges(
+        changes,
+        changes.map((change) => historyChangeForPage(change.pageNumber)),
+        options,
+      );
     }
+  }
+
+  private async loadAnnotationSpec(page: PdfPage, id: string): Promise<PdfAnnotationSpec | null> {
+    const annotation = (await page.loadAnnotations()).find((item) => item.id === id);
+    return annotation ? annotationObjectToSpec(annotation) : null;
+  }
+
+  private annotationHistoryFromSnapshots(
+    before: readonly PdfAnnotationObject[],
+    changes: readonly PdfAnnotationChange[],
+  ): PdfAnnotationHistoryChange[] {
+    const beforeById = new Map(before.map((annotation) => [annotation.id, annotationObjectToSpec(annotation)]));
+    return changes.map((change) => ({
+      id: change.id,
+      pageNumber: change.pageNumber,
+      before: beforeById.get(change.id) ?? null,
+      after: change.type === 'remove' ? null : change.spec,
+    }));
   }
 
   /**
@@ -1851,6 +2007,7 @@ export class PdfDocument {
    */
   async formOpenPage(page: PdfPage): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
+    if (this.lastFormValues.size === 0) await this.loadFormFields();
     await this.sendCommand('formOpenPage', {
       docHandle: this.docHandle,
       formHandle: this.formHandle,

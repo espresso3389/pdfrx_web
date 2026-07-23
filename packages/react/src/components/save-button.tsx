@@ -19,7 +19,7 @@ export interface PdfSaveButtonProps {
 
 /**
  * Serializes a temporary copy of the current document — including any
- * annotation and page edits — and downloads it as a PDF without materializing
+ * annotation, form, and page edits — and downloads it as a PDF without materializing
  * the live document's page arrangement or invalidating its editing history.
  */
 export function PdfSaveButton({ className, style, fileName, children, encode }: PdfSaveButtonProps): ReactNode {

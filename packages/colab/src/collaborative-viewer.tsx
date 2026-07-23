@@ -41,9 +41,11 @@ import {
 
 const formFieldValue = (field: PdfFormField): PdfFormFieldValue => {
   if (field.type === 'checkBox') return field.isChecked === true;
-  if (field.type === 'listBox' && field.options) {
-    const selected = field.options.filter((option) => option.selected).map((option) => option.label);
-    return selected.length > 1 ? selected : selected[0] ?? '';
+  if ((field.type === 'comboBox' || field.type === 'listBox') && field.options) {
+    // Choice mutation APIs select by option label. Preserve labels as an array
+    // even for single-select controls so export values that differ from their
+    // display labels still round-trip across the collaboration protocol.
+    return field.options.filter((option) => option.selected).map((option) => option.label);
   }
   return field.value;
 };
@@ -104,9 +106,10 @@ export function CollaborativePdfViewer({
       <PdfrxProvider
         src={src}
         wasmModulesUrl={wasmModulesUrl}
-        // Local history stores page positions and annotation snapshots that can
-        // become stale after another participant edits the session. Keep it
-        // disabled until collaborative undo is expressed as relay operations.
+        // Local history stores page positions, annotation snapshots, and form
+        // values that can become stale after another participant edits the
+        // session. Keep it disabled until collaborative undo is expressed as
+        // relay operations.
         editing={{ pages: true, annotations: true, history: false, actorId }}
       >
         <CollaborativeViewerContent

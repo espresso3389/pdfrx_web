@@ -19,6 +19,7 @@ import {
   type PdfDocumentEventMap,
   type PdfFontQuery,
   type PdfFormField,
+  type PdfFormFieldChange,
   type PdfLink,
   type PdfPage,
   type PdfTextOrientation,
@@ -106,7 +107,7 @@ export interface PdfrxViewerOptions {
     pages?: boolean;
     /** Record and expose Undo/Redo history. */
     history?: boolean;
-    /** Stable application/user id attached to annotation mutations. */
+    /** Stable application/user id attached to viewer-owned mutations. */
     actorId?: string;
   };
   /**
@@ -728,10 +729,11 @@ interface AnnotationCommand {
   after: PdfAnnotationSpec | null;
 }
 
-/** One chronological undo/redo entry shared by annotations and page edits. */
+/** One chronological undo/redo entry shared by annotations, forms, and page edits. */
 type HistoryEntry =
   | { kind: 'annotations'; commands: AnnotationCommand[] }
-  | { kind: 'pages'; before: readonly PdfPage[]; after: readonly PdfPage[] };
+  | { kind: 'pages'; before: readonly PdfPage[]; after: readonly PdfPage[] }
+  | { kind: 'forms'; document: PdfDocument; changes: readonly PdfFormFieldChange[] };
 
 /** One object stored in the viewer-local annotation clipboard. */
 interface AnnotationClipboardEntry {
@@ -1521,7 +1523,7 @@ export class PdfrxViewer {
   private annotationDuplicateQueue: Promise<void> = Promise.resolve();
   /** In-progress drawing gesture, or null. */
   private drawState: DrawState | null = null;
-  /** Chronological annotation and page-edit history. Entries before the index are applied. */
+  /** Chronological annotation, form, and page-edit history. Entries before the index are applied. */
   private history: HistoryEntry[] = [];
   private historyIndex = 0;
   private readonly historyChangeListeners = new Set<() => void>();
@@ -1538,6 +1540,8 @@ export class PdfrxViewer {
   private readonly resizeObserver: ResizeObserver;
 
   private doc: PdfDocument | null = null;
+  /** Last arrangement observed through `pagesRearranged`, including direct document API calls. */
+  private observedDocumentPages: readonly PdfPage[] = [];
   private pageGeoms: PageGeometry[] = [];
   private layout: PageLayout | null = null;
   private layoutDirectionValue: LayoutDirection;
@@ -2628,6 +2632,7 @@ export class PdfrxViewer {
     this.lastNotifiedTransform = null;
 
     this.doc = doc;
+    this.observedDocumentPages = doc.pages.slice();
     this.pageGeoms = doc.pages.map((p) => ({ width: p.width, height: p.height, rotation: p.rotation / 90 }));
     this.layout = this.computeLayout();
     this.cache = new PageRenderCache(doc, () => this.invalidate(), () => this.canvasAnnotationRenderingMode());
@@ -2639,7 +2644,10 @@ export class PdfrxViewer {
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
     doc.addEventListener('pagesRearranged', (event) => this.onPagesRearranged(event));
     this.syncFormDocumentListeners();
-    doc.addEventListener('annotationsChanged', () => this.onAnnotationsChanged());
+    doc.addEventListener('annotationsChanged', (event) => {
+      this.onAnnotationsChanged();
+      this.recordDirectAnnotationMutation(event);
+    });
     this.resetView();
     this.buildViewerOverlays();
     this.notifyDocumentChanged();
@@ -2671,6 +2679,15 @@ export class PdfrxViewer {
    */
   private onPagesRearranged(event: PdfDocumentEventMap['pagesRearranged']): void {
     if (!this.doc) return;
+    const beforePages = this.observedDocumentPages;
+    const afterPages = this.doc.pages.slice();
+    this.observedDocumentPages = afterPages;
+    const changed = beforePages.length !== afterPages.length ||
+      beforePages.some((page, index) => page.renderKey !== afterPages[index]?.renderKey);
+    if (event.origin === 'api' && changed) {
+      this.recordHistoryEntry({ kind: 'pages', before: beforePages, after: afterPages });
+      this.annotationHistoryMergeKey = null;
+    }
     const anchor = this.pendingArrangementViewportAnchor ?? this.captureArrangementViewportAnchor();
     this.pendingArrangementViewportAnchor = null;
     this.arrangementGeneration++;
@@ -4557,7 +4574,10 @@ export class PdfrxViewer {
     };
     const fontPx = (box: Rect): string => `${Math.min(Math.max(rectHeight(box) * 0.62, 8), 24)}px sans-serif`;
     const commit = (value: string | boolean): void => {
-      void doc.setFormFieldValue(field.name, value).then(() => this.reconcileFormOverlays());
+      void doc.setFormFieldValue(field.name, value, {
+        origin: 'user',
+        actorId: this.options.editing?.actorId,
+      }).then(() => this.reconcileFormOverlays());
     };
     const box0 = toPx(field.rects[0]!);
 
@@ -4683,7 +4703,13 @@ export class PdfrxViewer {
       if (this.formDocumentListeners.has(sourceDocument)) continue;
       this.formDocumentListeners.set(
         sourceDocument,
-        sourceDocument.addEventListener('formFieldsChanged', () => this.reconcileFormOverlays()),
+        sourceDocument.addEventListener('formFieldsChanged', (event) => {
+          this.reconcileFormOverlays();
+          if ((event.origin === 'api' || event.origin === 'user') && event.changes.length > 0) {
+            this.recordHistoryEntry({ kind: 'forms', document: sourceDocument, changes: event.changes });
+            this.annotationHistoryMergeKey = null;
+          }
+        }),
       );
     }
   }
@@ -5650,6 +5676,22 @@ export class PdfrxViewer {
     this.annotationHistoryMergeKey = mergeKey ?? null;
   }
 
+  /**
+   * Records annotation edits made through `PdfDocument`/`PdfPage` directly.
+   * Viewer-owned edits use `origin: 'user'` and keep their richer gesture
+   * grouping; replay/remote/restore changes deliberately stay out of local
+   * history.
+   */
+  private recordDirectAnnotationMutation(event: PdfDocumentEventMap['annotationsChanged']): void {
+    if (event.origin !== 'api') return;
+    this.recordAnnotationCommandGroup(event.historyChanges.map((change) => ({
+      pageNumber: change.pageNumber,
+      id: change.id,
+      before: change.before,
+      after: change.after,
+    })));
+  }
+
   private recordHistoryEntry(entry: HistoryEntry): void {
     if (this.options.editing?.history === false) return;
     this.history.length = this.historyIndex;
@@ -5668,7 +5710,7 @@ export class PdfrxViewer {
     }
   }
 
-  /** Subscribes to changes in the common annotation/page-edit history. */
+  /** Subscribes to changes in the common annotation/form/page-edit history. */
   addHistoryChangeListener(listener: () => void): () => void {
     this.historyChangeListeners.add(listener);
     return () => this.historyChangeListeners.delete(listener);
@@ -5682,12 +5724,12 @@ export class PdfrxViewer {
     this.notifyHistoryChanged();
   }
 
-  /** Whether an annotation or page edit can be undone. */
+  /** Whether an annotation, form, or page edit can be undone. */
   canUndo(): boolean {
     return this.options.editing?.history !== false && this.historyIndex > 0;
   }
 
-  /** Whether an undone annotation or page edit can be redone. */
+  /** Whether an undone annotation, form, or page edit can be redone. */
   canRedo(): boolean {
     return this.options.editing?.history !== false && this.historyIndex < this.history.length;
   }
@@ -5702,32 +5744,36 @@ export class PdfrxViewer {
     return this.canRedo();
   }
 
-  /** Undoes the latest annotation or page edit. */
+  /** Undoes the latest annotation, form, or page edit. */
   async undo(): Promise<void> {
     if (!this.canUndo()) return;
     const entry = this.history[--this.historyIndex]!;
     this.setSelectedAnnotations([]);
     if (entry.kind === 'pages') {
       this.replaceDocumentPages(entry.before, { origin: 'history', actorId: this.options.editing?.actorId });
-    } else {
+    } else if (entry.kind === 'annotations') {
       for (let i = entry.commands.length - 1; i >= 0; i--) {
         const cmd = entry.commands[i]!;
         await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.before);
       }
+    } else {
+      await this.applyFormHistoryState(entry.document, entry.changes, 'before');
     }
     this.annotationHistoryMergeKey = null;
     this.notifyHistoryChanged();
   }
 
-  /** Redoes the next undone annotation or page edit. */
+  /** Redoes the next undone annotation, form, or page edit. */
   async redo(): Promise<void> {
     if (!this.canRedo()) return;
     const entry = this.history[this.historyIndex++]!;
     this.setSelectedAnnotations([]);
     if (entry.kind === 'pages') {
       this.replaceDocumentPages(entry.after, { origin: 'history', actorId: this.options.editing?.actorId });
-    } else {
+    } else if (entry.kind === 'annotations') {
       for (const cmd of entry.commands) await this.applyAnnotationState(cmd.pageNumber, cmd.id, cmd.after);
+    } else {
+      await this.applyFormHistoryState(entry.document, entry.changes, 'after');
     }
     this.annotationHistoryMergeKey = null;
     this.notifyHistoryChanged();
@@ -5804,6 +5850,20 @@ export class PdfrxViewer {
         actorId: this.options.editing?.actorId,
       });
     }
+  }
+
+  private async applyFormHistoryState(
+    document: PdfDocument,
+    changes: readonly PdfFormFieldChange[],
+    state: 'before' | 'after',
+  ): Promise<void> {
+    if (document.isDisposed) return;
+    const values: Record<string, PdfFormFieldChange[typeof state]> = {};
+    for (const change of changes) values[change.name] = change[state];
+    await document.setFormFieldValues(values, {
+      origin: 'history',
+      actorId: this.options.editing?.actorId,
+    });
   }
 
   /** Re-applies the selection outline + anchor handles across every overlay. */

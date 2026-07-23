@@ -140,12 +140,21 @@ describe('page-scoped annotation API', () => {
       expect(firstPlacement.document).toBe(host);
       expect(firstPlacement.sourceDocument).toBe(source);
 
-      await firstPlacement.addAnnotation(squareAnnotation());
+      const id = await firstPlacement.addAnnotation(squareAnnotation());
 
       expect(events).toHaveLength(1);
       expect(events[0]?.pageNumbers).toEqual([1, 2]);
+      expect(events[0]?.historyChanges).toHaveLength(2);
+      expect(events[0]?.historyChanges[0]).toMatchObject({ id, pageNumber: 1, before: null });
+      expect(events[0]?.historyChanges[0]?.after).toMatchObject({ subtype: 'square' });
       expect(sourceEvents).toHaveLength(1);
       expect(sourceEvents[0]?.pageNumbers).toEqual([1]);
+      expect(sourceEvents[0]?.historyChanges[0]).toMatchObject({ id, pageNumber: 1, before: null });
+
+      await firstPlacement.updateAnnotation(id, { ...squareAnnotation(), opacity: 0.5 });
+      expect(events[1]?.historyChanges).toHaveLength(2);
+      expect(events[1]?.historyChanges[0]?.before).toMatchObject({ subtype: 'square' });
+      expect(events[1]?.historyChanges[0]?.after).toMatchObject({ subtype: 'square', opacity: 0.5 });
       const placed = await host.loadAnnotations();
       expect(placed.map((annotation) => annotation.pageNumber)).toEqual([1, 2]);
       expect(await source.pages[0]!.loadAnnotations()).toHaveLength(1);
@@ -188,6 +197,25 @@ describe('collaborative outline export', () => {
 });
 
 describe('collaborative AcroForm export', () => {
+  it('records choice-field labels so history replay can restore the selected option', async () => {
+    const document = await engine.openData(await readFile('../../examples/react/public/form.pdf'));
+    const events: PdfDocumentEventMap['formFieldsChanged'][] = [];
+    const unsubscribe = document.addEventListener('formFieldsChanged', (event) => events.push(event));
+    try {
+      await document.setFormFieldValue('country', 'USA');
+      const change = events.at(-1)?.changes.find((item) => item.name === 'country');
+      expect(change).toEqual({ name: 'country', before: ['Japan'], after: ['USA'] });
+
+      await document.setFormFieldValues({ country: change!.before }, { origin: 'history' });
+      const restored = (await document.loadFormFields()).find((field) => field.name === 'country');
+      expect(restored?.value).toBe('Japan');
+      expect(restored?.options?.find((option) => option.selected)?.label).toBe('Japan');
+    } finally {
+      unsubscribe();
+      await document.dispose();
+    }
+  });
+
   it('registers imported widgets under source-scoped field names and rewrites calculations', async () => {
     const first = await openFixture('form-a.pdf');
     const second = await openFixture('form-b.pdf');
@@ -218,11 +246,35 @@ describe('collaborative AcroForm export', () => {
         expect(await reopened.getFormFieldValue('source_2.input')).toBe('20');
         expect(await calculationOrderSize(reopened)).toBe(2);
 
+        const formEvents: PdfDocumentEventMap['formFieldsChanged'][] = [];
+        const unsubscribeForms = reopened.addEventListener('formFieldsChanged', (event) => {
+          if (event.changes.length > 0) formEvents.push(event);
+        });
         await reopened.setFormFieldValue('source_1.input', '7');
+        expect(formEvents).toHaveLength(1);
+        expect(formEvents[0]).toMatchObject({
+          origin: 'api',
+          changes: [
+            { name: 'source_1.input', before: '10', after: '7' },
+            { name: 'source_1.total', before: '10', after: '7' },
+          ],
+        });
         expect(await reopened.getFormFieldValue('source_1.total')).toBe('7');
         expect(await reopened.getFormFieldValue('source_2.total')).toBe('20');
-        await reopened.setFormFieldValue('source_2.input', '9');
+        await reopened.setFormFieldValues({
+          'source_1.input': '8',
+          'source_2.input': '9',
+        });
+        expect(formEvents).toHaveLength(2);
+        expect(formEvents[1]?.changes.map((change) => change.name)).toEqual([
+          'source_1.input',
+          'source_1.total',
+          'source_2.input',
+          'source_2.total',
+        ]);
+        expect(await reopened.getFormFieldValue('source_1.total')).toBe('8');
         expect(await reopened.getFormFieldValue('source_2.total')).toBe('9');
+        unsubscribeForms();
       } finally {
         await reopened.dispose();
       }

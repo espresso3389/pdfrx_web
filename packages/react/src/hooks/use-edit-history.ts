@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePdfrxViewer } from './use-pdfrx-viewer.js';
 
-/** Shared annotation/page-edit Undo/Redo state. */
+/** Shared annotation/form/page-edit Undo/Redo state. */
 export interface PdfEditHistory {
   undo: () => Promise<void>;
   redo: () => Promise<void>;
@@ -12,7 +12,7 @@ export interface PdfEditHistory {
 }
 
 /**
- * Accesses the viewer's single chronological annotation/page-edit history.
+ * Accesses the viewer's single chronological annotation/form/page-edit history.
  * Call the returned `clearHistory` before intentionally materializing the live
  * page arrangement with `PdfDocument.assemblePages()` or `encodePdf()`.
  */

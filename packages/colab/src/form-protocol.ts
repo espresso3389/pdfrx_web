@@ -7,7 +7,7 @@ export interface SharedFormFieldChange {
   readonly documentId: string;
   /** Fully-qualified AcroForm field name inside that source PDF. */
   readonly fieldName: string;
-  /** New field value, retaining scalar, boolean, or multi-select shape. */
+  /** New typed value; choice fields use selected option-label arrays. */
   readonly value: PdfFormFieldValue;
 }
 

@@ -238,11 +238,36 @@ export interface PdfFormField {
 
 /**
  * A value accepted by {@link PdfDocument.setFormFieldValue}. Interpretation
- * depends on the field type: `boolean` toggles a checkbox, a `string` sets text
- * / selects a radio export value or a single choice option, and a `string[]`
- * selects options of a (multi-select) list box.
+ * depends on the field type: `boolean` toggles a checkbox; a `string` sets text,
+ * selects a radio export value, or selects one choice option by its label; and
+ * a `string[]` selects choice options by label (including single-select
+ * combo/list fields when replaying history).
  */
 export type PdfFormFieldValue = string | boolean | string[];
+
+/**
+ * One field value changed as part of a form mutation transaction. Choice-field
+ * states use selected option-label arrays so they remain replayable when a
+ * PDF's export value differs from its display label.
+ */
+export interface PdfFormFieldChange {
+  readonly name: string;
+  readonly before: PdfFormFieldValue;
+  readonly after: PdfFormFieldValue;
+}
+
+/** Where a form mutation originated. */
+export type PdfFormChangeOrigin = 'user' | 'api' | 'remote' | 'restore' | 'history';
+
+/** Options shared by form mutation APIs. */
+export interface PdfFormMutationOptions {
+  /** Defaults to `api`. */
+  readonly origin?: PdfFormChangeOrigin;
+  /** Application-defined id correlating the complete bulk mutation. */
+  readonly transactionId?: string;
+  /** Stable application/user id responsible for the mutation. */
+  readonly actorId?: string;
+}
 
 /**
  * Raw text of a page: full text plus one rect per UTF-16 code unit.
@@ -634,6 +659,18 @@ export type PdfAnnotationChange =
   | { readonly type: 'add' | 'update'; readonly id: string; readonly pageNumber: number; readonly spec: PdfAnnotationSpec }
   | { readonly type: 'remove'; readonly id: string; readonly pageNumber: number };
 
+/**
+ * A reversible annotation mutation. Unlike {@link PdfAnnotationChange}, this
+ * carries both states so observers can build Undo/Redo history without having
+ * to intercept the API call before it reaches {@link PdfDocument}.
+ */
+export interface PdfAnnotationHistoryChange {
+  readonly id: string;
+  readonly pageNumber: number;
+  readonly before: PdfAnnotationSpec | null;
+  readonly after: PdfAnnotationSpec | null;
+}
+
 /** Options shared by annotation mutation APIs. */
 export interface PdfAnnotationMutationOptions {
   /** Defaults to `api`. */
@@ -792,12 +829,21 @@ export interface PdfDocumentEventMap {
   /** The engine reported missing fonts; supply them via `PdfrxEngine.addFontData`. */
   missingFonts: { queries: PdfFontQuery[] };
   /**
-   * A form field value changed. `source` is `'user'` for interactive edits in
-   * the viewer (relayed from the form-fill module) and `'api'` for
-   * {@link PdfDocument.setFormFieldValue}. Reload values with
-   * {@link PdfDocument.loadFormFields} when this fires.
+   * One form transaction completed. `changes` contains the complete typed
+   * before/after diff, including calculated fields changed as a consequence.
+   * `source` is `'user'` for interactive edits in the viewer (relayed from the
+   * form-fill module) and `'api'` for programmatic writes.
    */
-  formFieldsChanged: { source: 'user' | 'api'; pageNumbers?: number[] };
+  formFieldsChanged: {
+    /** Kept for UI consumers distinguishing interactive and programmatic writes. */
+    source: 'user' | 'api';
+    origin: PdfFormChangeOrigin;
+    transactionId?: string;
+    actorId?: string;
+    /** Every direct and calculated field change produced by one transaction. */
+    changes: readonly PdfFormFieldChange[];
+    pageNumbers?: number[];
+  };
   /**
    * Annotations were added, updated or removed. The exact synchronization-ready
    * changes are included. `origin: 'remote'` identifies changes that should not
@@ -811,6 +857,8 @@ export interface PdfDocumentEventMap {
     transactionId?: string;
     actorId?: string;
     changes: readonly PdfAnnotationChange[];
+    /** Complete reversible states for the mutations in `changes`. */
+    historyChanges: readonly PdfAnnotationHistoryChange[];
     pageNumbers: number[];
   };
 }

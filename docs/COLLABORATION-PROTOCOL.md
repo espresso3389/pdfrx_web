@@ -288,6 +288,8 @@ immutable source `documentId` and fully-qualified AcroForm `fieldName`.
 
 Snapshots are complete materialized state for their stream. They allow a late
 joiner or reconnecting client to rebuild without replaying the operation log.
+Choice-form values use selected option-label arrays even for single-select
+controls; scalar strings remain text values and radio export values.
 
 ### Committed operations
 
