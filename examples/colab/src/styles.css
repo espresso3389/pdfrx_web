@@ -8,14 +8,19 @@ button, input { font: inherit; }
 .brand-mark { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; color: #fff; background: #2563eb; font-size: 24px; font-weight: 750; }
 .brand h1 { margin: 0; font-size: 21px; }
 .brand p { margin: 4px 0 0; color: #667085; font-size: 13px; }
-.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 22px; border-radius: 11px; background: #f0f3f8; }
-.mode-tabs button { padding: 9px; border: 0; border-radius: 8px; color: #667085; background: transparent; cursor: pointer; }
-.mode-tabs button.active { color: #1d4ed8; background: #fff; box-shadow: 0 1px 4px rgba(32, 48, 78, .12); font-weight: 650; }
 .invited-session-heading { display: grid; gap: 4px; padding: 12px 14px; margin-bottom: 22px; border-radius: 11px; background: #f0f3f8; }
 .invited-session-heading span { color: #667085; font-size: 11px; }
 .invited-session-heading strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .session-card form { display: grid; gap: 16px; }
 .session-card label { display: grid; gap: 7px; font-size: 13px; font-weight: 650; }
+.file-field { display: grid; gap: 7px; font-size: 13px; font-weight: 650; }
+.file-drop-zone { min-height: 104px; place-items: center; align-content: center; gap: 5px !important; padding: 16px; border: 2px dashed #b9c6da; border-radius: 11px; color: #344054; background: #f8faff; text-align: center; cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+.file-drop-zone:hover, .file-drop-zone.dragging { border-color: #3b82f6; background: #eff6ff; }
+.file-drop-zone.dragging { transform: scale(1.01); }
+.file-drop-zone input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.file-drop-zone strong { max-width: 100%; overflow: hidden; color: #1d4ed8; text-overflow: ellipsis; white-space: nowrap; }
+.file-drop-zone small { color: #7a8498; font-size: 11px; font-weight: 400; }
+.file-drop-zone:focus-within { outline: 3px solid #dbeafe; border-color: #3b82f6; }
 .label-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .label-heading small { color: #7a8498; font-size: 11px; font-weight: 400; }
 .session-card input { min-width: 0; padding: 11px 12px; border: 1px solid #cfd7e5; border-radius: 9px; color: #172033; background: #fff; }

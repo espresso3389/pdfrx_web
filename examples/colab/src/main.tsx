@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { createRoot } from 'react-dom/client';
+import { PDFDocument } from 'pdf-lib';
 import {
   CollaborativePdfViewer,
   type CollaborationConnectionState,
@@ -55,11 +64,11 @@ function CollaborationApp() {
 function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
   const invitedSessionId = useMemo(() => new URL(location.href).searchParams.get('session')?.trim() ?? '', []);
   const isInvitation = invitedSessionId.length > 0;
-  const [mode, setMode] = useState<'join' | 'create'>(() => isInvitation ? 'join' : 'create');
   const [invitedSession, setInvitedSession] = useState<SessionInfo | null>(null);
   const [sessionName, setSessionName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('pdfrx-display-name') ?? '');
   const [file, setFile] = useState<File | null>(null);
+  const [draggingFile, setDraggingFile] = useState(false);
   const [pending, setPending] = useState(false);
   const [admissionState, setAdmissionState] = useState<'idle' | 'waiting' | 'rejected'>('idle');
   const [retryAt, setRetryAt] = useState(0);
@@ -102,10 +111,9 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
       let info: SessionInfo;
       let memberToken: string;
       let source: ArrayBuffer;
-      if (mode === 'create') {
-        if (!file) throw new Error('PDFファイルを選択してください');
-        if (file.type && file.type !== 'application/pdf') throw new Error('PDFファイルを選択してください');
-        source = await file.arrayBuffer();
+      if (!isInvitation) {
+        if (!file) throw new Error('PDFまたは画像ファイルを選択してください');
+        source = await fileAsPdf(file);
         const response = await fetch(`${config.apiBase}/sessions`, {
           method: 'POST',
           headers: {
@@ -164,7 +172,7 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
           <span className="brand-mark">P</span>
           <div>
             <h1>PDF Collaboration</h1>
-            <p>PDFを共有して、ページ・フォーム・注釈を共同編集します。</p>
+            <p>PDFや画像を共有して、ページ・フォーム・注釈を共同編集します。</p>
           </div>
         </div>
         {isInvitation ? (
@@ -172,18 +180,9 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
             <span>招待されたセッション</span>
             <strong>{invitedSession?.name ?? 'セッション情報を取得しています…'}</strong>
           </div>
-        ) : (
-          <div className="mode-tabs" role="tablist">
-            <button type="button" className={mode === 'join' ? 'active' : ''} onClick={() => setMode('join')}>
-              セッションに参加
-            </button>
-            <button type="button" className={mode === 'create' ? 'active' : ''} onClick={() => setMode('create')}>
-              新規作成
-            </button>
-          </div>
-        )}
+        ) : null}
         <form onSubmit={(event) => void submit(event)}>
-          {mode === 'create' && (
+          {!isInvitation && (
             <>
               <label>
                 <span className="label-heading">
@@ -192,22 +191,45 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
                 </span>
                 <input value={sessionName} onChange={(event) => setSessionName(event.target.value)} maxLength={100} />
               </label>
-              <label>
-                PDFファイル
-                <input type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-              </label>
+              <div className="file-field">
+                <span>PDFまたは画像ファイル</span>
+                <label
+                  className={`file-drop-zone${draggingFile ? ' dragging' : ''}`}
+                  onDragEnter={(event) => {
+                    event.preventDefault();
+                    setDraggingFile(true);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                    setDraggingFile(true);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false);
+                  }}
+                  onDrop={(event: DragEvent<HTMLLabelElement>) => {
+                    event.preventDefault();
+                    setDraggingFile(false);
+                    const dropped = event.dataTransfer.files[0];
+                    if (dropped) setFile(dropped);
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf,image/*"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                  <strong>{file?.name ?? 'ファイルを選択'}</strong>
+                  <small>{file ? '別のファイルを選択、またはドロップ' : 'クリックして選択、またはここにドロップ'}</small>
+                </label>
+              </div>
             </>
           )}
           <label>
             あなたの表示名
             <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={80} />
           </label>
-          {mode === 'join' && !isInvitation && (
-            <div className="gate-status neutral">
-              セッションへの参加には、参加中のメンバーから共有された招待用リンクが必要です。
-            </div>
-          )}
-          {mode === 'join' && isInvitation && admissionState === 'idle' && !error && (
+          {isInvitation && admissionState === 'idle' && !error && (
             <div className="gate-status neutral">
               初めて参加する端末は、現在参加中のメンバーによる承認が必要です。
             </div>
@@ -222,21 +244,59 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
             </div>
           )}
           {error && <div className="gate-status rejected" role="alert">{error}</div>}
-          <button className="primary-button" disabled={pending || retrySeconds > 0 || (mode === 'join' && !isInvitation)}>
+          <button className="primary-button" disabled={pending || retrySeconds > 0}>
             {admissionState === 'waiting'
               ? '承認待ち…'
               : admissionState === 'rejected'
                 ? retrySeconds > 0 ? `参加を再申請 (${retrySeconds}秒)` : '参加を再申請'
                 : pending
                   ? '準備しています…'
-                  : mode === 'join'
-                    ? isInvitation ? '参加を申請' : '招待用リンクを開いてください'
-                    : 'セッションを作成'}
+                  : isInvitation ? '参加を申請' : 'セッションを作成'}
           </button>
         </form>
       </section>
     </main>
   );
+}
+
+const IMAGE_EXTENSION = /\.(avif|bmp|gif|ico|jpe?g|png|webp)$/i;
+
+function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+
+function isImageFile(file: File): boolean {
+  return file.type.startsWith('image/') || (file.type === '' && IMAGE_EXTENSION.test(file.name));
+}
+
+async function fileAsPdf(file: File): Promise<ArrayBuffer> {
+  if (isPdfFile(file)) return file.arrayBuffer();
+  if (!isImageFile(file)) throw new Error('PDFまたは画像ファイルを選択してください');
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error('画像ファイルを読み込めませんでした');
+  }
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('画像をPDFに変換できませんでした');
+    context.drawImage(bitmap, 0, 0);
+    const png = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('画像をPDFに変換できませんでした')), 'image/png');
+    });
+    const pdf = await PDFDocument.create();
+    const image = await pdf.embedPng(await png.arrayBuffer());
+    const page = pdf.addPage([bitmap.width, bitmap.height]);
+    page.drawImage(image, { x: 0, y: 0, width: bitmap.width, height: bitmap.height });
+    return (await pdf.save()).buffer as ArrayBuffer;
+  } finally {
+    bitmap.close();
+  }
 }
 
 function SessionViewer({ active, onLeave }: { active: ActiveSession; onLeave: () => void }) {
