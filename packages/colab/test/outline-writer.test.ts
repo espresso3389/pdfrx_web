@@ -1,5 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { PdfrxEngine, type PdfDocument, type WireRawPdfObject } from '@pdfrx/engine';
+import {
+  PdfrxEngine,
+  type PdfAnnotationSpec,
+  type PdfDocument,
+  type PdfDocumentEventMap,
+  type WireRawPdfObject,
+} from '@pdfrx/engine';
 import { afterAll, describe, expect, it } from 'vitest';
 import { mergeAcroForms, writeOutline } from '../src/outline-writer.js';
 
@@ -119,6 +125,40 @@ describe('raw PDF object API', () => {
   });
 });
 
+describe('page-scoped annotation API', () => {
+  it('writes imported source pages while reporting placement page numbers from the host document', async () => {
+    const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
+    const host = await engine.createFromImages([pixel]);
+    const source = await engine.createFromImages([pixel]);
+    const events: PdfDocumentEventMap['annotationsChanged'][] = [];
+    const sourceEvents: PdfDocumentEventMap['annotationsChanged'][] = [];
+    const unsubscribe = host.addEventListener('annotationsChanged', (event) => events.push(event));
+    const unsubscribeSource = source.addEventListener('annotationsChanged', (event) => sourceEvents.push(event));
+    try {
+      host.setPages([source.pages[0]!, source.pages[0]!]);
+      const firstPlacement = host.pages[0]!;
+      expect(firstPlacement.document).toBe(host);
+      expect(firstPlacement.sourceDocument).toBe(source);
+
+      await firstPlacement.addAnnotation(squareAnnotation());
+
+      expect(events).toHaveLength(1);
+      expect(events[0]?.pageNumbers).toEqual([1, 2]);
+      expect(sourceEvents).toHaveLength(1);
+      expect(sourceEvents[0]?.pageNumbers).toEqual([1]);
+      const placed = await host.loadAnnotations();
+      expect(placed.map((annotation) => annotation.pageNumber)).toEqual([1, 2]);
+      expect(await source.pages[0]!.loadAnnotations()).toHaveLength(1);
+      expect((await host.exportAnnotations()).annotations).toHaveLength(1);
+    } finally {
+      unsubscribe();
+      unsubscribeSource();
+      await host.dispose();
+      await source.dispose();
+    }
+  });
+});
+
 describe('collaborative outline export', () => {
   it('writes nested bookmarks with destinations in the final page order', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
@@ -196,6 +236,16 @@ describe('collaborative AcroForm export', () => {
 
 async function openFixture(name: string): Promise<PdfDocument> {
   return engine.openData(await readFile(new URL(`fixtures/${name}`, import.meta.url)));
+}
+
+function squareAnnotation(): PdfAnnotationSpec {
+  return {
+    subtype: 'square',
+    rect: { left: 0, top: 1, right: 1, bottom: 0 },
+    color: { red: 255, green: 0, blue: 0, alpha: 255 },
+    borderWidth: 1,
+    geometry: { kind: 'none' },
+  };
 }
 
 async function calculationOrderSize(document: PdfDocument): Promise<number> {

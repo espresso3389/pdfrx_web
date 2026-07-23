@@ -79,17 +79,18 @@ export function useAnnotations(): PdfAnnotationsState {
   }, [doc, viewer, generation, reloadNonce]);
 
   const add = useCallback(
-    async (pageNumber: number, spec: PdfAnnotationSpec): Promise<string | undefined> => doc?.addAnnotation(pageNumber, spec),
+    async (pageNumber: number, spec: PdfAnnotationSpec): Promise<string | undefined> =>
+      doc?.pages[pageNumber - 1]?.addAnnotation(spec),
     [doc],
   );
   const update = useCallback(
     async (pageNumber: number, id: string, spec: PdfAnnotationSpec): Promise<string | undefined> =>
-      doc?.updateAnnotation(pageNumber, id, spec),
+      doc?.pages[pageNumber - 1]?.updateAnnotation(id, spec),
     [doc],
   );
   const remove = useCallback(
     async (pageNumber: number, id: string): Promise<void> => {
-      await doc?.removeAnnotation(pageNumber, id);
+      await doc?.pages[pageNumber - 1]?.removeAnnotation(id);
     },
     [doc],
   );

@@ -127,29 +127,77 @@ export interface PdfOpenUrlOptions extends PdfOpenOptions {
  * Builds a batch of raw PDF-object edits for {@link PdfDocument.editRawObjects}.
  *
  * Methods only record operations while the callback runs. No document mutation
- * occurs until the complete batch has been applied successfully to a temporary
- * document.
+ * occurs until the callback completes. The batch is then sent in one worker
+ * command, either directly or through the temporary-copy transaction selected
+ * by {@link PdfRawObjectEditOptions.atomic}.
+ *
+ * A target says *where* to edit; a patch value says *what* to store. Use
+ * {@link catalog} or {@link object} for a starting target and {@link at} for a
+ * nested dictionary/array container. {@link createDictionary} returns a
+ * {@link PdfRawCreatedObject}: pass it directly as a later target, or pass its
+ * {@link PdfRawCreatedObject.reference | reference} property as a value in
+ * another object.
  */
 export interface PdfRawObjectEditor {
-  /** Targets the document catalog dictionary. */
+  /** Returns a target for the document catalog (`/Root`) dictionary. */
   catalog(): WireRawPdfTarget;
-  /** Targets an indirect object by object number. */
+  /**
+   * Returns a target for an existing indirect object.
+   * @param objectNumber Positive PDF object number, as returned by
+   *   {@link PdfDocument.getRawObject} or an indirect `reference` value.
+   */
   object(objectNumber: number): WireRawPdfTarget;
-  /** Targets a dictionary/array child below another target. */
+  /**
+   * Returns a target for a nested container below `target`.
+   *
+   * String components select dictionary keys without the leading `/`; number
+   * components select zero-based array items. Indirect references encountered
+   * between components are dereferenced automatically.
+   *
+   * @example Target the first element of a nested array
+   * ```ts
+   * const firstKid = editor.at(editor.object(pagesObjectNumber), 'Kids', 0);
+   * ```
+   */
   at(target: WireRawPdfTarget, ...path: (string | number)[]): WireRawPdfTarget;
-  /** Creates an indirect dictionary and returns a target/reference for it. */
+  /**
+   * Reserves a new indirect dictionary in this batch.
+   *
+   * The returned object is itself a target for further edits. Use its
+   * {@link PdfRawCreatedObject.reference} property when storing an indirect
+   * reference to it in another dictionary or array.
+   */
   createDictionary(entries?: Record<string, WireRawPdfPatchValue>): PdfRawCreatedObject;
+  /** Sets or replaces one dictionary entry; `key` omits the leading `/`. */
   setDictionaryValue(target: WireRawPdfTarget, key: string, value: WireRawPdfPatchValue): void;
+  /** Removes one dictionary entry; `key` omits the leading `/`. */
   removeDictionaryValue(target: WireRawPdfTarget, key: string): void;
+  /** Appends a value to the target array. */
   appendArrayValue(target: WireRawPdfTarget, value: WireRawPdfPatchValue): void;
+  /** Replaces the value at a zero-based array index. */
   setArrayValue(target: WireRawPdfTarget, index: number, value: WireRawPdfPatchValue): void;
+  /** Removes the value at a zero-based array index. */
   removeArrayValue(target: WireRawPdfTarget, index: number): void;
+  /**
+   * Replaces a stream's decoded bytes. PDFium updates the stream representation
+   * when the document is encoded.
+   */
   setStreamData(target: WireRawPdfTarget, data: Uint8Array): void;
 }
 
-/** A newly-created indirect object usable both as an edit target and as a patch value. */
+/**
+ * Handle for an indirect dictionary reserved by
+ * {@link PdfRawObjectEditor.createDictionary}.
+ *
+ * Pass the handle itself to editor methods to mutate the new dictionary. Pass
+ * {@link reference} as a patch value to store an indirect reference to it in a
+ * catalog, dictionary, or array. The final numeric PDF object number is assigned
+ * inside the worker and intentionally hidden from the callback.
+ */
 export interface PdfRawCreatedObject extends WireRawPdfTarget {
+  /** Batch-local identity used internally; it is not a PDF object number. */
   readonly localId: string;
+  /** Patch value that stores an indirect reference to this newly-created dictionary. */
   readonly reference: WireRawPdfPatchValue;
 }
 
@@ -746,10 +794,10 @@ export class PdfDocument {
     if (pages.length === 0) throw new Error('setPages requires at least one page');
     const before = this.describePageArrangement(this._pages);
     const arranged = pages.map((page, index) => {
-      if (page.document.isDisposed) {
-        throw new Error(`Page ${index + 1} belongs to disposed document ${page.document.sourceName}`);
+      if (page.sourceDocument.isDisposed) {
+        throw new Error(`Page ${index + 1} belongs to disposed document ${page.sourceDocument.sourceName}`);
       }
-      return page.withPageNumber(index + 1);
+      return page.placedIn(this, index + 1);
     });
     this.trackBorrowedDocuments(arranged);
     this._pages = arranged;
@@ -797,7 +845,7 @@ export class PdfDocument {
   private trackBorrowedDocuments(arranged: readonly PdfPage[]): void {
     const lenders = new Set<PdfDocument>();
     for (const page of arranged) {
-      if (page.document.docHandle !== this.docHandle) lenders.add(page.document);
+      if (page.sourceDocument.docHandle !== this.docHandle) lenders.add(page.sourceDocument);
     }
     for (const previous of this.borrowedFrom) {
       if (!lenders.has(previous)) previous.borrowers.delete(this);
@@ -825,7 +873,7 @@ export class PdfDocument {
     }
     for (let i = 0; i < this._pages.length; i++) {
       const page = this._pages[i]!;
-      if (page.document.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex) return i + 1;
+      if (page.sourceDocument.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex) return i + 1;
     }
     return null;
   }
@@ -1014,7 +1062,7 @@ export class PdfDocument {
     if (this._isDisposed) return;
     await this.synchronized(async () => {
       // Indices here are physical, not positional: after setPages the two differ.
-      const unloaded = this._pages.filter((p) => !p.isLoaded && p.document.docHandle === this.docHandle);
+      const unloaded = this._pages.filter((p) => !p.isLoaded && p.sourceDocument.docHandle === this.docHandle);
       if (unloaded.length === 0) return;
       let firstPageIndex = Math.min(...unloaded.map((p) => p.sourcePageIndex));
 
@@ -1073,7 +1121,7 @@ export class PdfDocument {
     for (let i = 0; i < pages.length; i++) {
       const current = pages[i]!;
       // Imported pages are reloaded by the document that owns them.
-      if (current.document.docHandle !== this.docHandle) continue;
+      if (current.sourceDocument.docHandle !== this.docHandle) continue;
       const fresh = bySourceIndex.get(current.sourcePageIndex);
       if (!fresh) continue;
       pages[i] = current.rebasedOn(fresh).withPageNumber(i + 1);
@@ -1365,7 +1413,7 @@ export class PdfDocument {
    */
   async createPdfCopy(): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    const sourceDocuments = new Set(this._pages.map((page) => page.document));
+    const sourceDocuments = new Set(this._pages.map((page) => page.sourceDocument));
     const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
     return baseDocument.createArrangementCopy(this._pages);
   }
@@ -1380,7 +1428,7 @@ export class PdfDocument {
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (copy)`, null);
     try {
       const pages = pagesToEncode.map((page) => {
-        if (page.document.docHandle !== this.docHandle) return page;
+        if (page.sourceDocument.docHandle !== this.docHandle) return page;
         const copiedSource = copy.pages[page.sourcePageIndex];
         if (!copiedSource) {
           throw new Error(`Source page ${page.sourcePageIndex + 1} is missing from the document copy`);
@@ -1408,7 +1456,7 @@ export class PdfDocument {
     const byName = new Map<string, { field: PdfFormField; rects: PdfRect[] }>();
     const ordered: { field: PdfFormField; rects: PdfRect[] }[] = [];
     for (const page of this._pages) {
-      if (page.document.docHandle !== this.docHandle) continue; // imported pages carry their own form state
+      if (page.sourceDocument.docHandle !== this.docHandle) continue; // imported pages carry their own form state
       const fields = await page.loadFormFields();
       for (const field of fields) {
         if (field.name) this.formFieldSourceIndex.set(field.name, page.sourcePageIndex);
@@ -1450,30 +1498,27 @@ export class PdfDocument {
 
   /**
    * Loads all content annotations (ink, shapes, text markup, notes, free text —
-   * not widgets/links/popups) across the document's loaded pages, each tagged
-   * with its 1-based `pageNumber`. Use `options.subtype` to restrict the result
-   * to one or more annotation subtypes. Annotations on pages imported from
-   * another document are skipped (they carry their own annotation state, like
-   * form fields). Returns `[]` for a disposed document.
+   * not widgets/links/popups) across the current page arrangement, including
+   * imported pages. Each result is tagged with its 1-based arrangement
+   * `pageNumber`. Use {@link PdfPage.loadAnnotations} when only one page is
+   * needed. If the same physical source page is placed more than once, its
+   * shared annotations appear once per placement. Returns `[]` for a disposed
+   * document.
    */
   async loadAnnotations(options: PdfLoadAnnotationsOptions = {}): Promise<PdfAnnotationObject[]> {
     if (this._isDisposed) return [];
     const all: PdfAnnotationObject[] = [];
-    const requestedSubtypes = options.subtype === undefined
-      ? null
-      : new Set(Array.isArray(options.subtype) ? options.subtype : [options.subtype]);
     for (const page of this._pages) {
-      if (page.document.docHandle !== this.docHandle) continue; // imported pages carry their own annotations
-      const annotations = await page.loadAnnotations();
-      all.push(...(requestedSubtypes ? annotations.filter((a) => requestedSubtypes.has(a.subtype)) : annotations));
+      all.push(...await page.loadAnnotations(options));
     }
     return all;
   }
 
   /**
-   * Loads every highlight annotation in the document. Each result includes its
-   * 1-based page number. With `includeText`, the engine also loads the relevant
-   * pages' text and extracts the characters covered by the highlight quadpoints.
+   * Loads highlights across the current page arrangement. Use
+   * {@link PdfPage.loadHighlights} for one page. Each result includes its
+   * 1-based arrangement page number; imported and duplicate placements follow
+   * the same semantics as {@link loadAnnotations}.
    */
   async loadHighlights(options: PdfLoadHighlightsOptions = {}): Promise<PdfHighlightObject[]> {
     const annotations = await this.loadAnnotations({ subtype: 'highlight' });
@@ -1495,81 +1540,91 @@ export class PdfDocument {
     }));
   }
 
-  /**
-   * Creates an annotation on `pageNumber` (1-based) from `spec` and returns its
-   * id (the `/NM` key). The worker generates the annotation's appearance stream,
-   * so it is included by {@link encodePdf} and renders in other PDF viewers.
-   * Only ink / markup / square / circle / freeText / text geometries are honored
-   * — see {@link PdfAnnotationSpec}. Fires `annotationsChanged` with an exact add change.
-   */
-  async addAnnotation(pageNumber: number, spec: PdfAnnotationSpec, options: PdfAnnotationMutationOptions = {}): Promise<string> {
+  /** Applies a page-scoped add and emits the change from the arrangement document. @internal */
+  async addAnnotationForPage(
+    page: PdfPage,
+    spec: PdfAnnotationSpec,
+    options: PdfAnnotationMutationOptions = {},
+  ): Promise<string> {
     if (this._isDisposed) throw new Error('Document is disposed');
-    const page = this.pageForAnnotation(pageNumber);
+    if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
-    const result = await page.document.sendCommand('addAnnotation', {
-      docHandle: page.document.docHandle,
+    const result = await page.sourceDocument.sendCommand('addAnnotation', {
+      docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       spec: page.annotationSpecToWire(effectiveSpec),
     });
     const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
-    this.emitAnnotationChanges([{ type: 'add', id: result.id, pageNumber, spec: storedSpec }], options);
+    page.sourceDocument.emitAnnotationSourceChange(
+      page.sourcePageIndex,
+      (pageNumber) => ({ type: 'add', id: result.id, pageNumber, spec: storedSpec }),
+      options,
+    );
     return result.id;
   }
 
-  /**
-   * Replaces the annotation `id` on `pageNumber` with a fresh one built from
-   * `spec`, keeping the same id. Geometry has no in-place setter, so an edit is a
-   * remove + recreate; pass the full new spec (e.g. moved/resized geometry).
-   * Fires `annotationsChanged` with an exact update change.
-   */
-  async updateAnnotation(pageNumber: number, id: string, spec: PdfAnnotationSpec, options: PdfAnnotationMutationOptions = {}): Promise<string> {
+  /** Applies a page-scoped update and emits the change from the arrangement document. @internal */
+  async updateAnnotationForPage(
+    page: PdfPage,
+    id: string,
+    spec: PdfAnnotationSpec,
+    options: PdfAnnotationMutationOptions = {},
+  ): Promise<string> {
     if (this._isDisposed) throw new Error('Document is disposed');
-    const page = this.pageForAnnotation(pageNumber);
+    if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
-    const result = await page.document.sendCommand('updateAnnotation', {
-      docHandle: page.document.docHandle,
+    const result = await page.sourceDocument.sendCommand('updateAnnotation', {
+      docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
       spec: page.annotationSpecToWire(effectiveSpec),
     });
     const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
-    this.emitAnnotationChanges([{ type: 'update', id: result.id, pageNumber, spec: storedSpec }], options);
+    page.sourceDocument.emitAnnotationSourceChange(
+      page.sourcePageIndex,
+      (pageNumber) => ({ type: 'update', id: result.id, pageNumber, spec: storedSpec }),
+      options,
+    );
     return result.id;
   }
 
-  /**
-   * Removes the annotation `id` from `pageNumber`. Returns whether it was found.
-   * Fires `annotationsChanged` with an exact remove change.
-   */
-  async removeAnnotation(pageNumber: number, id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
+  /** Applies a page-scoped removal and emits the change from the arrangement document. @internal */
+  async removeAnnotationForPage(
+    page: PdfPage,
+    id: string,
+    options: PdfAnnotationMutationOptions = {},
+  ): Promise<boolean> {
     if (this._isDisposed) throw new Error('Document is disposed');
-    const page = this.pageForAnnotation(pageNumber);
-    const result = await page.document.sendCommand('removeAnnotation', {
-      docHandle: page.document.docHandle,
+    if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
+    const result = await page.sourceDocument.sendCommand('removeAnnotation', {
+      docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
     });
-    if (result.ok) this.emitAnnotationChanges([{ type: 'remove', id, pageNumber }], options);
+    if (result.ok) {
+      page.sourceDocument.emitAnnotationSourceChange(
+        page.sourcePageIndex,
+        (pageNumber) => ({ type: 'remove', id, pageNumber }),
+        options,
+      );
+    }
     return result.ok;
   }
 
   /**
-   * Bulk-creates annotations (one {@link addAnnotation} per item) and returns
-   * their ids in order. Convenience for importing an exported annotation set.
+   * Exports a versioned, structured-cloneable snapshot across the current
+   * arrangement. This stays on `PdfDocument` because snapshots can span pages;
+   * use {@link PdfPage.loadAnnotations} for a single-page read. A physical
+   * source page placed more than once is exported once, using its first
+   * arrangement page number, because all placements share the same stable ids
+   * and annotation state.
    */
-  async importAnnotations(items: readonly { pageNumber: number; spec: PdfAnnotationSpec }[]): Promise<string[]> {
-    const ids: string[] = [];
-    for (const item of items) ids.push(await this.addAnnotation(item.pageNumber, item.spec));
-    return ids;
-  }
-
-  /** Exports a versioned, structured-cloneable snapshot with stable ids. */
   async exportAnnotations(): Promise<PdfAnnotationSnapshot> {
-    const annotations = await this.loadAnnotations();
+    const annotations = await this.loadUniqueSourceAnnotations();
     return {
       version: 1,
       annotations: annotations.map((annotation) => ({
@@ -1580,11 +1635,16 @@ export class PdfDocument {
     };
   }
 
-  /** Restores a snapshot while preserving ids and emitting one atomic change batch. */
+  /**
+   * Restores a document-wide snapshot while preserving ids and emitting one
+   * `annotationsChanged` notification batch. The PDFium mutations are
+   * sequential, not transactional: a later failure can leave earlier changes
+   * applied.
+   */
   async restoreAnnotations(snapshot: PdfAnnotationSnapshot, options: PdfRestoreAnnotationsOptions = {}): Promise<void> {
     if (snapshot.version !== 1) throw new Error(`Unsupported annotation snapshot version: ${String(snapshot.version)}`);
     const origin = options.origin ?? 'restore';
-    const existing = await this.loadAnnotations();
+    const existing = await this.loadUniqueSourceAnnotations();
     const incomingIds = new Set(snapshot.annotations.map((item) => item.id));
     const changes: PdfAnnotationChange[] = [];
     if ((options.mode ?? 'replace') === 'replace') {
@@ -1598,8 +1658,8 @@ export class PdfDocument {
     for (const item of snapshot.annotations) {
       const spec = { ...structuredClone(item.spec), id: item.id };
       const page = this.pageForAnnotation(item.pageNumber);
-      const result = await page.document.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
-        docHandle: page.document.docHandle,
+      const result = await page.sourceDocument.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
+        docHandle: page.sourceDocument.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(existingIds.has(item.id) ? { id: item.id } : {}),
         spec: page.annotationSpecToWire(spec),
@@ -1609,7 +1669,13 @@ export class PdfDocument {
     this.emitAnnotationChanges(changes, { origin, transactionId: options.transactionId, actorId: options.actorId });
   }
 
-  /** Applies a remote/local change batch atomically for synchronization. */
+  /**
+   * Routes a cross-page synchronization batch to its arrangement pages and
+   * emits one `annotationsChanged` event after the applied operations. This is
+   * a notification batch, not a rollback transaction: a later failure can
+   * leave earlier PDFium mutations applied. Use page methods for independent
+   * local CRUD on one page.
+   */
   async applyAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions = {}): Promise<void> {
     const applied: PdfAnnotationChange[] = [];
     for (const change of changes) {
@@ -1620,8 +1686,8 @@ export class PdfDocument {
       const page = this.pageForAnnotation(change.pageNumber);
       const spec = { ...structuredClone(change.spec), id: change.id };
       const command = change.type === 'add' ? 'addAnnotation' : 'updateAnnotation';
-      const result = await page.document.sendCommand(command, {
-        docHandle: page.document.docHandle,
+      const result = await page.sourceDocument.sendCommand(command, {
+        docHandle: page.sourceDocument.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(command === 'updateAnnotation' ? { id: change.id } : {}),
         spec: page.annotationSpecToWire(spec),
@@ -1633,12 +1699,28 @@ export class PdfDocument {
 
   private async removeAnnotationRaw(pageNumber: number, id: string): Promise<boolean> {
     const page = this.pageForAnnotation(pageNumber);
-    const result = await page.document.sendCommand('removeAnnotation', {
-      docHandle: page.document.docHandle,
+    const result = await page.sourceDocument.sendCommand('removeAnnotation', {
+      docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
     });
     return result.ok;
+  }
+
+  /**
+   * Loads each physical page once, using its first arrangement placement for
+   * the snapshot page number. Duplicate placements share annotation state and
+   * must not produce duplicate stable ids in export/restore bookkeeping.
+   */
+  private async loadUniqueSourceAnnotations(): Promise<PdfAnnotationObject[]> {
+    const seen = new Set<string>();
+    const result: PdfAnnotationObject[] = [];
+    for (const page of this._pages) {
+      if (seen.has(page.sourceKey)) continue;
+      seen.add(page.sourceKey);
+      result.push(...await page.loadAnnotations());
+    }
+    return result;
   }
 
   private emitAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions): void {
@@ -1650,6 +1732,26 @@ export class PdfDocument {
       changes,
       pageNumbers: [...new Set(changes.map((change) => change.pageNumber))],
     });
+  }
+
+  /**
+   * Notifies every open arrangement that currently places one physical source
+   * page. This keeps both the source document's viewer and all borrowing
+   * document viewers current after page-scoped CRUD.
+   */
+  private emitAnnotationSourceChange(
+    sourcePageIndex: number,
+    changeForPage: (pageNumber: number) => PdfAnnotationChange,
+    options: PdfAnnotationMutationOptions,
+  ): void {
+    for (const target of [this, ...this.borrowers]) {
+      const changes = target._pages
+        .filter((page) =>
+          page.sourceDocument.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex
+        )
+        .map((page) => changeForPage(page.pageNumber));
+      target.emitAnnotationChanges(changes, options);
+    }
   }
 
   /**
@@ -1858,6 +1960,7 @@ export class PdfDocument {
  */
 export interface PdfPageProxySpec {
   readonly basePage: PdfPage;
+  readonly document: PdfDocument;
   readonly pageNumber: number;
   readonly rotation: PdfPageRotation;
 }
@@ -1877,13 +1980,14 @@ export class PdfPage {
   /** @internal */
   constructor(
     /** The document holding the physical page this one draws. */
-    readonly document: PdfDocument,
+    readonly sourceDocument: PdfDocument,
     src: WirePageInfo | PdfPageProxySpec,
   ) {
     if ('basePage' in src) {
       // Proxies are never nested: wrapping a proxy re-wraps its base instead, so
       // `basePage` is always a real page and no unwrap-the-chain walk is needed.
       const base = src.basePage.sourcePage;
+      this.document = src.document;
       this.basePage = base;
       this.pageNumber = src.pageNumber;
       this.rotation = src.rotation;
@@ -1897,6 +2001,7 @@ export class PdfPage {
       this.width = swapWH ? base.height : base.width;
       this.height = swapWH ? base.width : base.height;
     } else {
+      this.document = sourceDocument;
       this.basePage = null;
       this.pageNumber = src.pageIndex + 1;
       this.rotation = pdfPageRotationFromIndex(src.rotation);
@@ -1910,6 +2015,13 @@ export class PdfPage {
     }
   }
 
+  /**
+   * Document whose current arrangement contains this page.
+   *
+   * For an imported page this differs from {@link sourceDocument}, which owns
+   * the physical PDF page and its annotations and form widgets.
+   */
+  readonly document: PdfDocument;
   /** 1-based page number — the position in {@link PdfDocument.pages}, not in the PDF. */
   readonly pageNumber: number;
   /** Page width in points (1/72 inch), at {@link rotation}. */
@@ -1922,7 +2034,7 @@ export class PdfPage {
   readonly isLoaded: boolean;
   /** The real page this one stands in for, or `null` if this *is* a real page. */
   readonly basePage: PdfPage | null;
-  /** Reserved for internal use only. 0-based index of the physical page within {@link document}'s PDF. @internal */
+  /** Reserved for internal use only. 0-based index of the physical page within {@link sourceDocument}. @internal */
   readonly sourcePageIndex: number;
   /** Reserved for internal use only. Rotation baked into the PDF for the physical page. @internal */
   readonly sourceRotation: PdfPageRotation;
@@ -1960,7 +2072,8 @@ export class PdfPage {
    * page number or rotation. Useful for keying caches by content.
    */
   hasSameSource(other: PdfPage): boolean {
-    return other.document.docHandle === this.document.docHandle && other.sourcePageIndex === this.sourcePageIndex;
+    return other.sourceDocument.docHandle === this.sourceDocument.docHandle
+      && other.sourcePageIndex === this.sourcePageIndex;
   }
 
   /**
@@ -1968,7 +2081,7 @@ export class PdfPage {
    * Two pages with the same key produce the same text and links.
    */
   get sourceKey(): string {
-    return `${this.document.docHandle}:${this.sourcePageIndex}`;
+    return `${this.sourceDocument.docHandle}:${this.sourcePageIndex}`;
   }
 
   /**
@@ -1985,7 +2098,18 @@ export class PdfPage {
    */
   withPageNumber(pageNumber: number): PdfPage {
     if (pageNumber === this.pageNumber) return this;
-    return new PdfPage(this.document, { basePage: this, pageNumber, rotation: this.rotation });
+    return new PdfPage(this.sourceDocument, {
+      basePage: this,
+      document: this.document,
+      pageNumber,
+      rotation: this.rotation,
+    });
+  }
+
+  /** Returns a placement proxy owned by `document`. @internal */
+  placedIn(document: PdfDocument, pageNumber: number): PdfPage {
+    if (document === this.document && pageNumber === this.pageNumber) return this;
+    return new PdfPage(this.sourceDocument, { basePage: this, document, pageNumber, rotation: this.rotation });
   }
 
   /**
@@ -1995,7 +2119,12 @@ export class PdfPage {
    */
   rotatedTo(rotation: PdfPageRotation): PdfPage {
     if (rotation === this.rotation) return this;
-    return new PdfPage(this.document, { basePage: this, pageNumber: this.pageNumber, rotation });
+    return new PdfPage(this.sourceDocument, {
+      basePage: this,
+      document: this.document,
+      pageNumber: this.pageNumber,
+      rotation,
+    });
   }
 
   /** Returns this page rotated by `delta` clockwise, relative to its current {@link rotation}. */
@@ -2025,7 +2154,12 @@ export class PdfPage {
    */
   rebasedOn(base: PdfPage): PdfPage {
     if (this.basePage === null) return base;
-    return new PdfPage(base.document, { basePage: base, pageNumber: this.pageNumber, rotation: this.rotation });
+    return new PdfPage(base.sourceDocument, {
+      basePage: base,
+      document: this.document,
+      pageNumber: this.pageNumber,
+      rotation: this.rotation,
+    });
   }
 
   /**
@@ -2035,7 +2169,7 @@ export class PdfPage {
    */
   toAssembleSource(): PdfAssembleSource {
     return {
-      document: this.document,
+      document: this.sourceDocument,
       pageNumber: this.sourcePageIndex + 1,
       ...(this.rotation === this.sourceRotation ? {} : { rotation: this.rotation }),
     };
@@ -2057,16 +2191,16 @@ export class PdfPage {
    * it starts — see {@link createCancellationToken}.
    */
   async render(options: PdfPageRenderOptions = {}): Promise<PdfImage | null> {
-    if (this.document.isDisposed) return null;
+    if (this.sourceDocument.isDisposed) return null;
     const fullWidth = options.fullWidth ?? this.width;
     const fullHeight = options.fullHeight ?? this.height;
     const width = options.width ?? Math.floor(fullWidth);
     const height = options.height ?? Math.floor(fullHeight);
 
-    const result = await this.document.enqueueRender(
+    const result = await this.sourceDocument.enqueueRender(
       () =>
-        this.document.sendCommand('renderPage', {
-          docHandle: this.document.docHandle,
+        this.sourceDocument.sendCommand('renderPage', {
+          docHandle: this.sourceDocument.docHandle,
           pageIndex: this.sourcePageIndex,
           x: options.x ?? 0,
           y: options.y ?? 0,
@@ -2082,12 +2216,12 @@ export class PdfPage {
             options.annotationRenderingMode ?? 'annotationAndForms',
           ),
           flags: options.flags ?? 0,
-          formHandle: this.document.formHandle,
+          formHandle: this.sourceDocument.formHandle,
         }),
       options.cancellationToken,
     );
     if (!result) return null; // cancelled
-    this.document.updateMissingFonts(result.missingFonts);
+    this.sourceDocument.updateMissingFonts(result.missingFonts);
     return new PdfImage(width, height, new Uint8Array(result.imageData));
   }
 
@@ -2112,12 +2246,12 @@ export class PdfPage {
    * page is not yet loaded (progressive loading).
    */
   async loadText(): Promise<PdfPageRawText | null> {
-    if (this.document.isDisposed || !this.isLoaded) return null;
-    const result = await this.document.sendCommand('loadText', {
-      docHandle: this.document.docHandle,
+    if (this.sourceDocument.isDisposed || !this.isLoaded) return null;
+    const result = await this.sourceDocument.sendCommand('loadText', {
+      docHandle: this.sourceDocument.docHandle,
       pageIndex: this.sourcePageIndex,
     });
-    this.document.updateMissingFonts(result.missingFonts);
+    this.sourceDocument.updateMissingFonts(result.missingFonts);
     return {
       fullText: result.fullText,
       charRects: result.charRects.map((r) => this.rectFromWire(r)),
@@ -2131,9 +2265,9 @@ export class PdfPage {
    * page is not yet loaded.
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
-    if (this.document.isDisposed || !this.isLoaded) return [];
-    const result = await this.document.sendCommand('loadLinks', {
-      docHandle: this.document.docHandle,
+    if (this.sourceDocument.isDisposed || !this.isLoaded) return [];
+    const result = await this.sourceDocument.sendCommand('loadLinks', {
+      docHandle: this.sourceDocument.docHandle,
       pageIndex: this.sourcePageIndex,
       enableAutoLinkDetection: options.enableAutoLinkDetection ?? true,
     });
@@ -2144,7 +2278,7 @@ export class PdfPage {
       // imported into another document, an internal link therefore names a
       // position in its *source* document — the PDF has no destination for the
       // host, so there is nothing better to report.
-      dest: pdfDestFromWire(link.dest, this.document),
+      dest: pdfDestFromWire(link.dest, this.sourceDocument),
       annotation: link.annotation
         ? {
             title: link.annotation.title ?? null,
@@ -2164,10 +2298,10 @@ export class PdfPage {
    * disposed, has no form, or the page is not yet loaded.
    */
   async loadFormFields(): Promise<PdfFormField[]> {
-    if (this.document.isDisposed || !this.isLoaded || !this.document.formHandle) return [];
-    const result = await this.document.sendCommand('loadFormFields', {
-      docHandle: this.document.docHandle,
-      formHandle: this.document.formHandle,
+    if (this.sourceDocument.isDisposed || !this.isLoaded || !this.sourceDocument.formHandle) return [];
+    const result = await this.sourceDocument.sendCommand('loadFormFields', {
+      docHandle: this.sourceDocument.docHandle,
+      formHandle: this.sourceDocument.formHandle,
       pageIndex: this.sourcePageIndex,
     });
     return groupWireFormFields(result.fields, this);
@@ -2179,13 +2313,69 @@ export class PdfPage {
    * bounding-box-relative page coordinates (like {@link loadLinks}). Returns an
    * empty array if the document is disposed or the page is not yet loaded.
    */
-  async loadAnnotations(): Promise<PdfAnnotationObject[]> {
-    if (this.document.isDisposed || !this.isLoaded) return [];
-    const result = await this.document.sendCommand('loadAnnotations', {
-      docHandle: this.document.docHandle,
+  async loadAnnotations(options: PdfLoadAnnotationsOptions = {}): Promise<PdfAnnotationObject[]> {
+    if (this.sourceDocument.isDisposed || !this.isLoaded) return [];
+    const result = await this.sourceDocument.sendCommand('loadAnnotations', {
+      docHandle: this.sourceDocument.docHandle,
       pageIndex: this.sourcePageIndex,
     });
-    return result.annotations.map((a) => this.annotationFromWire(a));
+    const annotations = result.annotations.map((a) => this.annotationFromWire(a));
+    if (options.subtype === undefined) return annotations;
+    const subtypes = new Set(Array.isArray(options.subtype) ? options.subtype : [options.subtype]);
+    return annotations.filter((annotation) => subtypes.has(annotation.subtype));
+  }
+
+  /**
+   * Loads highlight annotations on this page. Unlike
+   * {@link PdfDocument.loadHighlights}, this performs no document-wide scan.
+   * With `includeText`, only this page's text is loaded and intersected with the
+   * highlight quadpoints.
+   */
+  async loadHighlights(options: PdfLoadHighlightsOptions = {}): Promise<PdfHighlightObject[]> {
+    const annotations = await this.loadAnnotations({ subtype: 'highlight' });
+    const highlights: PdfHighlightObject[] = annotations.map((annotation) => ({
+      ...annotation,
+      subtype: 'highlight',
+      text: null,
+    }));
+    if (!options.includeText || highlights.length === 0) return highlights;
+    const text = await this.loadText();
+    return highlights.map((highlight) => ({
+      ...highlight,
+      text: extractHighlightText(highlight, text),
+    }));
+  }
+
+  /**
+   * Adds an annotation to this page and returns its stable `/NM` id.
+   *
+   * The physical write is sent to {@link sourceDocument}; the
+   * `annotationsChanged` event is emitted from the source document and every
+   * open arrangement that places that source page. Duplicate placements share
+   * annotation state and all of their page numbers are reported as affected.
+   */
+  async addAnnotation(
+    spec: PdfAnnotationSpec,
+    options: PdfAnnotationMutationOptions = {},
+  ): Promise<string> {
+    return this.document.addAnnotationForPage(this, spec, options);
+  }
+
+  /**
+   * Replaces annotation `id` with a fresh annotation built from the complete
+   * `spec`, preserving the id. PDFium has no in-place geometry setter.
+   */
+  async updateAnnotation(
+    id: string,
+    spec: PdfAnnotationSpec,
+    options: PdfAnnotationMutationOptions = {},
+  ): Promise<string> {
+    return this.document.updateAnnotationForPage(this, id, spec, options);
+  }
+
+  /** Removes annotation `id`; returns whether it was found. */
+  async removeAnnotation(id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
+    return this.document.removeAnnotationForPage(this, id, options);
   }
 
   /** @internal Converts a wire annotation (raw coords) to the public model (bbox-relative). */

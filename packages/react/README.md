@@ -183,11 +183,11 @@ they were recorded against. Either route every editable page mutation through
 an external state replacement and do not continue using the existing history.
 
 The same distinction applies to annotations: edits made with the built-in
-annotation UI are recorded, while direct `PdfDocument.addAnnotation()`,
+annotation UI are recorded, while direct `PdfPage.addAnnotation()`,
 `updateAnnotation()` and `removeAnnotation()` calls are not. The `add`, `update`
-and `remove` functions from `useAnnotations()` currently expose those direct
-document operations, so use them for externally managed annotation state, not
-as entries in the viewer's Undo/Redo sequence.
+and `remove` functions from `useAnnotations()` expose those direct page
+operations, so use them for externally managed annotation state, not as entries
+in the viewer's Undo/Redo sequence.
 
 Opening another document clears the history. For custom controls, use
 `useEditHistory()`:

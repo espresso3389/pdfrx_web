@@ -95,7 +95,15 @@ export interface WireOutlineNode {
   children: WireOutlineNode[];
 }
 
-/** Serialized PDF object value used by the raw object editing commands. */
+/**
+ * A non-recursive, structured-clone representation of one PDF object.
+ *
+ * Indirect references stay `{ kind: 'reference', ... }` instead of expanding
+ * their target, so cyclic object graphs are safe to inspect. PDF strings are
+ * their original bytes (not decoded JavaScript text), names are decoded strings,
+ * dictionary keys omit the leading `/`, and stream `data` contains decoded
+ * bytes. `rawData` is present only when explicitly requested.
+ */
 export type WireRawPdfObject =
   | { kind: 'null' }
   | { kind: 'boolean'; value: boolean }
@@ -113,14 +121,41 @@ export type WireRawPdfObject =
       rawData?: Uint8Array;
     };
 
+/**
+ * Identifies an existing object or nested container for a raw edit.
+ *
+ * Start with exactly one of:
+ *
+ * - `root: true` — the document catalog;
+ * - `objectNumber` — an existing indirect object; or
+ * - `localId` — an indirect dictionary created in the same worker batch.
+ *
+ * `path`, when present, is followed from that starting object. String
+ * components select dictionary keys (without `/`) and number components select
+ * zero-based array items. Indirect references encountered along the path are
+ * dereferenced automatically. Application code should normally obtain targets
+ * from `PdfRawObjectEditor.catalog()`, `object()`, `at()`, or
+ * `createDictionary()` rather than constructing this wire shape directly.
+ */
 export interface WireRawPdfTarget {
+  /** Selects the document catalog. Mutually exclusive with `objectNumber` and `localId`. */
   root?: true;
+  /** Selects an existing indirect object by its positive PDF object number. */
   objectNumber?: number;
+  /** Selects an indirect dictionary created earlier in the same operation batch. */
   localId?: string;
+  /** Dictionary keys and zero-based array indices to traverse from the selected starting object. */
   path?: (string | number)[];
 }
 
-/** Value accepted by a raw PDF patch, including references to dictionaries created in the same command. */
+/**
+ * Value accepted by a raw PDF edit operation.
+ *
+ * It has the same recursive shapes as {@link WireRawPdfObject}, plus
+ * `localReference`, which points at an indirect dictionary created in the same
+ * batch. With {@link PdfRawObjectEditor}, use
+ * `PdfRawCreatedObject.reference` instead of constructing a local reference.
+ */
 export type WireRawPdfPatchValue =
   | Exclude<WireRawPdfObject, { kind: 'array' | 'dictionary' | 'stream' }>
   | { kind: 'localReference'; id: string }
@@ -133,6 +168,13 @@ export type WireRawPdfPatchValue =
       rawData?: Uint8Array;
     };
 
+/**
+ * Low-level worker-protocol operation compiled by `PdfRawObjectEditor`.
+ *
+ * Normal application code uses the editor's dictionary/array/stream methods;
+ * this union remains public because {@link WorkerCommandMap} exposes the typed
+ * worker protocol.
+ */
 export type WireRawPdfPatchOperation =
   | { op: 'dictionarySet'; target: WireRawPdfTarget; key: string; value: WireRawPdfPatchValue }
   | { op: 'dictionaryRemove'; target: WireRawPdfTarget; key: string }

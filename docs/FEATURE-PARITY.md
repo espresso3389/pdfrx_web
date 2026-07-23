@@ -30,8 +30,9 @@ Upstream API names are given so you can find the reference implementation.
 > `formCalculationEnabled`, and the React `useFormFields` hook. Also **annotation
 > read / create / edit / export** through an SVG overlay —
 > `PdfPage.loadAnnotations()`, `PdfDocument.loadAnnotations()` /
-> `addAnnotation()` / `updateAnnotation()` / `removeAnnotation()` /
-> `importAnnotations()`, the `annotationsChanged` event, the `interactiveAnnotations`
+> `loadHighlights()`, page-scoped `PdfPage.addAnnotation()` /
+> `updateAnnotation()` / `removeAnnotation()`, document snapshot/synchronization
+> APIs, the `annotationsChanged` event, the `interactiveAnnotations`
 > viewer option with `setAnnotationTool()`, and the React `useAnnotations` hook +
 > `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text, independent
 > text color/font size, live marquee selection, snapping guides, and unified

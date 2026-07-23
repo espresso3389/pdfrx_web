@@ -204,9 +204,14 @@ next to the form block:
   viewers. Colors are additionally stored in private `pdfrx:C` / `pdfrx:IC` keys,
   because `FPDFAnnot_GetColor` refuses to report a color once an `/AP` exists.
 
-The engine surfaces `PdfPage.loadAnnotations()`,
-`PdfDocument.loadAnnotations()` / `loadHighlights()` / `addAnnotation()` / `updateAnnotation()` /
-`removeAnnotation()` / `importAnnotations()`, and an `annotationsChanged` event;
+Single-page annotation reads and mutations live on `PdfPage`:
+`loadAnnotations()` / `loadHighlights()` / `addAnnotation()` /
+`updateAnnotation()` / `removeAnnotation()`. `PdfDocument` retains only
+arrangement-wide queries (`loadAnnotations()` / `loadHighlights()`), snapshot
+export/restore, synchronization batches, and the `annotationsChanged` event.
+For imported pages, `PdfPage.document` is the arrangement receiving the event,
+while `PdfPage.sourceDocument` owns the physical PDF object being mutated;
+duplicate placements therefore share annotation state.
 `@pdfrx/react` exposes the `useAnnotations` hook and a `PdfAnnotationToolbar`.
 
 External collaboration uses a versioned `PdfAnnotationSnapshot` for full

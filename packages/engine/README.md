@@ -107,7 +107,22 @@ Each symbol links to its entry in the
 - [`PdfPage.render`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#render) — partial-region rendering for tiled/zoomed views (`x`, `y`, `width`, `height` vs `fullWidth`, `fullHeight`)
 - Cancellable rendering: renders are queued client-side (one in the worker at a time) instead of being posted all at once, so work that is no longer wanted can be dropped before it starts. Pass a [`PdfPageRenderCancellationToken`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPageRenderCancellationToken.html) from [`createCancellationToken()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#createcancellationtoken) and `cancel()` it; `render` then resolves to `null`
 - [`PdfPage.loadText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadtext) / [`loadLinks`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadlinks), [`PdfDocument.loadOutline`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadoutline)
-- Document-wide annotation queries: `doc.loadAnnotations({ subtype: 'highlight' })`, or `doc.loadHighlights({ includeText: true })` to include the highlighted page text
+- Page-scoped annotation API:
+  [`page.loadAnnotations()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadannotations) /
+  [`loadHighlights({ includeText: true })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadhighlights)
+  and
+  [`page.addAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#addannotation) /
+  [`updateAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#updateannotation) /
+  [`removeAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#removeannotation).
+  `page.document` is the current arrangement receiving change events;
+  `page.sourceDocument` owns the physical page, so imported and duplicate
+  placements share annotation state.
+- Document-wide annotation queries:
+  [`doc.loadAnnotations({ subtype: 'highlight' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadannotations)
+  and
+  [`doc.loadHighlights({ includeText: true })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadhighlights)
+  aggregate the current arrangement, including imported pages. Use the
+  corresponding `PdfPage` methods when only one page is needed.
 - External annotation persistence and collaboration: `exportAnnotations()` / `restoreAnnotations()` preserve stable ids, `serializeAnnotationSnapshot()` handles binary FreeText appearance data, and `applyAnnotationChanges()` applies `add` / `update` / `remove` batches. `annotationsChanged` includes the exact changes plus `origin`, `transactionId`, and `actorId`; publish local/user changes and apply incoming changes with `origin: 'remote'` to prevent echo loops. Each annotation carries its last `actorId` and monotonic `revision`.
 - Rectangle and FreeText annotation specs preserve independent `textColor` and
   `fontSize` appearance properties. A viewer may switch between square and
@@ -121,8 +136,16 @@ Each symbol links to its entry in the
 - [`doc.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy) — assemble and serialize through a temporary copy, preserving the live document's proxy arrangement
 - `encodePdfCopy()` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
 - Raw PDF-object inspection and editing: `getCatalogObject()` reads the catalog,
-  `getRawObject(objectNumber)` reads an indirect object without recursively
-  expanding references, and `editRawObjects(editor => { ... })` provides
+  `getRawObject(objectNumber)` returns a
+  [`WireRawPdfObject`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.WireRawPdfObject.html)
+  without recursively expanding references, and `editRawObjects(editor => { ... })`
+  provides a
+  [`PdfRawObjectEditor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfRawObjectEditor.html)
+  over typed
+  [`WireRawPdfTarget`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.WireRawPdfTarget.html)
+  locations and
+  [`WireRawPdfPatchValue`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.WireRawPdfPatchValue.html)
+  values. Its methods provide
   dictionary, array, and decoded-stream helpers over the custom `FPDFRaw_*`
   PDFium backend. Newly-created indirect dictionaries can be referenced within
   the same batch without manually assigning object numbers.

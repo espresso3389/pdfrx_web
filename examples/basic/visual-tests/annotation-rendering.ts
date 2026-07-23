@@ -124,7 +124,7 @@ function compare(pdfiumCanvas: HTMLCanvasElement, svgCanvas: HTMLCanvasElement):
 async function run(spec: PdfAnnotationSpec): Promise<VisualDiffResult> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
-  const id = await doc.addAnnotation(1, spec);
+  const id = await doc.pages[0]!.addAnnotation(spec);
   try {
     const shape = await waitForShape(id);
     const pdfiumImage = await doc.pages[0]!.render({
@@ -138,7 +138,7 @@ async function run(spec: PdfAnnotationSpec): Promise<VisualDiffResult> {
     pdfiumCanvas.getContext('2d')!.putImageData(pdfiumImage.toImageData(), 0, 0);
     return compare(pdfiumCanvas, await rasterizeShape(shape));
   } finally {
-    await doc.removeAnnotation(1, id);
+    await doc.pages[0]!.removeAnnotation(id);
   }
 }
 
@@ -151,7 +151,7 @@ async function inspectStamp(spec: PdfAnnotationSpec): Promise<{
 }> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
-  const id = await doc.addAnnotation(1, spec);
+  const id = await doc.pages[0]!.addAnnotation(spec);
   try {
     const shape = await waitForShape(id);
     const rect = shape.querySelector('rect');
@@ -163,14 +163,14 @@ async function inspectStamp(spec: PdfAnnotationSpec): Promise<{
       rx: rect?.getAttribute('rx') ?? null,
     };
   } finally {
-    await doc.removeAnnotation(1, id);
+    await doc.pages[0]!.removeAnnotation(id);
   }
 }
 
 async function runAtomicUpdate(before: PdfAnnotationSpec, after: PdfAnnotationSpec): Promise<{ frames: number; missingFrames: number }> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
-  const id = await doc.addAnnotation(1, before);
+  const id = await doc.pages[0]!.addAnnotation(before);
   const original = await waitForShape(id);
   let frames = 0;
   let missingFrames = 0;
@@ -184,7 +184,7 @@ async function runAtomicUpdate(before: PdfAnnotationSpec, after: PdfAnnotationSp
     }
   })();
   try {
-    await doc.updateAnnotation(1, id, after);
+    await doc.pages[0]!.updateAnnotation(id, after);
     for (let frame = 0; frame < 120 && original.isConnected; frame++) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
@@ -193,7 +193,7 @@ async function runAtomicUpdate(before: PdfAnnotationSpec, after: PdfAnnotationSp
   } finally {
     monitoring = false;
     await monitor;
-    await doc.removeAnnotation(1, id);
+    await doc.pages[0]!.removeAnnotation(id);
   }
 }
 
@@ -205,7 +205,9 @@ interface ClipboardTestResult {
 async function clearAnnotations(): Promise<void> {
   const doc = viewer.document;
   if (!doc) return;
-  for (const annotation of await doc.loadAnnotations(1)) await doc.removeAnnotation(1, annotation.id);
+  for (const annotation of await doc.pages[0]!.loadAnnotations()) {
+    await doc.pages[0]!.removeAnnotation(annotation.id);
+  }
   viewer.setSelectedAnnotations([]);
 }
 
@@ -214,7 +216,7 @@ async function runClipboardTest(spec: PdfAnnotationSpec): Promise<ClipboardTestR
   if (!doc || !spec.rect) throw new Error('Test PDF is not open or spec has no rect');
   await clearAnnotations();
   try {
-    const originalId = await doc.addAnnotation(1, spec);
+    const originalId = await doc.pages[0]!.addAnnotation(spec);
     await waitForShape(originalId);
     viewer.setSelectedAnnotation(originalId);
     if (!viewer.copySelectedAnnotations()) throw new Error('Copy failed');
@@ -258,7 +260,7 @@ async function setupDuplicateGesture(spec: PdfAnnotationSpec): Promise<string> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
   await clearAnnotations();
-  const id = await doc.addAnnotation(1, spec);
+  const id = await doc.pages[0]!.addAnnotation(spec);
   await waitForShape(id);
   viewer.setAnnotationSelectMode(true);
   viewer.setSelectedAnnotation(id);
@@ -282,7 +284,7 @@ async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
   const doc = viewer.document;
   if (!doc) throw new Error('Test PDF is not open');
   await clearAnnotations();
-  for (const spec of specs) await doc.addAnnotation(1, spec);
+  for (const spec of specs) await doc.pages[0]!.addAnnotation(spec);
   viewer.setAnnotationSelectMode(true);
   viewer.setSelectedAnnotations([]);
 }
@@ -292,7 +294,7 @@ async function setupSnapGesture(specs: PdfAnnotationSpec[]): Promise<string[]> {
   if (!doc) throw new Error('Test PDF is not open');
   await clearAnnotations();
   const ids: string[] = [];
-  for (const spec of specs) ids.push(await doc.addAnnotation(1, spec));
+  for (const spec of specs) ids.push(await doc.pages[0]!.addAnnotation(spec));
   for (const id of ids) await waitForShape(id);
   viewer.setAnnotationSelectMode(true);
   viewer.setSelectedAnnotation(ids[0] ?? null);
@@ -371,7 +373,7 @@ async function runFreeTextRoundTrip(spec: PdfAnnotationSpec): Promise<{
   const doc = viewer.document;
   if (!doc || !spec.rect) throw new Error('Test PDF is not open or spec has no rect');
   await clearAnnotations();
-  await doc.addAnnotation(1, spec);
+  await doc.pages[0]!.addAnnotation(spec);
   const encoded = await doc.encodePdf();
   const reopened = await viewer.engine.openData(encoded);
   try {

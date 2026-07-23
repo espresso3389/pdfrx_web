@@ -528,13 +528,13 @@ export interface PdfAnnotationObject {
   readonly geometry: PdfAnnotationGeometry;
 }
 
-/** Filters for {@link PdfDocument.loadAnnotations}. */
+/** Filters shared by `PdfPage.loadAnnotations` and {@link PdfDocument.loadAnnotations}. */
 export interface PdfLoadAnnotationsOptions {
   /** Return only this subtype, or any of these subtypes. Omit to return all annotations. */
   readonly subtype?: PdfAnnotationSubtype | readonly PdfAnnotationSubtype[];
 }
 
-/** Options for {@link PdfDocument.loadHighlights}. */
+/** Options for `PdfPage.loadHighlights` and {@link PdfDocument.loadHighlights}. */
 export interface PdfLoadHighlightsOptions {
   /**
    * Extract the page text covered by each highlight's quadpoints. This loads
@@ -543,7 +543,7 @@ export interface PdfLoadHighlightsOptions {
   readonly includeText?: boolean;
 }
 
-/** A highlight returned by {@link PdfDocument.loadHighlights}. */
+/** A highlight returned by page- or document-level `loadHighlights`. */
 export interface PdfHighlightObject extends PdfAnnotationObject {
   readonly subtype: 'highlight';
   /** Highlighted page text, or `null` when text extraction was not requested or unavailable. */
@@ -552,7 +552,7 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
 
 /**
  * Parameters to create or replace an annotation via
- * {@link PdfDocument.addAnnotation} / {@link PdfDocument.updateAnnotation}.
+ * `PdfPage.addAnnotation` / `PdfPage.updateAnnotation`.
  *
  * Only these geometries are honored by the engine: `ink` (freehand; also how the
  * viewer realizes line/arrow), `markup` quads (highlight/underline/squiggly/
@@ -780,7 +780,10 @@ export interface PdfDocumentEventMap {
   /**
    * Annotations were added, updated or removed. The exact synchronization-ready
    * changes are included. `origin: 'remote'` identifies changes that should not
-   * be published back to the same synchronization channel.
+   * be published back to the same synchronization channel. Page-scoped CRUD is
+   * reported by the source document and by every open arrangement that places
+   * that physical page; duplicate placements contribute each affected
+   * arrangement page number.
    */
   annotationsChanged: {
     origin: PdfAnnotationChangeOrigin;

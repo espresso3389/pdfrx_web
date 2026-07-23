@@ -3052,7 +3052,7 @@ export class PdfrxViewer {
   private ensureFormFields(pageNumber: number): void {
     if (!this.doc || this.pageFormFields.has(pageNumber)) return;
     const page = this.doc.pages[pageNumber - 1];
-    if (!page || !page.isLoaded || !page.document.formHandle) return;
+    if (!page || !page.isLoaded || !page.sourceDocument.formHandle) return;
     const generation = this.arrangementGeneration;
     const promise = page.loadFormFields().then((fields) => {
       if (generation === this.arrangementGeneration) {
@@ -4482,7 +4482,9 @@ export class PdfrxViewer {
       `width:${pageSize.width}px;height:${pageSize.height}px;`;
     const controls = new Map<string, (field: PdfFormField) => void>();
     for (const field of fields) {
-      for (const el of this.buildFormControls(page.document, field, pageGeom, pageSize, controls)) container.appendChild(el);
+      for (const el of this.buildFormControls(page.sourceDocument, field, pageGeom, pageSize, controls)) {
+        container.appendChild(el);
+      }
     }
     if (container.childElementCount === 0) return null;
     return { container, controls };
@@ -4671,7 +4673,7 @@ export class PdfrxViewer {
       this.clearFormDocumentListeners();
       return;
     }
-    const current = new Set(this.doc.pages.map((page) => page.document));
+    const current = new Set(this.doc.pages.map((page) => page.sourceDocument));
     for (const [sourceDocument, unsubscribe] of this.formDocumentListeners) {
       if (current.has(sourceDocument)) continue;
       unsubscribe();
@@ -4712,6 +4714,13 @@ export class PdfrxViewer {
 
   private annotationMutationOptions(): { origin: 'user'; actorId?: string } {
     return { origin: 'user', actorId: this.options.editing?.actorId };
+  }
+
+  /** Resolves one current arrangement slot for a page-scoped annotation operation. */
+  private annotationPage(pageNumber: number): PdfPage {
+    const page = this.doc?.pages[pageNumber - 1];
+    if (!page) throw new RangeError(`pageNumber ${pageNumber} is outside the current document`);
+    return page;
   }
 
   /**
@@ -5422,7 +5431,7 @@ export class PdfrxViewer {
         for (const cmd of group) {
           const after = cmd.after!;
           if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-          await this.doc.updateAnnotation(cmd.pageNumber, cmd.id, after, this.annotationMutationOptions());
+          await this.annotationPage(cmd.pageNumber).updateAnnotation(cmd.id, after, this.annotationMutationOptions());
           const snapshot = this.annotationSnapshots.get(cmd.id);
           if (snapshot) {
             this.annotationSnapshots.set(cmd.id, {
@@ -5513,7 +5522,7 @@ export class PdfrxViewer {
       const pageNumber = range.pageText.pageNumber;
       const rect = bboxOfPoints(quads.flatMap((q) => [q.topLeft, q.topRight, q.bottomLeft, q.bottomRight]));
       const spec: PdfAnnotationSpec = { subtype: 'highlight', rect, color: rgba, geometry: { kind: 'markup', quads } };
-      const id = await this.doc.addAnnotation(pageNumber, spec, this.annotationMutationOptions());
+      const id = await this.annotationPage(pageNumber).addAnnotation(spec, this.annotationMutationOptions());
       group.push({ pageNumber, id, before: null, after: spec });
     }
     this.recordAnnotationCommandGroup(group);
@@ -5564,7 +5573,7 @@ export class PdfrxViewer {
       for (const entry of this.annotationClipboard) {
         if (entry.pageNumber < 1 || entry.pageNumber > this.doc.pages.length) continue;
         const spec = translateSpec(entry.spec, offset, -offset);
-        const id = await this.doc.addAnnotation(entry.pageNumber, spec, this.annotationMutationOptions());
+        const id = await this.annotationPage(entry.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
         group.push({ pageNumber: entry.pageNumber, id, before: null, after: spec });
         ids.push(id);
       }
@@ -5592,7 +5601,7 @@ export class PdfrxViewer {
     const group: AnnotationCommand[] = [];
     for (const t of targets) {
       const before = annotationToSpec(t.annotation);
-      await this.doc.removeAnnotation(t.pageNumber, t.annotation.id, this.annotationMutationOptions());
+      await this.annotationPage(t.pageNumber).removeAnnotation(t.annotation.id, this.annotationMutationOptions());
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after: null });
     }
     this.recordAnnotationCommandGroup(group);
@@ -5784,8 +5793,17 @@ export class PdfrxViewer {
   private async applyAnnotationState(pageNumber: number, id: string, spec: PdfAnnotationSpec | null): Promise<void> {
     if (!this.doc) return;
     this.selectedAnnotationIds.delete(id);
-    if (spec === null) await this.doc.removeAnnotation(pageNumber, id, { origin: 'history', actorId: this.options.editing?.actorId });
-    else await this.doc.updateAnnotation(pageNumber, id, spec, { origin: 'history', actorId: this.options.editing?.actorId });
+    if (spec === null) {
+      await this.annotationPage(pageNumber).removeAnnotation(id, {
+        origin: 'history',
+        actorId: this.options.editing?.actorId,
+      });
+    } else {
+      await this.annotationPage(pageNumber).updateAnnotation(id, spec, {
+        origin: 'history',
+        actorId: this.options.editing?.actorId,
+      });
+    }
   }
 
   /** Re-applies the selection outline + anchor handles across every overlay. */
@@ -5972,7 +5990,7 @@ export class PdfrxViewer {
       refreshFreeTextLayout(after);
       void (async () => {
         if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-        await this.doc!.updateAnnotation(overlay.pageNumber, annotation.id, after);
+        await this.annotationPage(overlay.pageNumber).updateAnnotation(annotation.id, after);
         this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
       })();
     };
@@ -6265,7 +6283,7 @@ export class PdfrxViewer {
       if (contents === null) return;
       await this.applyBoxContents(spec, contents);
     }
-    const id = await this.doc.addAnnotation(s.pageNumber, spec, this.annotationMutationOptions());
+    const id = await this.annotationPage(s.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
     this.setAnnotationSelectMode(true);
     this.setSelectedAnnotation(id);
@@ -6526,7 +6544,11 @@ export class PdfrxViewer {
     if (before.subtype === 'text') after.contents = contents;
     else await this.applyBoxContents(after, contents);
     if (contents === (before.contents ?? '') && after.subtype === before.subtype) return;
-    await this.doc.updateAnnotation(overlay.pageNumber, annotation.id, after, this.annotationMutationOptions());
+    await this.annotationPage(overlay.pageNumber).updateAnnotation(
+      annotation.id,
+      after,
+      this.annotationMutationOptions(),
+    );
     this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
   }
 
@@ -6762,7 +6784,7 @@ export class PdfrxViewer {
     if (!this.doc) return;
     const before = annotationToSpec(a);
     const after = translateAnnotationSpec(a, dx, dy);
-    await this.doc.updateAnnotation(pageNumber, a.id, after, this.annotationMutationOptions());
+    await this.annotationPage(pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber, id: a.id, before, after });
   }
 
@@ -6827,7 +6849,7 @@ export class PdfrxViewer {
     for (const entry of entries) {
       if (entry.pageNumber < 1 || entry.pageNumber > this.doc.pages.length) continue;
       const spec = structuredClone(entry.spec);
-      const id = await this.doc.addAnnotation(entry.pageNumber, spec, this.annotationMutationOptions());
+      const id = await this.annotationPage(entry.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
       group.push({ pageNumber: entry.pageNumber, id, before: null, after: spec });
       ids.push(id);
       created.push({ pageNumber: entry.pageNumber, spec });
@@ -7231,7 +7253,7 @@ export class PdfrxViewer {
       const after = makeSpec(a);
       refreshFreeTextLayout(after);
       if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-      await this.doc.updateAnnotation(overlay.pageNumber, a.id, after, this.annotationMutationOptions());
+      await this.annotationPage(overlay.pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions());
       group.push({ pageNumber: overlay.pageNumber, id: a.id, before, after });
     }
     this.recordAnnotationCommandGroup(group);
