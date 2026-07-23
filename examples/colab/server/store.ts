@@ -13,6 +13,7 @@ export interface StoredSession {
   readonly createdAt: string;
   updatedAt: string;
   memberTokenHashes: string[];
+  sourcePasswords?: Record<string, string>;
   pageSnapshot: PageSessionSnapshot;
   annotationSnapshot: AnnotationSessionSnapshot;
   formSnapshot: FormSessionSnapshot;
@@ -57,6 +58,7 @@ export class SessionStore {
     name: string,
     source: Uint8Array,
     pageCount: number,
+    password?: string,
   ): Promise<{ readonly session: StoredSession; readonly memberToken: string }> {
     if (!Number.isSafeInteger(pageCount) || pageCount < 1) throw new Error('PDFにページがありません');
     let id = randomUUID().replaceAll('-', '').slice(0, 16);
@@ -69,6 +71,7 @@ export class SessionStore {
       createdAt: now,
       updatedAt: now,
       memberTokenHashes: [hashToken(memberToken)],
+      ...(password ? { sourcePasswords: { main: password } } : {}),
       pageSnapshot: {
         revision: 0,
         pages: Array.from({ length: pageCount }, (_, pageIndex) => ({

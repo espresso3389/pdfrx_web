@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import { PdfrxEngine } from '@pdfrx/engine';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   AnnotationProtocolError,
@@ -24,7 +24,9 @@ const apiPrefix = normalizedPrefix(process.env.PDFRX_API_PREFIX ?? '/api');
 const relayPath = process.env.PDFRX_RELAY_PATH ?? '/relay';
 const maxSourceBytes = Number(process.env.PDFRX_MAX_SOURCE_BYTES ?? 50 * 1024 * 1024);
 const memberTokenHeader = 'x-pdfrx-member-token';
+const sourcePasswordHeader = 'x-pdfrx-source-password';
 const store = new SessionStore(dataDirectory);
+const engine = new PdfrxEngine();
 await store.open();
 
 const clients = new Map<string, Set<WebSocket>>();
@@ -293,9 +295,17 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
   }
   if (request.method === 'POST' && url.pathname === `${apiPrefix}/sessions`) {
     const bytes = await readBody(request);
-    let pdf: PDFDocument;
+    const password = decodedHeader(request, sourcePasswordHeader) || undefined;
+    let pageCount: number;
     try {
-      pdf = await PDFDocument.load(bytes, { updateMetadata: false });
+      const document = await engine.openData(bytes, password ? {
+        passwordProvider: () => password,
+      } : {});
+      try {
+        pageCount = document.pages.length;
+      } finally {
+        await document.dispose();
+      }
     } catch {
       throw new HttpError(400, 'invalid-pdf');
     }
@@ -305,7 +315,7 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
     } catch {
       throw new HttpError(400, 'invalid-session-name');
     }
-    const created = await store.create(sessionName, bytes, pdf.getPageCount());
+    const created = await store.create(sessionName, bytes, pageCount, password);
     json(response, 201, { ...publicSession(created.session), memberToken: created.memberToken });
     return;
   }
@@ -329,6 +339,9 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
         'Cache-Control': 'private, no-store',
         'Content-Type': 'application/pdf',
         'Content-Length': bytes.byteLength,
+        ...(session.sourcePasswords?.[documentId]
+          ? { 'X-Pdfrx-Source-Password': encodeURIComponent(session.sourcePasswords[documentId]) }
+          : {}),
       });
       response.end(bytes);
       return;
@@ -448,6 +461,7 @@ const shutdown = (): void => {
   shuttingDown = true;
   for (const client of webSockets.clients) client.close(1001, 'Server shutting down');
   httpServer.close((error) => {
+    engine.dispose();
     if (error) {
       console.error(error);
       process.exitCode = 1;

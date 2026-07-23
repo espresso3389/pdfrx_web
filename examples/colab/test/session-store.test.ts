@@ -1,12 +1,15 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PDFDocument } from 'pdf-lib';
-import { afterEach, describe, expect, it } from 'vitest';
+import { PdfrxEngine } from '@pdfrx/engine';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { SessionStore } from '../server/store.js';
 
 describe('persistent collaboration session store', () => {
   const directories: string[] = [];
+  const engine = new PdfrxEngine();
+
+  afterAll(() => engine.dispose());
 
   afterEach(async () => {
     for (const directory of directories.splice(0)) {
@@ -19,10 +22,7 @@ describe('persistent collaboration session store', () => {
   it('persists snapshots, source bytes, and non-recoverable member tokens', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pdfrx-colab-'));
     directories.push(directory);
-    const pdf = await PDFDocument.create();
-    pdf.addPage();
-    pdf.addPage();
-    const bytes = await pdf.save();
+    const bytes = await createTestPdf(engine, 2);
     const store = new SessionStore(directory);
     await store.open();
     const created = await store.create('Persistent room', bytes, 2);
@@ -46,12 +46,26 @@ describe('persistent collaboration session store', () => {
     expect(restored && admittedToken && reopened.verifyMemberToken(restored, admittedToken)).toBe(true);
   });
 
+  it('persists a source password for authenticated participants without exposing it in page state', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pdfrx-colab-'));
+    directories.push(directory);
+    const bytes = await createTestPdf(engine, 1);
+    const store = new SessionStore(directory);
+    await store.open();
+
+    const { session } = await store.create('Protected source', bytes, 1, 'internal-secret');
+    expect(session.sourcePasswords).toEqual({ main: 'internal-secret' });
+    expect(JSON.stringify(session.pageSnapshot)).not.toContain('internal-secret');
+
+    const reopened = new SessionStore(directory);
+    await reopened.open();
+    expect(reopened.get(session.id)?.sourcePasswords).toEqual({ main: 'internal-secret' });
+  });
+
   it('accepts identical source retries and rejects conflicting bytes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pdfrx-colab-'));
     directories.push(directory);
-    const pdf = await PDFDocument.create();
-    pdf.addPage();
-    const bytes = await pdf.save();
+    const bytes = await createTestPdf(engine, 1);
     const store = new SessionStore(directory);
     await store.open();
     const { session } = await store.create('Sources', bytes, 1);
@@ -61,3 +75,16 @@ describe('persistent collaboration session store', () => {
     await expect(store.putSource(session.id, 'imported', new Uint8Array([1, 2, 3]))).rejects.toThrow('source-conflict');
   });
 });
+
+async function createTestPdf(engine: PdfrxEngine, pageCount: number): Promise<Uint8Array> {
+  const document = await engine.createFromImages(Array.from({ length: pageCount }, () => ({
+    pixels: new Uint8Array([255, 255, 255, 255]),
+    width: 1,
+    height: 1,
+  })));
+  try {
+    return await document.encodePdf();
+  } finally {
+    await document.dispose();
+  }
+}

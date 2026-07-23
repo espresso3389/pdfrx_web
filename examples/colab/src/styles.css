@@ -21,6 +21,12 @@ button, input { font: inherit; }
 .file-drop-zone strong { max-width: 100%; overflow: hidden; color: #1d4ed8; text-overflow: ellipsis; white-space: nowrap; }
 .file-drop-zone small { color: #7a8498; font-size: 11px; font-weight: 400; }
 .file-drop-zone:focus-within { outline: 3px solid #dbeafe; border-color: #3b82f6; }
+.password-dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, .48); }
+.password-dialog { width: min(380px, 100%); display: grid; gap: 14px; padding: 24px; border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(15, 23, 42, .3); }
+.password-dialog h2 { margin: 0; font-size: 18px; }
+.password-dialog p { margin: 0; color: #667085; font-size: 13px; line-height: 1.5; }
+.password-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.password-dialog-actions button { padding: 9px 14px; border: 0; border-radius: 8px; cursor: pointer; }
 .label-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .label-heading small { color: #7a8498; font-size: 11px; font-weight: 400; }
 .session-card input { min-width: 0; padding: 11px 12px; border: 1px solid #cfd7e5; border-radius: 9px; color: #172033; background: #fff; }

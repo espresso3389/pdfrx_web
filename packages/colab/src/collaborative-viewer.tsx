@@ -11,6 +11,7 @@ import {
   imageBytesToPdf,
   isImageFile,
   isPdfFile,
+  type PdfSource,
   usePdfDocument,
   usePdfrxViewer,
 } from '@pdfrx/react';
@@ -67,7 +68,7 @@ export interface CollaborativePdfViewerProps {
   /** Accessible participant label shown in the built-in chrome. */
   readonly name?: string;
   /** Initial PDF used for the session's `main` source. */
-  readonly src: string | URL | ArrayBuffer | Uint8Array | Blob;
+  readonly src: PdfSource;
   /** Directory containing the PDFium worker assets. */
   readonly wasmModulesUrl?: string;
   /** Additional class applied to the outer `.collab-pane` element. */

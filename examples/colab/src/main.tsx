@@ -8,12 +8,13 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PDFDocument } from 'pdf-lib';
+import { PdfrxEngine } from '@pdfrx/engine';
 import {
   CollaborativePdfViewer,
   type CollaborationConnectionState,
   type CollaborationTransport,
 } from '@pdfrx/colab';
+import { imageBytesToPdf } from '@pdfrx/react';
 import '@pdfrx/colab/styles.css';
 import '@pdfrx/react/styles.css';
 import './styles.css';
@@ -41,6 +42,13 @@ interface ActiveSession {
   readonly actorId: string;
   readonly displayName: string;
   readonly source: ArrayBuffer;
+  readonly sourcePassword?: string;
+}
+
+interface PreparedFile {
+  readonly file: File;
+  readonly source: ArrayBuffer;
+  readonly password?: string;
 }
 
 const config: RuntimeConfig = {
@@ -49,6 +57,7 @@ const config: RuntimeConfig = {
     `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/relay`,
   wasmModulesUrl: new URL(import.meta.env.VITE_PDFRX_WASM_URL ?? './pdfium/', location.href).toString(),
 };
+const imageEngine = new PdfrxEngine({ wasmModulesUrl: config.wasmModulesUrl });
 
 function CollaborationApp() {
   const [active, setActive] = useState<ActiveSession | null>(null);
@@ -67,7 +76,13 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
   const [invitedSession, setInvitedSession] = useState<SessionInfo | null>(null);
   const [sessionName, setSessionName] = useState('');
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('pdfrx-display-name') ?? '');
-  const [file, setFile] = useState<File | null>(null);
+  const [preparedFile, setPreparedFile] = useState<PreparedFile | null>(null);
+  const [preparingFile, setPreparingFile] = useState(false);
+  const [passwordRequest, setPasswordRequest] = useState<{
+    readonly resolve: (password: string | null) => void;
+    readonly retry: boolean;
+  } | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [draggingFile, setDraggingFile] = useState(false);
   const [pending, setPending] = useState(false);
   const [admissionState, setAdmissionState] = useState<'idle' | 'waiting' | 'rejected'>('idle');
@@ -75,6 +90,23 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const retrySeconds = Math.max(0, Math.ceil((retryAt - now) / 1000));
+  const requestPassword = (retry: boolean): Promise<string | null> => new Promise((resolve) => {
+    setPasswordRequest({ resolve, retry });
+    queueMicrotask(() => passwordInputRef.current?.focus());
+  });
+  const prepareFile = async (selected: File): Promise<void> => {
+    setPreparingFile(true);
+    setPreparedFile(null);
+    setError(null);
+    try {
+      const prepared = await fileAsPdf(selected, requestPassword);
+      setPreparedFile({ file: selected, ...prepared });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPreparingFile(false);
+    }
+  };
 
   useEffect(() => {
     if (!isInvitation) return;
@@ -111,14 +143,17 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
       let info: SessionInfo;
       let memberToken: string;
       let source: ArrayBuffer;
+      let sourcePassword: string | undefined;
       if (!isInvitation) {
-        if (!file) throw new Error('PDFまたは画像ファイルを選択してください');
-        source = await fileAsPdf(file);
+        if (!preparedFile) throw new Error('PDFまたは画像ファイルを選択してください');
+        source = preparedFile.source;
+        sourcePassword = preparedFile.password;
         const response = await fetch(`${config.apiBase}/sessions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/pdf',
             'X-Pdfrx-Session-Name': encodeURIComponent(sessionName.trim()),
+            ...(sourcePassword ? { 'X-Pdfrx-Source-Password': encodeURIComponent(sourcePassword) } : {}),
           },
           body: source,
         });
@@ -141,6 +176,7 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
           response = await fetchSource(info.id, memberToken);
         }
         if (!response.ok) throw new Error(await responseError(response));
+        sourcePassword = decodedResponseHeader(response, 'X-Pdfrx-Source-Password') || undefined;
         source = await response.arrayBuffer();
       }
       localStorage.setItem(`pdfrx-member-${info.id}`, memberToken);
@@ -150,6 +186,7 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
         displayName: displayName.trim(),
         actorId: getActorId(),
         source,
+        ...(sourcePassword ? { sourcePassword } : {}),
       });
     } catch (reason) {
       if (reason instanceof AdmissionRejectedError) {
@@ -211,16 +248,19 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
                     event.preventDefault();
                     setDraggingFile(false);
                     const dropped = event.dataTransfer.files[0];
-                    if (dropped) setFile(dropped);
+                    if (dropped) void prepareFile(dropped);
                   }}
                 >
                   <input
                     type="file"
                     accept="application/pdf,.pdf,image/*"
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                    onChange={(event) => {
+                      const selected = event.target.files?.[0];
+                      if (selected) void prepareFile(selected);
+                    }}
                   />
-                  <strong>{file?.name ?? 'ファイルを選択'}</strong>
-                  <small>{file ? '別のファイルを選択、またはドロップ' : 'クリックして選択、またはここにドロップ'}</small>
+                  <strong>{preparedFile?.file.name ?? (preparingFile ? 'ファイルを確認しています…' : 'ファイルを選択')}</strong>
+                  <small>{preparedFile ? '別のファイルを選択、またはドロップ' : 'クリックして選択、またはここにドロップ'}</small>
                 </label>
               </div>
             </>
@@ -244,7 +284,7 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
             </div>
           )}
           {error && <div className="gate-status rejected" role="alert">{error}</div>}
-          <button className="primary-button" disabled={pending || retrySeconds > 0}>
+          <button className="primary-button" disabled={pending || preparingFile || retrySeconds > 0}>
             {admissionState === 'waiting'
               ? '承認待ち…'
               : admissionState === 'rejected'
@@ -254,6 +294,34 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
                   : isInvitation ? '参加を申請' : 'セッションを作成'}
           </button>
         </form>
+        {passwordRequest && (
+          <div className="password-dialog-backdrop" role="presentation">
+            <form
+              className="password-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="password-dialog-title"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const password = String(data.get('password') ?? '');
+                passwordRequest.resolve(password || null);
+                setPasswordRequest(null);
+              }}
+            >
+              <h2 id="password-dialog-title">PDFのパスワード</h2>
+              <p>{passwordRequest.retry ? 'パスワードが正しくありません。もう一度入力してください。' : 'このPDFを開くためのパスワードを入力してください。'}</p>
+              <input ref={passwordInputRef} type="password" name="password" autoComplete="off" required />
+              <div className="password-dialog-actions">
+                <button type="button" onClick={() => {
+                  passwordRequest.resolve(null);
+                  setPasswordRequest(null);
+                }}>キャンセル</button>
+                <button type="submit" className="primary-button">開く</button>
+              </div>
+            </form>
+          </div>
+        )}
       </section>
     </main>
   );
@@ -269,33 +337,42 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || (file.type === '' && IMAGE_EXTENSION.test(file.name));
 }
 
-async function fileAsPdf(file: File): Promise<ArrayBuffer> {
-  if (isPdfFile(file)) return file.arrayBuffer();
+async function fileAsPdf(
+  file: File,
+  requestPassword: (retry: boolean) => Promise<string | null>,
+): Promise<{ readonly source: ArrayBuffer; readonly password?: string }> {
+  if (isPdfFile(file)) {
+    const source = await file.arrayBuffer();
+    let suppliedPassword: string | undefined;
+    let attempts = 0;
+    const document = await imageEngine.openData(source, {
+      sourceName: file.name,
+      passwordProvider: async () => {
+        const password = await requestPassword(attempts > 0);
+        attempts++;
+        suppliedPassword = password ?? undefined;
+        return password;
+      },
+    });
+    await document.dispose();
+    return { source, ...(suppliedPassword ? { password: suppliedPassword } : {}) };
+  }
   if (!isImageFile(file)) throw new Error('PDFまたは画像ファイルを選択してください');
 
-  let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(file);
+    return { source: Uint8Array.from(await imageBytesToPdf(imageEngine, await file.arrayBuffer())).buffer };
   } catch {
-    throw new Error('画像ファイルを読み込めませんでした');
+    throw new Error('画像ファイルをPDFに変換できませんでした');
   }
+}
+
+function decodedResponseHeader(response: Response, name: string): string {
+  const value = response.headers.get(name);
+  if (!value) return '';
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('画像をPDFに変換できませんでした');
-    context.drawImage(bitmap, 0, 0);
-    const png = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('画像をPDFに変換できませんでした')), 'image/png');
-    });
-    const pdf = await PDFDocument.create();
-    const image = await pdf.embedPng(await png.arrayBuffer());
-    const page = pdf.addPage([bitmap.width, bitmap.height]);
-    page.drawImage(image, { x: 0, y: 0, width: bitmap.width, height: bitmap.height });
-    return (await pdf.save()).buffer as ArrayBuffer;
-  } finally {
-    bitmap.close();
+    return decodeURIComponent(value);
+  } catch {
+    return '';
   }
 }
 
@@ -432,7 +509,11 @@ function SessionViewer({ active, onLeave }: { active: ActiveSession; onLeave: ()
         memberToken={active.memberToken}
         onConnectionStateChange={setConnectionState}
         onPresenceChange={setConnectedCount}
-        src={active.source}
+        src={{
+          data: active.source,
+          sourceName: 'main.pdf',
+          ...(active.sourcePassword ? { passwordProvider: () => active.sourcePassword ?? null } : {}),
+        }}
         wasmModulesUrl={config.wasmModulesUrl}
         transport={transport}
       />
