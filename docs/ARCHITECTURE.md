@@ -141,8 +141,8 @@ Edits are written back with `setFormFieldValue` (on `blur` for text, immediately
 for checkbox/radio/select); `formFieldsChanged` reconciles control values in
 place (skipping the focused element). Gated by the `interactiveForms` option
 (default on). The engine still exposes lower-level `FORM_On*` input commands
-(`formOpenPage` / `formPointerEvent` / `formKeyEvent` / …) for headless use, but
-the viewer no longer drives them.
+  (`formOpenPage` / `formPointerEvent` / `formKeyEvent` / …) for headless use;
+  the viewer does not drive them.
 
 **Calculated fields.** Auto-calculating forms drive their totals with field
 JavaScript (`/AA/C` calculate actions), which this PDFium build cannot run (no
@@ -283,7 +283,7 @@ subscribe to the exact events with `usePdfPageChanges()`.
   (ink, markup, square/circle, line/polygon, note/free-text). Subtypes it cannot
   reproduce faithfully — image stamps, and any type drawn only from an `/AP`
   stream — show as a plain rectangle outline while the overlay is on, because the
-  canvas no longer draws them. Line/arrow are stored as ink annotations (no
+  canvas does not draw them in that mode. Line/arrow are stored as ink annotations (no
   PDFium geometry setter for `Line`/`Polygon`).
 - Scroll physics beyond exponential-decay fling (no platform-specific curves).
 

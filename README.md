@@ -40,8 +40,8 @@ The deployable collaboration application is in
 [`examples/colab`](examples/colab/README.md) and runs locally with
 `npm run dev:colab`; it starts the single-viewer client together with its
 persistent WebSocket relay.
-The relay's JSON messages, strict revision streams, transient drag previews,
-and source-PDF endpoints are specified in
+The relay's JSON messages, independently ordered and revision-checked operation
+streams, transient drag previews, and source-PDF endpoints are specified in
 [`docs/COLLABORATION-PROTOCOL.md`](docs/COLLABORATION-PROTOCOL.md).
 
 It has a search bar, thumbnails/outline sidebar, print/download buttons, form

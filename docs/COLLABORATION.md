@@ -10,9 +10,9 @@ The scope is page arrangement (insert, remove, move, duplicate, and rotate),
 content annotations, presence, and persistence. Editing existing PDF page
 content is out of scope.
 
-## What already exists
+## Local editing foundation
 
-The current stack already supplies most of the local editing machinery:
+The local editing stack supplies:
 
 - `PdfDocument.setPages()` synchronously replaces the virtual page arrangement.
   Pages can be reordered, removed, duplicated, rotated, or borrowed from an
@@ -37,7 +37,7 @@ mounts one instance after creating or joining a protected session. See
 WebSocket envelopes, sequencing rules, rejection codes, transient annotation
 previews, and source-PDF HTTP endpoints.
 
-## Why the collaboration adapter is still required
+## Collaboration adapter boundary
 
 `pagesRearranged` reports origin/transaction/actor metadata and exact before and
 after local arrangement descriptors. Those descriptors deliberately use
@@ -108,10 +108,11 @@ During object movement and anchor/group resizing, the viewer also broadcasts
 non-persistent annotation previews. These update the other participants' SVG
 overlays immediately but do not change the PDF, annotation revision, snapshot,
 or undo history. Pointer release submits the final full annotation spec through
-the normal strict-revision operation stream.
+the ordered, revision-checked operation stream.
 
-Forms use a third strict revision stream. A field is addressed by immutable
-source `documentId` plus its fully-qualified AcroForm field name; values retain
+Forms use an independent ordered, revision-checked operation stream. A field is
+addressed by immutable source `documentId` plus its fully-qualified AcroForm
+field name; values retain
 their `string | boolean | string[]` shape. The relay stores virtual field state,
 while every participant calls `setFormFieldValue()` on its own source document.
 Remote applies are suppressed from publication to avoid echo loops. Because a
@@ -180,16 +181,16 @@ rather than applying optimistically and rebuild from snapshots when joining.
 Do not send PDF bytes over the operation channel. Upload a source PDF first,
 obtain its `documentId`, and then insert placements referring to that asset.
 
-## Reusable APIs delivered
+## Reusable APIs
 
 The collaboration protocol itself must not be added to `@pdfrx/react` or its
 lower packages. The reusable packages need only expose observable mutations and
 origin-aware application primitives.
 
-### First: page mutation metadata
+### Page mutation metadata
 
-The first API increment now provides page equivalents of the annotation
-mutation concepts:
+The page mutation APIs provide page equivalents of the annotation mutation
+concepts:
 
 - a page-change origin (`user`, `api`, `remote`, `restore`, `history`, or
   `materialize`);
@@ -225,7 +226,7 @@ particular, the server must canonicalize multiple inserts at the same anchor if
 it wants commit order rather than the natural reverse order of repeated
 "insert immediately after" operations.
 
-### Second: annotation and form adapters
+### Annotation and form adapters
 
 The adapter maps network `placementId` values to current page numbers at apply
 time. Annotation writes are routed to the physical source owner, including for
@@ -235,7 +236,7 @@ fully-qualified field name and are applied independently by every client.
 Retention/restoration policy for annotations belonging to a removed placement
 remains an application/session-history decision.
 
-### Third: reusable collaboration package and application workspace
+### Collaboration package and application workspace
 
 `@pdfrx/colab` contains the shared protocol, browser client, React viewer,
 client adapter, and export composer. `PageSourceRegistry` maps stable session `documentId`
@@ -250,7 +251,7 @@ rejoin for a fresh snapshot rather than guessing at state. The browser client
 waits for page, annotation, and form snapshots before it reports a completed
 join or sends queued operations. The production relay serializes each
 session's operations, persists accepted state, and only then broadcasts the
-commit. `InMemoryPageRelay` remains as a fast integration-test fixture.
+commit. Integration tests use `InMemoryPageRelay` as a fast relay fixture.
 
 Run `npm run dev:colab` for the end-to-end application. It starts the
 single-viewer session client and Node.js relay. Users create a session from a PDF or
@@ -290,8 +291,8 @@ The implemented application covers:
    `AFSimple_Calculate` references and calculation order;
 8. apply remote changes without echoing or polluting local undo.
 
-Presence, permissions, durable storage, invite expiry, and final server-side PDF
-generation follow after this data path is proven.
+User accounts, read-only roles, audit-log retention, administrative deletion,
+and final server-side PDF generation are outside the current application scope.
 
 ## Current semantics and remaining decisions
 
@@ -302,8 +303,7 @@ The following semantics affect the data model and should not be left implicit:
   `PdfPage` proxy may share underlying annotation state, so materialization or a
   placement-level annotation overlay is required.
 - **Last-page removal.** The engine currently rejects an empty arrangement.
-  Recommended: keep the application invariant of at least one page for the
-  first version.
+  Keep the application invariant of at least one page.
 - **Page removal.** Recommended: retain the removed placement and its annotation
   state in the operation history so an authorized undo can restore both.
 - **Concurrent annotation edits.** Recommended: reject stale per-annotation

@@ -2,8 +2,7 @@
 
 This workspace is a deployable single-viewer collaboration application, not a
 two-pane demo. It contains a static React client, a Node.js WebSocket/HTTP
-relay, durable session/PDF storage, and member-approved admission. The relay
-and the old in-memory integration-test fixture remain application code.
+relay, durable session/PDF storage, and member-approved admission.
 
 No deployment hostname, public path, or production port is committed here.
 Every deployment-specific value is supplied through environment variables.

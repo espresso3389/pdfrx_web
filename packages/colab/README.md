@@ -3,9 +3,10 @@
 Collaborative PDF editing for the
 [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) viewer family.
 
-`@pdfrx/colab` provides a ready-made React viewer, a strict-revision browser
-client, shared page/annotation/form protocols, stable virtual-page adapters,
-and mixed-source PDF export. Each participant renders and mutates its own local
+`@pdfrx/colab` provides a ready-made React viewer, a browser client that keeps
+participants synchronized through ordered, revision-checked operations, shared
+page/annotation/form protocols, stable virtual-page adapters, and mixed-source
+PDF export. Each participant renders and mutates its own local
 [`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html);
 the relay sequences small semantic operations instead of
 streaming rendered pages or repeatedly transferring the complete PDF.
@@ -46,8 +47,8 @@ and `/relay` routes to that process.
 The deployable implementation lives in
 [`examples/colab/server`](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab/server).
 It persists session state and PDF sources, supports member-approved admission,
-and is configured entirely through environment variables. The old in-memory
-relay remains only as an integration-test fixture.
+and is configured entirely through environment variables. Integration tests use
+the in-memory `startPageRelayServer()` fixture.
 
 For production, deploy an equivalent service yourself and pass its public
 WebSocket URL, for example `wss://relay.example.com/collaboration`. The server

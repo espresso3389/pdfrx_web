@@ -10,7 +10,7 @@ things pdfrx_web has that pdfrx lacks.
 
 **Legend**
 
-- ✅ Implemented — ported since this document was first written.
+- ✅ Implemented — available in pdfrx_web.
 - ❌ Not implemented — a candidate to port.
 - ◐ Partial — a narrower version exists; details in Notes.
 - ⏸️ Intentionally not ported — Flutter-specific, web-inapplicable, or a
