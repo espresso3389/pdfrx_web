@@ -1124,6 +1124,8 @@ const FREE_TEXT_MIN_SCREEN_HEIGHT = 48;
 /** Minimum on-screen dimensions for click/short-drag geometry tools. */
 const SHAPE_MIN_SCREEN_SIZE = 72;
 const LINE_MIN_SCREEN_LENGTH = 96;
+/** Pointer travel required before an ink gesture becomes an annotation. */
+const INK_MIN_SCREEN_LENGTH = 2;
 
 /** Expands a y-down drag rectangle to a minimum size and keeps it inside the page. */
 function minimumDrawRect(a: Offset, b: Offset, minWidth: number, minHeight: number, bounds: Size): Rect {
@@ -6002,8 +6004,10 @@ export class PdfrxViewer {
     };
     switch (s.tool) {
       case 'ink': {
-        if (s.points.length < 2) return null;
-        const stroke = s.points.map(toPdf);
+        const points = [...s.points, end];
+        const minimum = INK_MIN_SCREEN_LENGTH / this.transform.zoom;
+        if (points.every((point) => Math.hypot(point.x - start.x, point.y - start.y) < minimum)) return null;
+        const stroke = points.map(toPdf);
         return { subtype: 'ink', rect: bboxOfPoints(stroke), color, borderWidth, geometry: { kind: 'ink', strokes: [stroke] } };
       }
       case 'line': {
