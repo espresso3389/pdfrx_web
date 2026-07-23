@@ -113,6 +113,9 @@ export class InMemoryPageRelay {
           }
           return;
         }
+        if (message.type === 'session.approve' || message.type === 'session.reject') {
+          throw new RelayRequestError('unsupported-message', 'The in-memory test relay does not manage admission');
+        }
         let committed: ServerRelayMessage;
         if (message.type === 'page.operation') {
           const result = commitPageOperation(joined.session.snapshot, message.request);

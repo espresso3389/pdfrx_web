@@ -24,10 +24,10 @@ Dependency order (build and publish must respect it):
 Examples live in `examples/basic` (vanilla), `examples/react`, and
 `examples/colab`. They are private (`"private": true`) and never published.
 
-The two-viewer collaboration example and reference relay live in
-`examples/colab`. They are private and non-published; the reusable browser
-client, protocol, adapter, export composer, and React component live in the
-published `@pdfrx/colab` package.
+The deployable single-viewer collaboration app, persistent Bun relay, and
+reference test relay live in `examples/colab`. They are private and
+non-published; the reusable browser client, protocol, adapter, export composer,
+and React component live in the published `@pdfrx/colab` package.
 
 ## Commands
 
@@ -38,7 +38,7 @@ npm test             # vitest: viewer-core + react + colab + colab example
 npm run test:visual  # Playwright: PDFium vs SVG annotation pixel diffs
 npm run dev          # examples/basic  (http://localhost:5173)
 npm run dev:react    # examples/react  (http://localhost:5173)
-npm run dev:colab    # two-viewer collaboration example + WS relay
+npm run dev:colab    # single-viewer collaboration app + Bun relay
 npm run docs         # typedoc -> docs-site/
 npm run build:pages  # build + docs + static Pages-compatible examples + assemble
 ```
@@ -61,7 +61,7 @@ started by the current task—never terminate a pre-existing development server.
 All Vite configs set a fixed port with `strictPort: true`. This is intentional:
 an `npm run dev*` command must fail visibly on a conflict instead of silently
 starting on 5174 (or another port) and leaving multiple servers behind. The
-colab script also owns its reference relay on port 5191; do not start a
+colab script also owns its Bun relay on port 5191; do not start a
 second relay separately.
 
 Per-package: `npm run build --workspace=@pdfrx/<name>` and

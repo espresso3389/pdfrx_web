@@ -6,10 +6,14 @@
 
 .collab-pane * { box-sizing: border-box; }
 .collab-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ccd5e3; border-radius: 10px; background: white; box-shadow: 0 5px 18px rgb(28 45 75 / 8%); }
-.collab-pane-header { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-bottom: 1px solid #e2e7ef; }
 .collab-status { color: #8a94a6; font-size: 12px; }
 .collab-status.connected { color: #138a54; }
-.collab-viewer-body { min-height: 0; flex: 1; display: flex; }
+.collab-join-request { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #f3d89b; color: #704d00; background: #fff8e8; font-size: 12px; }
+.collab-join-request button { flex: none; padding: 5px 9px; border: 0; border-radius: 6px; color: white; background: #b7791f; cursor: pointer; }
+.collab-join-actions { display: flex; gap: 6px; }
+.collab-join-request button.reject { color: #704d00; background: #f3e1b9; }
+.collab-viewer-body { min-height: 0; flex: 1; display: flex; overflow: hidden; touch-action: none; overscroll-behavior: none; }
 .collab-annotation-toolbar { min-height: 38px; padding-block: 3px; }
-.collab-error { padding: 6px 10px; background: #fff0f0; color: #b42318; font-size: 12px; }
-.collab-activity { display: flex; gap: 10px; min-height: 30px; padding: 7px 10px; overflow-x: auto; border-top: 1px solid #e2e7ef; color: #667085; font-size: 11px; white-space: nowrap; }
+.collab-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px; background: #fff0f0; color: #b42318; font-size: 12px; }
+.collab-error button { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; color: inherit; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; }
+.collab-error button:hover { background: rgba(180, 35, 24, .1); }

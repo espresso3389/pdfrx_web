@@ -16,7 +16,15 @@ import type {
 
 /** Messages accepted from a browser client by the reference relay. */
 export type ClientRelayMessage =
-  | { readonly type: 'session.join'; readonly sessionId: string }
+  | {
+      readonly type: 'session.join';
+      readonly sessionId: string;
+      readonly memberToken?: string;
+      readonly actorId?: string;
+      readonly displayName?: string;
+    }
+  | { readonly type: 'session.approve'; readonly sessionId: string; readonly requestId: string }
+  | { readonly type: 'session.reject'; readonly sessionId: string; readonly requestId: string }
   | { readonly type: 'page.operation'; readonly sessionId: string; readonly request: PageOperationRequest }
   | { readonly type: 'annotation.operation'; readonly sessionId: string; readonly request: AnnotationOperationRequest }
   | { readonly type: 'annotation.preview'; readonly sessionId: string; readonly preview: AnnotationPreview }
@@ -27,10 +35,41 @@ export type ServerRelayMessage =
   | { readonly type: 'session.snapshot'; readonly sessionId: string; readonly snapshot: PageSessionSnapshot }
   | { readonly type: 'annotation.snapshot'; readonly sessionId: string; readonly snapshot: AnnotationSessionSnapshot }
   | { readonly type: 'form.snapshot'; readonly sessionId: string; readonly snapshot: FormSessionSnapshot }
+  | { readonly type: 'session.presence'; readonly sessionId: string; readonly connectedCount: number }
   | { readonly type: 'page.committed'; readonly sessionId: string; readonly committed: CommittedPageOperation }
   | { readonly type: 'annotation.committed'; readonly sessionId: string; readonly committed: CommittedAnnotationOperation }
   | { readonly type: 'annotation.preview'; readonly sessionId: string; readonly preview: AnnotationPreview }
   | { readonly type: 'form.committed'; readonly sessionId: string; readonly committed: CommittedFormOperation }
+  | {
+      readonly type: 'session.join.pending';
+      readonly sessionId: string;
+      readonly requestId: string;
+    }
+  | {
+      readonly type: 'session.join.request';
+      readonly sessionId: string;
+      readonly requestId: string;
+      readonly actorId: string;
+      readonly displayName: string;
+    }
+  | {
+      readonly type: 'session.join.approved';
+      readonly sessionId: string;
+      readonly requestId: string;
+      readonly memberToken: string;
+    }
+  | {
+      readonly type: 'session.join.rejected';
+      readonly sessionId: string;
+      readonly requestId: string;
+      readonly retryAfterMs: number;
+    }
+  | {
+      readonly type: 'session.join.resolved';
+      readonly sessionId: string;
+      readonly requestId: string;
+      readonly decision: 'approved' | 'rejected' | 'cancelled';
+    }
   | {
       readonly type: 'operation.rejected';
       readonly sessionId?: string;
@@ -172,7 +211,26 @@ export function parseClientRelayMessage(json: string): ClientRelayMessage {
   if (!isRecord(value) || !isString(value.type) || !isString(value.sessionId)) {
     throw new Error('Invalid relay message');
   }
-  if (value.type === 'session.join') return { type: value.type, sessionId: value.sessionId };
+  if (value.type === 'session.join') {
+    if (
+      (value.memberToken !== undefined && typeof value.memberToken !== 'string') ||
+      (value.actorId !== undefined && typeof value.actorId !== 'string') ||
+      (value.displayName !== undefined && typeof value.displayName !== 'string')
+    ) {
+      throw new Error('Invalid session join');
+    }
+    return {
+      type: value.type,
+      sessionId: value.sessionId,
+      ...(typeof value.memberToken === 'string' ? { memberToken: value.memberToken } : {}),
+      ...(typeof value.actorId === 'string' ? { actorId: value.actorId } : {}),
+      ...(typeof value.displayName === 'string' ? { displayName: value.displayName } : {}),
+    };
+  }
+  if (value.type === 'session.approve' || value.type === 'session.reject') {
+    if (!isString(value.requestId)) throw new Error('Invalid session approval');
+    return { type: value.type, sessionId: value.sessionId, requestId: value.requestId };
+  }
   if (value.type === 'page.operation') {
     return { type: value.type, sessionId: value.sessionId, request: parseRequest(value.request) };
   }

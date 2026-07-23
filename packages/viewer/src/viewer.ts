@@ -1355,6 +1355,10 @@ export class PdfrxViewer {
     this.#engine = options.engine ?? new PdfrxEngine(options.engineOptions ?? { wasmModulesUrl: 'pdfium/' });
     this.ownsEngine = !options.engine;
     this.layoutDirectionValue = options.layoutDirection ?? 'vertical';
+    this.previousContainerTouchAction = container.style.touchAction;
+    this.previousContainerOverscrollBehavior = container.style.overscrollBehavior;
+    container.style.touchAction = 'none';
+    container.style.overscrollBehavior = 'none';
 
     if (!container.style.position && getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -1407,11 +1411,21 @@ export class PdfrxViewer {
     // originating there bubble to the host but can never reach the sibling
     // canvas beneath it.
     this.container.addEventListener('wheel', this.onWheel, { passive: false, capture: true });
+    // iOS Safari can disregard `touch-action` when the gesture starts on a
+    // positioned overlay or at the viewport edge. Cancelling native touchmove
+    // at the shared host keeps pan and pinch inside the viewer.
+    this.container.addEventListener('touchmove', this.onNativeTouchMove, { passive: false, capture: true });
+    this.container.addEventListener('pointerdown', this.onSelectGesturePointerDown, { capture: true });
+    this.container.addEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
+    this.container.addEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
+    this.container.addEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
     this.canvas.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   private readonly container: HTMLElement;
+  private readonly previousContainerTouchAction: string;
+  private readonly previousContainerOverscrollBehavior: string;
   private readonly options: PdfrxViewerOptions;
   readonly #engine: PdfrxEngine;
   private readonly ownsEngine: boolean;
@@ -2365,6 +2379,13 @@ export class PdfrxViewer {
     this.clearFormOverlays();
     this.clearAnnotationOverlays();
     this.container.removeEventListener('wheel', this.onWheel, { capture: true });
+    this.container.removeEventListener('touchmove', this.onNativeTouchMove, { capture: true });
+    this.container.removeEventListener('pointerdown', this.onSelectGesturePointerDown, { capture: true });
+    this.container.removeEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
+    this.container.removeEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
+    this.container.removeEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
+    this.container.style.touchAction = this.previousContainerTouchAction;
+    this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
     void this.doc?.dispose();
     if (this.ownsEngine) this.#engine.dispose();
@@ -3483,6 +3504,103 @@ export class PdfrxViewer {
         yZoomed: this.transform.yZoomed - dy,
       });
     }
+  };
+
+  private readonly onNativeTouchMove = (event: TouchEvent): void => {
+    if (event.cancelable) event.preventDefault();
+  };
+
+  private readonly selectTouchPoints = new Map<number, {
+    point: Offset;
+    target: EventTarget;
+  }>();
+  private selectTouchGesture: {
+    pointers: readonly [number, number];
+    startDistance: number;
+    startZoom: number;
+    startDocCenter: Offset;
+  } | null = null;
+  private cancellingSelectTouch = false;
+
+  private readonly onSelectGesturePointerDown = (event: PointerEvent): void => {
+    if (this.cancellingSelectTouch || event.pointerType !== 'touch' || !this.isAnnotationSelectMode()) return;
+    this.selectTouchPoints.set(event.pointerId, {
+      point: this.localPoint(event),
+      target: event.target ?? this.canvas,
+    });
+    if (this.selectTouchGesture || this.selectTouchPoints.size !== 2) return;
+    const entries = [...this.selectTouchPoints.entries()];
+    const first = entries[0];
+    const second = entries[1];
+    if (!first || !second) return;
+
+    // The first finger may already be moving an annotation or marquee. End
+    // that single-finger interaction before the two-finger viewport gesture
+    // takes ownership of both pointers.
+    this.cancellingSelectTouch = true;
+    try {
+      first[1].target.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        pointerId: first[0],
+        pointerType: 'touch',
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }));
+    } finally {
+      this.cancellingSelectTouch = false;
+    }
+
+    const p0 = first[1].point;
+    const p1 = second[1].point;
+    const center = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+    this.selectTouchGesture = {
+      pointers: [first[0], second[0]],
+      startDistance: Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), 1),
+      startZoom: this.transform.zoom,
+      startDocCenter: viewToDocument(this.transform, center),
+    };
+    this.stopFling();
+    this.stopAnimation();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  private readonly onSelectGesturePointerMove = (event: PointerEvent): void => {
+    const gesture = this.selectTouchGesture;
+    if (!gesture || event.pointerType !== 'touch' || !gesture.pointers.includes(event.pointerId)) return;
+    const tracked = this.selectTouchPoints.get(event.pointerId);
+    if (tracked) tracked.point = this.localPoint(event);
+    const p0 = this.selectTouchPoints.get(gesture.pointers[0])?.point;
+    const p1 = this.selectTouchPoints.get(gesture.pointers[1])?.point;
+    if (p0 && p1) {
+      const distance = Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), 1);
+      const center = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+      const zoom = this.options.zoomEnabled === false
+        ? gesture.startZoom
+        : Math.min(
+            Math.max((gesture.startZoom * distance) / gesture.startDistance, this.minZoom),
+            this.maxZoom,
+          );
+      this.setTransform({
+        zoom,
+        xZoomed: center.x - gesture.startDocCenter.x * zoom,
+        yZoomed: center.y - gesture.startDocCenter.y * zoom,
+      });
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  private readonly onSelectGesturePointerUp = (event: PointerEvent): void => {
+    if (this.cancellingSelectTouch || event.pointerType !== 'touch') return;
+    const owned = this.selectTouchGesture?.pointers.includes(event.pointerId) ?? false;
+    this.selectTouchPoints.delete(event.pointerId);
+    if (owned) {
+      this.selectTouchGesture = null;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    if (this.selectTouchPoints.size === 0) this.selectTouchGesture = null;
   };
 
   /** Document-space distance scrolled per arrow-key press (view px). */

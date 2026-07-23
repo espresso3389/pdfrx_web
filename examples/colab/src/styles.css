@@ -1,13 +1,57 @@
-.collab-app { box-sizing: border-box; display: flex; flex-direction: column; height: 100%; padding: 16px; gap: 14px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #edf1f7; }
-.collab-app * { box-sizing: border-box; }
-.collab-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.collab-header h1 { margin: 0; font-size: 20px; }
-.collab-header p { margin: 3px 0 0; color: #667085; font-size: 13px; }
-.collab-session { padding: 6px 10px; border-radius: 999px; background: #dbe6ff; color: #2855a6; font-size: 12px; }
-.collab-grid { min-height: 0; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-
-@media (max-width: 900px) {
-  .collab-app { height: auto; min-height: 100%; }
-  .collab-grid { grid-template-columns: 1fr; }
-  .collab-pane { height: 720px; }
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #edf1f7; }
+html, body, #root { width: 100%; height: 100%; margin: 0; overscroll-behavior: none; }
+* { box-sizing: border-box; }
+button, input { font: inherit; }
+.session-gate { min-height: 100%; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 10%, #dce8ff, transparent 32%), #edf1f7; }
+.session-card { width: min(480px, 100%); padding: 30px; border: 1px solid #d8dee9; border-radius: 20px; background: #fff; box-shadow: 0 18px 60px rgba(32, 48, 78, .13); }
+.brand { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+.brand-mark { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; color: #fff; background: #2563eb; font-size: 24px; font-weight: 750; }
+.brand h1 { margin: 0; font-size: 21px; }
+.brand p { margin: 4px 0 0; color: #667085; font-size: 13px; }
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 22px; border-radius: 11px; background: #f0f3f8; }
+.mode-tabs button { padding: 9px; border: 0; border-radius: 8px; color: #667085; background: transparent; cursor: pointer; }
+.mode-tabs button.active { color: #1d4ed8; background: #fff; box-shadow: 0 1px 4px rgba(32, 48, 78, .12); font-weight: 650; }
+.invited-session-heading { display: grid; gap: 4px; padding: 12px 14px; margin-bottom: 22px; border-radius: 11px; background: #f0f3f8; }
+.invited-session-heading span { color: #667085; font-size: 11px; }
+.invited-session-heading strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.session-card form { display: grid; gap: 16px; }
+.session-card label { display: grid; gap: 7px; font-size: 13px; font-weight: 650; }
+.label-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.label-heading small { color: #7a8498; font-size: 11px; font-weight: 400; }
+.session-card input { min-width: 0; padding: 11px 12px; border: 1px solid #cfd7e5; border-radius: 9px; color: #172033; background: #fff; }
+.session-card input:read-only { color: #667085; background: #f4f7fb; cursor: default; }
+.session-card input:focus { outline: 3px solid #dbeafe; border-color: #3b82f6; }
+.gate-status { min-height: 42px; padding: 11px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+.gate-status.neutral { color: #7a8498; background: #f4f7fb; }
+.gate-status.waiting { color: #704d00; background: #fff8e8; }
+.gate-status.rejected { color: #b42318; background: #fef3f2; }
+.primary-button { padding: 12px 16px; border: 0; border-radius: 10px; color: #fff; background: #2563eb; font-weight: 700; cursor: pointer; }
+.primary-button:disabled { opacity: .55; cursor: wait; }
+.collab-app { height: 100%; display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow: hidden; overscroll-behavior: none; background: #edf1f7; }
+.collab-header { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.collab-header h1 { min-width: 0; margin: 0; overflow: hidden; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.session-actions { flex: none; display: flex; align-items: center; gap: 9px; }
+.connection-summary { display: flex; align-items: center; gap: 6px; color: #667085; font-size: 12px; white-space: nowrap; }
+.connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; box-shadow: 0 0 0 3px rgba(152, 162, 179, .15); }
+.connection-summary.connected .connection-dot { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, .15); }
+.connection-summary.connecting .connection-dot { background: #f79009; box-shadow: 0 0 0 3px rgba(247, 144, 9, .15); }
+.elapsed-time { padding-left: 6px; border-left: 1px solid #cfd7e5; }
+.invite-link-button, .user-name-button { padding: 5px 8px; border: 0; border-radius: 7px; color: #2563eb; background: transparent; cursor: pointer; }
+.invite-link-button:hover, .user-name-button:hover { background: #e4ebf7; }
+.current-user { display: flex; align-items: center; gap: 6px; }
+.user-avatar { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #2563eb; font-size: 12px; font-weight: 750; }
+.user-name-button { max-width: 180px; overflow: hidden; color: #344054; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.current-user input { width: 150px; padding: 5px 7px; border: 1px solid #93b4ef; border-radius: 7px; background: #fff; }
+.current-user input:focus { outline: 2px solid #bfdbfe; }
+.leave-button { padding: 7px 12px; border: 1px solid #cbd3df; border-radius: 8px; color: #344054; background: #fff; cursor: pointer; }
+.reconnecting-banner { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 9px 12px; border: 1px solid #f5d38a; border-radius: 9px; color: #704d00; background: #fff8e8; font-size: 13px; }
+.reconnecting-spinner { width: 14px; height: 14px; border: 2px solid rgba(112, 77, 0, .25); border-top-color: #a66b00; border-radius: 50%; animation: reconnecting-spin .8s linear infinite; }
+@keyframes reconnecting-spin { to { transform: rotate(360deg); } }
+@media (max-width: 680px) {
+  .collab-header { align-items: flex-start; }
+  .session-actions { gap: 4px; }
+  .elapsed-time { display: none; }
+  .invite-link-button { font-size: 12px; }
+  .user-name-button { max-width: 90px; }
 }
+.collab-app > .collab-pane { min-height: 0; flex: 1; }

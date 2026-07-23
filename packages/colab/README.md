@@ -30,22 +30,24 @@ For local development in this repository, run:
 npm run dev:colab
 ```
 
-That command starts both the Vite example at `http://localhost:5173` and the
-reference in-memory relay at `ws://localhost:5191`. The example therefore uses:
+That command starts the Vite client at `http://localhost:5173` and the
+persistent Bun relay at `http://localhost:5191`. Vite proxies its local `/api`
+and `/relay` routes to that process.
 
 ```tsx
 <CollaborativePdfViewer
-  relayUrl="ws://localhost:5191"
-  sessionId="demo"
+  relayUrl="ws://localhost:5173/relay"
+  sessionId={sessionId}
+  memberToken={memberToken}
   // ...
 />
 ```
 
-The reference implementation lives in
-[`examples/colab/src/relay-server.ts`](https://github.com/espresso3389/pdfrx_web/blob/master/examples/colab/src/relay-server.ts).
-It is deliberately an example rather than a package export: it keeps sessions
-and uploaded PDFs only in memory and has no authentication, authorization, or
-durable storage.
+The deployable implementation lives in
+[`examples/colab/server`](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab/server).
+It persists session state and PDF sources, supports member-approved admission,
+and is configured entirely through environment variables. The old in-memory
+relay remains only as an integration-test fixture.
 
 For production, deploy an equivalent service yourself and pass its public
 WebSocket URL, for example `wss://relay.example.com/collaboration`. The server
@@ -202,6 +204,7 @@ for the complete source definition.
 | `actorId` | `string` | Stable participant ID attached to submitted operations. |
 | `relayUrl` | `string` | Application-hosted `ws:`/`wss:` endpoint described in [Provide a relay](#before-you-start-provide-a-relay). |
 | `sessionId` | `string` | Shared room/session identifier. Treat it as untrusted input, not authorization. |
+| `memberToken` | `string?` | Device-specific membership token issued after approval and never appended to the URL. |
 | `src` | `string \| URL \| ArrayBuffer \| Uint8Array \| Blob` | Initial PDF registered as the session's `main` source. |
 | `name` | `string?` | Accessible display label; defaults to `actorId`. |
 | `wasmModulesUrl` | `string?` | Directory containing `pdfium_worker.js` and `pdfium.wasm`; defaults to `/pdfium/`. |
@@ -254,6 +257,9 @@ Pages, annotations, and forms use independent monotonic revision streams. The
 client sends one operation per stream at a time and resolves its promise only
 after receiving the relay's authoritative commit. It does not optimistically
 apply a second copy of an operation that the local viewer already performed.
+Joining completes only after page, annotation, and form snapshots have all
+arrived. The ready-made viewer automatically reconnects and rejoins after a
+completed connection is interrupted.
 
 Annotation movement and resizing additionally use best-effort transient
 previews. They are broadcast to the other participants without consuming an

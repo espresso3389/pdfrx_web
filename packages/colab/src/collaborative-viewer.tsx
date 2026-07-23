@@ -14,21 +14,26 @@ import {
   usePdfDocument,
   usePdfrxViewer,
 } from '@pdfrx/react';
-import type { PdfAnnotationChange, PdfDocument, PdfFormField, PdfFormFieldValue } from '@pdfrx/engine';
+import type {
+  PdfAnnotationChange,
+  PdfAnnotationSnapshot,
+  PdfDocument,
+  PdfFormField,
+  PdfFormFieldValue,
+} from '@pdfrx/engine';
 import type { PagePlacementOperation } from '@pdfrx/viewer-core';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   fetchRelaySource,
   PageCollaborationClient,
   uploadRelaySource,
+  type CollaborationConnectionState,
   type CollaborationTransport,
 } from './client.js';
 import { applyPagePlacementsToViewer, PageSourceRegistry } from './page-adapter.js';
 import { encodeCollaborativePdf } from './export-composer.js';
 import type { PageSessionSnapshot } from './protocol.js';
-import type { CommittedPageOperation } from './protocol.js';
 import {
-  describePageOperation,
   movePlacementToIndex,
   rotatePlacement,
 } from './ui-operations.js';
@@ -53,6 +58,12 @@ export interface CollaborativePdfViewerProps {
   readonly relayUrl: string;
   /** Shared session identifier. */
   readonly sessionId: string;
+  /** Device-specific membership token issued when this participant was admitted. */
+  readonly memberToken?: string;
+  /** Reports relay connection lifecycle changes. */
+  readonly onConnectionStateChange?: (state: CollaborationConnectionState) => void;
+  /** Reports the number of participants currently connected. */
+  readonly onPresenceChange?: (connectedCount: number) => void;
   /** Accessible participant label shown in the built-in chrome. */
   readonly name?: string;
   /** Initial PDF used for the session's `main` source. */
@@ -78,6 +89,9 @@ export function CollaborativePdfViewer({
   actorId,
   relayUrl,
   sessionId,
+  memberToken,
+  onConnectionStateChange,
+  onPresenceChange,
   src,
   wasmModulesUrl = '/pdfium/',
   className,
@@ -99,6 +113,9 @@ export function CollaborativePdfViewer({
           actorId={actorId}
           relayUrl={relayUrl}
           sessionId={sessionId}
+          memberToken={memberToken}
+          onConnectionStateChange={onConnectionStateChange}
+          onPresenceChange={onPresenceChange}
           transport={transport}
         />
       </PdfrxProvider>
@@ -111,12 +128,18 @@ function CollaborativeViewerContent({
   actorId,
   relayUrl,
   sessionId,
+  memberToken,
+  onConnectionStateChange,
+  onPresenceChange,
   transport,
 }: {
   name: string;
   actorId: string;
   relayUrl: string;
   sessionId: string;
+  memberToken?: string;
+  onConnectionStateChange?: (state: CollaborationConnectionState) => void;
+  onPresenceChange?: (connectedCount: number) => void;
   transport?: CollaborationTransport;
 }): ReactNode {
   const viewer = usePdfrxViewer();
@@ -124,9 +147,12 @@ function CollaborativeViewerContent({
   const [snapshot, setSnapshot] = useState<PageSessionSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [activity, setActivity] = useState<readonly CommittedPageOperation[]>([]);
-  const [annotationRevision, setAnnotationRevision] = useState(0);
   const [annotating, setAnnotating] = useState(true);
+  const [joinRequests, setJoinRequests] = useState<readonly {
+    requestId: string;
+    actorId: string;
+    displayName: string;
+  }[]>([]);
   const clientRef = useRef<PageCollaborationClient | null>(null);
   const sourcesRef = useRef<PageSourceRegistry | null>(null);
   const sourceDocumentsRef = useRef<PdfDocument[]>([]);
@@ -167,6 +193,7 @@ function CollaborativeViewerContent({
     sourcesRef.current = sources;
     let active = true;
     const formValues = new Map<string, PdfFormFieldValue>();
+    const formDefaults = new Map<string, PdfFormFieldValue>();
     const formObservers = new Map<string, () => void>();
     const applyingRemoteForms = new WeakSet<PdfDocument>();
     const formKey = (documentId: string, fieldName: string): string => `${documentId}\u0000${fieldName}`;
@@ -176,6 +203,7 @@ function CollaborativeViewerContent({
         if (!field.name) continue;
         const key = formKey(documentId, field.name);
         const value = formFieldValue(field);
+        if (!formDefaults.has(key)) formDefaults.set(key, value);
         const previous = formValues.get(key);
         formValues.set(key, value);
         if (publish && !sameFormValue(previous, value)) {
@@ -198,7 +226,7 @@ function CollaborativeViewerContent({
     observeSourceFormsRef.current = observeSourceForms;
     observeSourceForms('main', document);
     let applying = Promise.resolve();
-    const unsubscribe = client.subscribe((next, committed) => {
+    const unsubscribe = client.subscribe((next) => {
       applying = applying.then(async () => {
         const documentIds = new Set(next.pages.map((page) => page.source.documentId));
         await Promise.all([...documentIds].filter((id) => !sources.has(id)).map(ensureSource));
@@ -209,7 +237,6 @@ function CollaborativeViewerContent({
           recordHistory: false,
         });
         setSnapshot(next);
-        if (committed) setActivity((items) => [committed, ...items].slice(0, 4));
         setError(null);
       }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
@@ -217,11 +244,25 @@ function CollaborativeViewerContent({
     const unsubscribeAnnotations = client.subscribeAnnotations((annotationSnapshot, committed) => {
       applyingAnnotations = applyingAnnotations.then(async () => {
         if (!active) return;
-        setAnnotationRevision(annotationSnapshot.revision);
         if (committed?.actorId === actorId) return;
+        if (!committed) {
+          const annotations: PdfAnnotationSnapshot['annotations'][number][] = [];
+          for (const record of annotationSnapshot.annotations) {
+            const pageIndex = client.snapshot?.pages.findIndex((page) => page.placementId === record.placementId) ?? -1;
+            if (pageIndex < 0) continue;
+            const spec = structuredClone(record.spec);
+            await viewer.prepareAnnotationAppearance(spec);
+            annotations.push({ id: record.id, pageNumber: pageIndex + 1, spec });
+          }
+          await document.restoreAnnotations(
+            { version: 1, annotations },
+            { mode: 'replace', origin: 'remote', transactionId: 'annotation-snapshot' },
+          );
+          return;
+        }
         const records = committed
           ? [committed.change]
-          : annotationSnapshot.annotations.map((item) => ({ ...item, type: 'add' as const }));
+          : [];
         const changes: PdfAnnotationChange[] = [];
         for (const record of records) {
           const pageIndex = client.snapshot?.pages.findIndex((page) => page.placementId === record.placementId) ?? -1;
@@ -256,7 +297,32 @@ function CollaborativeViewerContent({
     const unsubscribeForms = client.subscribeForms((formSnapshot, committed) => {
       applyingForms = applyingForms.then(async () => {
         if (!active || committed?.actorId === actorId) return;
-        const records = committed ? [committed.change] : formSnapshot.fields;
+        if (!committed) {
+          const authoritative = new Map(
+            formSnapshot.fields.map((record) => [formKey(record.documentId, record.fieldName), record.value]),
+          );
+          const documentIds = new Set(client.snapshot?.pages.map((page) => page.source.documentId) ?? ['main']);
+          for (const documentId of documentIds) {
+            const sourceDocument = await ensureSource(documentId);
+            const fields = await sourceDocument.loadFormFields();
+            applyingRemoteForms.add(sourceDocument);
+            try {
+              for (const field of fields) {
+                if (!field.name) continue;
+                const key = formKey(documentId, field.name);
+                const current = formFieldValue(field);
+                if (!formDefaults.has(key)) formDefaults.set(key, current);
+                const value = authoritative.get(key) ?? formDefaults.get(key) ?? current;
+                if (!sameFormValue(current, value)) await sourceDocument.setFormFieldValue(field.name, value);
+                formValues.set(key, value);
+              }
+            } finally {
+              applyingRemoteForms.delete(sourceDocument);
+            }
+          }
+          return;
+        }
+        const records = [committed.change];
         for (const record of records) {
           const sourceDocument = await ensureSource(record.documentId);
           applyingRemoteForms.add(sourceDocument);
@@ -269,6 +335,21 @@ function CollaborativeViewerContent({
         }
       }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
+    const unsubscribeJoinRequests = client.subscribeJoinRequests((request) => {
+      setJoinRequests((items) => [
+        ...items.filter((item) => item.actorId !== request.actorId),
+        { requestId: request.requestId, actorId: request.actorId, displayName: request.displayName },
+      ]);
+    });
+    const unsubscribeJoinResolutions = client.subscribeJoinRequestResolutions((requestId) => {
+      setJoinRequests((items) => items.filter((item) => item.requestId !== requestId));
+    });
+    const unsubscribeConnectionState = onConnectionStateChange
+      ? client.subscribeConnectionState(onConnectionStateChange)
+      : undefined;
+    const unsubscribePresence = onPresenceChange
+      ? client.subscribePresence(onPresenceChange)
+      : undefined;
     const unsubscribeLocalAnnotations = document.addEventListener('annotationsChanged', (event) => {
       if (event.origin === 'remote') return;
       void (async () => {
@@ -295,7 +376,7 @@ function CollaborativeViewerContent({
       });
       client.sendAnnotationPreview(shared);
     });
-    void client.connect(relayUrl, sessionId).catch((reason: unknown) => {
+    void client.connect(relayUrl, sessionId, { memberToken, displayName: name, reconnect: true }).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason));
     });
     return () => {
@@ -304,6 +385,10 @@ function CollaborativeViewerContent({
       unsubscribeAnnotations();
       unsubscribeAnnotationPreviews();
       unsubscribeForms();
+      unsubscribeJoinRequests();
+      unsubscribeJoinResolutions();
+      unsubscribeConnectionState?.();
+      unsubscribePresence?.();
       unsubscribeLocalAnnotations();
       unsubscribeLocalAnnotationPreviews();
       for (const unsubscribeFormObserver of formObservers.values()) unsubscribeFormObserver();
@@ -315,7 +400,18 @@ function CollaborativeViewerContent({
       for (const sourceDocument of sourceDocumentsRef.current.splice(0)) void sourceDocument.dispose();
       sourceOpensRef.current.clear();
     };
-  }, [actorId, documentState.isLoading, ensureSource, transport, viewer, viewer?.document]);
+  }, [
+    actorId,
+    documentState.isLoading,
+    ensureSource,
+    memberToken,
+    name,
+    onConnectionStateChange,
+    onPresenceChange,
+    transport,
+    viewer,
+    viewer?.document,
+  ]);
 
   const submit = useCallback(async (operation: PagePlacementOperation): Promise<void> => {
     setPending(true);
@@ -410,12 +506,19 @@ function CollaborativeViewerContent({
   const connected = snapshot !== null && !pending;
   return (
     <>
-      <div className="collab-pane-header">
-        <strong>{name}</strong>
-        <span className={snapshot ? 'collab-status connected' : 'collab-status'}>
-          {snapshot ? `connected · pages ${snapshot.revision} · notes ${annotationRevision}` : 'connecting…'}
-        </span>
-      </div>
+      {joinRequests.map((request) => (
+        <div className="collab-join-request" key={request.requestId}>
+          <span>{request.displayName} さんが参加を希望しています</span>
+          <span className="collab-join-actions">
+            <button type="button" onClick={() => clientRef.current?.approveJoin(request.requestId)}>
+              参加を承認
+            </button>
+            <button type="button" className="reject" onClick={() => clientRef.current?.rejectJoin(request.requestId)}>
+              拒否
+            </button>
+          </span>
+        </div>
+      ))}
       <PdfToolbar
         beforeSearch={(
           <button
@@ -468,7 +571,12 @@ function CollaborativeViewerContent({
           />
         </div>
       )}
-      {error && <div className="collab-error" role="alert">{error}</div>}
+      {error && (
+        <div className="collab-error" role="alert">
+          <span>{error}</span>
+          <button type="button" aria-label="エラーを閉じる" onClick={() => setError(null)}>×</button>
+        </div>
+      )}
       <div className="collab-viewer-body">
         <PdfSidebar
           tabs={['thumbnails']}
@@ -486,13 +594,6 @@ function CollaborativeViewerContent({
           onInsertFiles={connected ? (files, index) => void insertFiles(files, index) : undefined}
         />
         <PdfViewerSurface style={{ flex: 1, minWidth: 0 }} />
-      </div>
-      <div className="collab-activity" aria-label={`${name}: 操作履歴`}>
-        {activity.length === 0
-          ? <span>確定操作はまだありません</span>
-          : activity.map((item) => (
-              <span key={item.operationId}>rev {item.revision} · {item.actorId}: {describePageOperation(item.operation)}</span>
-            ))}
       </div>
     </>
   );

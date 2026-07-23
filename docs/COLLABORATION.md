@@ -2,8 +2,9 @@
 
 This document records the boundary between the reusable `@pdfrx/*` packages
 and the collaborative PDF application in this repository. The browser-side
-integration is published as `@pdfrx/colab`; the reference relay and two-viewer
-example remain in the private `examples/colab` workspace.
+integration is published as `@pdfrx/colab`; the deployable single-viewer client,
+persistent Bun relay, and reference test fixture remain in the private
+`examples/colab` workspace.
 
 The scope is page arrangement (insert, remove, move, duplicate, and rotate),
 content annotations, presence, and persistence. Editing existing PDF page
@@ -27,11 +28,11 @@ The current stack already supplies most of the local editing machinery:
   a React application to control these features without putting networking in
   the viewer.
 
-The transport and protocol remain application concerns. The prototype exposes
+The transport and protocol remain application concerns. The application exposes
 their React integration as a reusable `CollaborativePdfViewer` component: it
 sends commands to the same engine/viewer mutations used by local UI and applies
-remote commands with a remote origin so they are not echoed. The demo app only
-mounts two instances of this component. See
+remote commands with a remote origin so they are not echoed. The application
+mounts one instance after creating or joining a protected session. See
 [COLLABORATION-PROTOCOL.md](COLLABORATION-PROTOCOL.md) for the complete
 WebSocket envelopes, sequencing rules, rejection codes, transient annotation
 previews, and source-PDF HTTP endpoints.
@@ -55,12 +56,14 @@ owns the physical source page while their change events retain the arrangement's
 1-based page number. Added PDF and image pages are therefore immediately
 annotatable without first materializing the combined document.
 
-The prototype uploads an imported PDF once to the relay under a session-scoped
+The application uploads an imported PDF once to the relay under a session-scoped
 source document ID. Page placements reference that ID and a physical page
 index; each participant downloads and opens a missing source before applying
-the committed placement. The development relay stores source bytes in memory
-and limits each PDF to 50 MiB. Durable storage, authentication, retention,
-content hashing, and malware scanning remain production concerns.
+the committed placement. The Bun relay stores source PDFs on disk, persists
+materialized state using atomic file replacement, admits new devices after any
+connected member approves them, and defaults to a 50 MiB limit.
+Retention, malware scanning, per-user quotas, and multi-instance coordination
+remain production concerns.
 
 ## Shared application model
 
@@ -94,7 +97,7 @@ Network annotations address `placementId`, while the adapter resolves that ID
 to the current 1-based page number immediately before calling the engine.
 Annotation geometry remains in PDF page coordinates.
 
-The prototype now maintains a second authoritative revision stream for
+The protocol maintains a second authoritative revision stream for
 annotations. Exact add, update, and remove changes from `annotationsChanged`
 are converted from page numbers to placement IDs, committed by the relay, and
 converted back against each participant's current arrangement. Remote applies
@@ -243,21 +246,15 @@ turns the session model into engine `PdfPage` proxies, and
 The strict protocol primitive accepts a command only at its declared
 `baseRevision`, assigns the next revision, and applies committed events only in
 sequence. A revision gap is treated as an error; production recovery must
-rejoin for a fresh snapshot rather than guessing at state. `InMemoryPageRelay`
-exposes that primitive over WebSocket for the first
-vertical slice: clients join a session, receive its snapshot, submit one queued
-operation at a time, and receive every committed operation in revision order.
-The relay remains in the private `examples/colab` workspace and intentionally
-has no authentication, invite handling, or
-durable operation log yet; the production relay may become a second private
-workspace when those are added.
+rejoin for a fresh snapshot rather than guessing at state. The browser client
+waits for page, annotation, and form snapshots before it reports a completed
+join or sends queued operations. The production Bun relay serializes each
+session's operations, persists accepted state, and only then broadcasts the
+commit. `InMemoryPageRelay` remains as a fast integration-test fixture.
 
-Run `npm run dev:colab` for the first end-to-end UI. It opens two independent
-React viewer providers (Alice and Bob) against one relay session. Rotate, move,
-remove, insert, replace, and thumbnail drag-reorder commands are submitted to the
-relay first; only committed snapshots are resolved to each client's own
-`PdfDocument` and applied to its viewer. Each pane also shows the latest
-committed operations and actors.
+Run `npm run dev:colab` for the end-to-end application. It starts the
+single-viewer session client and Bun relay. Users create a session from a PDF or
+request admission using its shared URL. Any connected member may approve.
 
 The same integration can be embedded without the demo shell:
 
@@ -276,14 +273,15 @@ import '@pdfrx/colab/styles.css';
 />
 ```
 
-The app's `main.tsx` contains only the demo mount. Component behavior lives in
-the published package, so consumer code does not depend on the two-pane
-demonstration or its Node.js relay implementation.
+The app's `main.tsx` provides session creation/joining and the single-viewer
+shell. Viewer synchronization behavior lives in the published package; the
+Bun server remains application code because authentication, storage, retention,
+and deployment policy belong to the host.
 
-The implemented vertical slice covers:
+The implemented application covers:
 
-1. open one PDF and create an in-memory session;
-2. connect two browser clients to a development relay;
+1. create a durable session from a PDF and receive its first device membership;
+2. join from independent browser clients;
 3. synchronize rotate, move, insert, and remove by placement ID;
 4. synchronize annotation add, update, and remove using exact change metadata;
 5. synchronize typed AcroForm values against source document IDs and field names;

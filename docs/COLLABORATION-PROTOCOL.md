@@ -15,9 +15,12 @@ development implementation, not a production service.
 - Every message has a string `type`. Client messages also have a non-empty
   `sessionId`.
 - A client must send `session.join` after the socket opens and before sending
-  any other message.
+  any other message. An admitted device supplies its `memberToken`. A new
+  device supplies its actor and display name and waits for member approval.
 - A successful join returns three snapshots, in this order:
   `session.snapshot`, `annotation.snapshot`, and `form.snapshot`.
+- The browser client does not report a completed join or send queued operations
+  until all three snapshots have arrived.
 - Sending another `session.join` moves that socket to the named session.
 - Closing the socket removes it from the session. The reference relay stores no
   participant presence.
@@ -76,9 +79,64 @@ happened, and the authoritative commit advances the shared snapshot.
 ```json
 {
   "type": "session.join",
-  "sessionId": "review-123"
+  "sessionId": "review-123",
+  "memberToken": "device-specific random token",
+  "actorId": "user-42",
+  "displayName": "Alice"
 }
 ```
+
+When `memberToken` is absent or invalid, a production relay creates a pending
+request instead of returning snapshots:
+
+```ts
+// Relay -> applicant
+{ type: 'session.join.pending'; sessionId: string; requestId: string }
+
+// Relay -> every currently connected member
+{ type: 'session.join.request'; sessionId: string; requestId: string;
+  actorId: string; displayName: string }
+
+// Any connected member -> relay
+{ type: 'session.approve'; sessionId: string; requestId: string }
+{ type: 'session.reject'; sessionId: string; requestId: string }
+
+// Relay -> applicant
+{ type: 'session.join.approved'; sessionId: string; requestId: string;
+  memberToken: string }
+{ type: 'session.join.rejected'; sessionId: string; requestId: string;
+  retryAfterMs: number }
+
+// Relay -> every connected member after either decision
+{ type: 'session.join.resolved'; sessionId: string; requestId: string;
+  decision: 'approved' | 'rejected' | 'cancelled' }
+
+// Relay -> every connected member when presence changes
+{ type: 'session.presence'; sessionId: string; connectedCount: number }
+```
+
+The applicant resends `session.join` with the issued token and then receives
+the three snapshots. Tokens identify admitted devices, are not placed in the
+shared URL, and are sent to source HTTP endpoints through
+`X-Pdfrx-Member-Token`. Pending requests expire after ten minutes in the Bun
+relay. Approval, rejection, applicant disconnect, and expiry all broadcast a
+resolution so every member removes the corresponding prompt.
+
+After a rejection, the same `sessionId` / `actorId` pair cannot apply again
+until `retryAfterMs` has elapsed. Consecutive rejections increase that delay
+linearly: 5 seconds, 10 seconds, 15 seconds, and so on. The Bun relay enforces
+the cooldown; the client also displays the remaining time.
+
+`session.presence` counts distinct connected `actorId` values, so multiple tabs
+opened by the same participant do not inflate the participant count.
+
+If the relay rejects an operation because its page, annotation, or form
+revision is stale, the browser closes that socket and reconnects. Fresh
+snapshots are then applied authoritatively: page placement is replaced,
+annotations are restored in replace mode (including removal of unsent local
+annotations), and form fields are reset to committed values or their original
+document defaults. This prevents a transient failure from leaving a client in
+a permanently divergent state.
 
 ### Page operation
 
@@ -273,6 +331,9 @@ Known codes include:
 | `invalid-message` | Malformed JSON, envelope, operation, or unknown message type. |
 | `session-not-found` | The requested session does not exist. |
 | `not-joined` | A non-join message was sent before joining that session. |
+| `authentication-failed` | The device membership token is invalid. |
+| `admission-required` | The device has no membership and omitted request metadata. |
+| `join-request-not-found` | The approval request expired or belongs to another session. |
 | `invalid-envelope` | Invalid page protocol ID or revision. |
 | `base-revision-mismatch` | Stale page operation. |
 | `annotation-revision-mismatch` | Stale annotation operation. |
@@ -350,4 +411,3 @@ client A                         relay                         client B
 ```
 
 Only the final committed operation enters the annotation snapshot and PDF.
-

@@ -35,9 +35,10 @@ It renders pages, text selection, links, and search highlights onto a single
 **[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
 React viewer, runs entirely in your browser.
 
-The collaboration source example is in [`examples/colab`](examples/colab/README.md) and
-runs locally with `npm run dev:colab`; it starts the two-viewer UI together with
-its reference WebSocket relay.
+The deployable collaboration application is in
+[`examples/colab`](examples/colab/README.md) and runs locally with
+`npm run dev:colab`; it starts the single-viewer client together with its
+persistent Bun WebSocket relay.
 The relay's JSON messages, strict revision streams, transient drag previews,
 and source-PDF endpoints are specified in
 [`docs/COLLABORATION-PROTOCOL.md`](docs/COLLABORATION-PROTOCOL.md).

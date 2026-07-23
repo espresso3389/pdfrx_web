@@ -42,6 +42,18 @@ export type CollaborationFetch = (input: string | URL, init?: RequestInit) => Pr
 /** Resolves the immutable source endpoint used by the collaboration session. */
 export type RelaySourceUrlResolver = (relayUrl: string, sessionId: string, documentId: string) => string;
 
+/** Credentials sent in the encrypted WebSocket join payload. */
+export interface CollaborationJoinOptions {
+  /** Device-specific membership token. It is never appended to the relay URL. */
+  readonly memberToken?: string;
+  /** Participant display name used for approval requests. */
+  readonly displayName?: string;
+  /** Rejoin automatically after a connection that completed successfully closes. */
+  readonly reconnect?: boolean;
+  /** Delay before automatic reconnection. Defaults to 1500 milliseconds. */
+  readonly reconnectDelayMs?: number;
+}
+
 /**
  * Host-provided transport hooks for authentication and custom relay routing.
  *
@@ -66,6 +78,22 @@ export type AnnotationSessionListener = (snapshot: AnnotationSessionSnapshot, co
 export type AnnotationPreviewListener = (preview: AnnotationPreview) => void;
 /** Receives the current form snapshot and optional incremental commit. */
 export type FormSessionListener = (snapshot: FormSessionSnapshot, committed?: CommittedFormOperation) => void;
+/** Join request shown to already admitted participants. */
+export interface CollaborationJoinRequest {
+  readonly requestId: string;
+  readonly actorId: string;
+  readonly displayName: string;
+}
+/** Receives a pending participant request that any current member may approve. */
+export type CollaborationJoinRequestListener = (request: CollaborationJoinRequest) => void;
+/** Receives the id of a join request resolved by any current member. */
+export type CollaborationJoinResolutionListener = (requestId: string) => void;
+/** Current relay connection lifecycle state. */
+export type CollaborationConnectionState = 'connecting' | 'connected' | 'disconnected';
+/** Receives relay connection lifecycle changes. */
+export type CollaborationConnectionStateListener = (state: CollaborationConnectionState) => void;
+/** Receives the number of participants currently connected to the session. */
+export type CollaborationPresenceListener = (connectedCount: number) => void;
 
 /** Converts a relay WebSocket endpoint into its session source HTTP endpoint. */
 export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: string): string {
@@ -159,6 +187,10 @@ export class PageCollaborationClient {
   readonly #annotationListeners = new Set<AnnotationSessionListener>();
   readonly #annotationPreviewListeners = new Set<AnnotationPreviewListener>();
   readonly #formListeners = new Set<FormSessionListener>();
+  readonly #joinRequestListeners = new Set<CollaborationJoinRequestListener>();
+  readonly #joinResolutionListeners = new Set<CollaborationJoinResolutionListener>();
+  readonly #connectionStateListeners = new Set<CollaborationConnectionStateListener>();
+  readonly #presenceListeners = new Set<CollaborationPresenceListener>();
   readonly #queue: QueuedOperation[] = [];
   #socket: CollaborationWebSocket | null = null;
   #sessionId: string | null = null;
@@ -170,6 +202,10 @@ export class PageCollaborationClient {
   readonly #formQueue: QueuedFormOperation[] = [];
   #formSnapshot: FormSessionSnapshot | null = null;
   #formPending: QueuedFormOperation | null = null;
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  #closedByUser = false;
+  #initialized = false;
+  #connectionState: CollaborationConnectionState = 'disconnected';
 
   constructor(
     /** Stable participant id attached to every submitted operation. */
@@ -223,20 +259,67 @@ export class PageCollaborationClient {
     return () => this.#formListeners.delete(listener);
   }
 
+  /** Subscribes to requests from participants waiting for admission. */
+  subscribeJoinRequests(listener: CollaborationJoinRequestListener): () => void {
+    this.#joinRequestListeners.add(listener);
+    return () => this.#joinRequestListeners.delete(listener);
+  }
+
+  /** Subscribes to approved, rejected, or cancelled join-request resolutions. */
+  subscribeJoinRequestResolutions(listener: CollaborationJoinResolutionListener): () => void {
+    this.#joinResolutionListeners.add(listener);
+    return () => this.#joinResolutionListeners.delete(listener);
+  }
+
+  /** Subscribes to relay connection lifecycle changes. */
+  subscribeConnectionState(listener: CollaborationConnectionStateListener): () => void {
+    this.#connectionStateListeners.add(listener);
+    listener(this.#connectionState);
+    return () => this.#connectionStateListeners.delete(listener);
+  }
+
+  /** Subscribes to the current connected-participant count. */
+  subscribePresence(listener: CollaborationPresenceListener): () => void {
+    this.#presenceListeners.add(listener);
+    return () => this.#presenceListeners.delete(listener);
+  }
+
   /**
    * Opens the relay socket and joins `sessionId`.
    * @returns The initial authoritative page snapshot.
    * @throws `Error` if already connected, the session is invalid, or joining fails.
    */
-  connect(url: string, sessionId: string): Promise<PageSessionSnapshot> {
+  connect(url: string, sessionId: string, options: CollaborationJoinOptions = {}): Promise<PageSessionSnapshot> {
     if (this.#socket) throw new Error('Client is already connected');
     if (sessionId.length === 0) return Promise.reject(new Error('sessionId must not be empty'));
     this.#sessionId = sessionId;
+    this.#closedByUser = false;
+    this.#initialized = false;
+    this.#setConnectionState('connecting');
     const socket = this.createSocket(url);
     this.#socket = socket;
     return new Promise<PageSessionSnapshot>((resolve, reject) => {
       let joined = false;
-      socket.addEventListener('open', () => this.#send({ type: 'session.join', sessionId }));
+      let receivedPages = false;
+      let receivedAnnotations = false;
+      let receivedForms = false;
+      const finishJoin = (): void => {
+        if (joined || !receivedPages || !receivedAnnotations || !receivedForms || !this.#snapshot) return;
+        joined = true;
+        this.#initialized = true;
+        this.#setConnectionState('connected');
+        resolve(this.#snapshot);
+        this.#pump();
+        this.#pumpAnnotations();
+        this.#pumpForms();
+      };
+      socket.addEventListener('open', () => this.#send({
+        type: 'session.join',
+        sessionId,
+        actorId: this.actorId,
+        ...(options.memberToken !== undefined ? { memberToken: options.memberToken } : {}),
+        ...(options.displayName !== undefined ? { displayName: options.displayName } : {}),
+      }));
       socket.addEventListener('message', (event) => {
         try {
           const data = (event as MessageEvent).data;
@@ -245,20 +328,21 @@ export class PageCollaborationClient {
             if (message.sessionId !== sessionId) throw new Error(`Unexpected session: ${message.sessionId}`);
             validatePageSessionSnapshot(message.snapshot);
             this.#snapshot = message.snapshot;
-            joined = true;
-            resolve(message.snapshot);
+            receivedPages = true;
             this.#notify();
-            this.#pump();
+            finishJoin();
           } else if (message.type === 'annotation.snapshot') {
             if (message.sessionId !== sessionId) throw new Error(`Unexpected session: ${message.sessionId}`);
             this.#annotationSnapshot = message.snapshot;
+            receivedAnnotations = true;
             this.#notifyAnnotations();
-            this.#pumpAnnotations();
+            finishJoin();
           } else if (message.type === 'form.snapshot') {
             if (message.sessionId !== sessionId) throw new Error(`Unexpected session: ${message.sessionId}`);
             this.#formSnapshot = message.snapshot;
+            receivedForms = true;
             this.#notifyForms();
-            this.#pumpForms();
+            finishJoin();
           } else if (message.type === 'page.committed') {
             if (!this.#snapshot || message.sessionId !== sessionId) return;
             this.#snapshot = applyCommittedPageOperation(this.#snapshot, message.committed);
@@ -292,6 +376,26 @@ export class PageCollaborationClient {
               pending.resolve(message.committed);
               this.#pumpForms();
             }
+          } else if (message.type === 'session.join.request') {
+            if (message.sessionId !== sessionId) return;
+            const request = {
+              requestId: message.requestId,
+              actorId: message.actorId,
+              displayName: message.displayName,
+            };
+            for (const listener of this.#joinRequestListeners) listener(request);
+          } else if (message.type === 'session.join.resolved') {
+            if (message.sessionId !== sessionId) return;
+            for (const listener of this.#joinResolutionListeners) listener(message.requestId);
+          } else if (message.type === 'session.presence') {
+            if (message.sessionId !== sessionId) return;
+            for (const listener of this.#presenceListeners) listener(message.connectedCount);
+          } else if (
+            message.type === 'session.join.pending' ||
+            message.type === 'session.join.approved' ||
+            message.type === 'session.join.rejected'
+          ) {
+            if (!joined) reject(new Error('Session membership approval is required before connecting'));
           } else {
             const error = new RelayOperationError(message.code, message.message, message.currentRevision);
             if (!joined) reject(error);
@@ -313,11 +417,19 @@ export class PageCollaborationClient {
               pending.reject(error);
               this.#pumpForms();
             }
+            if (
+              message.code === 'page-revision-mismatch' ||
+              message.code === 'annotation-revision-mismatch' ||
+              message.code === 'form-revision-mismatch'
+            ) {
+              socket.close();
+            }
           }
         } catch (error) {
           const failure = error instanceof Error ? error : new Error(String(error));
           if (!joined) reject(failure);
           this.#fail(failure);
+          if (joined) socket.close();
         }
       });
       socket.addEventListener('error', () => {
@@ -327,7 +439,12 @@ export class PageCollaborationClient {
         const error = new Error('WebSocket connection closed');
         if (!joined) reject(error);
         this.#socket = null;
+        this.#initialized = false;
+        this.#setConnectionState('disconnected');
         this.#fail(error);
+        if (joined && options.reconnect && !this.#closedByUser) {
+          this.#scheduleReconnect(url, sessionId, options);
+        }
       });
     });
   }
@@ -375,8 +492,25 @@ export class PageCollaborationClient {
     });
   }
 
+  /** Approves one pending participant using the current admitted connection. */
+  approveJoin(requestId: string): void {
+    if (!this.#socket || !this.#sessionId) throw new Error('Client is not connected');
+    if (requestId.length === 0) throw new Error('requestId must not be empty');
+    this.#send({ type: 'session.approve', sessionId: this.#sessionId, requestId });
+  }
+
+  /** Rejects one pending participant using the current admitted connection. */
+  rejectJoin(requestId: string): void {
+    if (!this.#socket || !this.#sessionId) throw new Error('Client is not connected');
+    if (requestId.length === 0) throw new Error('requestId must not be empty');
+    this.#send({ type: 'session.reject', sessionId: this.#sessionId, requestId });
+  }
+
   /** Closes the transport. Any queued or pending operations are rejected. */
   close(): void {
+    this.#closedByUser = true;
+    if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = null;
     this.#socket?.close();
   }
 
@@ -385,8 +519,25 @@ export class PageCollaborationClient {
     this.#socket.send(JSON.stringify(message));
   }
 
+  #scheduleReconnect(url: string, sessionId: string, options: CollaborationJoinOptions): void {
+    if (this.#reconnectTimer || this.#closedByUser) return;
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = null;
+      if (this.#closedByUser || this.#socket) return;
+      void this.connect(url, sessionId, options).catch(() => {
+        this.#scheduleReconnect(url, sessionId, options);
+      });
+    }, options.reconnectDelayMs ?? 1500);
+  }
+
+  #setConnectionState(state: CollaborationConnectionState): void {
+    if (this.#connectionState === state) return;
+    this.#connectionState = state;
+    for (const listener of this.#connectionStateListeners) listener(state);
+  }
+
   #pump(): void {
-    if (this.#pending || !this.#snapshot || !this.#sessionId || !this.#socket) return;
+    if (this.#pending || !this.#initialized || !this.#snapshot || !this.#sessionId || !this.#socket) return;
     const next = this.#queue.shift();
     if (!next) return;
     this.#pending = next;
@@ -400,7 +551,7 @@ export class PageCollaborationClient {
   }
 
   #pumpAnnotations(): void {
-    if (this.#annotationPending || !this.#annotationSnapshot || !this.#sessionId || !this.#socket) return;
+    if (this.#annotationPending || !this.#initialized || !this.#annotationSnapshot || !this.#sessionId || !this.#socket) return;
     const next = this.#annotationQueue.shift();
     if (!next) return;
     this.#annotationPending = next;
@@ -414,7 +565,7 @@ export class PageCollaborationClient {
   }
 
   #pumpForms(): void {
-    if (this.#formPending || !this.#formSnapshot || !this.#sessionId || !this.#socket) return;
+    if (this.#formPending || !this.#initialized || !this.#formSnapshot || !this.#sessionId || !this.#socket) return;
     const next = this.#formQueue.shift();
     if (!next) return;
     this.#formPending = next;
