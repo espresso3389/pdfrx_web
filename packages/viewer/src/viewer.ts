@@ -5565,7 +5565,7 @@ export class PdfrxViewer {
       } else if (this.isAnnotationSelectMode()) {
         e.preventDefault();
         e.stopPropagation();
-        this.beginMarquee(overlay, start, e.pointerId);
+        this.beginMarquee(overlay, start, e.pointerId, e.metaKey || e.ctrlKey);
       }
     });
     svg.addEventListener('pointermove', (e) => {
@@ -6258,9 +6258,10 @@ export class PdfrxViewer {
   // Marquee (rubber-band) selection and group move/resize.
   // -------------------------------------------------------------------------
 
-  /** Rubber-band selection: drag a rectangle; select every overlapping annotation. */
-  private beginMarquee(overlay: AnnotationPageOverlay, start: Offset, pointerId: number): void {
-    this.setSelectedAnnotations([]);
+  /** Rubber-band selection: continuously select every overlapping annotation. */
+  private beginMarquee(overlay: AnnotationPageOverlay, start: Offset, pointerId: number, additive: boolean): void {
+    const initialSelection = additive ? new Set(this.selectedAnnotationIds) : new Set<string>();
+    if (!additive) this.setSelectedAnnotations([]);
     const rect = document.createElementNS(SVG_NS, 'rect');
     rect.setAttribute('fill', 'rgba(33, 150, 243, 0.12)');
     rect.setAttribute('stroke', '#2196f3');
@@ -6283,22 +6284,28 @@ export class PdfrxViewer {
       return { left, top, right: Math.max(start.x, cur.x), bottom: Math.max(start.y, cur.y) };
     };
     place(start);
+    const selectOverlapping = (boxPx: Rect): void => {
+      const hit = new Set(initialSelection);
+      for (const [id, annotation] of overlay.annotations) {
+        const shapeBox = this.annotationPxBounds(annotation, overlay);
+        if (shapeBox && rectsOverlap(boxPx, shapeBox)) hit.add(id);
+      }
+      this.setSelectedAnnotations(hit);
+      // Updating selection redraws this layer, so put the live marquee back on
+      // top whenever that redraw detached it.
+      if (!rect.isConnected) overlay.anchorLayer.appendChild(rect);
+    };
     const move = (e: PointerEvent): void => {
-      place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+      const boxPx = place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+      selectOverlapping(boxPx);
     };
     const up = (e: PointerEvent): void => {
       overlay.svg.removeEventListener('pointermove', move);
       overlay.svg.removeEventListener('pointerup', up);
       overlay.svg.removeEventListener('pointercancel', up);
       const boxPx = place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+      selectOverlapping(boxPx);
       rect.remove();
-      // Select every annotation whose on-page px bounds overlap the marquee.
-      const hit: string[] = [];
-      for (const [id, a] of overlay.annotations) {
-        const shapeBox = this.annotationPxBounds(a, overlay);
-        if (shapeBox && rectsOverlap(boxPx, shapeBox)) hit.push(id);
-      }
-      this.setSelectedAnnotations(hit);
     };
     overlay.svg.addEventListener('pointermove', move);
     overlay.svg.addEventListener('pointerup', up);
