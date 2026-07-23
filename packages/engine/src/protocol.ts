@@ -186,6 +186,8 @@ export interface WireAnnotationObject {
   actorId: string | null;
   revision: number;
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
+  textColor: WireColor | null;
+  fontSize: number | null;
   fontFace: string | null;
   appearanceLines: string[] | null;
   appearanceRuns: {
@@ -237,6 +239,10 @@ export interface WireAnnotationSpec {
   actorId?: string | null;
   revision?: number;
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
+  /** FreeText glyph color. */
+  textColor?: WireColor | null;
+  /** FreeText font size in points. */
+  fontSize?: number;
   /** Registered worker font face used to build a FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines for the generated FreeText appearance. */

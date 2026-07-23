@@ -10,6 +10,7 @@ import { parseServerRelayMessage, type ClientRelayMessage } from './wire.js';
 import {
   applyCommittedAnnotationOperation,
   type AnnotationOperationRequest,
+  type AnnotationPreview,
   type AnnotationSessionSnapshot,
   type CommittedAnnotationOperation,
   type SharedAnnotationChange,
@@ -61,6 +62,8 @@ export interface CollaborationTransport {
 export type PageSessionListener = (snapshot: PageSessionSnapshot, committed?: CommittedPageOperation) => void;
 /** Receives the current annotation snapshot and optional incremental commit. */
 export type AnnotationSessionListener = (snapshot: AnnotationSessionSnapshot, committed?: CommittedAnnotationOperation) => void;
+/** @internal Receives non-persistent annotation geometry while another participant drags. */
+export type AnnotationPreviewListener = (preview: AnnotationPreview) => void;
 /** Receives the current form snapshot and optional incremental commit. */
 export type FormSessionListener = (snapshot: FormSessionSnapshot, committed?: CommittedFormOperation) => void;
 
@@ -154,6 +157,7 @@ export class RelayOperationError extends Error {
 export class PageCollaborationClient {
   readonly #listeners = new Set<PageSessionListener>();
   readonly #annotationListeners = new Set<AnnotationSessionListener>();
+  readonly #annotationPreviewListeners = new Set<AnnotationPreviewListener>();
   readonly #formListeners = new Set<FormSessionListener>();
   readonly #queue: QueuedOperation[] = [];
   #socket: CollaborationWebSocket | null = null;
@@ -204,6 +208,12 @@ export class PageCollaborationClient {
     this.#annotationListeners.add(listener);
     if (this.#annotationSnapshot) listener(this.#annotationSnapshot);
     return () => this.#annotationListeners.delete(listener);
+  }
+
+  /** @internal Subscribes to transient annotation drag previews. */
+  subscribeAnnotationPreviews(listener: AnnotationPreviewListener): () => void {
+    this.#annotationPreviewListeners.add(listener);
+    return () => this.#annotationPreviewListeners.delete(listener);
   }
 
   /** Subscribes to form state and immediately emits an existing snapshot. */
@@ -269,6 +279,9 @@ export class PageCollaborationClient {
               pending.resolve(message.committed);
               this.#pumpAnnotations();
             }
+          } else if (message.type === 'annotation.preview') {
+            if (message.sessionId !== sessionId || message.preview.actorId === this.actorId) return;
+            for (const listener of this.#annotationPreviewListeners) listener(message.preview);
           } else if (message.type === 'form.committed') {
             if (!this.#formSnapshot || message.sessionId !== sessionId) return;
             this.#formSnapshot = applyCommittedFormOperation(this.#formSnapshot, message.committed);
@@ -338,6 +351,16 @@ export class PageCollaborationClient {
     return new Promise((resolve, reject) => {
       this.#annotationQueue.push({ operationId, change, resolve, reject });
       this.#pumpAnnotations();
+    });
+  }
+
+  /** @internal Broadcasts a non-persistent annotation drag preview without a revision. */
+  sendAnnotationPreview(changes: AnnotationPreview['changes']): void {
+    if (!this.#socket || !this.#sessionId || changes.length === 0) return;
+    this.#send({
+      type: 'annotation.preview',
+      sessionId: this.#sessionId,
+      preview: { actorId: this.actorId, changes },
     });
   }
 

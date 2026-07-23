@@ -86,6 +86,8 @@ export interface PdfrxStrings {
   noStroke: string;
   fillColor: string;
   noFill: string;
+  textColor: string;
+  textSize: string;
   opacity: string;
   thickness: string;
   closeAnnotationToolbar: string;
@@ -163,6 +165,8 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   noStroke: 'No stroke',
   fillColor: 'Fill color',
   noFill: 'No fill',
+  textColor: 'Text color',
+  textSize: 'Text size',
   opacity: 'Opacity',
   thickness: 'Thickness',
   closeAnnotationToolbar: 'Close annotation toolbar',

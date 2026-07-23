@@ -485,6 +485,10 @@ export interface PdfAnnotationObject {
   readonly revision: number;
   /** Text direction for FreeText content; harmless metadata on other subtypes. */
   readonly textOrientation: PdfTextOrientation;
+  /** FreeText glyph color, or null when the annotation does not persist one. */
+  readonly textColor: PdfAnnotationColor | null;
+  /** FreeText font size in points, or null when inferred from an existing appearance. */
+  readonly fontSize: number | null;
   readonly fontFace: string | null;
   readonly appearanceLines: readonly string[] | null;
   readonly appearanceRuns: readonly (readonly {
@@ -570,6 +574,10 @@ export interface PdfAnnotationSpec {
   revision?: number;
   /** Text direction for FreeText content. Defaults to page-relative, unrotated. */
   textOrientation?: PdfTextOrientation;
+  /** FreeText glyph color. Defaults to black. */
+  textColor?: PdfAnnotationColor | null;
+  /** FreeText font size in points. Defaults to 12. */
+  fontSize?: number;
   /** Font face registered with the engine for a generated FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines used by the generated FreeText appearance. */

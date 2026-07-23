@@ -2,6 +2,7 @@ import type { PagePlacementOperation } from '@pdfrx/viewer-core';
 import type { CommittedPageOperation, PageOperationRequest, PageSessionSnapshot } from './protocol.js';
 import type {
   AnnotationOperationRequest,
+  AnnotationPreview,
   AnnotationSessionSnapshot,
   CommittedAnnotationOperation,
   SharedAnnotationChange,
@@ -18,6 +19,7 @@ export type ClientRelayMessage =
   | { readonly type: 'session.join'; readonly sessionId: string }
   | { readonly type: 'page.operation'; readonly sessionId: string; readonly request: PageOperationRequest }
   | { readonly type: 'annotation.operation'; readonly sessionId: string; readonly request: AnnotationOperationRequest }
+  | { readonly type: 'annotation.preview'; readonly sessionId: string; readonly preview: AnnotationPreview }
   | { readonly type: 'form.operation'; readonly sessionId: string; readonly request: FormOperationRequest };
 
 /** Snapshots, commits, and structured errors emitted by the reference relay. */
@@ -27,6 +29,7 @@ export type ServerRelayMessage =
   | { readonly type: 'form.snapshot'; readonly sessionId: string; readonly snapshot: FormSessionSnapshot }
   | { readonly type: 'page.committed'; readonly sessionId: string; readonly committed: CommittedPageOperation }
   | { readonly type: 'annotation.committed'; readonly sessionId: string; readonly committed: CommittedAnnotationOperation }
+  | { readonly type: 'annotation.preview'; readonly sessionId: string; readonly preview: AnnotationPreview }
   | { readonly type: 'form.committed'; readonly sessionId: string; readonly committed: CommittedFormOperation }
   | {
       readonly type: 'operation.rejected';
@@ -175,6 +178,18 @@ export function parseClientRelayMessage(json: string): ClientRelayMessage {
   }
   if (value.type === 'annotation.operation') {
     return { type: value.type, sessionId: value.sessionId, request: parseAnnotationRequest(value.request) };
+  }
+  if (value.type === 'annotation.preview') {
+    if (!isRecord(value.preview) || !isString(value.preview.actorId) || !Array.isArray(value.preview.changes)) {
+      throw new Error('Invalid annotation preview');
+    }
+    const changes = value.preview.changes.map(parseAnnotationChange);
+    if (changes.some((change) => change.type !== 'update')) throw new Error('Invalid annotation preview');
+    return {
+      type: value.type,
+      sessionId: value.sessionId,
+      preview: { actorId: value.preview.actorId, changes: changes as AnnotationPreview['changes'] },
+    };
   }
   if (value.type === 'form.operation') {
     return { type: value.type, sessionId: value.sessionId, request: parseFormRequest(value.request) };

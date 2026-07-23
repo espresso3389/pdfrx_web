@@ -726,6 +726,17 @@ export interface AnnotationStyle {
   strokeWidth: number;
   /** Stroke opacity 0-1 (baked into the stroke color's alpha). */
   opacity: number;
+  /** Text CSS color for rectangle/text-box contents. */
+  textColor: string;
+  /** Text size in PDF points for rectangle/text-box contents. */
+  fontSize: number;
+}
+
+/** @internal Transient annotation geometry shared while a drag is active. */
+export interface AnnotationPreviewChange {
+  readonly pageNumber: number;
+  readonly id: string;
+  readonly spec: PdfAnnotationSpec;
 }
 
 /** In-progress annotation drawing gesture (page-local px). */
@@ -832,13 +843,15 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       borderWidth: a.borderWidth,
       flags: a.flags,
       contents: a.contents,
-    author: a.author,
-    actorId: a.actorId,
-    revision: a.revision,
-    textOrientation: a.textOrientation,
-    fontFace: a.fontFace,
-    appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
-    appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
+      author: a.author,
+      actorId: a.actorId,
+      revision: a.revision,
+      textColor: a.textColor,
+      fontSize: a.fontSize ?? undefined,
+      textOrientation: a.textOrientation,
+      fontFace: a.fontFace,
+      appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
+      appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
       geometry: a.geometry,
     },
     dx,
@@ -870,7 +883,12 @@ function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec)
     flags: spec.flags ?? base.flags,
     contents: spec.contents === undefined ? base.contents : spec.contents,
     author: spec.author === undefined ? base.author : spec.author,
+    textColor: spec.textColor === undefined ? base.textColor : spec.textColor,
+    fontSize: spec.fontSize === undefined ? base.fontSize : spec.fontSize,
     textOrientation: spec.textOrientation ?? base.textOrientation,
+    fontFace: spec.fontFace === undefined ? base.fontFace : spec.fontFace,
+    appearanceLines: spec.appearanceLines === undefined ? base.appearanceLines : spec.appearanceLines,
+    appearanceRuns: spec.appearanceRuns === undefined ? base.appearanceRuns : spec.appearanceRuns,
     geometry: spec.geometry ?? base.geometry,
   };
 }
@@ -1212,20 +1230,20 @@ function minimumDrawLine(a: Offset, b: Offset, minLength: number, bounds: Size):
   return [start, end];
 }
 
-function renderFreeTextEmoji(text: string): { width: number; height: number; scale: number; pixels: Uint8Array } | undefined {
+function renderFreeTextEmoji(text: string, fontSize: number): { width: number; height: number; scale: number; pixels: Uint8Array } | undefined {
   const scale = 3;
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d');
   if (!measure) return undefined;
-  measure.font = `${FREE_TEXT_FONT_SIZE}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-  const logicalWidth = Math.max(FREE_TEXT_FONT_SIZE, Math.ceil(measure.measureText(text).width + 2));
-  const logicalHeight = Math.ceil(FREE_TEXT_FONT_SIZE * 1.35);
+  measure.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+  const logicalWidth = Math.max(fontSize, Math.ceil(measure.measureText(text).width + 2));
+  const logicalHeight = Math.ceil(fontSize * 1.35);
   canvas.width = logicalWidth * scale;
   canvas.height = logicalHeight * scale;
   const context = canvas.getContext('2d');
   if (!context) return undefined;
   context.scale(scale, scale);
-  context.font = `${FREE_TEXT_FONT_SIZE}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+  context.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
   context.textBaseline = 'top';
   context.fillText(text, 1, 0);
   return {
@@ -1285,6 +1303,7 @@ function refreshFreeTextLayout(spec: PdfAnnotationSpec): void {
   spec.appearanceLines = wrapFreeText(
     spec.contents,
     spec.rect.right - spec.rect.left - (spec.borderWidth ?? 0) * 2,
+    spec.fontSize ?? FREE_TEXT_FONT_SIZE,
   );
   spec.appearanceRuns = undefined;
 }
@@ -1427,6 +1446,8 @@ export class PdfrxViewer {
     fillColor: null,
     strokeWidth: 3,
     opacity: 1,
+    textColor: '#000000',
+    fontSize: FREE_TEXT_FONT_SIZE,
   };
   /** Ids of the currently selected annotations (empty when none). */
   private readonly selectedAnnotationIds = new Set<string>();
@@ -1520,6 +1541,9 @@ export class PdfrxViewer {
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
   private readonly annotationModeChangeListeners = new Set<(mode: AnnotationMode) => void>();
+  private readonly annotationPreviewChangeListeners = new Set<
+    (changes: readonly AnnotationPreviewChange[]) => void
+  >();
   /** Signature of the last-notified selection, so we don't fire on no-op updates. */
   private lastSelectionSig = 'empty';
   /** Last current-page value notified to {@link pageChangeListeners}. */
@@ -4741,7 +4765,7 @@ export class PdfrxViewer {
             };
             const appearanceText = hasCalloutAppearance ? a.appearanceTextStyles[0] : undefined;
             const appearanceOrigin = appearanceText ? toPx(appearanceText.origin) : null;
-            const fontSize = appearanceText?.fontSize || FREE_TEXT_FONT_SIZE;
+            const fontSize = a.fontSize ?? appearanceText?.fontSize ?? FREE_TEXT_FONT_SIZE;
             const clipId = `pdfrx-free-text-${a.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
             const clipPath = document.createElementNS(SVG_NS, 'clipPath');
             clipPath.setAttribute('id', clipId);
@@ -4757,7 +4781,7 @@ export class PdfrxViewer {
             const textY = appearanceOrigin?.y ?? logicalBox.top + width + FREE_TEXT_PADDING + fontSize;
             text.setAttribute('x', `${textX}`);
             text.setAttribute('y', `${textY}`);
-            text.setAttribute('fill', colorCss(appearanceText?.fillColor ?? null, '#000') ?? '#000');
+            text.setAttribute('fill', colorCss(a.textColor ?? appearanceText?.fillColor ?? null, '#000') ?? '#000');
             text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
             text.setAttribute('font-size', `${fontSize}`);
             if (textRotation !== 0) text.setAttribute('transform', `rotate(${textRotation} ${centreX} ${centreY})`);
@@ -4855,6 +4879,30 @@ export class PdfrxViewer {
     return () => this.annotationModeChangeListeners.delete(listener);
   }
 
+  /** @internal Subscribes to non-persistent live annotation drag previews. */
+  addAnnotationPreviewChangeListener(
+    listener: (changes: readonly AnnotationPreviewChange[]) => void,
+  ): () => void {
+    this.annotationPreviewChangeListeners.add(listener);
+    return () => this.annotationPreviewChangeListeners.delete(listener);
+  }
+
+  /** @internal Paints remotely supplied drag previews without mutating the PDF. */
+  applyAnnotationPreviewChanges(changes: readonly AnnotationPreviewChange[]): void {
+    for (const change of changes) {
+      const located = this.locateAnnotation(change.id);
+      const overlay = this.annotationOverlays.get(change.pageNumber);
+      if (!located || !overlay || located.pageNumber !== change.pageNumber) continue;
+      const display = syntheticAnnotation(located.annotation, change.spec);
+      this.previewAnnotationShape(overlay, located.annotation, change.spec);
+      if (this.selectedAnnotationIds.has(change.id)) this.updateAnchorPositions(overlay, display);
+    }
+  }
+
+  private emitAnnotationPreviewChanges(changes: readonly AnnotationPreviewChange[]): void {
+    for (const listener of this.annotationPreviewChangeListeners) listener(changes);
+  }
+
   private setAnnotationMode(mode: AnnotationMode): void {
     if (mode === this.annotationMode) return;
     if (mode !== 'select') this.setSelectedAnnotations([]);
@@ -4890,22 +4938,25 @@ export class PdfrxViewer {
   }
 
   /**
-   * Applies a `color` and/or `strokeWidth` to every currently selected annotation
+   * Applies drawing and text style changes to every currently selected annotation
    * as one undoable step. No-op when nothing is selected. Use alongside
    * {@link setAnnotationStyle} (which only affects newly drawn annotations).
    */
   async applyStyleToSelection(style: Partial<AnnotationStyle>, historyMergeKey?: string): Promise<void> {
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
-    const { color, opacity, fillColor, strokeWidth } = style;
+    const { color, opacity, fillColor, strokeWidth, textColor, fontSize } = style;
     if (
       color === undefined &&
       opacity === undefined &&
       fillColor === undefined &&
-      strokeWidth === undefined
+      strokeWidth === undefined &&
+      textColor === undefined &&
+      fontSize === undefined
     ) {
       return;
     }
     const stroke = color !== undefined ? cssColorToRgba(color, opacity ?? this.annotationStyle.opacity) : undefined;
+    const text = textColor !== undefined ? cssColorToRgba(textColor, opacity ?? this.annotationStyle.opacity) : undefined;
     // `fillColor` is tri-state: undefined = leave, null = clear the fill, string = set it.
     const fill =
       fillColor === undefined
@@ -4930,6 +4981,11 @@ export class PdfrxViewer {
         after.interiorColor = { ...after.interiorColor, a: toAlpha(opacity) };
       }
       if (strokeWidth !== undefined) after.borderWidth = strokeWidth;
+      if (t.annotation.subtype === 'square' || t.annotation.subtype === 'freeText') {
+        if (text) after.textColor = text;
+        else if (opacity !== undefined && after.textColor) after.textColor = { ...after.textColor, a: toAlpha(opacity) };
+        if (fontSize !== undefined) after.fontSize = Math.max(1, fontSize);
+      }
       refreshFreeTextLayout(after);
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after });
     }
@@ -5480,10 +5536,14 @@ export class PdfrxViewer {
       this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
       lastSpec = anchor.reshape(to);
+      refreshFreeTextLayout(lastSpec);
       const display = syntheticAnnotation(annotation, lastSpec);
       this.previewAnnotationShape(overlay, annotation, lastSpec);
       // Move every anchor (and the bounding box) to follow the reshaped geometry.
       this.updateAnchorPositions(overlay, display);
+      this.emitAnnotationPreviewChanges([
+        { pageNumber: overlay.pageNumber, id: annotation.id, spec: structuredClone(lastSpec) },
+      ]);
     };
     const up = (): void => {
       circle.removeEventListener('pointermove', move);
@@ -5785,7 +5845,7 @@ export class PdfrxViewer {
       const contents = await this.requestAnnotationText(overlay, spec);
       if (contents === null) return;
       spec.contents = contents;
-    } else if (s.tool === 'rectangle' || s.tool === 'freeText') {
+    } else if (s.tool === 'freeText') {
       const contents = await this.requestAnnotationText(overlay, spec);
       if (contents === null) return;
       await this.applyBoxContents(spec, contents);
@@ -5833,9 +5893,10 @@ export class PdfrxViewer {
   private async prepareFreeTextAppearance(spec: PdfAnnotationSpec): Promise<void> {
     refreshFreeTextLayout(spec);
     const lines = spec.appearanceLines ?? [''];
+    const fontSize = spec.fontSize ?? FREE_TEXT_FONT_SIZE;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    if (context) context.font = `${FREE_TEXT_FONT_SIZE}px Arial, sans-serif`;
+    if (context) context.font = `${fontSize}px Arial, sans-serif`;
     const graphemeSegmenter =
       typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
     spec.appearanceRuns = [];
@@ -5876,9 +5937,9 @@ export class PdfrxViewer {
           group.kind === 'latin' || group.kind === 'neutral' || group.kind === 'symbols'
             ? null
             : await this.ensureFreeTextFont(group.kind);
-        const image = group.kind === 'symbols' ? renderFreeTextEmoji(group.text) : undefined;
+        const image = group.kind === 'symbols' ? renderFreeTextEmoji(group.text, fontSize) : undefined;
         runs.push({ text: group.text, fontFace, x, ...(image ? { image } : {}) });
-        x += context?.measureText(group.text).width ?? group.text.length * FREE_TEXT_FONT_SIZE * 0.6;
+        x += context?.measureText(group.text).width ?? group.text.length * fontSize * 0.6;
       }
       spec.appearanceRuns.push(runs);
     }
@@ -5951,11 +6012,13 @@ export class PdfrxViewer {
       : strokeWidth > 0 && stroke
         ? `${strokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
         : 'none';
+    const editorTextColor = colorCss(spec.textColor ?? null, '#000000') ?? '#000000';
+    const editorFontSize = spec.fontSize ?? FREE_TEXT_FONT_SIZE;
     textarea.style.cssText =
       `box-sizing:border-box;width:100%;height:100%;resize:both;min-width:40px;min-height:28px;` +
       `max-width:${Math.max(40, overlay.pageSize.width - editorX)}px;` +
       `max-height:${Math.max(28, overlay.pageSize.height - editorY)}px;padding:5px;` +
-      'font:12px Arial,Helvetica,sans-serif;color:#111;background:rgba(255,255,255,.96);' +
+      `font:${editorFontSize}px Arial,Helvetica,sans-serif;color:${editorTextColor};background:rgba(255,255,255,.96);` +
       `border:${editorBorder};border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);`;
     textarea.addEventListener('pointerdown', (event) => event.stopPropagation());
     foreign.appendChild(textarea);
@@ -6057,6 +6120,8 @@ export class PdfrxViewer {
     const toPdf = (o: Offset): PdfPoint => offsetToPdfPoint(o, { page: s.pageGeom, scaledPageSize: s.pageSize });
     const color = cssColorToRgba(this.annotationStyle.color, this.annotationStyle.opacity);
     const borderWidth = this.annotationStyle.strokeWidth;
+    const textColor = cssColorToRgba(this.annotationStyle.textColor, this.annotationStyle.opacity);
+    const fontSize = this.annotationStyle.fontSize;
     const start = s.points[0]!;
     const rectOf = (a: Offset, b: Offset) => {
       const p1 = toPdf(a);
@@ -6107,6 +6172,7 @@ export class PdfrxViewer {
           color,
           interiorColor,
           borderWidth,
+          ...(s.tool === 'rectangle' ? { textColor, fontSize } : {}),
         };
       }
       case 'highlight': {
@@ -6157,6 +6223,8 @@ export class PdfrxViewer {
           interiorColor,
           borderWidth,
           contents: '',
+          textColor,
+          fontSize,
           textOrientation: { rotation: 0, behavior: 'page' },
         };
       }
@@ -6179,12 +6247,14 @@ export class PdfrxViewer {
     const display = this.annotationDisplayGroup(overlay, id, g);
     const sourceBox = this.annotationPxBounds(annotation, overlay);
     const excludedIds = new Set([id]);
+    const dragSurface = overlay.svg;
     try {
       g.setPointerCapture(pointerId);
     } catch {
       /* ignore */
     }
     const preview = duplicate ? (display.cloneNode(true) as SVGGElement) : display;
+    let previewed = false;
     if (duplicate) {
       preview.removeAttribute('data-annot-id');
       preview.removeAttribute('data-annot-visual-id');
@@ -6207,18 +6277,39 @@ export class PdfrxViewer {
       return this.snapAnnotationTranslation(overlay, sourceBox, raw, excludedIds);
     };
     const move = (e: PointerEvent): void => {
+      const raw = rawDisplacement(e);
+      if (Math.hypot(raw.x, raw.y) < TAP_SLOP / this.transform.zoom) return;
+      if (!duplicate) {
+        try {
+          dragSurface.setPointerCapture(pointerId);
+        } catch {
+          /* best-effort */
+        }
+      }
+      previewed = true;
       const snapped = displacement(e);
       const delta = snapped.point;
       this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
-      const transform = `translate(${delta.x} ${delta.y})`;
-      preview.setAttribute('transform', transform);
-      // Move the anchors + bounding box rigidly with the shape.
-      if (!duplicate) overlay.anchorLayer.setAttribute('transform', transform);
+      if (duplicate) {
+        preview.setAttribute('transform', `translate(${delta.x} ${delta.y})`);
+      } else {
+        const pdfDelta = offsetDeltaToPdfDelta(delta, { page: pageGeom, scaledPageSize: pageSize });
+        const spec = translateAnnotationSpec(annotation, pdfDelta.x, pdfDelta.y);
+        this.previewAnnotationShape(overlay, annotation, spec);
+        this.updateAnchorPositions(overlay, syntheticAnnotation(annotation, spec));
+        this.emitAnnotationPreviewChanges([
+          {
+            pageNumber,
+            id,
+            spec,
+          },
+        ]);
+      }
     };
     const up = (e: PointerEvent): void => {
-      g.removeEventListener('pointermove', move);
-      g.removeEventListener('pointerup', up);
-      g.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', up);
       const raw = rawDisplacement(e);
       const delta = displacement(e).point;
       this.renderAnnotationSnapGuides(overlay);
@@ -6226,9 +6317,11 @@ export class PdfrxViewer {
       const dyPx = delta.y;
       if (Math.abs(raw.x) < 0.5 && Math.abs(raw.y) < 0.5) {
         // A click, not a move: undo the (tiny) live transform.
-        preview.removeAttribute('transform');
         if (duplicate) preview.remove();
-        overlay.anchorLayer.removeAttribute('transform');
+        else if (previewed) {
+          this.previewAnnotationShape(overlay, annotation, annotationToSpec(annotation));
+          this.updateAnchorPositions(overlay, annotation);
+        }
         return;
       }
       // A real move: keep the live transform so the shape/anchors hold their new
@@ -6245,9 +6338,9 @@ export class PdfrxViewer {
         void this.commitMove(pageNumber, annotation, dx, dy);
       }
     };
-    g.addEventListener('pointermove', move);
-    g.addEventListener('pointerup', up);
-    g.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointermove', move);
+    dragSurface.addEventListener('pointerup', up);
+    dragSurface.addEventListener('pointercancel', up);
   }
 
   private async commitMove(pageNumber: number, a: PdfAnnotationObject, dx: number, dy: number): Promise<void> {
@@ -6583,9 +6676,27 @@ export class PdfrxViewer {
       const snapped = displacement(e);
       const delta = snapped.point;
       this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
-      const transform = `translate(${delta.x} ${delta.y})`;
-      for (const g of previews) g.setAttribute('transform', transform);
-      if (!duplicate) overlay.anchorLayer.setAttribute('transform', transform);
+      if (duplicate) {
+        const transform = `translate(${delta.x} ${delta.y})`;
+        for (const g of previews) g.setAttribute('transform', transform);
+      } else {
+        const pdfDelta = offsetDeltaToPdfDelta(delta, {
+          page: overlay.pageGeom,
+          scaledPageSize: overlay.pageSize,
+        });
+        const changes = sel.map((annotation) => ({
+            pageNumber: overlay.pageNumber,
+            id: annotation.id,
+            spec: translateAnnotationSpec(annotation, pdfDelta.x, pdfDelta.y),
+        }));
+        for (let index = 0; index < sel.length; index++) {
+          const annotation = sel[index];
+          const change = changes[index];
+          if (annotation && change) this.previewAnnotationShape(overlay, annotation, change.spec);
+        }
+        overlay.anchorLayer.setAttribute('transform', `translate(${delta.x} ${delta.y})`);
+        this.emitAnnotationPreviewChanges(changes);
+      }
     };
     const up = (e: PointerEvent): void => {
       svg.removeEventListener('pointermove', move);
@@ -6597,10 +6708,8 @@ export class PdfrxViewer {
       const dxPx = delta.x;
       const dyPx = delta.y;
       if (Math.abs(raw.x) < 0.5 && Math.abs(raw.y) < 0.5) {
-        for (const g of previews) {
-          if (duplicate) g.remove();
-          else g.removeAttribute('transform');
-        }
+        if (duplicate) for (const g of previews) g.remove();
+        else for (const annotation of sel) this.previewAnnotationShape(overlay, annotation, annotationToSpec(annotation));
         overlay.anchorLayer.removeAttribute('transform');
         return;
       }
@@ -6647,8 +6756,15 @@ export class PdfrxViewer {
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
       newBox = resizeBoxByHandle(box, index, to);
       // Live-preview every member scaled into the new group box.
-      for (const a of sel) this.previewAnnotationShape(overlay, a, scaleAnnotationSpec(a, box, newBox));
+      const previewChanges: AnnotationPreviewChange[] = [];
+      for (const a of sel) {
+        const preview = scaleAnnotationSpec(a, box, newBox);
+        refreshFreeTextLayout(preview);
+        this.previewAnnotationShape(overlay, a, preview);
+        previewChanges.push({ pageNumber: overlay.pageNumber, id: a.id, spec: structuredClone(preview) });
+      }
       this.updateGroupAnchorPositions(overlay, newBox);
+      this.emitAnnotationPreviewChanges(previewChanges);
     };
     const up = (): void => {
       circle.removeEventListener('pointermove', move);

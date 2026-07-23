@@ -14,6 +14,7 @@ import {
   IconPen,
   IconRectangle,
   IconSelectObject,
+  IconTextSize,
   IconThickness,
 } from './icons.js';
 
@@ -43,6 +44,21 @@ export interface PdfAnnotationToolbarProps {
 const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow'];
 
 const DEFAULT_COLORS: readonly string[] = ['#e53935', '#1e88e5', '#43a047', '#fbc02d', '#8e24aa', '#000000'];
+
+/** Classifies hexadecimal colors that may disappear into a light/dark toolbar. */
+function textColorTone(color: string): 'dark' | 'light' | null {
+  const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color);
+  if (!match) return null;
+  const hex = match[1]!;
+  const expanded = hex.length === 3 ? [...hex].map((value) => value + value).join('') : hex;
+  const red = Number.parseInt(expanded.slice(0, 2), 16);
+  const green = Number.parseInt(expanded.slice(2, 4), 16);
+  const blue = Number.parseInt(expanded.slice(4, 6), 16);
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+  if (luminance < 80) return 'dark';
+  if (luminance > 220) return 'light';
+  return null;
+}
 
 const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
   ink: IconPen,
@@ -92,11 +108,13 @@ export function PdfAnnotationToolbar({
   const [color, setColor] = useState(colors[0] ?? '#e53935');
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [fillColor, setFillColor] = useState<string | null>(null);
+  const [textColor, setTextColor] = useState('#000000');
+  const [fontSize, setFontSize] = useState(12);
   /** Whole-annotation opacity, 0-1. */
   const [opacity, setOpacity] = useState(1);
   const [width, setWidth] = useState(3);
   /** Which attribute popup is open, if any. */
-  const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'opacity' | 'width' | null>(null);
+  const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'opacity' | 'width' | null>(null);
   const paletteHostRef = useRef<HTMLSpanElement>(null);
   const sliderGestureRef = useRef<{ key: string; sequence: number } | null>(null);
   const sliderSequenceRef = useRef(0);
@@ -169,6 +187,17 @@ export function PdfAnnotationToolbar({
     setOpenPalette(null);
     viewer?.setAnnotationStyle({ fillColor: c });
     void viewer?.applyStyleToSelection({ fillColor: c });
+  };
+  const pickTextColor = (c: string): void => {
+    setTextColor(c);
+    setOpenPalette(null);
+    viewer?.setAnnotationStyle({ textColor: c });
+    void viewer?.applyStyleToSelection({ textColor: c });
+  };
+  const pickTextSize = (size: number): void => {
+    setFontSize(size);
+    viewer?.setAnnotationStyle({ fontSize: size });
+    void viewer?.applyStyleToSelection({ fontSize: size }, sliderMergeKey('fontSize'));
   };
   const pickOpacity = (v: number): void => {
     setOpacity(v);
@@ -357,6 +386,77 @@ export function PdfAnnotationToolbar({
                 onKeyUp={endSliderGesture}
                 onBlur={endSliderGesture}
                 aria-label={strings.thickness}
+              />
+            </div>
+          )}
+        </span>
+        <span className="pdfrx-annot-colorbtn">
+          <button
+            type="button"
+            className={['pdfrx-button', openPalette === 'textColor' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
+            title={strings.textColor}
+            aria-label={strings.textColor}
+            aria-expanded={openPalette === 'textColor'}
+            onClick={() => setOpenPalette(openPalette === 'textColor' ? null : 'textColor')}
+          >
+            <span
+              aria-hidden
+              className={[
+                'pdfrx-annot-text-color-icon',
+                textColorTone(textColor) ? `pdfrx-annot-text-color-icon-${textColorTone(textColor)}` : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{ color: textColor }}
+            >
+              A
+            </span>
+          </button>
+          {openPalette === 'textColor' && (
+            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.textColor}>
+              {colors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="option"
+                  aria-selected={textColor === c}
+                  className={['pdfrx-annot-swatch', textColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
+                  aria-label={`${strings.textColor}: ${c}`}
+                  onClick={() => pickTextColor(c)}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          )}
+        </span>
+        <span className="pdfrx-annot-colorbtn">
+          <button
+            type="button"
+            className={['pdfrx-button', openPalette === 'textSize' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
+            title={strings.textSize}
+            aria-label={strings.textSize}
+            aria-expanded={openPalette === 'textSize'}
+            onClick={() => setOpenPalette(openPalette === 'textSize' ? null : 'textSize')}
+          >
+            <IconTextSize />
+          </button>
+          {openPalette === 'textSize' && (
+            <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.textSize}>
+              <span className="pdfrx-annot-slider-value">{fontSize}</span>
+              <input
+                className="pdfrx-annot-slider-vertical"
+                type="range"
+                min={6}
+                max={48}
+                step={1}
+                value={fontSize}
+                onChange={(e) => pickTextSize(Number(e.target.value))}
+                onPointerDown={() => beginSliderGesture('fontSize')}
+                onPointerUp={endSliderGesture}
+                onKeyDown={() => beginSliderGesture('fontSize')}
+                onKeyUp={endSliderGesture}
+                onBlur={endSliderGesture}
+                aria-label={strings.textSize}
               />
             </div>
           )}

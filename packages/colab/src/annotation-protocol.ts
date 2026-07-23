@@ -2,8 +2,17 @@ import type { PdfAnnotationSpec } from '@pdfrx/engine';
 import type { PagePlacement } from '@pdfrx/viewer-core';
 
 /** Add, replace, or remove one annotation addressed by stable page placement. */
+/** @internal */
+export interface SharedAnnotationUpdate {
+  readonly type: 'update';
+  readonly placementId: string;
+  readonly id: string;
+  readonly spec: PdfAnnotationSpec;
+}
+
 export type SharedAnnotationChange =
-  | { readonly type: 'add' | 'update'; readonly placementId: string; readonly id: string; readonly spec: PdfAnnotationSpec }
+  | { readonly type: 'add'; readonly placementId: string; readonly id: string; readonly spec: PdfAnnotationSpec }
+  | SharedAnnotationUpdate
   | { readonly type: 'remove'; readonly placementId: string; readonly id: string };
 
 /** Current materialized state of one shared annotation. */
@@ -40,6 +49,12 @@ export interface AnnotationOperationRequest {
 export interface CommittedAnnotationOperation extends AnnotationOperationRequest {
   /** Revision assigned by the relay. */
   readonly revision: number;
+}
+
+/** @internal Non-persistent annotation geometry broadcast while a participant drags. */
+export interface AnnotationPreview {
+  readonly actorId: string;
+  readonly changes: readonly SharedAnnotationUpdate[];
 }
 
 /**

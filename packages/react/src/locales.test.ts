@@ -49,6 +49,8 @@ describe('resolvePdfrxStrings', () => {
     expect(ja.redo).toBe('やり直す');
     expect(ja.textSelection).toBe('テキストを選択');
     expect(ja.strokeColor).toBe('線の色');
+    expect(ja.textColor).toBe('文字色');
+    expect(ja.textSize).toBe('文字サイズ');
     expect(ja.annotationTextPlaceholder).toBe('テキスト');
     expect(ja.annotationNotePlaceholder).toBe('ノート');
     expect(ja.closeAnnotationToolbar).toBe('注釈ツールバーを閉じる');

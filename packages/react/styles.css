@@ -686,6 +686,30 @@
   display: inline-flex;
 }
 
+.pdfrx-annot-text-color-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Only near-black text on a dark toolbar and near-white text on a light
+   toolbar need an outline. The surrounding padding keeps this thin,
+   continuous stroke inside the button's paint area. */
+@media (prefers-color-scheme: dark) {
+  .pdfrx-annot-text-color-icon-dark {
+    -webkit-text-stroke: 0.25px #fff;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  .pdfrx-annot-text-color-icon-light {
+    -webkit-text-stroke: 0.25px #000;
+  }
+}
+
 /* Stroke-color indicator: a ring in the current stroke color. */
 .pdfrx-annot-color-ring {
   width: 15px;

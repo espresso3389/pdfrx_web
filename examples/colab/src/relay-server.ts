@@ -102,6 +102,17 @@ export class InMemoryPageRelay {
         if (!joined || joined.sessionId !== message.sessionId) {
           throw new RelayRequestError('not-joined', 'Join the session before submitting operations');
         }
+        if (message.type === 'annotation.preview') {
+          const preview: ServerRelayMessage = {
+            type: 'annotation.preview',
+            sessionId: joined.sessionId,
+            preview: message.preview,
+          };
+          for (const client of joined.session.clients) {
+            if (client !== socket) send(client, preview);
+          }
+          return;
+        }
         let committed: ServerRelayMessage;
         if (message.type === 'page.operation') {
           const result = commitPageOperation(joined.session.snapshot, message.request);

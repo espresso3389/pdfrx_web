@@ -243,6 +243,15 @@ function CollaborativeViewerContent({
         }
       }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
+    const unsubscribeAnnotationPreviews = client.subscribeAnnotationPreviews((preview) => {
+      const changes = preview.changes.flatMap((record) => {
+        const pageIndex = client.snapshot?.pages.findIndex((page) => page.placementId === record.placementId) ?? -1;
+        return pageIndex < 0
+          ? []
+          : [{ pageNumber: pageIndex + 1, id: record.id, spec: structuredClone(record.spec) }];
+      });
+      viewer.applyAnnotationPreviewChanges(changes);
+    });
     let applyingForms = Promise.resolve();
     const unsubscribeForms = client.subscribeForms((formSnapshot, committed) => {
       applyingForms = applyingForms.then(async () => {
@@ -272,6 +281,20 @@ function CollaborativeViewerContent({
         }
       })().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
+    const unsubscribeLocalAnnotationPreviews = viewer.addAnnotationPreviewChangeListener((changes) => {
+      const shared = changes.flatMap((change) => {
+        const placement = client.snapshot?.pages[change.pageNumber - 1];
+        return placement
+          ? [{
+              type: 'update' as const,
+              placementId: placement.placementId,
+              id: change.id,
+              spec: structuredClone(change.spec),
+            }]
+          : [];
+      });
+      client.sendAnnotationPreview(shared);
+    });
     void client.connect(relayUrl, sessionId).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -279,8 +302,10 @@ function CollaborativeViewerContent({
       active = false;
       unsubscribe();
       unsubscribeAnnotations();
+      unsubscribeAnnotationPreviews();
       unsubscribeForms();
       unsubscribeLocalAnnotations();
+      unsubscribeLocalAnnotationPreviews();
       for (const unsubscribeFormObserver of formObservers.values()) unsubscribeFormObserver();
       observeSourceFormsRef.current = () => {};
       if (clientRef.current === client) clientRef.current = null;

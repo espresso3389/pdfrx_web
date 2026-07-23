@@ -260,6 +260,17 @@ test('annotation move snaps to nearby object guides and shows the active guide',
   await page.mouse.down();
   await page.mouse.move(start.x + nearTargetDx, start.y, { steps: 4 });
   await expect(page.locator('.pdfrx-annotation-snap-guide')).not.toHaveCount(0);
+  const livePreview = await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readAnnotationPreviewRects(): { id: string; rect?: { left: number; right: number } }[];
+        };
+      }
+    ).annotationVisualTest.readAnnotationPreviewRects(),
+  );
+  expect(livePreview[0]?.id).toBe(ids[0]);
+  expect(livePreview[0]?.rect?.left).toBeGreaterThan(specs[0]!.rect!.left);
   await page.mouse.up();
   await expect(page.locator('.pdfrx-annotation-snap-guide')).toHaveCount(0);
   await expect
@@ -608,6 +619,12 @@ test('the box tool switches automatically between rectangle and FreeText', async
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(editor).toHaveCount(0);
+  await expect.poll(async () => (await read())[0]?.subtype).toBe('square');
+  expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
+
+  const box = page.locator('g[data-annot-id]');
+  await box.dblclick();
   await expect(editor).toHaveCount(1);
   await expect(editor).toHaveAttribute('placeholder', 'Localized text');
   expect(
@@ -616,13 +633,6 @@ test('the box tool switches automatically between rectangle and FreeText', async
       return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
     }),
   ).toEqual({ width: '5px', style: 'solid', color: 'rgb(229, 57, 53)' });
-  await editor.press('Control+Enter');
-  await expect.poll(async () => (await read())[0]?.subtype).toBe('square');
-  expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
-
-  const box = page.locator('g[data-annot-id]');
-  await box.dblclick();
-  await expect(editor).toHaveCount(1);
   await editor.fill('Text inside the box');
   await editor.press('Control+Enter');
   await expect.poll(async () => (await read())[0]?.subtype).toBe('freeText');
@@ -650,6 +660,8 @@ test('the box tool switches automatically between rectangle and FreeText', async
   await page.mouse.down();
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
+  await expect(editor).toHaveCount(0);
+  await box.dblclick();
   await expect(editor).toHaveCount(1);
   expect(
     await editor.evaluate((element) => {
@@ -657,6 +669,96 @@ test('the box tool switches automatically between rectangle and FreeText', async
       return { width: style.borderTopWidth, style: style.borderTopStyle };
     }),
   ).toEqual({ width: '0px', style: 'none' });
+});
+
+test('box text color and size are rendered and survive PDF round-trip', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(async () => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: {
+          setupTextTool(t: 'rectangle'): Promise<void>;
+          setTextStyle(color: string, size: number): void;
+        };
+      }
+    ).annotationVisualTest;
+    await api.setupTextTool('rectangle');
+    api.setTextStyle('#43a047', 24);
+  });
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(240, 230, { steps: 3 });
+  await page.mouse.up();
+  const editor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(editor).toHaveCount(0);
+  await page.locator('g[data-annot-id]').dblclick();
+  await expect(editor).toHaveCount(1);
+  await expect(editor).toHaveCSS('color', 'rgb(67, 160, 71)');
+  await expect(editor).toHaveCSS('font-size', '24px');
+  await editor.fill('Styled text');
+  await editor.press('Control+Enter');
+  const svgText = page.locator('g[data-annot-id] text');
+  await expect(svgText).toHaveAttribute('fill', 'rgb(67, 160, 71)');
+  await expect(svgText).toHaveAttribute('font-size', '24');
+  expect(
+    await page.evaluate(() =>
+      (
+        window as unknown as {
+          annotationVisualTest: {
+            readTextStyleRoundTrip(): Promise<{ textColor: unknown; fontSize: number | null } | null>;
+          };
+        }
+      ).annotationVisualTest.readTextStyleRoundTrip(),
+    ),
+  ).toEqual({ textColor: { r: 67, g: 160, b: 71, a: 255 }, fontSize: 24 });
+});
+
+test('box text reflows while its resize handle is being dragged', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupTextTool(t: 'rectangle'): Promise<void> };
+      }
+    ).annotationVisualTest.setupTextTool('rectangle'),
+  );
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(150, 220, { steps: 3 });
+  await page.mouse.up();
+  const editor = page.locator('.pdfrx-annotation-text-editor textarea');
+  await expect(editor).toHaveCount(0);
+  await page.locator('g[data-annot-id]').dblclick();
+  await editor.fill('Text that wraps across several lines while the box changes width');
+  await editor.press('Control+Enter');
+  const lines = page.locator('g[data-annot-id] text tspan');
+  await expect.poll(async () => lines.count()).toBeGreaterThan(1);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setObjectSelectMode(): void };
+      }
+    ).annotationVisualTest.setObjectSelectMode(),
+  );
+  const box = page.locator('g[data-annot-id]');
+  await box.click();
+  const handles = page.locator('.pdfrx-anchors circle');
+  await expect(handles).toHaveCount(8);
+  const initialLineCount = await lines.count();
+  expect(initialLineCount).toBeGreaterThan(1);
+  const rightHandle = handles.nth(3);
+  const handleBox = await rightHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 220, handleBox!.y + handleBox!.height / 2, {
+    steps: 4,
+  });
+  // Assert before pointerup: the live SVG preview must already use the wider box.
+  await expect.poll(async () => lines.count()).toBeLessThan(initialLineCount);
+  await page.mouse.up();
 });
 
 test('note and FreeText use inline editors instead of browser prompts', async ({ page }) => {

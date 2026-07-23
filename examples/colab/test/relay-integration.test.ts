@@ -143,6 +143,39 @@ describe('WebSocket page relay', () => {
     expect(bob.annotationSnapshot?.annotations[0]?.placementId).toBe('a');
   });
 
+  it('broadcasts annotation drag previews without committing a revision', async () => {
+    server = await startPageRelayServer({ sessions: { shared: initial } });
+    const alice = new PageCollaborationClient('alice', () => 'unused-a', socketFactory);
+    const bob = new PageCollaborationClient('bob', () => 'unused-b', socketFactory);
+    clients.push(alice, bob);
+    await Promise.all([alice.connect(server.url, 'shared'), bob.connect(server.url, 'shared')]);
+
+    const received = new Promise<Parameters<Parameters<typeof bob.subscribeAnnotationPreviews>[0]>[0]>((resolve) => {
+      const unsubscribe = bob.subscribeAnnotationPreviews((preview) => {
+        unsubscribe();
+        resolve(preview);
+      });
+    });
+    alice.sendAnnotationPreview([{
+      type: 'update',
+      placementId: 'a',
+      id: 'box-1',
+      spec: { subtype: 'freeText', rect: { left: 10, bottom: 10, right: 80, top: 40 }, contents: 'preview' },
+    }]);
+
+    expect(await received).toEqual({
+      actorId: 'alice',
+      changes: [{
+        type: 'update',
+        placementId: 'a',
+        id: 'box-1',
+        spec: { subtype: 'freeText', rect: { left: 10, bottom: 10, right: 80, top: 40 }, contents: 'preview' },
+      }],
+    });
+    expect(alice.annotationSnapshot?.revision).toBe(0);
+    expect(bob.annotationSnapshot?.revision).toBe(0);
+  });
+
   it('broadcasts typed form values in their own strict revision stream', async () => {
     server = await startPageRelayServer({ sessions: { shared: initial } });
     const alice = new PageCollaborationClient('alice', () => 'form-1', socketFactory);

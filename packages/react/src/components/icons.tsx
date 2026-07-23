@@ -112,6 +112,14 @@ export const IconClose = (): ReactNode => (
 );
 
 /** @internal */
+export const IconTextSize = (): ReactNode => (
+  <Icon>
+    <path d="M3.5 19L8.5 5l5 14M5.5 14h6" />
+    <path d="M18.5 6v12M16.5 8l2-2 2 2M16.5 16l2 2 2-2" />
+  </Icon>
+);
+
+/** @internal */
 export const IconOpenFile = (): ReactNode => (
   <Icon>
     <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z" />

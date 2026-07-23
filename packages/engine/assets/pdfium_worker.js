@@ -3611,6 +3611,8 @@ function _generateAnnotId() {
 const ANNOT_COLOR_KEY = 'pdfrx:C';
 const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
 const ANNOT_FONT_FACE_KEY = 'pdfrx:FontFace';
+const ANNOT_TEXT_COLOR_KEY = 'pdfrx:TextColor';
+const ANNOT_FONT_SIZE_KEY = 'pdfrx:FontSize';
 const ANNOT_ACTOR_ID_KEY = 'pdfrx:ActorId';
 const ANNOT_REVISION_KEY = 'pdfrx:Revision';
 /** Bitmap backing stores retained until FPDFPage_GenerateContent consumes them. */
@@ -3868,6 +3870,11 @@ function _readAnnotationObject(annot, index) {
     actorId: _getAnnotField(ANNOT_ACTOR_ID_KEY, annot) || null,
     revision: Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, annot), 10) || 0,
     textOrientation: _readTextOrientation(annot),
+    textColor: _colorFromKey(_getAnnotField(ANNOT_TEXT_COLOR_KEY, annot)) ?? null,
+    fontSize: (() => {
+      const value = Number.parseFloat(_getAnnotField(ANNOT_FONT_SIZE_KEY, annot));
+      return Number.isFinite(value) && value > 0 ? value : null;
+    })(),
     fontFace: _getAnnotField(ANNOT_FONT_FACE_KEY, annot) || null,
     appearanceLines: (() => {
       const value = _getAnnotField('pdfrx:FreeTextLines', annot);
@@ -3981,6 +3988,8 @@ function _applyAnnotSpec(annot, spec, docHandle) {
   if (spec.textOrientation) {
     _setAnnotStringKey(annot, 'pdfrx:TextOrientation', JSON.stringify(spec.textOrientation));
   }
+  if (spec.textColor) _setAnnotStringKey(annot, ANNOT_TEXT_COLOR_KEY, _colorToKey(spec.textColor));
+  if (typeof spec.fontSize === 'number') _setAnnotStringKey(annot, ANNOT_FONT_SIZE_KEY, String(spec.fontSize));
   if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
   if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
   if (spec.appearanceRuns) {
@@ -4064,7 +4073,8 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
     return font;
   };
   try {
-    const fontSize = 12;
+    const fontSize = Math.max(1, spec.fontSize ?? 12);
+    const textColor = spec.textColor ?? [0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255];
     const lineHeight = fontSize * 1.2;
     const lines = spec.appearanceLines ?? String(spec.contents).replace(/\r\n?/g, '\n').split('\n');
     for (let index = 0; index < lines.length; index++) {
@@ -4109,7 +4119,13 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
         } finally {
           StringUtils.freeUTF8(value);
         }
-        w.FPDFPageObj_SetFillColor(text, 0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255);
+        w.FPDFPageObj_SetFillColor(
+          text,
+          textColor[0],
+          textColor[1],
+          textColor[2],
+          textColor[3] ?? 255,
+        );
         const radians = (-intrinsicRotation * Math.PI) / 180;
         const cos = Math.cos(radians);
         const sin = Math.sin(radians);

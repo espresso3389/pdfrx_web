@@ -1,4 +1,4 @@
-import type { PdfAnnotationSpec } from '@pdfrx/engine';
+import type { PdfAnnotationSpec, PdfRect } from '@pdfrx/engine';
 import { PdfrxViewer } from '@pdfrx/viewer';
 
 const SIZE = 256;
@@ -19,6 +19,10 @@ const viewer = new PdfrxViewer(host, {
   annotationEditorPlaceholders: { text: 'Localized text', note: 'Localized note' },
   margin: 0,
   pageDropShadow: null,
+});
+let lastAnnotationPreviewRects: { id: string; rect: PdfRect | undefined }[] = [];
+viewer.addAnnotationPreviewChangeListener((changes) => {
+  lastAnnotationPreviewRects = changes.map((change) => ({ id: change.id, rect: change.spec.rect }));
 });
 
 const white = new Uint8Array(SIZE * SIZE * 4).fill(255);
@@ -299,10 +303,35 @@ function readViewTransform(): { xZoomed: number; yZoomed: number; zoom: number }
   return viewer.currentTransform;
 }
 
+function readAnnotationPreviewRects(): typeof lastAnnotationPreviewRects {
+  return structuredClone(lastAnnotationPreviewRects);
+}
+
 async function setupTextTool(tool: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void> {
   await clearAnnotations();
   if (strokeWidth !== undefined) viewer.setAnnotationStyle({ strokeWidth });
   viewer.setAnnotationTool(tool);
+}
+
+function setTextStyle(textColor: string, fontSize: number): void {
+  viewer.setAnnotationStyle({ textColor, fontSize });
+}
+
+function setObjectSelectMode(): void {
+  viewer.setAnnotationSelectMode(true);
+}
+
+async function readTextStyleRoundTrip(): Promise<{ textColor: unknown; fontSize: number | null } | null> {
+  const doc = viewer.document;
+  if (!doc) return null;
+  const encoded = await doc.encodePdf();
+  const reopened = await viewer.engine.openData(encoded);
+  try {
+    const annotation = (await reopened.pages[0]!.loadAnnotations())[0];
+    return annotation ? { textColor: annotation.textColor, fontSize: annotation.fontSize } : null;
+  } finally {
+    await reopened.dispose();
+  }
 }
 
 async function readTextAnnotations(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]> {
@@ -455,7 +484,11 @@ declare global {
       setupSelectAllTest: typeof setupSelectAllTest;
       setupSnapGesture: typeof setupSnapGesture;
       readViewTransform: typeof readViewTransform;
+      readAnnotationPreviewRects: typeof readAnnotationPreviewRects;
       setupTextTool: typeof setupTextTool;
+      setTextStyle: typeof setTextStyle;
+      setObjectSelectMode: typeof setObjectSelectMode;
+      readTextStyleRoundTrip: typeof readTextStyleRoundTrip;
       readTextAnnotations: typeof readTextAnnotations;
       readTextAnnotationsRoundTrip: typeof readTextAnnotationsRoundTrip;
       flushAnnotationTextEdit: typeof flushAnnotationTextEdit;
@@ -475,7 +508,11 @@ window.annotationVisualTest = {
   setupSelectAllTest,
   setupSnapGesture,
   readViewTransform,
+  readAnnotationPreviewRects,
   setupTextTool,
+  setTextStyle,
+  setObjectSelectMode,
+  readTextStyleRoundTrip,
   readTextAnnotations,
   readTextAnnotationsRoundTrip,
   flushAnnotationTextEdit,
