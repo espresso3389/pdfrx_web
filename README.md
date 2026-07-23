@@ -14,7 +14,8 @@ It renders pages, text selection, links, and search highlights onto a single
 **Features**
 
 - Sharp, high-quality rendering with re-rendering on zoom
-- Pan / wheel / pinch zoom with inertia, keyboard navigation
+- Pan by primary- or right-button drag, wheel / pinch zoom with inertia,
+  keyboard navigation
 - Canvas-painted text selection: mouse drag, double-click word selection,
   touch long-press with draggable handles and a magnifier lens
 - Text search with highlights, outline (bookmarks), page thumbnails
@@ -86,9 +87,8 @@ npm install @pdfrx/colab     # Collaborative React apps
 npm install @pdfrx/viewer    # everything else
 ```
 
-Either package pulls in `@pdfrx/viewer-core` and `@pdfrx/engine` (which bundles
-the WASM engine assets) automatically; `@pdfrx/react` also pulls in
-`@pdfrx/viewer`.
+The higher-level packages pull in their lower-level dependencies automatically;
+`@pdfrx/engine` includes the WASM engine assets.
 
 ## Usage
 
@@ -190,10 +190,11 @@ worker protocol contract, and coordinate conventions.
 
 ```sh
 npm install
-npm run build     # tsc for all packages
-npm test          # viewer-core + react unit tests (vitest)
+npm run build     # tsc for all packages and the collaboration app
+npm test          # viewer-core + react + colab + relay tests (vitest)
 npm run dev       # vanilla example app (Vite)
 npm run dev:react # React example app (Vite)
+npm run dev:colab # collaboration app + Bun relay
 ```
 
 The WASM engine assets (`packages/engine/assets/pdfium_worker.js`,

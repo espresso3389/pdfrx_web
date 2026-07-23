@@ -82,7 +82,8 @@ Upstream API names are given so you can find the reference implementation.
 
 ## Viewer — interaction & configurability
 
-pdfrx_web already implements the core gestures: **pan, pinch-zoom, wheel
+pdfrx_web already implements the core gestures: **primary- and right-button
+drag pan, pinch-zoom, wheel
 (and ctrl+wheel zoom), inertia/fling, keyboard navigation, long-press & dbl-click
 word selection, context menu, selection magnifier, links overlay, touch
 handles, auto-scroll during selection drag, and page overlays.** The gaps are
@@ -90,7 +91,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, `boundaryMargin` (over-pan), and `panAxis` (`'free'` / `'horizontal'` / `'vertical'` / `'aligned'`) to lock drag-panning to an axis. |
+| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, `boundaryMargin` (over-pan), and `panAxis` (`'free'` / `'horizontal'` / `'vertical'` / `'aligned'`) to lock primary-button, right-button, and single- or two-finger drag-panning to an axis. Two-finger midpoint movement (pan) and separation (zoom) honor their toggles independently. A moved right-button drag suppresses the context menu. |
 | Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
 | Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
 | Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |

@@ -82,8 +82,11 @@ the canvas approach enables selection behavior DOM ranges cannot express. The
 shell adds:
 
 - a pointer state machine (`pan / select / dragHandle / pinch`): mouse text-drag
-  selects, background drag pans, touch pans with long-press word selection and
-  draggable A/B handles;
+  selects, primary-button background drag or right-button drag pans, and touch
+  pans with long-press word selection and draggable A/B handles; a moved
+  right-button drag suppresses its context menu. Two-finger midpoint movement
+  pans while separation changes zoom; the two parts independently honor
+  `panEnabled` / `panAxis` and `zoomEnabled`;
 - the selection magnifier lens (positioning logic with edge flipping);
 - a page bitmap cache with capped base renders plus high-zoom sharp patches
   rendered for the visible region;
