@@ -4,7 +4,12 @@ import { parseSvgAnnotation } from './svg-annotation.js';
 
 const IMAGE_DECODE_TIMEOUT_MS = 5_000;
 
-/** Adds an image as a stamp annotation, centered on the requested page. */
+/**
+ * Adds an image as a stamp annotation, centered on the requested page.
+ *
+ * Raster inputs retain up to 2048 pixels on their longest side independently
+ * of their initial 240-point on-page placement. SVG inputs remain vector paths.
+ */
 export async function addCenteredImageAnnotation(
   viewer: PdfrxViewer,
   file: File,
@@ -24,7 +29,11 @@ export async function addCenteredImageAnnotation(
   });
 }
 
-/** Adds an image as a stamp annotation centered at a point, constrained to its page. */
+/**
+ * Adds an image as a stamp annotation centered at a point, constrained to its
+ * page. Raster inputs retain up to 2048 pixels on their longest side
+ * independently of their initial 240-point on-page placement; SVG stays vector.
+ */
 export async function addDroppedImageAnnotation(
   page: PdfPage,
   file: File,

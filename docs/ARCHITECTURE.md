@@ -219,7 +219,13 @@ duplicate placements therefore share annotation state.
 The toolbar's image picker and the all-in-one viewer's image-drop handler share
 one stamp-creation path: picked images target the current page center, dropped
 images target the drop point, and both are capped at 240 PDF points wide before
-being scaled further when required to fit the page.
+being scaled further when required to fit the page. Placement size is separate
+from image resolution: raster inputs are decoded to RGBA with a 2048-pixel
+longest-side cap, while SVG inputs become normalized vector appearance paths.
+PDFium appearance readback prefers the image object's intrinsic bitmap rather
+than its placement-matrix-rendered bitmap. The viewer also retains the first
+generation of those pixels across annotation rebuilds, so repeated transforms
+do not progressively resample image stamps.
 
 External collaboration uses a versioned `PdfAnnotationSnapshot` for full
 save/restore and `PdfAnnotationChange[]` for incremental synchronization. IDs
@@ -262,7 +268,11 @@ Select button) enters a mode where dragging empty page area draws a rubber-band
 marquee and continuously selects every overlapping annotation while the pointer
 moves; objects that leave it are removed. Holding Ctrl/Cmd preserves the
 pre-drag selection and adds intersections, and modifier-click toggles one
-object. Single-click select still works with or without select mode. The
+object. Straight lines and arrows bypass SVG bounding-box hits: selection uses
+the closest finite line segment within 6 screen pixels for mouse/pen or 10
+screen pixels for touch. Marquee selection likewise tests segment/rectangle
+intersection rather than line/arrow bounds. Single-click select still works
+with or without select mode. The
 selection is a `Set<id>`. A single selection shows the
 annotation's own handles; a multi-selection shows one group bounding box whose
 eight handles scale every member together (`scaleAnnotationSpec` maps each

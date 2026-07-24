@@ -139,7 +139,13 @@ the `origin` lets the publisher ignore it and avoid a synchronization echo.
 The standard
 [`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html)
 orders text controls after line thickness, provides independent text color and
-font-size settings, and adds image stamps from its image picker. Rectangle and
+font-size settings, and adds image stamps from its image picker. Picked images
+are centered on the current page; dropped images use the drop point. Their
+initial placement is capped at 240 PDF points wide and fitted to the page, but
+that placement does not determine the embedded resolution: raster inputs retain
+their decoded pixels up to a 2048-pixel longest side, and SVG inputs remain
+vector paths. Repeated image resize operations reuse the retained source pixels
+instead of progressively resampling PDFium's transformed appearance. Rectangle and
 text-box tools share the same on-page behavior: placing a rectangle does not
 automatically start typing, while double-clicking either a rectangle or
 FreeText annotation opens localized inline editing. Adding non-blank text
@@ -150,7 +156,10 @@ font size, wrapping, and clipping while it is resized.
 Object-select mode updates a marquee selection continuously during its drag.
 Objects that leave the marquee are removed from the selection; holding
 `Ctrl`/`Cmd` preserves the existing selection and adds intersecting objects.
-The same modifier toggles objects on click. Annotation body and anchor drags
+The same modifier toggles objects on click. Straight lines and arrows are
+clickable only near their actual segments (with a slightly wider touch target),
+and a marquee must cross their segments rather than merely their bounding
+rectangles. Annotation body and anchor drags
 snap to nearby coordinates on other annotations and display alignment guides.
 
 ## Editing history and document mutations
