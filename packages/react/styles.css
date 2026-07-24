@@ -699,6 +699,43 @@
 
 /* --- Annotation toolbar --------------------------------------------------- */
 
+/* Rows that join the app chrome animate both their occupied height and their
+   contents. Keeping them mounted also gives closing transitions time to run. */
+.pdfrx-collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex: 0 0 auto;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 140ms ease,
+    visibility 0s linear 180ms;
+}
+
+.pdfrx-collapsible-content {
+  min-height: 0;
+  overflow: hidden;
+  transform: translateY(-6px);
+  transition: transform 180ms ease;
+}
+
+.pdfrx-collapsible-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 160ms ease,
+    visibility 0s;
+}
+
+.pdfrx-collapsible-open > .pdfrx-collapsible-content {
+  transform: translateY(0);
+}
+
 /* The second toolbar row hosting the annotation mode bar. */
 .pdfrx-toolbar-annot {
   flex-wrap: wrap;
@@ -1018,7 +1055,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px;
   font-family: var(--pdfrx-font);
   font-size: 13px;
   color: var(--pdfrx-accent-contrast);
@@ -1063,7 +1100,11 @@
     display: inline-flex;
   }
 
-  /* ...and let its second row show when the toolbar renders one. */
+  /* ...and let its animated second-row slot participate in layout. */
+  .pdfrx-toolbar-search-slot {
+    display: grid;
+  }
+
   .pdfrx-toolbar-search-row {
     display: flex;
     align-items: center;
@@ -1072,5 +1113,12 @@
     box-sizing: border-box;
     background: var(--pdfrx-bg-subtle);
     border-bottom: 1px solid var(--pdfrx-border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfrx-collapsible,
+  .pdfrx-collapsible-content {
+    transition: none;
   }
 }

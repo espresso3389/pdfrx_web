@@ -133,6 +133,7 @@ export function PdfrxProvider({
   options.annotationEditorPlaceholders = {
     text: mergedStrings.annotationTextPlaceholder,
     note: mergedStrings.annotationNotePlaceholder,
+    addText: mergedStrings.annotationAddText,
     ...options.annotationEditorPlaceholders,
   };
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {

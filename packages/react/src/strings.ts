@@ -84,6 +84,8 @@ export interface PdfrxStrings {
   annotationTextPlaceholder: string;
   /** Placeholder shown while editing a sticky note. */
   annotationNotePlaceholder: string;
+  /** Banner shown while an empty rectangle is selected. */
+  annotationAddText: string;
   strokeColor: string;
   noStroke: string;
   fillColor: string;
@@ -166,6 +168,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   addImage: 'Add image',
   annotationTextPlaceholder: 'Text',
   annotationNotePlaceholder: 'Note',
+  annotationAddText: 'Add text',
   strokeColor: 'Stroke color',
   noStroke: 'No stroke',
   fillColor: 'Fill color',

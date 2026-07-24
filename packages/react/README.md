@@ -150,17 +150,28 @@ text-box tools share the same on-page behavior: placing a rectangle does not
 automatically start typing, while double-clicking either a rectangle or
 FreeText annotation opens localized inline editing. Adding non-blank text
 converts the rectangle to FreeText; clearing all text converts it back to a
-plain square. The inline editor follows the annotation stroke, text color,
-font size, wrapping, and clipping while it is resized.
+plain square. A selected empty rectangle shows a localized **Add text** banner;
+clicking it opens the editor. Text-bearing FreeText accepts a double-click
+across its text/background area. Filled rectangles retain full-interior hit
+testing, while unfilled rectangles otherwise use their outline. The inline
+editor follows the annotation stroke, text color, font size, wrapping, and
+clipping while it is resized.
 
-Secondary-button drag updates a marquee selection continuously during its drag.
+Annotation selection is always available; the toolbar contains drawing tools,
+not text/object selection mode buttons. A primary click selects one object,
+primary-button object and anchor drags move or reshape it, and secondary-button
+drag updates a marquee selection continuously during its drag.
 Objects that leave the marquee are removed from the selection; holding
 `Ctrl`/`Cmd` preserves the existing selection and adds intersecting objects.
-The same modifier toggles objects on click. Straight lines and arrows are
-clickable only near their actual segments (with a slightly wider touch target),
-and a marquee must cross their segments rather than merely their bounding
-rectangles. Annotation body and anchor drags
-snap to nearby coordinates on other annotations and display alignment guides.
+The same modifier toggles objects on click. Pen strokes, straight lines, and
+arrows are clickable only near their actual segments (with a slightly wider
+touch target); unfilled rectangles and ellipses are clickable only on or near
+their outlines. A marquee uses the same shape-aware intersections rather than
+plain bounding rectangles. Annotation creation, body drags, and anchor drags
+snap to nearby coordinates on other annotations and display alignment guides
+(freehand ink creation remains unsnapped). `Ctrl`/`Cmd`+`A` selects all text
+unless at least one annotation is selected, in which case it selects every
+annotation on the current page.
 
 ## Editing history and document mutations
 

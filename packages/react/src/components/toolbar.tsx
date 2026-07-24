@@ -112,9 +112,17 @@ export function PdfToolbar({
         {sidebarTogglePosition === 'end' && sidebarToggle}
         <PdfLoadingBar />
       </div>
-      {showSearch && searchOpen && (
-        <div className="pdfrx-toolbar-search-row">
-          <PdfSearchBox autoFocus onClose={() => setSearchOpen(false)} />
+      {showSearch && (
+        <div
+          className={`pdfrx-collapsible pdfrx-toolbar-search-slot${searchOpen ? ' pdfrx-collapsible-open' : ''}`}
+          aria-hidden={!searchOpen}
+          inert={!searchOpen}
+        >
+          <div className="pdfrx-collapsible-content">
+            <div className="pdfrx-toolbar-search-row">
+              <PdfSearchBox autoFocus={searchOpen} onClose={() => setSearchOpen(false)} />
+            </div>
+          </div>
         </div>
       )}
     </>

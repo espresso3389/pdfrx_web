@@ -72,8 +72,9 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
 /**
  * The annotation toolbar: drawing-tool toggles, an image picker, plus
  * color/width pickers. Text interaction remains on the primary mouse button
- * and object selection remains available on the secondary button independently
- * of the active drawing tool. The image picker adds a printable stamp annotation
+ * and annotation selection remains available independently of the toolbar:
+ * primary-click/body/anchor interaction edits one object and secondary drag
+ * marquee-selects. The image picker adds a printable stamp annotation
  * to the center of the current page, using the same sizing as image drop (240pt
  * wide at most, with additional proportional scaling when needed to fit the page). Drawing
  * controls are wired to {@link PdfrxViewer.setAnnotationTool} /

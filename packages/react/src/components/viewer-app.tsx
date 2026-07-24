@@ -183,6 +183,13 @@ function PdfrxViewerAppChrome({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [annotating, setAnnotating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const errorMessageRef = useRef('');
+  if (error !== null) {
+    errorMessageRef.current =
+      store.errorKind === 'import'
+        ? strings.failedToImport(store.errorFileName ?? '', describeError(error))
+        : strings.failedToOpen(describeError(error));
+  }
 
   // Batteries-included default: prompt for a password when a document is
   // encrypted. Only a fallback — an app-supplied `passwordProvider` prop wins
@@ -382,28 +389,38 @@ function PdfrxViewerAppChrome({
           {children}
         </PdfToolbar>
       )}
-      {enableAnnotations && annotating && (
-        <div className="pdfrx-toolbar pdfrx-toolbar-annot">
-          <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+      {enableAnnotations && (
+        <div
+          className={`pdfrx-collapsible${annotating ? ' pdfrx-collapsible-open' : ''}`}
+          aria-hidden={!annotating}
+          inert={!annotating}
+        >
+          <div className="pdfrx-collapsible-content">
+            <div className="pdfrx-toolbar pdfrx-toolbar-annot">
+              <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+            </div>
+          </div>
         </div>
       )}
-      {error !== null && (
-        <div className="pdfrx-error" role="alert">
-          <span className="pdfrx-error-message">
-            {store.errorKind === 'import'
-              ? strings.failedToImport(store.errorFileName ?? '', describeError(error))
-              : strings.failedToOpen(describeError(error))}
-          </span>
-          <button
-            className="pdfrx-button pdfrx-error-dismiss"
-            onClick={clearError}
-            title={strings.dismissError}
-            aria-label={strings.dismissError}
-          >
-            <IconClose />
-          </button>
+      <div
+        className={`pdfrx-collapsible${error !== null ? ' pdfrx-collapsible-open' : ''}`}
+        aria-hidden={error === null}
+        inert={error === null}
+      >
+        <div className="pdfrx-collapsible-content">
+          <div className="pdfrx-error" role={error !== null ? 'alert' : undefined}>
+            <span className="pdfrx-error-message">{errorMessageRef.current}</span>
+            <button
+              className="pdfrx-button pdfrx-error-dismiss"
+              onClick={clearError}
+              title={strings.dismissError}
+              aria-label={strings.dismissError}
+            >
+              <IconClose />
+            </button>
+          </div>
         </div>
-      )}
+      </div>
       <div className="pdfrx-app-body">
         {/* Kept mounted while closed: the drawer animates out on narrow screens,
             and a `display: none` sidebar stops its thumbnails from rendering

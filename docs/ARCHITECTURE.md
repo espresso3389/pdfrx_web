@@ -100,8 +100,9 @@ the canvas approach enables selection behavior DOM ranges cannot express. The
 shell adds:
 
 - a pointer state machine (`pan / select / dragHandle / pinch`): mouse text-drag
-  selects, primary-button background drag pans, secondary-button drag selects
-  or moves annotation objects, and touch pans with long-press word selection
+  selects, primary-button background drag pans, primary-button annotation/anchor
+  drag moves or reshapes objects, secondary-button drag marquee-selects objects,
+  and touch pans with long-press word selection
   and draggable A/B handles. Two-finger midpoint movement
   pans while separation changes zoom; the two parts independently honor
   `panEnabled` / `panAxis` and `zoomEnabled`;
@@ -257,23 +258,26 @@ through the engine and the `annotationsChanged` event rebuilds the affected
 page's SVG.
 
 **Text highlight** is not a drawing tool — it is proper text markup. The user
-selects text (normal mode) and picks *Highlight* from the right-click context
+selects text and picks *Highlight* from the right-click context
 menu; `PdfrxViewer.highlightSelection(color?)` turns the selection into per-line
 quadpoints (`getSelectedRanges` + `enumerateFragmentBoundingRects`, the same
 geometry that paints the selection) and adds one `Highlight` markup annotation
 per page as a single undo group. `canHighlightSelection()` gates the menu item.
 
-**Select mode & multi-selection.** `setAnnotationSelectMode(true)` (the toolbar's
-Select button) enters a mode where dragging empty page area draws a rubber-band
-marquee and continuously selects every overlapping annotation while the pointer
-moves; objects that leave it are removed. Holding Ctrl/Cmd preserves the
-pre-drag selection and adds intersections, and modifier-click toggles one
-object. Straight lines and arrows bypass SVG bounding-box hits: selection uses
-the closest finite line segment within 6 screen pixels for mouse/pen or 10
-screen pixels for touch. Marquee selection likewise tests segment/rectangle
-intersection rather than line/arrow bounds. Single-click select is always
-available. The
-selection is a `Set<id>`. A single selection shows the
+**Always-available object selection & multi-selection.** Annotation selection
+has no toolbar mode: a primary click selects one object, a primary drag on an
+object or anchor moves or reshapes it, and a secondary-button drag draws a
+rubber-band marquee. The marquee continuously selects every intersecting
+annotation; objects that leave it are removed. A moved secondary drag suppresses
+the trailing context menu, while a stationary secondary click still opens it.
+Holding Ctrl/Cmd preserves the pre-drag selection and adds intersections, and
+modifier-click toggles one object. Pen strokes, lines, and arrows bypass
+bounding-box hits: selection uses the closest finite stroke segment within 6
+screen pixels for mouse/pen or 10 pixels for touch, plus half the stroke width.
+Unfilled rectangles and ellipses are likewise selectable only on or near their
+outlines; their hollow interiors remain available for text selection. Marquee
+selection applies the same shape-aware rules. The selection is a `Set<id>`. A
+single selection shows the
 annotation's own handles; a multi-selection shows one group bounding box whose
 eight handles scale every member together (`scaleAnnotationSpec` maps each
 member's own rect/geometry through the group's affine transform) and whose body
@@ -281,13 +285,24 @@ drag moves them all. Anchors and FreeText wrapping/clipping follow live during
 both. Body and anchor drags snap each movable X/Y axis to nearby coordinates on
 other annotations and paint alignment guides. Edge-midpoint handles participate
 only on their normal axis, and the dragged annotation's own anchors are excluded.
+Newly drawn objects apply the same snapping to their start/end coordinates and
+live preview (freehand ink remains unsnapped).
+
+`Ctrl`/`Cmd`+`A` selects all document text by default. If at least one annotation
+is already selected, it instead selects every annotation on the current page.
+`setAnnotationSelectMode(true)` remains only as a compatibility API that clears
+the active drawing tool; `false` is a no-op.
 
 **Rectangle text editing.** Square and FreeText remain distinct PDF annotation
 subtypes but are one GUI object. Double-clicking either opens the same inline
 editor; non-blank content writes a FreeText spec and clearing it writes a square
-spec. Rectangle placement itself only creates and selects an empty square. Both
-forms preserve stroke/fill/opacity/thickness plus independent text color and
-font size. The input border follows the annotation stroke unless that stroke is
+spec. Selecting an empty square also places a localized, clickable *Add text*
+banner at its center. Rectangle placement itself only creates and selects an
+empty square. For a FreeText object, the text area and its background accept the
+editing double-click. Filled rectangles retain full-interior hit testing;
+unfilled empty rectangles require their outline or the banner. Both forms
+preserve stroke/fill/opacity/thickness plus independent text color and font
+size. The input border follows the annotation stroke unless that stroke is
 disabled.
 
 Collaborative hosts may subscribe to transient full-spec preview updates during

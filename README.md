@@ -14,8 +14,9 @@ It renders pages, text selection, links, and search highlights onto a single
 **Features**
 
 - Sharp, high-quality rendering with re-rendering on zoom
-- Pan by primary-button or touch drag, wheel / pinch zoom with inertia;
-  secondary-button drag selects annotation objects
+- Pan by primary-button background or touch drag, wheel / pinch zoom with
+  inertia; primary-button object/anchor drags edit annotations and
+  secondary-button drag marquee-selects them
 - Canvas-painted text selection: mouse drag, double-click word selection,
   touch long-press with draggable handles and a magnifier lens
 - Text search with highlights, outline (bookmarks), page thumbnails

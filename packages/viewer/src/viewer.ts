@@ -268,7 +268,8 @@ export interface PdfrxViewerOptions {
   doubleClickToZoom?: boolean;
   /**
    * Enables drag-to-pan (primary-button background drag or touch drag).
-   * Secondary-button drags are reserved for annotation object selection.
+   * Secondary-button drags are reserved for annotation marquee selection;
+   * primary drags that start on an annotation body or anchor edit that object.
    * Default: `true`.
    */
   panEnabled?: boolean;
@@ -307,12 +308,15 @@ export interface PdfrxViewerOptions {
    */
   interactiveAnnotations?: boolean;
   /**
-   * Placeholder text shown by the inline annotation editors. Defaults to
-   * `{ text: 'Text', note: 'Note' }`; localized UI wrappers can override it.
+   * Text shown by annotation text-editing UI. Defaults to
+   * `{ text: 'Text', note: 'Note', addText: 'Add text' }`; localized UI
+   * wrappers can override it.
    */
   annotationEditorPlaceholders?: {
     text?: string;
     note?: string;
+    /** Banner shown while an empty rectangle is selected. */
+    addText?: string;
   };
   /**
    * Extra scrollable margin, in document units, added around the document so it
@@ -767,7 +771,11 @@ interface AnnotationDuplicateRepeat {
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
 export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'freeText';
 
-/** Current annotation interaction mode. `null` is normal text-selection viewing. */
+/**
+ * Current drawing interaction state. `null` means no drawing tool; annotation
+ * selection remains available. `'select'` is retained for source compatibility
+ * with the former explicit selection mode.
+ */
 export type AnnotationMode = AnnotationTool | 'select' | null;
 
 /** Style applied to newly drawn annotations. */
@@ -1684,8 +1692,8 @@ export class PdfrxViewer {
     NonNullable<PdfAnnotationObject['appearanceImage']>
   >();
   /**
-   * Active annotation mode: a drawing tool, `'select'` (marquee/multi-select
-   * editing), or null (normal viewing — pan/text-select, single-click select).
+   * Active drawing tool, or null. The legacy `'select'` value remains accepted
+   * by the type but is no longer entered by the public selection API.
    */
   private annotationMode: AnnotationMode = null;
   /** Current style applied to newly drawn annotations. */
@@ -4239,6 +4247,15 @@ export class PdfrxViewer {
   private readonly onAnnotationPointerDown = (event: PointerEvent): void => {
     if ((event.button !== 0 && event.button !== 2) || !this.isAnnotationSelectMode()) return;
     if (event.button === 0 && this.drawingTool()) return;
+    if (
+      event.button === 0 &&
+      event.target instanceof Element &&
+      event.target.closest('.pdfrx-add-text-banner')
+    ) {
+      // The banner owns this click. In particular, a filled rectangle also
+      // hits across its interior, so object-move capture must not preempt it.
+      return;
+    }
     const hit = this.annotationHitAtClientPoint(event.clientX, event.clientY, event.pointerType);
     const overlay = hit?.overlay ?? [...this.annotationOverlays.values()].find((candidate) => {
       if (candidate.container.style.display === 'none') return false;
@@ -5749,12 +5766,15 @@ export class PdfrxViewer {
     if (on) this.setAnnotationMode(null);
   }
 
-  /** Current annotation interaction mode. */
+  /**
+   * Current drawing state. Returns the selected drawing tool or `null`;
+   * annotation selection is always available and is not represented here.
+   */
   getAnnotationMode(): AnnotationMode {
     return this.annotationMode;
   }
 
-  /** Subscribes to annotation interaction-mode changes. */
+  /** Subscribes to drawing-tool changes. */
   addAnnotationModeChangeListener(listener: (mode: AnnotationMode) => void): () => void {
     this.annotationModeChangeListeners.add(listener);
     return () => this.annotationModeChangeListeners.delete(listener);
@@ -6339,8 +6359,52 @@ export class PdfrxViewer {
       g.style.filter = multi && selected ? 'drop-shadow(0 0 2px #2196f3)' : '';
     }
     const sel = this.selectedAnnotationsOn(overlay);
-    if (sel.length === 1) this.renderAnnotationAnchors(overlay, sel[0]!);
+    if (sel.length === 1) {
+      this.renderAnnotationAnchors(overlay, sel[0]!);
+      this.renderAddTextBanner(overlay, sel[0]!);
+    }
     else if (sel.length > 1) this.renderGroupSelection(overlay, sel);
+  }
+
+  /** Adds a clickable editing affordance to a selected empty rectangle. */
+  private renderAddTextBanner(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): void {
+    if (annotation.subtype !== 'square' || annotation.contents?.trim()) return;
+    const bounds = this.annotationPxBounds(annotation, overlay);
+    if (!bounds) return;
+    const zoom = this.transform.zoom;
+    const width = 96 / zoom;
+    const height = 26 / zoom;
+    const foreignObject = document.createElementNS(SVG_NS, 'foreignObject');
+    foreignObject.setAttribute('class', 'pdfrx-add-text-banner');
+    foreignObject.setAttribute('x', `${(bounds.left + bounds.right - width) / 2}`);
+    foreignObject.setAttribute('y', `${(bounds.top + bounds.bottom - height) / 2}`);
+    foreignObject.setAttribute('width', `${width}`);
+    foreignObject.setAttribute('height', `${height}`);
+    foreignObject.style.pointerEvents = 'auto';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = this.options.annotationEditorPlaceholders?.addText ?? 'Add text';
+    button.style.cssText =
+      `box-sizing:border-box;width:100%;height:100%;padding:0 ${8 / zoom}px;border:${1 / zoom}px solid #2196f3;` +
+      `border-radius:${4 / zoom}px;background:rgba(255,255,255,.94);color:#1565c0;font:${12 / zoom}px sans-serif;` +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;box-shadow:0 1px 3px #0003;';
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      foreignObject.remove();
+      this.trackAnnotationTextEdit(this.editTextAnnotation(overlay, annotation));
+    });
+    foreignObject.appendChild(button);
+    overlay.anchorLayer.appendChild(foreignObject);
+  }
+
+  /** Hides the empty-rectangle affordance while its geometry is changing. */
+  private hideAddTextBanner(overlay: AnnotationPageOverlay): void {
+    overlay.anchorLayer.querySelector('.pdfrx-add-text-banner')?.remove();
   }
 
   /** Finger-friendly anchors after a touch selection; compact anchors for mouse/pen. */
@@ -6461,6 +6525,7 @@ export class PdfrxViewer {
     const excludedIds = new Set([annotation.id]);
     let lastSpec: PdfAnnotationSpec | null = null;
     const move = (e: PointerEvent): void => {
+      this.hideAddTextBanner(overlay);
       const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
       const snapped = this.snapAnnotationPoint(overlay, raw, excludedIds, anchor.movableAxes);
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
@@ -7111,11 +7176,17 @@ export class PdfrxViewer {
     if (!this.doc) return;
     const before = annotationToSpec(annotation);
     const contents = await this.requestAnnotationText(overlay, before);
-    if (contents === null) return;
+    if (contents === null) {
+      this.refreshAnnotationSelection(overlay);
+      return;
+    }
     const after = structuredClone(before);
     if (before.subtype === 'text') after.contents = contents;
     else await this.applyBoxContents(after, contents);
-    if (contents === (before.contents ?? '') && after.subtype === before.subtype) return;
+    if (contents === (before.contents ?? '') && after.subtype === before.subtype) {
+      this.refreshAnnotationSelection(overlay);
+      return;
+    }
     await this.annotationPage(overlay.pageNumber).updateAnnotation(
       annotation.id,
       after,
@@ -7293,6 +7364,7 @@ export class PdfrxViewer {
     const move = (e: PointerEvent): void => {
       const raw = rawDisplacement(e);
       if (Math.hypot(raw.x, raw.y) < TAP_SLOP / this.transform.zoom) return;
+      this.hideAddTextBanner(overlay);
       if (!duplicate) {
         // Pointer capture is already held by the viewer container.
       }
@@ -7806,6 +7878,7 @@ export class PdfrxViewer {
     const selectedIds = new Set(sel.map((annotation) => annotation.id));
     let newBox: PdfRect | null = null;
     const move = (e: PointerEvent): void => {
+      this.hideAddTextBanner(overlay);
       const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
       const snapped = this.snapAnnotationPoint(overlay, raw, selectedIds, boundingBoxHandleAxes(index));
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });

@@ -84,8 +84,9 @@ Upstream API names are given so you can find the reference implementation.
 
 ## Viewer — interaction & configurability
 
-pdfrx_web already implements the core gestures: **primary- and right-button
-drag pan, pinch-zoom, wheel
+pdfrx_web already implements the core gestures: **primary-button background
+drag pan, primary-button annotation manipulation, secondary-button annotation
+marquee selection, pinch-zoom, wheel
 (and ctrl+wheel zoom), inertia/fling, keyboard navigation, long-press & dbl-click
 word selection, context menu, selection magnifier, links overlay, touch
 handles, auto-scroll during selection drag, and page overlays.** The gaps are

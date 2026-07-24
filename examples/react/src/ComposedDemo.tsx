@@ -61,11 +61,17 @@ export function ComposedDemo({ locale }: { locale?: string }) {
           <PdfSaveButton />
         </div>
 
-        {annotating && (
-          <div className="pdfrx-toolbar pdfrx-toolbar-annot">
-            <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+        <div
+          className={`pdfrx-collapsible${annotating ? ' pdfrx-collapsible-open' : ''}`}
+          aria-hidden={!annotating}
+          inert={!annotating}
+        >
+          <div className="pdfrx-collapsible-content">
+            <div className="pdfrx-toolbar pdfrx-toolbar-annot">
+              <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+            </div>
           </div>
-        )}
+        </div>
 
         <div className="pdfrx-app-body">
           {/* Both panes at once, instead of the tabbed <PdfSidebar>. */}

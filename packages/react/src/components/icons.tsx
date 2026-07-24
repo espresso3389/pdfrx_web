@@ -149,21 +149,6 @@ export const IconAnnotate = (): ReactNode => (
   </Icon>
 );
 
-/** @internal Text-selection mode: an I-beam cursor. */
-export const IconCursorText = (): ReactNode => (
-  <Icon>
-    <path d="M9 5c2 0 3 .8 3 2 0-1.2 1-2 3-2M9 19c2 0 3-.8 3-2 0 1.2 1 2 3 2M12 7v10" />
-  </Icon>
-);
-
-/** @internal Object-select mode: a marquee with a pointer. */
-export const IconSelectObject = (): ReactNode => (
-  <Icon>
-    <rect x="4" y="4" width="11" height="11" rx="1" strokeDasharray="3 2.5" />
-    <path d="M13.5 13.5l7 2.6-3.1 1.3-1.3 3.1z" />
-  </Icon>
-);
-
 /** @internal Freehand pen tool. */
 export const IconPen = (): ReactNode => (
   <Icon>
