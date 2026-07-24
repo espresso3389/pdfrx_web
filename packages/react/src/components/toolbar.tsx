@@ -24,7 +24,7 @@ export interface PdfToolbarProps {
   showSearch?: boolean;
   /** Show the print button. Defaults to `true`. */
   showPrint?: boolean;
-  /** Controls placed immediately before the search field. */
+  /** Controls placed in the left group after page/zoom controls, separated by a gap. */
   beforeSearch?: ReactNode;
   /** Controls placed right after the search field, set apart from print/children by a gap. */
   afterSearch?: ReactNode;
@@ -84,9 +84,9 @@ export function PdfToolbar({
         {sidebarTogglePosition === 'start' && sidebarToggle}
         {showPageIndicator && <PdfPageIndicator />}
         {showZoomControls && <PdfZoomControls />}
-        <span className="pdfrx-toolbar-spacer" />
+        {beforeSearch && (showPageIndicator || showZoomControls) && <span className="pdfrx-toolbar-gap" aria-hidden />}
         {beforeSearch}
-        {beforeSearch && showSearch && <span className="pdfrx-toolbar-gap" aria-hidden />}
+        <span className="pdfrx-toolbar-spacer" />
         {showSearch && <PdfSearchBox className="pdfrx-toolbar-search" />}
         {showSearch && (
           <button

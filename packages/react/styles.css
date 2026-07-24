@@ -1042,8 +1042,10 @@
 /* --- Phones: simplify zoom controls and collapse search into a toggle ----- */
 
 @media (max-width: 640px) {
-  /* Pinch gestures provide zoom on phones; retain only fit-to-width. */
-  .pdfrx-toolbar > .pdfrx-zoom-controls > :not(.pdfrx-fit-width-button) {
+  /* Pinch gestures provide numeric zoom on phones; retain both fit modes. */
+  .pdfrx-toolbar
+    > .pdfrx-zoom-controls
+    > :not(.pdfrx-fit-page-button):not(.pdfrx-fit-width-button) {
     display: none;
   }
 

@@ -126,7 +126,10 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
         <IconZoomIn />
       </button>
       <button
-        className={joinClass('pdfrx-button', zoomMode === 'page' ? 'pdfrx-button-active' : undefined)}
+        className={joinClass(
+          'pdfrx-button pdfrx-fit-page-button',
+          zoomMode === 'page' ? 'pdfrx-button-active' : undefined,
+        )}
         onClick={() => fitToPage(undefined, 200)}
         title={strings.fitPage}
         aria-pressed={zoomMode === 'page'}
