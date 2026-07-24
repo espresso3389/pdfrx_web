@@ -101,22 +101,19 @@ every `https://espresso3389.github.io/pdfrx_web/...` API link in the changed
 README maps to a generated local path. `docs-site/` remains ignored build
 output and must not be committed.
 
-For a new or renamed public API, use a two-stage update so the README never
-points at a symbol that has not reached the public API reference yet:
+For a new or renamed public API, generate and validate its final URL locally;
+do not use an intermediate commit/push or wait for the deployed Pages site:
 
-1. Add the export and its TypeDoc comments, run the normal build/tests and
-   `npm run docs`, then commit and push that API change.
-2. Wait for the `Docs` GitHub Actions workflow triggered by that push to
-   succeed, and verify the symbol's final URL on the deployed API reference.
-3. Add or update the package README using that verified public URL, validate
-   the links against the local `docs-site/` output, then commit and push the
-   README change separately.
-4. Do not create the release tag until both pushes are complete and the README
-   links resolve publicly.
-
-Existing, already-deployed symbols do not require an artificial preliminary
-commit; link them directly and include the README update in the current docs
-change.
+1. Add the export and its TypeDoc comments, then run the normal build/tests and
+   `npm run docs`.
+2. Find the generated symbol page under
+   `docs-site/{classes,interfaces,types,functions,...}` and use its exact path
+   after the public prefix `https://espresso3389.github.io/pdfrx_web/`.
+3. Run `npm run check:readme-api-links`. It verifies that every public API
+   symbol introduced as inline code in a README has a direct link and that
+   every public API URL maps to a generated local file.
+4. Commit and push the API and README updates together. Do not create a release
+   tag until the local documentation and README checks pass.
 
 ## TypeScript conventions
 

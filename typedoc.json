@@ -5,6 +5,7 @@
   "entryPoints": ["packages/engine", "packages/viewer-core", "packages/viewer", "packages/react", "packages/colab"],
   "out": "docs-site",
   "readme": "README.md",
+  "customJs": "docs/typedoc-custom.js",
   "includeVersion": true,
   "excludeInternal": true,
   "excludePrivate": true,

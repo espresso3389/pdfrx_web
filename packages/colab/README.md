@@ -73,7 +73,8 @@ https://relay.example.com/sessions/<sessionId>/sources/<documentId>
 ```
 
 The WebSocket path itself may be chosen by the host, but the current
-`relaySourceUrl()` contract places source endpoints at the host root. Configure
+[`relaySourceUrl()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html)
+contract places source endpoints at the host root. Configure
 the reverse proxy accordingly. Browsers also require `wss:` when the viewer is
 served over HTTPS.
 
@@ -374,7 +375,9 @@ maps session document IDs to open local
 instances. [`createPagePlacements()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.createPagePlacements.html)
 creates stable initial placements,
 [`resolvePagePlacements()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.resolvePagePlacements.html)
-converts an authoritative snapshot into local `PdfPage` proxies, and
+converts an authoritative snapshot into local
+[`PdfPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html)
+proxies, and
 [`applyPagePlacementsToViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.applyPagePlacementsToViewer.html)
 applies the arrangement
 without publishing it as another local edit.

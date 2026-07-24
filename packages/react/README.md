@@ -52,8 +52,11 @@ their visual result is preserved.
 
 ### 2. Composed parts
 
-`PdfrxProvider` owns the viewer; where each piece goes is up to you. The only
-requirement is exactly one `<PdfViewerSurface>` somewhere inside.
+[`PdfrxProvider`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxProvider.html)
+owns the viewer; where each piece goes is up to you. The only requirement is
+exactly one
+[`<PdfViewerSurface>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerSurface.html)
+somewhere inside.
 
 ```tsx
 import { PdfrxProvider, PdfSidebar, PdfToolbar, PdfViewerSurface } from '@pdfrx/react';
@@ -70,11 +73,19 @@ import '@pdfrx/react/styles.css';
 </PdfrxProvider>;
 ```
 
-Individually available: `PdfToolbar`, `PdfSidebar`, `PdfThumbnailList`,
-`PdfOutlineTree`, `PdfSearchBox`, `PdfPageIndicator`, `PdfZoomControls`,
-`PdfPrintButton`, `PdfLoadingBar`,
+Individually available:
+[`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html),
+[`PdfSidebar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSidebar.html),
+[`PdfThumbnailList`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfThumbnailList.html),
+[`PdfOutlineTree`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfOutlineTree.html),
+[`PdfSearchBox`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSearchBox.html),
+[`PdfPageIndicator`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfPageIndicator.html),
+[`PdfZoomControls`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfZoomControls.html),
+[`PdfPrintButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfPrintButton.html),
+[`PdfLoadingBar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfLoadingBar.html),
 [`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html),
-and `PdfSaveButton`.
+and
+[`PdfSaveButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSaveButton.html).
 
 ### 3. Headless hooks
 
@@ -91,18 +102,18 @@ function Toolbar() {
 
 | Hook | What it gives you |
 | --- | --- |
-| `usePdfrxViewer()` | The underlying `PdfrxViewer` — the escape hatch for anything below |
-| `usePdfDocument()` | Load state, page count, download progress, errors, `open()` |
-| `usePdfNavigation()` | Current page, page count, `goToPage`/`goToDest` |
-| `usePdfZoom()` | Zoom level, zoom/fit actions, whether the limits are reached |
-| `usePdfOutline()` | The bookmark tree, reloaded per document |
-| `useFormFields()` | AcroForm fields, live values, loading state, and `setValue()` |
-| `usePdfSearch()` | Query, matches, current index, next/previous |
-| `usePdfSelection()` | Selected range, resolved text and rects, copy |
-| `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
-| `usePdfPrint()` | `print()` plus an `isPrinting` flag |
+| [`usePdfrxViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxViewer.html) | The underlying [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html) — the escape hatch for anything below |
+| [`usePdfDocument()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfDocument.html) | Load state, page count, download progress, errors, [`open()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfDocumentState.html#open) |
+| [`usePdfNavigation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfNavigation.html) | Current page, page count, `goToPage`/`goToDest` |
+| [`usePdfZoom()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfZoom.html) | Zoom level, zoom/fit actions, whether the limits are reached |
+| [`usePdfOutline()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfOutline.html) | The bookmark tree, reloaded per document |
+| [`useFormFields()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useFormFields.html) | AcroForm fields, live values, loading state, and [`setValue()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfFormFieldsState.html#setvalue) |
+| [`usePdfSearch()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSearch.html) | Query, matches, current index, next/previous |
+| [`usePdfSelection()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSelection.html) | Selected range, resolved text and rects, copy |
+| [`usePdfPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfPageThumbnail.html) | One page rendered to a canvas, through a shared cache |
+| [`usePdfPrint()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfPrint.html) | [`print()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPrint.html#print) plus an `isPrinting` flag |
 | [`useAnnotations()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useAnnotations.html) | Annotation data and direct add/update/remove operations |
-| `useEditHistory()` | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
+| [`useEditHistory()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useEditHistory.html) | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
 
 For an annotation-only collaboration viewer, disable page edits and local
 Undo/Redo while attaching a stable user id to mutations:
@@ -115,10 +126,14 @@ Undo/Redo while attaching a stable user id to mutations:
 ```
 
 The annotation toolbar remains available, page-edit controls and history
-buttons are hidden, and `viewer.setPages()` / `setPage()` reject edits. Subscribe
-to `document.addEventListener('annotationsChanged', ...)` to publish its exact
+buttons are hidden, and
+[`viewer.setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpages) /
+[`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpage)
+reject edits. Subscribe to
+[`document.addEventListener('annotationsChanged', ...)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#addeventlistener)
+to publish its exact
 `changes` batch. Apply an incoming batch with
-`document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`;
+[`document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#applyannotationchanges);
 the `origin` lets the publisher ignore it and avoid a synchronization echo.
 
 The standard
@@ -144,14 +159,21 @@ The built-in annotation editor, form controls, and the page controls enabled by
 `enablePageEditing` use one chronological Undo/Redo history. Page insertion,
 deletion, rotation and thumbnail drag-reordering are each recorded as one
 operation. `Ctrl`/`Cmd`+`Z`, `Ctrl`/`Cmd`+`Shift`+`Z` and `Ctrl`+`Y` follow that
-same history, as do `undo()` and `redo()` returned by `useEditHistory()`.
+same history, as do
+[`undo()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfEditHistory.html#undo)
+and
+[`redo()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfEditHistory.html#redo)
+returned by
+[`useEditHistory()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useEditHistory.html).
 
 Page history stores the complete page arrangement before and after an edit.
 Undoing a page edit therefore restores the page numbering that existed when an
 earlier annotation edit was recorded. This ordering is the invariant that keeps
 annotation commands, which refer to 1-based page numbers, consistent.
 
-For the standard rotate/delete UI, use `PdfPageActions`. It performs local
+For the standard rotate/delete UI, use
+[`PdfPageActions`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfPageActions.html).
+It performs local
 viewer mutations by default, while collaborative hosts can intercept the same
 controls and submit stable operations to their relay:
 
@@ -165,7 +187,9 @@ controls and submit stable operations to their relay:
 ```
 
 When building other custom React page controls, either mutate through the viewer
-returned by `usePdfrxViewer()` or call the attached document directly. Both
+returned by
+[`usePdfrxViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxViewer.html)
+or call the attached document directly. Both
 paths participate in the same history:
 
 ```tsx
@@ -191,9 +215,14 @@ viewer.document?.setPages(nextPages);
 
 `PdfDocument.pagesRearranged` carries both arrangements, while
 `annotationsChanged.historyChanges` carries complete before/after annotation
-specs. The viewer consumes those events for direct `PdfPage.addAnnotation()`,
-`updateAnnotation()` and `removeAnnotation()` calls, including the `add`,
-`update`, and `remove` functions from `useAnnotations()`.
+specs. The viewer consumes those events for direct
+[`PdfPage.addAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#addannotation),
+[`updateAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#updateannotation)
+and
+[`removeAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#removeannotation)
+calls, including the `add`,
+`update`, and `remove` functions from
+[`useAnnotations()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useAnnotations.html).
 
 Direct form writes also participate.
 [`setFormFieldValues()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalues)
@@ -205,26 +234,37 @@ local history; page materialization is likewise excluded via its dedicated
 alter arbitrary PDF structures without semantic inverse operations.
 
 Opening another document clears the history. For custom controls, use
-`useEditHistory()`:
+[`useEditHistory()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useEditHistory.html):
 
 ```tsx
 const { undo, redo, canUndo, canRedo, clearHistory } = useEditHistory();
 ```
 
-`undo()` and `redo()` are asynchronous because an entry may contain annotation
+[`undo()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfEditHistory.html#undo)
+and
+[`redo()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfEditHistory.html#redo)
+are asynchronous because an entry may contain annotation
 or form writes; await them before starting another programmatic edit.
 
 ### Saving, page assembly and history
 
-Undo/Redo page entries retain the `PdfPage` proxies from before and after each
-operation. `PdfDocument.assemblePages()` replaces the PDF's physical page tree
+Undo/Redo page entries retain the
+[`PdfPage`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPage.html)
+proxies from before and after each
+operation.
+[`PdfDocument.assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
+replaces the PDF's physical page tree
 and reloads its pages, so those saved proxies can no longer be used to restore
-the earlier arrangement reliably. `encodePdf()` calls `assemblePages()`
+the earlier arrangement reliably.
+[`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
+calls
+[`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
 automatically and has the same consequence. Calling either while retaining the
 history can therefore leave Undo/Redo inconsistent with the live document.
 
 The built-in download buttons avoid this by using
-`PdfDocument.encodePdfCopy()`. Assembly happens on a temporary document, while
+[`PdfDocument.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy).
+Assembly happens on a temporary document, while
 the live document and its history remain intact. Custom editor save UI should
 normally do the same:
 
@@ -233,9 +273,13 @@ await viewer.flushAnnotationTextEdit();
 const data = await viewer.document!.encodePdfCopy();
 ```
 
-`PdfSaveButton` accepts an `encode(document)` override when an application must
+[`PdfSaveButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSaveButton.html)
+accepts an
+[`encode(document)`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfSaveButtonProps.html#encode)
+override when an application must
 post-process the bytes—for example, to merge outlines and AcroForm catalogs
-from several source PDFs. The default remains `document.encodePdfCopy()`:
+from several source PDFs. The default remains
+[`document.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy):
 
 ```tsx
 <PdfSaveButton encode={(document) => exportVirtualDocument(document, session)} />
@@ -259,8 +303,11 @@ clearHistory();                 // The current state becomes the new baseline.
 const data = await viewer.document!.encodePdf(); // Assembles the live document.
 ```
 
-Clearing first is important. Do not call `assemblePages()` or `encodePdf()` and
-then leave older Undo/Redo entries available.
+Clearing first is important. Do not call
+[`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
+or
+[`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
+and then leave older Undo/Redo entries available.
 
 ## Two things your app must provide
 
@@ -303,7 +350,11 @@ Override individual strings, or add a language that isn't built in, with
 />
 ```
 
-The full string set is the `PdfrxStrings` interface; `usePdfrxStrings()` gives
+The full string set is the
+[`PdfrxStrings`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxStrings.html)
+interface;
+[`usePdfrxStrings()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxStrings.html)
+gives
 your own components the active strings so they translate alongside the rest.
 
 ## Context menu
@@ -312,7 +363,8 @@ The right-click / long-press menu (Copy / Select All / Highlight) is themed and
 localized out of the box. Highlight opens a color palette when text can be
 converted to a markup annotation. Pass `contextMenuBuilder` to customize it — it receives the
 event context plus `{ viewer, strings }`, so you can reuse the built-in
-`buildDefaultContextMenu` and append your own items:
+[`buildDefaultContextMenu`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.buildDefaultContextMenu.html)
+and append your own items:
 
 ```tsx
 import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
@@ -341,7 +393,8 @@ import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
 ```
 
 Return `null` to suppress the menu entirely, or build a completely custom
-element instead of calling `buildDefaultContextMenu`.
+element instead of calling
+[`buildDefaultContextMenu`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.buildDefaultContextMenu.html).
 
 ## Theming
 
@@ -361,13 +414,19 @@ The dark palette follows `prefers-color-scheme` by default.
 ## Notes
 
 - **Server rendering** is safe: nothing touches the DOM until
-  `PdfViewerSurface` mounts, and the viewer is created there.
+  [`PdfViewerSurface`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerSurface.html)
+  mounts, and the viewer is created there.
 - **StrictMode** double-mounts every effect in development. The provider defers
   teardown by a microtask so the immediate remount reclaims the same viewer
   rather than booting a second pdfium worker.
-- **The viewer owns its document.** Any `PdfDocument`/`PdfPage` you hold via
-  `usePdfrxViewer()` becomes invalid when another document is opened — re-read
-  it, or key your state on `useDocumentGeneration()`.
+- **The viewer owns its document.** Any
+  [`PdfDocument`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfDocument.html) /
+  [`PdfPage`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPage.html)
+  you hold via
+  [`usePdfrxViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxViewer.html)
+  becomes invalid when another document is opened — re-read it, or key your
+  state on
+  [`useDocumentGeneration()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useDocumentGeneration.html).
 - **Options are live.** Changing `backgroundColor`, `panEnabled`,
   `layoutDirection` and friends applies to the running viewer. `engine`,
   `engineOptions` and `initialFit` are read once at construction, so changing

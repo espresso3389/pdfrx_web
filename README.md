@@ -62,8 +62,11 @@ built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
   up yourself.
 - **Anything else** (vanilla JS, Vue, Svelte, Angular, a custom element) — use
   **[`@pdfrx/viewer`](packages/viewer)** directly. It renders the PDF onto a
-  `<canvas>` and exposes the primitives (`loadOutline()`,
-  `renderPageThumbnail()`, `createTextSearcher()`), but the surrounding UI —
+  `<canvas>` and exposes the primitives
+  ([`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline),
+  [`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
+  [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher)),
+  but the surrounding UI —
   the thumbnail strip, the outline tree, the search box — is yours to build.
   That extra UI is exactly what `@pdfrx/react` packages up for React.
 - **PDF engine without a viewer UI?** Use
@@ -99,9 +102,16 @@ import '@pdfrx/react/styles.css';
 <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} />;
 ```
 
-Or compose the parts yourself (`PdfrxProvider` + `PdfToolbar` + `PdfSidebar` +
-`PdfViewerSurface`), or go headless with hooks like `usePdfSearch()` and
-`usePdfOutline()` and write every pixel of the UI. See the
+Or compose the parts yourself
+([`PdfrxProvider`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxProvider.html) +
+[`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html) +
+[`PdfSidebar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSidebar.html) +
+[`PdfViewerSurface`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerSurface.html)),
+or go headless with hooks like
+[`usePdfSearch()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSearch.html)
+and
+[`usePdfOutline()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfOutline.html)
+and write every pixel of the UI. See the
 [`@pdfrx/react` README](packages/react) for all three layers.
 
 ### Framework-agnostic
@@ -141,8 +151,10 @@ await viewer.print();
 
 Remember that the thumbnail strip, outline tree and search box are yours to
 build here (this is what `@pdfrx/react` packages up for React) — the viewer
-gives you the primitives: `loadOutline()`, `renderPageThumbnail()`,
-`createTextSearcher()`.
+gives you the primitives:
+[`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline),
+[`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
+[`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher).
 
 ### What your app must provide
 
@@ -163,7 +175,7 @@ Both entry points need two things:
 Documents opened from a `File`/`ArrayBuffer` use [`viewer.openData(data)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata).
 Password-protected files are supported by passing a
 [`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider):
-`openUrl(url, { passwordProvider: () => prompt('Password?') })`.
+[`openUrl(url, { passwordProvider: () => prompt('Password?') })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl).
 
 ## Packages
 
