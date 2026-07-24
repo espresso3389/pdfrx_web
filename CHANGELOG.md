@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-24
+
+### Added
+
+- Added configurable browser image decoding for formats such as HEIC/HEIF,
+  shared by file opening and image annotation insertion.
+
+### Changed
+
+- Straight line and arrow annotations now use distance-to-segment selection
+  with a wider touch target, including segment-aware marquee selection.
+
+### Fixed
+
+- Preserved the intrinsic resolution of raster image annotations when reading
+  their PDF appearances and across repeated move/resize operations, preventing
+  progressive resampling and visible quality loss.
+
 ## [0.13.0] - 2026-07-24
 
 ### Added
@@ -323,7 +341,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...v0.11.0

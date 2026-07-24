@@ -17,10 +17,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pdfrx/engine": "0.13.0",
-    "@pdfrx/colab": "0.13.0",
-    "@pdfrx/react": "^0.13.0",
-    "@pdfrx/viewer-core": "0.13.0",
+    "@pdfrx/engine": "0.14.0",
+    "@pdfrx/colab": "0.14.0",
+    "@pdfrx/react": "^0.14.0",
+    "@pdfrx/viewer-core": "0.14.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "ws": "^8.21.1"
