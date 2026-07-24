@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-24
+
+### Added
+
+- Added printable image stamp annotations from page drops, with proportional
+  page fitting and constrained interactive resizing.
+- Added vector PDF appearances for supported static SVG paths and basic shapes,
+  with raster fallback for unsupported SVG content.
+- Added an image picker to the React annotation toolbar. Picked images are
+  centered on the current page and use the same bounded sizing as dropped
+  images.
+
 ## [0.12.0] - 2026-07-24
 
 ### Added
@@ -311,7 +323,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.10.0...v0.10.1
