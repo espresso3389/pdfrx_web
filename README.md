@@ -23,7 +23,7 @@ It renders pages, text selection, links, and search highlights onto a single
 - Printing
 - Automatic missing-font fallback via Google Fonts (Arimo/Tinos/Cousine for
   standard fonts, Noto families for CJK and other scripts) — see
-  [docs/FONT-FALLBACK.md](docs/FONT-FALLBACK.md)
+  [docs/FONT-FALLBACK.md](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
 - Password-protected documents
 - Interactive AcroForm filling with JS-free standard calculations
 - SVG annotation editing: ink, shapes, markup, notes/free text, centered image
@@ -190,7 +190,8 @@ Password-protected files are supported by passing a
 Full **[API reference](https://espresso3389.github.io/pdfrx_web/)** is
 generated with TypeDoc and published to GitHub Pages.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the package layering, the
+See [docs/ARCHITECTURE.md](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
+for the package layering, the
 worker protocol contract, and coordinate conventions.
 
 ## Development
@@ -211,6 +212,7 @@ runs standalone — no submodule, no postinstall.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The Google Fonts files downloaded by the font
+MIT — see [LICENSE](https://github.com/espresso3389/pdfrx_web/blob/master/LICENSE).
+The Google Fonts files downloaded by the font
 fallback are licensed under the SIL OFL 1.1 / Apache 2.0 by their respective
 owners.

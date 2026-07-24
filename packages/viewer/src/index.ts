@@ -6,8 +6,8 @@
  * ({@link PdfrxViewerElement} / {@link definePdfrxViewerElement}) or
  * imperatively as the {@link PdfrxViewer} class. Both render pages, text
  * selection, links, and search highlights onto a single `<canvas>` — there is
- * deliberately no DOM text layer (see the design notes in
- * `docs/ARCHITECTURE.md`).
+ * deliberately no DOM text layer (see the
+ * [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)).
  *
  * Built on {@link https://www.npmjs.com/package/@pdfrx/engine | @pdfrx/engine}
  * (the rendering-engine worker client) and `@pdfrx/viewer-core` (the DOM-free

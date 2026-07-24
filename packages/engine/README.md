@@ -20,7 +20,8 @@ backend/toolchain. That build adds the small raw PDF-object C API used by
 [`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html)'s
 custom object inspection and editing features;
 `assets/pdfium_worker.js` is the worker that drives it (see
-[`assets/UPSTREAM.md`](assets/UPSTREAM.md) for provenance).
+[`assets/UPSTREAM.md`](https://github.com/espresso3389/pdfrx_web/blob/master/packages/engine/assets/UPSTREAM.md)
+for provenance).
 
 ## Installation
 

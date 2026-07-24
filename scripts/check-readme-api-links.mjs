@@ -73,6 +73,24 @@ for (const [readme, preferredModule] of packageModules) {
   }
 }
 
+const pendingDirectories = [docsRoot];
+while (pendingDirectories.length) {
+  const directory = pendingDirectories.pop();
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolute = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      pendingDirectories.push(absolute);
+    } else if (entry.name.endsWith('.html')) {
+      const html = readFileSync(absolute, 'utf8');
+      if (/href="(?:\.\.\/)*media\/[^"]+\.md(?:#[^"]*)?"/i.test(html)) {
+        missingTargets.push(
+          `${relative(root, absolute)}: relative Markdown was copied to docs-site/media; use its canonical source URL`,
+        );
+      }
+    }
+  }
+}
+
 if (missingTargets.length || unlinkedSymbols.length) {
   if (missingTargets.length) {
     console.error('API links without a generated docs-site target:');
