@@ -702,6 +702,8 @@
 /* Rows that join the app chrome animate both their occupied height and their
    contents. Keeping them mounted also gives closing transitions time to run. */
 .pdfrx-collapsible {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-rows: 0fr;
   flex: 0 0 auto;
@@ -733,6 +735,7 @@
 }
 
 .pdfrx-collapsible-open > .pdfrx-collapsible-content {
+  overflow: visible;
   transform: translateY(0);
 }
 

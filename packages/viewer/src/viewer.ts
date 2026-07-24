@@ -5640,14 +5640,18 @@ export class PdfrxViewer {
           const hasCalloutAppearance = !a.appearanceLines && a.appearancePaths.length > 2;
           if (!hasCalloutAppearance || !addAppearancePaths()) {
             const rect = document.createElementNS(SVG_NS, 'rect');
-            const inset = width / 2;
+            // FreeText's appearance path sits on the annotation bounds. PDF
+            // viewers clip the outside half of that centred stroke, so only
+            // half of /Border's width is visible inside the appearance BBox.
+            const visibleWidth = width / 2;
+            const inset = visibleWidth / 2;
             rect.setAttribute('x', `${box.left + inset}`);
             rect.setAttribute('y', `${box.top + inset}`);
-            rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - width)}`);
-            rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - width)}`);
+            rect.setAttribute('width', `${Math.max(0, Math.abs(rectWidth(box)) - visibleWidth)}`);
+            rect.setAttribute('height', `${Math.max(0, Math.abs(rectHeight(box)) - visibleWidth)}`);
             rect.setAttribute('fill', fill ?? 'none');
             rect.setAttribute('stroke', shapeStroke);
-            rect.setAttribute('stroke-width', `${width}`);
+            rect.setAttribute('stroke-width', `${visibleWidth}`);
             add(rect);
           }
           if (a.contents) {
@@ -7076,11 +7080,12 @@ export class PdfrxViewer {
       ? (this.options.annotationEditorPlaceholders?.note ?? 'Note')
       : (this.options.annotationEditorPlaceholders?.text ?? 'Text');
     const strokeWidth = spec.borderWidth ?? 0;
+    const visibleStrokeWidth = strokeWidth / 2;
     const stroke = spec.color;
     const editorBorder = isNote
       ? '1px solid #2196f3'
-      : strokeWidth > 0 && stroke
-        ? `${strokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
+      : visibleStrokeWidth > 0 && stroke
+        ? `${visibleStrokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
         : 'none';
     const editorTextColor = colorCss(spec.textColor ?? null, '#000000') ?? '#000000';
     const editorFontSize = spec.fontSize ?? FREE_TEXT_FONT_SIZE;

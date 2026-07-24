@@ -134,6 +134,19 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
     maxMismatchRatio: 0.025,
   },
   {
+    name: 'filled free text with thick border',
+    spec: {
+      subtype: 'freeText',
+      rect: { left: 36, top: 208, right: 220, bottom: 80 },
+      color: rgba(229, 57, 53, 255),
+      interiorColor: rgba(30, 136, 229, 255),
+      borderWidth: 12,
+      contents: 'Filled text box',
+      geometry: { kind: 'none' },
+    },
+    maxMismatchRatio: 0.025,
+  },
+  {
     name: 'rotated free text appearance',
     spec: {
       subtype: 'freeText',
@@ -632,7 +645,7 @@ test('the box tool switches automatically between rectangle and FreeText', async
       const style = getComputedStyle(element);
       return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
     }),
-  ).toEqual({ width: '5px', style: 'solid', color: 'rgb(229, 57, 53)' });
+  ).toEqual({ width: '2.5px', style: 'solid', color: 'rgb(229, 57, 53)' });
   await editor.fill('Text inside the box');
   await editor.press('Control+Enter');
   await expect.poll(async () => (await read())[0]?.subtype).toBe('freeText');
