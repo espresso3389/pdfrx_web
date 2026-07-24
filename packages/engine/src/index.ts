@@ -41,6 +41,7 @@ export {
   readJpegSize,
   type PdfCreateFromImagesOptions,
   type PdfImageDecoder,
+  type PdfImageDecoderResult,
   type PdfImageSource,
   type PdfRawImage,
 } from './image-source.js';

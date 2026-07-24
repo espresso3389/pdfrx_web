@@ -41,6 +41,9 @@ describe('resolvePdfrxStrings', () => {
   it('resolves interpolating strings per locale', () => {
     expect(resolvePdfrxStrings('ja').goToPage(3)).toBe('3 ページへ移動');
     expect(resolvePdfrxStrings('fr').failedToOpen('x')).toBe("Échec de l'ouverture du document : x");
+    expect(resolvePdfrxStrings('ja').failedToImport('photo.heic', '未対応')).toBe(
+      '「photo.heic」をインポートできませんでした: 未対応',
+    );
   });
 
   it('localizes editing and annotation controls', () => {

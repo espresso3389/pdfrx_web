@@ -1,7 +1,7 @@
 import type { PdfPage } from '@pdfrx/engine';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
-import { isImageFile, openFileAsDocument } from '../file-open.js';
+import { dragMayContainImage, isImageFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
@@ -218,10 +218,14 @@ function PdfrxViewerAppChrome({
       const inserted: PdfPage[] = [];
       for (const file of files) {
         try {
-          const doc = await openFileAsDocument(engine, file, { passwordProvider: store.passwordProvider });
+          const doc = await openFileAsDocument(engine, file, {
+            passwordProvider: store.passwordProvider,
+            imageDecoder: store.imageDecoder,
+          });
           inserted.push(...doc.pages);
         } catch (e) {
           console.error(`Failed to open ${file.name} for insertion:`, e);
+          store.reportImportError(e, file.name);
         }
       }
       if (inserted.length === 0) return;
@@ -245,12 +249,13 @@ function PdfrxViewerAppChrome({
       });
       if (!hit) return;
       try {
-        await addDroppedImageAnnotation(hit.page, file, hit.pdfPoint);
+        await addDroppedImageAnnotation(hit.page, file, hit.pdfPoint, store.imageDecoder);
       } catch (error) {
         console.error(`Failed to add image annotation from ${file.name}:`, error);
+        store.reportImportError(error, file.name);
       }
     },
-    [enableAnnotations, viewer],
+    [enableAnnotations, viewer, store],
   );
 
   // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
@@ -362,7 +367,7 @@ function PdfrxViewerAppChrome({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf,image/*"
+                accept="application/pdf,.pdf,image/*,.heic,.heif"
                 hidden
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -383,7 +388,11 @@ function PdfrxViewerAppChrome({
       )}
       {error !== null && (
         <div className="pdfrx-error" role="alert">
-          <span className="pdfrx-error-message">{strings.failedToOpen(describeError(error))}</span>
+          <span className="pdfrx-error-message">
+            {store.errorKind === 'import'
+              ? strings.failedToImport(store.errorFileName ?? '', describeError(error))
+              : strings.failedToOpen(describeError(error))}
+          </span>
           <button
             className="pdfrx-button pdfrx-error-dismiss"
             onClick={clearError}
@@ -403,10 +412,7 @@ function PdfrxViewerAppChrome({
         <PdfViewerSurface
           style={{ flex: 1 }}
           onDragOver={enableAnnotations ? (event) => {
-            if (
-              Array.from(event.dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/')) ||
-              Array.from(event.dataTransfer.files).some(isImageFile)
-            ) {
+            if (dragMayContainImage(event.dataTransfer.items, event.dataTransfer.files)) {
               event.preventDefault();
               event.dataTransfer.dropEffect = 'copy';
             }

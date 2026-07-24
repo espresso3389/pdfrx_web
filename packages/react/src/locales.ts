@@ -71,6 +71,7 @@ const ja: Partial<PdfrxStrings> = {
   addPages: 'ページを追加',
   enterPassword: 'このドキュメントはパスワードで保護されています。\nパスワード:',
   failedToOpen: (m) => `ドキュメントを開けませんでした: ${m}`,
+  failedToImport: (name, m) => `「${name}」をインポートできませんでした: ${m}`,
   dismissError: '閉じる',
 };
 
@@ -134,6 +135,7 @@ const zhHans: Partial<PdfrxStrings> = {
   addPages: '添加页面',
   enterPassword: '此文档受密码保护。\n密码：',
   failedToOpen: (m) => `无法打开文档：${m}`,
+  failedToImport: (name, m) => `无法导入“${name}”：${m}`,
   dismissError: '关闭',
 };
 
@@ -197,6 +199,7 @@ const zhHant: Partial<PdfrxStrings> = {
   addPages: '新增頁面',
   enterPassword: '此文件受密碼保護。\n密碼：',
   failedToOpen: (m) => `無法開啟文件：${m}`,
+  failedToImport: (name, m) => `無法匯入「${name}」：${m}`,
   dismissError: '關閉',
 };
 
@@ -260,6 +263,7 @@ const fr: Partial<PdfrxStrings> = {
   addPages: 'Ajouter des pages',
   enterPassword: 'Ce document est protégé par un mot de passe.\nMot de passe :',
   failedToOpen: (m) => `Échec de l'ouverture du document : ${m}`,
+  failedToImport: (name, m) => `Échec de l’importation de « ${name} » : ${m}`,
   dismissError: 'Fermer',
 };
 
@@ -323,6 +327,7 @@ const de: Partial<PdfrxStrings> = {
   addPages: 'Seiten hinzufügen',
   enterPassword: 'Dieses Dokument ist passwortgeschützt.\nPasswort:',
   failedToOpen: (m) => `Dokument konnte nicht geöffnet werden: ${m}`,
+  failedToImport: (name, m) => `„${name}“ konnte nicht importiert werden: ${m}`,
   dismissError: 'Schließen',
 };
 

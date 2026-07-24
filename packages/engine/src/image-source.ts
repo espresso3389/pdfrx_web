@@ -1,5 +1,7 @@
 import type { WireImagePage, WirePixelFormat } from './protocol.js';
 
+const IMAGE_DECODE_TIMEOUT_MS = 5_000;
+
 /**
  * Already-decoded image pixels. Provide these directly when the runtime cannot
  * decode the format on its own (e.g. Node, which has no `createImageBitmap`),
@@ -28,7 +30,43 @@ export type PdfImageSource = Blob | Uint8Array | ArrayBuffer | PdfRawImage;
  * {@link PdfCreateFromImagesOptions.decode} on runtimes without a built-in
  * decoder (JPEG never needs one — PDFium decodes it natively).
  */
-export type PdfImageDecoder = (bytes: Uint8Array, mimeType?: string) => Promise<PdfRawImage> | PdfRawImage;
+export type PdfImageDecoderResult = PdfRawImage | Blob | Uint8Array | ArrayBuffer;
+
+/**
+ * Decodes or converts encoded image bytes. Return {@link PdfRawImage} for
+ * RGBA/BGRA pixels, or return encoded bytes/a `Blob` in a format the runtime
+ * can decode (JPEG is accepted directly by PDFium). Return `null` to decline
+ * the input and use the built-in browser decoder.
+ *
+ * pdfrx can import images as PDF pages and, through `@pdfrx/react`, as image
+ * annotations. Encoded formats that the current browser cannot decode (HEIC is
+ * a common example) cannot be imported by default. Applications can add support
+ * for those formats without adding a pdfrx dependency on a particular codec:
+ * provide this callback and convert the input to JPEG/PNG or decoded
+ * RGBA8888/BGRA8888 pixels.
+ *
+ * @example Decode HEIC with an optional application dependency
+ * ```tsx
+ * import heic2any from 'heic2any';
+ * import type { PdfImageDecoder } from '@pdfrx/engine';
+ * import { PdfrxViewerApp } from '@pdfrx/react';
+ *
+ * const decodeImage: PdfImageDecoder = async (bytes, mimeType) => {
+ *   if (!mimeType || !/^image\/hei[cf](?:-sequence)?$/.test(mimeType)) return null;
+ *   const result = await heic2any({
+ *     blob: new Blob([bytes], { type: mimeType }),
+ *     toType: 'image/jpeg',
+ *   });
+ *   return Array.isArray(result) ? result[0]! : result;
+ * };
+ *
+ * <PdfrxViewerApp imageDecoder={decodeImage} enableFileOpen enablePageEditing />
+ * ```
+ */
+export type PdfImageDecoder = (
+  bytes: Uint8Array,
+  mimeType?: string,
+) => Promise<PdfImageDecoderResult | null> | PdfImageDecoderResult | null;
 
 /** Options for {@link PdfrxEngine.createFromImages}. */
 export interface PdfCreateFromImagesOptions {
@@ -103,7 +141,7 @@ export function canDecodeImages(): boolean {
 /** Decodes encoded image bytes to RGBA pixels via `createImageBitmap` + `OffscreenCanvas`. */
 async function decodeWithCanvas(bytes: Uint8Array, mimeType?: string): Promise<PdfRawImage> {
   const blob = new Blob([bytes as BlobPart], mimeType ? { type: mimeType } : undefined);
-  const bitmap = await createImageBitmap(blob);
+  const bitmap = await createImageBitmapWithTimeout(blob);
   try {
     const { width, height } = bitmap;
     const canvas = new OffscreenCanvas(width, height);
@@ -115,6 +153,36 @@ async function decodeWithCanvas(bytes: Uint8Array, mimeType?: string): Promise<P
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Some browser decoders leave `createImageBitmap()` pending indefinitely for
+ * unsupported formats instead of rejecting it. Bound the wait so callers get a
+ * useful import error rather than an operation that appears to be ignored.
+ */
+function createImageBitmapWithTimeout(blob: Blob): Promise<ImageBitmap> {
+  return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`The source image could not be decoded within ${IMAGE_DECODE_TIMEOUT_MS / 1000} seconds`));
+    }, IMAGE_DECODE_TIMEOUT_MS);
+    void createImageBitmap(blob).then(
+      (bitmap) => {
+        if (timedOut) {
+          bitmap.close();
+          return;
+        }
+        clearTimeout(timer);
+        resolve(bitmap);
+      },
+      (error: unknown) => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** Copies `data` into a freshly owned `ArrayBuffer` that is safe to transfer. */
@@ -166,7 +234,17 @@ async function encodedSourceBytes(
 ): Promise<{ bytes: Uint8Array; mimeType?: string }> {
   if (source instanceof Uint8Array) return { bytes: source };
   if (source instanceof ArrayBuffer) return { bytes: new Uint8Array(source) };
-  return { bytes: new Uint8Array(await source.arrayBuffer()), mimeType: source.type || undefined };
+  return {
+    bytes: new Uint8Array(await source.arrayBuffer()),
+    mimeType: source.type || inferMimeTypeFromBlobName(source),
+  };
+}
+
+function inferMimeTypeFromBlobName(source: Blob): string | undefined {
+  const name = 'name' in source && typeof source.name === 'string' ? source.name : '';
+  if (/\.heic$/i.test(name)) return 'image/heic';
+  if (/\.heif$/i.test(name)) return 'image/heif';
+  return undefined;
 }
 
 /** Converts one {@link PdfImageSource} into a {@link WireImagePage}. */
@@ -188,7 +266,26 @@ async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImages
     );
   }
   const decoded = await decode(bytes, mimeType);
-  return rawImageToPage(decoded, options);
+  if (decoded === null) {
+    if (!canDecodeImages()) {
+      throw new Error('The custom image decoder declined the image and this runtime has no built-in decoder');
+    }
+    return rawImageToPage(await decodeWithCanvas(bytes, mimeType), options);
+  }
+  if (isRawImage(decoded)) return rawImageToPage(decoded, options);
+
+  const converted = await encodedSourceBytes(decoded);
+  if (isJpeg(converted.bytes)) {
+    const { width: pw, height: ph } = options.pageSize
+      ? { width: 0, height: 0 }
+      : readJpegSize(converted.bytes);
+    const { width, height } = pageSizeFor(pw, ph, options);
+    return { kind: 'jpeg', data: toOwnedBuffer(converted.bytes), width, height };
+  }
+  if (!canDecodeImages()) {
+    throw new Error('The custom image decoder returned encoded data that this runtime cannot decode');
+  }
+  return rawImageToPage(await decodeWithCanvas(converted.bytes, converted.mimeType), options);
 }
 
 /**

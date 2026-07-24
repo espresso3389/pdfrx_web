@@ -1,4 +1,4 @@
-import type { PdfPasswordProvider } from '@pdfrx/engine';
+import type { PdfImageDecoder, PdfPasswordProvider } from '@pdfrx/engine';
 import {
   PdfrxViewer,
   type ContextMenuContext,
@@ -65,6 +65,8 @@ export class PdfrxViewerStore {
   #source: NormalizedPdfSource | null = null;
   #sourceKey: unknown = NO_SOURCE;
   #error: unknown = null;
+  #errorKind: 'open' | 'import' = 'open';
+  #errorFileName: string | null = null;
 
   /**
    * Default password provider applied to every built-in open (the `src` prop,
@@ -72,6 +74,7 @@ export class PdfrxViewerStore {
    * carry its own. Set from the `passwordProvider` prop by `PdfrxProvider`.
    */
   #passwordProvider: PdfPasswordProvider | undefined;
+  #imageDecoder: PdfImageDecoder | undefined;
   /**
    * Batteries-included fallback used only when {@link #passwordProvider} is
    * unset — `PdfrxViewerApp` registers a localized `window.prompt` here so
@@ -123,6 +126,24 @@ export class PdfrxViewerStore {
     return this.#error;
   }
 
+  /** The operation that produced {@link error}. */
+  get errorKind(): 'open' | 'import' {
+    return this.#errorKind;
+  }
+
+  /** File associated with an import error, or `null` for document-open errors. */
+  get errorFileName(): string | null {
+    return this.#errorFileName;
+  }
+
+  /** Shows an error from a built-in import action in the viewer app's error banner. */
+  reportImportError(error: unknown, fileName: string): void {
+    this.#error = error;
+    this.#errorKind = 'import';
+    this.#errorFileName = fileName;
+    this.#notify();
+  }
+
   /**
    * Clears {@link error} (e.g. when the user dismisses the error banner). A
    * no-op when there is no error. The next open attempt also clears it.
@@ -130,6 +151,7 @@ export class PdfrxViewerStore {
   clearError(): void {
     if (this.#error === null) return;
     this.#error = null;
+    this.#errorFileName = null;
     this.#notify();
   }
 
@@ -343,6 +365,16 @@ export class PdfrxViewerStore {
     this.#passwordProvider = provider;
   }
 
+  /** Decoder used by all built-in image import paths. */
+  get imageDecoder(): PdfImageDecoder | undefined {
+    return this.#imageDecoder;
+  }
+
+  /** Sets the app-supplied image decoder (from the `imageDecoder` prop). */
+  setImageDecoder(decoder: PdfImageDecoder | undefined): void {
+    this.#imageDecoder = decoder;
+  }
+
   /** Sets the fallback used only when no app password provider was supplied. */
   setFallbackPasswordProvider(provider: PdfPasswordProvider | undefined): void {
     this.#fallbackPasswordProvider = provider;
@@ -381,6 +413,7 @@ export class PdfrxViewerStore {
     const token = ++this.#openToken;
     if (this.#error !== null) {
       this.#error = null;
+      this.#errorFileName = null;
       this.#notify();
     }
     // No viewer yet: attach() replays this once the surface mounts.
@@ -401,13 +434,15 @@ export class PdfrxViewerStore {
           // Not a PDF — treat it as an image and show it as a one-page PDF. The
           // converted bytes become the viewer's source (so a font-fallback
           // reopen replays the PDF, not the image).
-          await viewer.openData(await imageBytesToPdf(viewer.engine, u8), options);
+          await viewer.openData(await imageBytesToPdf(viewer.engine, u8, this.#imageDecoder), options);
         }
       }
       return null;
     } catch (e) {
       if (token !== this.#openToken) return null; // superseded or disposed
       this.#error = e;
+      this.#errorKind = 'open';
+      this.#errorFileName = null;
       this.#notify();
       return e;
     }

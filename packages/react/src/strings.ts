@@ -113,6 +113,8 @@ export interface PdfrxStrings {
   enterPassword: string;
   /** Error banner text; receives the error message. */
   failedToOpen: (message: string) => string;
+  /** Error banner text when a file could not be imported as a page or image annotation. */
+  failedToImport: (fileName: string, message: string) => string;
   /** Error-banner dismiss button (title + aria-label). */
   dismissError: string;
 }
@@ -185,6 +187,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   addPages: 'Add pages',
   enterPassword: 'This document is password protected.\nPassword:',
   failedToOpen: (message) => `Failed to open the document: ${message}`,
+  failedToImport: (fileName, message) => `Failed to import “${fileName}”: ${message}`,
   dismissError: 'Dismiss',
 };
 

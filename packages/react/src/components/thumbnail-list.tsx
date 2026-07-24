@@ -392,7 +392,7 @@ export function PdfThumbnailList({
           <input
             ref={addInputRef}
             type="file"
-            accept="application/pdf,.pdf,image/*"
+            accept="application/pdf,.pdf,image/*,.heic,.heif"
             multiple
             hidden
             onChange={(e) => {

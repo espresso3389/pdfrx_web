@@ -1,12 +1,29 @@
-import type { PdfDocument, PdfPasswordProvider, PdfrxEngine } from '@pdfrx/engine';
+import type { PdfDocument, PdfImageDecoder, PdfPasswordProvider, PdfrxEngine } from '@pdfrx/engine';
 
 /** Image extensions used to classify typeless `File`s (e.g. from some drag sources). */
-const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico|svg)$/i;
+const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico|svg|heic|heif)$/i;
 
 /** Whether a `File` looks like an image the runtime can decode (by MIME type, or extension when typeless). */
 export function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true;
   return file.type === '' && IMAGE_EXTENSION.test(file.name);
+}
+
+/**
+ * Whether a drag may contain an image. During `dragover`, browsers commonly
+ * expose HEIC files as a file item with an empty MIME type and do not expose
+ * the file name until `drop`, so an empty type must be admitted for later
+ * classification by {@link isImageFile}.
+ */
+export function dragMayContainImage(
+  items: ArrayLike<Pick<DataTransferItem, 'kind' | 'type'>>,
+  files: ArrayLike<File>,
+): boolean {
+  return (
+    Array.from(items).some(
+      (item) => item.kind === 'file' && (item.type === '' || item.type.startsWith('image/')),
+    ) || Array.from(files).some(isImageFile)
+  );
 }
 
 /** Whether a `File` looks like a PDF (by MIME type or `.pdf` extension). */
@@ -36,8 +53,12 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
  * returning the PDF bytes. The temporary document is disposed before returning,
  * so the result is a standalone PDF that can be opened by any engine.
  */
-export async function imageBytesToPdf(engine: PdfrxEngine, bytes: Uint8Array | ArrayBuffer): Promise<Uint8Array> {
-  const doc = await engine.createFromImages([bytes]);
+export async function imageBytesToPdf(
+  engine: PdfrxEngine,
+  bytes: Uint8Array | ArrayBuffer,
+  imageDecoder?: PdfImageDecoder,
+): Promise<Uint8Array> {
+  const doc = await engine.createFromImages([bytes], { decode: imageDecoder });
   try {
     return await doc.encodePdf();
   } finally {
@@ -60,10 +81,10 @@ export async function imageBytesToPdf(engine: PdfrxEngine, bytes: Uint8Array | A
 export async function openFileAsDocument(
   engine: PdfrxEngine,
   file: File,
-  options: { passwordProvider?: PdfPasswordProvider } = {},
+  options: { passwordProvider?: PdfPasswordProvider; imageDecoder?: PdfImageDecoder } = {},
 ): Promise<PdfDocument> {
   if (isImageFile(file)) {
-    return engine.createFromImages([file], { sourceName: file.name });
+    return engine.createFromImages([file], { sourceName: file.name, decode: options.imageDecoder });
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (looksLikePdf(bytes)) {
@@ -71,5 +92,5 @@ export async function openFileAsDocument(
   }
   // Typeless and not a PDF: try to decode it as an image (createImageBitmap
   // sniffs the format from the bytes, so a missing MIME type is fine).
-  return engine.createFromImages([bytes], { sourceName: file.name });
+  return engine.createFromImages([bytes], { sourceName: file.name, decode: options.imageDecoder });
 }

@@ -2,6 +2,7 @@ import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { addCenteredImageAnnotation } from '../annotation-image.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
+import { usePdfrxStore } from '../context.js';
 import { usePdfrxStrings } from '../strings.js';
 import {
   IconArrowTool,
@@ -93,6 +94,7 @@ export function PdfAnnotationToolbar({
   onClose,
 }: PdfAnnotationToolbarProps): ReactNode {
   const viewer = usePdfrxViewer();
+  const store = usePdfrxStore();
   const strings = usePdfrxStrings();
   const toolTitles: Record<AnnotationTool, string> = {
     ink: strings.penTool,
@@ -246,14 +248,17 @@ export function PdfAnnotationToolbar({
       <input
         ref={imageInputRef}
         type="file"
-        accept="image/*,.svg"
+        accept="image/*,.svg,.heic,.heif"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = '';
           if (file && viewer) {
-            void addCenteredImageAnnotation(viewer, file)
-              .catch((error: unknown) => console.error(`Failed to add image annotation from ${file.name}:`, error));
+            void addCenteredImageAnnotation(viewer, file, undefined, store.imageDecoder)
+              .catch((error: unknown) => {
+                console.error(`Failed to add image annotation from ${file.name}:`, error);
+                store.reportImportError(error, file.name);
+              });
           }
         }}
       />

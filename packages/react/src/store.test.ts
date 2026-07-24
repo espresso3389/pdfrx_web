@@ -123,6 +123,21 @@ describe('PdfrxViewerStore', () => {
     expect(FakeViewer.instances[0]!.openUrlCalls).toHaveLength(1);
   });
 
+  it('reports and clears import errors for the viewer error banner', () => {
+    const store = new PdfrxViewerStore();
+    const failure = new Error('Unsupported image');
+
+    store.reportImportError(failure, 'photo.heic');
+
+    expect(store.error).toBe(failure);
+    expect(store.errorKind).toBe('import');
+    expect(store.errorFileName).toBe('photo.heic');
+
+    store.clearError();
+    expect(store.error).toBeNull();
+    expect(store.errorFileName).toBeNull();
+  });
+
   it('ignores an equivalent source so a re-render does not reopen the document', async () => {
     const store = new PdfrxViewerStore();
     store.attach(element);

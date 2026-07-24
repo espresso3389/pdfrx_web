@@ -1,4 +1,4 @@
-import type { PdfPasswordProvider } from '@pdfrx/engine';
+import type { PdfImageDecoder, PdfPasswordProvider } from '@pdfrx/engine';
 import type { PdfrxViewerOptions } from '@pdfrx/viewer';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PdfSource } from './source.js';
@@ -41,6 +41,17 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * ```
    */
   passwordProvider?: PdfPasswordProvider;
+  /**
+   * Decodes image formats unsupported by the browser, for every built-in image
+   * path: opening an image, inserting it as a page, and adding an image stamp.
+   * Without this prop, encoded formats unsupported by the current browser
+   * (such as HEIC in Chrome) cannot be imported as pages or annotations.
+   * Applications can add support without changing pdfrx by converting them to
+   * JPEG/PNG or decoded RGBA8888/BGRA8888 pixels here.
+   * Return JPEG/PNG/etc. encoded data or decoded RGBA/BGRA pixels.
+   * See {@link PdfImageDecoder} for a HEIC example.
+   */
+  imageDecoder?: PdfImageDecoder;
   /**
    * UI language for the built-in components. A BCP-47 tag (or a priority list),
    * matched against the built-in languages (English, Japanese, Simplified and
@@ -98,6 +109,7 @@ export function PdfrxProvider({
   strings,
   contextMenuBuilder,
   passwordProvider,
+  imageDecoder,
   children,
   ...options
 }: PdfrxProviderProps): ReactNode {
@@ -116,6 +128,7 @@ export function PdfrxProvider({
   store.setStrings(mergedStrings);
   store.setContextMenuBuilder(contextMenuBuilder);
   store.setPasswordProvider(passwordProvider);
+  store.setImageDecoder(imageDecoder);
 
   options.annotationEditorPlaceholders = {
     text: mergedStrings.annotationTextPlaceholder,
@@ -144,7 +157,7 @@ export function PdfrxProvider({
     if (!onError) return;
     let lastError = store.error;
     return store.subscribe(() => {
-      if (store.error !== null && store.error !== lastError) onError(store.error);
+      if (store.error !== null && store.error !== lastError && store.errorKind === 'open') onError(store.error);
       lastError = store.error;
     });
   }, [store, onError]);
