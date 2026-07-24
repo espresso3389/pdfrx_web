@@ -13,7 +13,7 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 | Engine client | `@pdfrx/engine` (`protocol.ts`, `communicator.ts`, `document.ts`) | Typed `postMessage` client: open/render/text/links/outline, fonts, forms, annotations, page editing, and raw PDF-object inspection/patching. |
 | Core logic | `@pdfrx/viewer-core` | DOM-free geometry, layout, viewport math, text flow, selection. |
 | Viewer shell | `@pdfrx/viewer` | The `<canvas>` shell plus HTML/SVG overlays: rendering, gestures, selection, search, forms, annotations, and printing. |
-| React bindings | `@pdfrx/react` | All-in-one and composable viewer UI, localized controls, and headless hooks. |
+| React bindings | `@pdfrx/react` | All-in-one and composable viewer UI, localized controls, animated chrome, and headless hooks. |
 
 ### The worker protocol
 

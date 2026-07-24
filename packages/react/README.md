@@ -30,6 +30,10 @@ import '@pdfrx/react/styles.css';
 <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} enableFileOpen />;
 ```
 
+The annotation toolbar, narrow-screen search row, and dismissible error banner
+animate as they enter and leave the layout. The default stylesheet disables
+these transitions when the user requests reduced motion.
+
 `enableFileOpen` accepts picked **images** too — PNG, JPEG, GIF, WebP and friends
 open as a one-page PDF. With `enablePageEditing`, dropping a PDF or image
 **between two thumbnails** inserts its pages at that spot, and thumbnails can be
@@ -145,10 +149,11 @@ initial placement is capped at 240 PDF points wide and fitted to the page, but
 that placement does not determine the embedded resolution: raster inputs retain
 their decoded pixels up to a 2048-pixel longest side, and SVG inputs remain
 vector paths. Repeated image resize operations reuse the retained source pixels
-instead of progressively resampling PDFium's transformed appearance. Rectangle and
-text-box tools share the same on-page behavior: placing a rectangle does not
-automatically start typing, while double-clicking either a rectangle or
-FreeText annotation opens localized inline editing. Adding non-blank text
+instead of progressively resampling PDFium's transformed appearance. The
+rectangle tool (including the legacy `freeText` tool alias) creates the same
+GUI object: placing a rectangle does not automatically start typing, while
+double-clicking either a rectangle or FreeText annotation opens localized inline
+editing. Adding non-blank text
 converts the rectangle to FreeText; clearing all text converts it back to a
 plain square. A selected empty rectangle shows a localized **Add text** banner;
 clicking it opens the editor. Text-bearing FreeText accepts a double-click

@@ -98,7 +98,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 | Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
 | Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
 | Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |
-| Loading / progress / error UI hooks | ◐ | The viewer ships a spinner/progress bar (`loadingIndicator`) and exposes `isLoading`, `loadingProgress`, and `addLoadingChangeListener`; `<pdfrx-viewer>` emits `loadingchange`, `load`, and `error`, while React exposes progress/error state and a dismissible error banner. Upstream's arbitrary loading/error banner builders are not ported. |
+| Loading / progress / error UI hooks | ◐ | The viewer ships a spinner/progress bar (`loadingIndicator`) and exposes `isLoading`, `loadingProgress`, and `addLoadingChangeListener`; `<pdfrx-viewer>` emits `loadingchange`, `load`, and `error`, while React exposes progress/error state and an animated dismissible error banner. The React annotation toolbar and narrow-screen search row use the same reduced-motion-aware reveal transition. Upstream's arbitrary loading/error banner builders are not ported. |
 | Custom scroll physics | ⏸️ | Upstream `scrollPhysics` + Instant/Physics delegates. pdfrx_web has a fixed inertia model. |
 
 ---
