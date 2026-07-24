@@ -875,6 +875,8 @@ function translateSpec(spec: PdfAnnotationSpec, dx: number, dy: number): PdfAnno
 
 /** Builds a spec from an existing annotation, translated by (dx, dy) in PDF points. */
 function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number): PdfAnnotationSpec {
+  const appearanceWidth = Math.max(0.01, a.rect.right - a.rect.left);
+  const appearanceHeight = Math.max(0.01, a.rect.top - a.rect.bottom);
   return translateSpec(
     {
       subtype: a.subtype,
@@ -894,6 +896,21 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
       appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
       appearanceImage: a.appearanceImage ? structuredClone(a.appearanceImage) : undefined,
+      appearancePaths: a.subtype === 'stamp' && !a.contents && !a.appearanceImage
+        ? a.appearancePaths.map((path) => ({
+            ...structuredClone(path),
+            fillColor: path.fillMode ? structuredClone(path.fillColor) : null,
+            strokeColor: path.stroke ? structuredClone(path.strokeColor) : null,
+            strokeWidth: path.strokeWidth / appearanceWidth,
+            segments: path.segments.map((segment) => ({
+              ...segment,
+              point: {
+                x: (segment.point.x - a.rect.left) / appearanceWidth,
+                y: (a.rect.top - segment.point.y) / appearanceHeight,
+              },
+            })),
+          }))
+        : undefined,
       geometry: a.geometry,
     },
     dx,
@@ -916,6 +933,9 @@ function inkSpecRect(strokes: PdfAnnotationPoint[][]): PdfRect {
  * geometry onto a base annotation — used to live-render a drag preview.
  */
 function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec): PdfAnnotationObject {
+  const rect = spec.rect ?? base.rect;
+  const appearanceWidth = Math.max(0.01, rect.right - rect.left);
+  const appearanceHeight = Math.max(0.01, rect.top - rect.bottom);
   return {
     ...base,
     rect: spec.rect ?? base.rect,
@@ -932,6 +952,19 @@ function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec)
     appearanceLines: spec.appearanceLines === undefined ? base.appearanceLines : spec.appearanceLines,
     appearanceRuns: spec.appearanceRuns === undefined ? base.appearanceRuns : spec.appearanceRuns,
     appearanceImage: spec.appearanceImage === undefined ? base.appearanceImage : spec.appearanceImage,
+    appearancePaths: spec.appearancePaths === undefined
+      ? base.appearancePaths
+      : spec.appearancePaths.map((path) => ({
+          ...path,
+          strokeWidth: path.strokeWidth * appearanceWidth,
+          segments: path.segments.map((segment) => ({
+            ...segment,
+            point: {
+              x: rect.left + segment.point.x * appearanceWidth,
+              y: rect.top - segment.point.y * appearanceHeight,
+            },
+          })),
+        })),
     geometry: spec.geometry ?? base.geometry,
   };
 }

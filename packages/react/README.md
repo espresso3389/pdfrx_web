@@ -39,6 +39,12 @@ Drop an image directly onto a displayed page to add it as a printable stamp
 annotation. Document opening remains an explicit toolbar action, so page drops
 cannot accidentally replace the current document.
 
+Static SVG drops keep paths and basic shapes as vector PDF appearance content,
+including nested transforms, solid fills/strokes, opacity, and arc conversion.
+SVG text, embedded images, CSS classes, gradients, patterns, clipping, masks,
+filters, animation, and external references fall back to a raster appearance so
+their visual result is preserved.
+
 ### 2. Composed parts
 
 `PdfrxProvider` owns the viewer; where each piece goes is up to you. The only

@@ -647,6 +647,25 @@ export interface PdfAnnotationSpec {
     height: number;
     pixels: Uint8Array;
   };
+  /**
+   * Normalized vector paths used as the normal appearance of a `stamp`
+   * annotation. Points are in a 0–1 box with an SVG-style y-down axis.
+   */
+  appearancePaths?: {
+    segments: {
+      type: 'move' | 'line' | 'bezier';
+      point: PdfAnnotationPoint;
+      close: boolean;
+    }[];
+    fillColor: PdfAnnotationColor | null;
+    strokeColor: PdfAnnotationColor | null;
+    /** Stroke width as a fraction of the appearance width. */
+    strokeWidth: number;
+    fillMode: number;
+    stroke: boolean;
+    lineCap: number;
+    lineJoin: number;
+  }[];
   geometry?: PdfAnnotationGeometry;
 }
 

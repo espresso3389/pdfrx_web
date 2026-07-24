@@ -74,6 +74,8 @@ import {
 
 /** Converts the richer read model into the complete writable/persistable shape. */
 export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnnotationSpec {
+  const appearanceWidth = Math.max(0.01, annotation.rect.right - annotation.rect.left);
+  const appearanceHeight = Math.max(0.01, annotation.rect.top - annotation.rect.bottom);
   return {
     id: annotation.id,
     subtype: annotation.subtype,
@@ -93,6 +95,21 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
     appearanceLines: annotation.appearanceLines ? [...annotation.appearanceLines] : undefined,
     appearanceRuns: annotation.appearanceRuns?.map((line) => line.map((run) => structuredClone(run))),
     appearanceImage: annotation.appearanceImage ? structuredClone(annotation.appearanceImage) : undefined,
+    appearancePaths: annotation.subtype === 'stamp' && !annotation.contents && !annotation.appearanceImage
+      ? annotation.appearancePaths.map((path) => ({
+          ...structuredClone(path),
+          fillColor: path.fillMode ? structuredClone(path.fillColor) : null,
+          strokeColor: path.stroke ? structuredClone(path.strokeColor) : null,
+          strokeWidth: path.strokeWidth / appearanceWidth,
+          segments: path.segments.map((segment) => ({
+            ...segment,
+            point: {
+              x: (segment.point.x - annotation.rect.left) / appearanceWidth,
+              y: (annotation.rect.top - segment.point.y) / appearanceHeight,
+            },
+          })),
+        }))
+      : undefined,
     geometry: structuredClone(annotation.geometry),
   };
 }
@@ -2710,6 +2727,17 @@ export class PdfPage {
       appearanceLines: spec.appearanceLines,
       appearanceRuns: spec.appearanceRuns,
       appearanceImage: spec.appearanceImage,
+      appearancePaths: spec.appearancePaths?.map((path) => ({
+        ...path,
+        fillColor: path.fillColor === null ? null : colorToWire(path.fillColor),
+        strokeColor: path.strokeColor === null ? null : colorToWire(path.strokeColor),
+        segments: path.segments.map((segment) => [
+          segment.type === 'move' ? 2 : segment.type === 'bezier' ? 1 : 0,
+          segment.point.x,
+          segment.point.y,
+          segment.close ? 1 : 0,
+        ]),
+      })),
       geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
     };
   }

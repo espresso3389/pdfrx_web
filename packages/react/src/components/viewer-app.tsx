@@ -7,6 +7,7 @@ import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
+import { parseSvgAnnotation } from '../svg-annotation.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
 import { PdfPageActions } from './page-actions.js';
 import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
@@ -242,17 +243,26 @@ function PdfrxViewerAppChrome({
       });
       if (!hit) return;
       try {
-        const image = await decodeAnnotationImage(file);
-        const pointScale = Math.min(1, 240 / image.width, hit.page.width / image.width, hit.page.height / image.height);
-        const width = image.width * pointScale;
-        const height = image.height * pointScale;
+        const vector = isSvgFile(file) ? parseSvgAnnotation(await file.text()) : null;
+        const image = vector ? null : await decodeAnnotationImage(file);
+        const sourceWidth = vector?.width ?? image!.width;
+        const sourceHeight = vector?.height ?? image!.height;
+        const pointScale = Math.min(
+          1,
+          240 / sourceWidth,
+          hit.page.width / sourceWidth,
+          hit.page.height / sourceHeight,
+        );
+        const width = sourceWidth * pointScale;
+        const height = sourceHeight * pointScale;
         const left = Math.max(0, Math.min(hit.page.width - width, hit.pdfPoint.x - width / 2));
         const bottom = Math.max(0, Math.min(hit.page.height - height, hit.pdfPoint.y - height / 2));
         await hit.page.addAnnotation({
           subtype: 'stamp',
           rect: { left, bottom, right: left + width, top: bottom + height },
           flags: 4,
-          appearanceImage: image,
+          appearanceImage: image ?? undefined,
+          appearancePaths: vector?.paths,
         });
       } catch (error) {
         console.error(`Failed to add image annotation from ${file.name}:`, error);
@@ -411,7 +421,10 @@ function PdfrxViewerAppChrome({
         <PdfViewerSurface
           style={{ flex: 1 }}
           onDragOver={enableAnnotations ? (event) => {
-            if (Array.from(event.dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/'))) {
+            if (
+              Array.from(event.dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/')) ||
+              Array.from(event.dataTransfer.files).some(isImageFile)
+            ) {
               event.preventDefault();
               event.dataTransfer.dropEffect = 'copy';
             }
@@ -425,6 +438,10 @@ function PdfrxViewerAppChrome({
       </div>
     </div>
   );
+}
+
+function isSvgFile(file: File): boolean {
+  return file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
 }
 
 /** Decodes an image file to bounded RGBA pixels suitable for worker transfer. */

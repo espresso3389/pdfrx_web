@@ -1,7 +1,7 @@
 import type { PdfDocument, PdfPasswordProvider, PdfrxEngine } from '@pdfrx/engine';
 
 /** Image extensions used to classify typeless `File`s (e.g. from some drag sources). */
-const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico)$/i;
+const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico|svg)$/i;
 
 /** Whether a `File` looks like an image the runtime can decode (by MIME type, or extension when typeless). */
 export function isImageFile(file: File): boolean {

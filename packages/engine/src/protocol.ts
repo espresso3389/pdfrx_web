@@ -345,6 +345,17 @@ export interface WireAnnotationSpec {
   }[][];
   /** RGBA pixels used as the normal appearance of a `stamp` annotation. */
   appearanceImage?: { width: number; height: number; pixels: Uint8Array };
+  /** Normalized SVG-style vector paths for a stamp appearance. */
+  appearancePaths?: {
+    segments: [number, number, number, number][];
+    fillColor: WireColor | null;
+    strokeColor: WireColor | null;
+    strokeWidth: number;
+    fillMode: number;
+    stroke: boolean;
+    lineCap: number;
+    lineJoin: number;
+  }[];
   geometry?: WireAnnotationGeometry;
 }
 

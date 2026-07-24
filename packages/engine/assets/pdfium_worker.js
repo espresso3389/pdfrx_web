@@ -4242,6 +4242,61 @@ function _appendFreeTextImage(docHandle, pageHandle, annot, image, x, top, rotat
   }
 }
 
+/** Appends normalized SVG-style paths to a Stamp annotation appearance. */
+function _appendStampPaths(annot, rect, paths) {
+  const w = Pdfium.wasmExports;
+  const [left, top, right, bottom] = rect;
+  const width = Math.max(0.01, right - left);
+  const height = Math.max(0.01, top - bottom);
+  const point = (segment) => [left + segment[1] * width, bottom + (1 - segment[2]) * height];
+  for (const appearance of paths) {
+    const segments = appearance.segments;
+    const first = segments?.[0];
+    if (!first) continue;
+    const firstPoint = point(first);
+    const object = w.FPDFPageObj_CreateNewPath(firstPoint[0], firstPoint[1]);
+    if (!object) continue;
+    let appended = false;
+    try {
+      for (let index = first[0] === 2 ? 1 : 0; index < segments.length; index++) {
+        const segment = segments[index];
+        if (!segment) continue;
+        const p = point(segment);
+        if (segment[0] === 2) {
+          w.FPDFPath_MoveTo(object, p[0], p[1]);
+        } else if (segment[0] === 0) {
+          w.FPDFPath_LineTo(object, p[0], p[1]);
+        } else {
+          const control2 = segments[index + 1];
+          const end = segments[index + 2];
+          if (!control2 || !end || control2[0] !== 1 || end[0] !== 1) continue;
+          const p2 = point(control2);
+          const p3 = point(end);
+          w.FPDFPath_BezierTo(object, p[0], p[1], p2[0], p2[1], p3[0], p3[1]);
+          if (end[3]) w.FPDFPath_Close(object);
+          index += 2;
+          continue;
+        }
+        if (segment[3]) w.FPDFPath_Close(object);
+      }
+      // PDFium may report a default black object color even when that paint
+      // operation is disabled. Draw mode is authoritative; otherwise a
+      // stroke-only SVG path becomes a black fill after move/resize round-trip.
+      const fill = appearance.fillMode ? appearance.fillColor : null;
+      const stroke = appearance.stroke ? appearance.strokeColor : null;
+      if (fill) w.FPDFPageObj_SetFillColor(object, fill[0], fill[1], fill[2], fill[3] ?? 255);
+      if (stroke) {
+        w.FPDFPageObj_SetStrokeColor(object, stroke[0], stroke[1], stroke[2], stroke[3] ?? 255);
+        w.FPDFPageObj_SetStrokeWidth(object, Math.max(0, appearance.strokeWidth * width));
+      }
+      w.FPDFPath_SetDrawMode(object, fill ? (appearance.fillMode || 1) : 0, appearance.stroke && !!stroke ? 1 : 0);
+      appended = !!w.FPDFAnnot_AppendObject(annot, object);
+    } finally {
+      if (!appended) w.FPDFPageObj_Destroy(object);
+    }
+  }
+}
+
 /**
  * Forces PDFium to generate (and persist into the annotation dicts) the /AP
  * appearance streams for any annotations on the page that lack them, by drawing
@@ -4300,6 +4355,8 @@ function _createAnnotOnPage(docHandle, pageHandle, pageIndex, spec, forcedId) {
       const image = spec.appearanceImage;
       const scale = image.width / Math.max(0.01, right - left);
       _appendFreeTextImage(docHandle, pageHandle, annot, { ...image, scale }, left, top);
+    } else if (spec.subtype === 'stamp' && spec.appearancePaths && spec.rect) {
+      _appendStampPaths(annot, spec.rect, spec.appearancePaths);
     }
     // PDFium cannot append page objects to a FreeText /AP. Keep the semantic
     // FreeText annotation hidden and paint its deterministic appearance in an
@@ -4376,6 +4433,15 @@ function updateAnnotation(params) {
       const existing = w.FPDFPage_GetAnnot(pageHandle, existingIndex);
       if (existing) {
         existingRevision = Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, existing), 10) || 0;
+        if (spec.subtype === 'stamp' && !spec.appearanceImage && !spec.appearancePaths) {
+          const revision = spec.revision ?? existingRevision + 1;
+          spec = { ...spec, revision };
+          _applyAnnotSpec(existing, spec, docHandle);
+          w.FPDFPage_CloseAnnot(existing);
+          _forceAnnotAppearances(pageHandle);
+          w.FPDFPage_GenerateContent(pageHandle);
+          return { id, revision };
+        }
         w.FPDFPage_CloseAnnot(existing);
       }
     }
