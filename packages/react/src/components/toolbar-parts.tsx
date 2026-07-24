@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { usePdfNavigation } from '../hooks/use-pdf-navigation.js';
 import { usePdfPrint } from '../hooks/use-pdf-print.js';
@@ -12,44 +12,102 @@ export interface PdfControlProps {
   style?: CSSProperties;
 }
 
-/**
- * An editable "page / total" box. Typing a number and pressing Enter (or
- * blurring) navigates; while a document is loading it shows nothing.
- */
+/** A "page / total" button that opens page-number and slider navigation. */
 export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNode {
   const { currentPageNumber, pageCount, goToPage } = usePdfNavigation();
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
+  const hostRef = useRef<HTMLSpanElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Leave the user's half-typed value alone; otherwise track the viewer.
   useEffect(() => {
     setDraft(null);
   }, [currentPageNumber]);
 
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+    const onDown = (event: PointerEvent): void => {
+      if (!hostRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
   const strings = usePdfrxStrings();
 
-  const commit = (): void => {
+  const commit = (close = false): void => {
     const parsed = Number(draft);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= pageCount) goToPage(parsed, 200);
     setDraft(null);
+    if (close) setOpen(false);
   };
 
   if (pageCount === 0) return null;
+  const current = currentPageNumber ?? 1;
+  const parsedDraft = Number(draft);
+  const sliderPage =
+    Number.isInteger(parsedDraft) && parsedDraft >= 1 && parsedDraft <= pageCount ? parsedDraft : current;
   return (
-    <span className={joinClass('pdfrx-page-indicator', className)} style={style}>
-      <input
-        className="pdfrx-page-input"
-        type="text"
-        inputMode="numeric"
+    <span ref={hostRef} className={joinClass('pdfrx-page-indicator', className)} style={style}>
+      <button
+        type="button"
+        className="pdfrx-page-trigger"
         aria-label={strings.pageNumber}
-        value={draft ?? (currentPageNumber === null ? '' : String(currentPageNumber))}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') setDraft(null);
-        }}
-      />
-      <span className="pdfrx-page-total">/ {pageCount}</span>
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{current}</span>
+        <span className="pdfrx-page-total">/ {pageCount}</span>
+      </button>
+      {open && (
+        <div className="pdfrx-page-popup" role="dialog" aria-label={strings.pageNumber}>
+          <div className="pdfrx-page-popup-row">
+            <input
+              ref={inputRef}
+              className="pdfrx-page-input"
+              type="text"
+              inputMode="numeric"
+              aria-label={strings.pageNumber}
+              value={draft ?? String(current)}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commit(true);
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setDraft(null);
+                  setOpen(false);
+                }
+              }}
+            />
+            <span className="pdfrx-page-total">/ {pageCount}</span>
+          </div>
+          <input
+            className="pdfrx-page-slider"
+            type="range"
+            min={1}
+            max={pageCount}
+            step={1}
+            value={sliderPage}
+            aria-label={strings.pageNumber}
+            onChange={(event) => {
+              const page = Number(event.target.value);
+              setDraft(String(page));
+              goToPage(page, 0);
+            }}
+          />
+        </div>
+      )}
     </span>
   );
 }
