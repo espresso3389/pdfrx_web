@@ -93,7 +93,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, `boundaryMargin` (over-pan), and `panAxis` (`'free'` / `'horizontal'` / `'vertical'` / `'aligned'`) to lock primary-button, right-button, and single- or two-finger drag-panning to an axis. Two-finger midpoint movement (pan) and separation (zoom) honor their toggles independently. A moved right-button drag suppresses the context menu. |
+| Interaction toggles / limits | ✅ | `PdfrxViewerOptions.panEnabled`, `zoomEnabled` (pinch + ctrl/cmd-wheel), `scrollByMouseWheel`, `scrollByArrowKey`, `boundaryMargin` (over-pan), and `panAxis` (`'free'` / `'horizontal'` / `'vertical'` / `'aligned'`) to lock primary-button and single- or two-finger drag-panning to an axis. Two-finger midpoint movement (pan) and separation (zoom) honor their toggles independently. Secondary-button drag is reserved for annotation marquee selection; primary-button object and anchor drags manipulate annotations. |
 | Interaction callbacks | ✅ | `onInteractionStart` / `onInteractionEnd`, and `onGeneralTap` reporting `tap` / `doubleTap` / `longPress` / `secondaryTap` with the view point. (`onInteractionUpdate` / `onKey` still absent.) |
 | Viewer-fixed overlays (`viewerOverlayBuilder`) | ✅ | `PdfrxViewerOptions.viewerOverlayBuilder({viewSize})` renders a viewport-fixed DOM layer (rebuilt on resize/open; `setViewerOverlayBuilder` / `refreshViewerOverlays` at runtime). |
 | Scroll thumbs | ◐ | No built-in scroll thumb, but the viewer-fixed overlay layer above is the injection point to build one. |

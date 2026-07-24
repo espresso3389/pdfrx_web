@@ -1,4 +1,4 @@
-import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
+import type { AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { addCenteredImageAnnotation } from '../annotation-image.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
@@ -7,7 +7,6 @@ import { usePdfrxStrings } from '../strings.js';
 import {
   IconArrowTool,
   IconClose,
-  IconCursorText,
   IconEllipse,
   IconHighlighter,
   IconImage,
@@ -16,13 +15,9 @@ import {
   IconOpacity,
   IconPen,
   IconRectangle,
-  IconSelectObject,
   IconTextSize,
   IconThickness,
 } from './icons.js';
-
-/** The mutually-exclusive interaction modes offered by the toolbar. */
-type ToolbarMode = 'text' | 'select' | AnnotationTool;
 
 /** Props for {@link PdfAnnotationToolbar}. */
 export interface PdfAnnotationToolbarProps {
@@ -36,8 +31,8 @@ export interface PdfAnnotationToolbarProps {
   /** Preset colors offered in the color picker. */
   colors?: readonly string[];
   /**
-   * When provided, a close (✕) button is shown. The toolbar always returns the
-   * viewer to text-selection mode when it unmounts, so hosts can just hide it.
+   * When provided, a close (✕) button is shown. The toolbar clears any active
+   * drawing tool when it unmounts, so hosts can just hide it.
    */
   onClose?: () => void;
 }
@@ -75,13 +70,14 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
 };
 
 /**
- * The annotation mode bar: mutually-exclusive toggles for text selection,
- * object selection and each drawing tool, an image picker, plus color/width
- * pickers. The image picker adds a printable stamp annotation to the center of
- * the current page, using the same sizing as image drop (240pt wide at most,
- * with additional proportional scaling when needed to fit the page). Drawing
+ * The annotation toolbar: drawing-tool toggles, an image picker, plus
+ * color/width pickers. Text interaction remains on the primary mouse button
+ * and object selection remains available on the secondary button independently
+ * of the active drawing tool. The image picker adds a printable stamp annotation
+ * to the center of the current page, using the same sizing as image drop (240pt
+ * wide at most, with additional proportional scaling when needed to fit the page). Drawing
  * controls are wired to {@link PdfrxViewer.setAnnotationTool} /
- * `setAnnotationSelectMode` / `setAnnotationStyle`. Requires a
+ * `setAnnotationStyle`. Requires a
  * {@link PdfrxProvider} ancestor and the viewer's `interactiveAnnotations`
  * option (on by default). Import `@pdfrx/react/styles.css` for the default
  * look, or style the `pdfrx-annot-*` class names yourself.
@@ -109,9 +105,7 @@ export function PdfAnnotationToolbar({
   const visibleTools = tools
     .map((tool) => (tool === 'freeText' ? 'rectangle' : tool))
     .filter((tool, index, all) => all.indexOf(tool) === index);
-  // One active mode at a time: 'text' = normal text-selection viewing,
-  // 'select' = object select (marquee/multi-select), a tool name = draw.
-  const [active, setActive] = useState<ToolbarMode>('select');
+  const [active, setActive] = useState<AnnotationTool | null>(null);
   const [color, setColor] = useState(colors[0] ?? '#e53935');
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [fillColor, setFillColor] = useState<string | null>(null);
@@ -139,13 +133,12 @@ export function PdfAnnotationToolbar({
     return gesture?.key === key ? `${key}:${gesture.sequence}` : undefined;
   };
 
-  // Start in object-select mode when the toolbar appears, and return to text
-  // mode when it unmounts (so closing it restores normal text selection).
+  // Keep the pressed tool in sync with programmatic changes. Closing the
+  // toolbar returns to the tool-free interaction state.
   useEffect(() => {
     if (!viewer) return;
-    const syncMode = (mode: AnnotationMode): void => setActive(mode ?? 'text');
-    viewer.setAnnotationSelectMode(true);
-    syncMode(viewer.getAnnotationMode());
+    const syncMode = (): void => setActive(viewer.getAnnotationTool());
+    syncMode();
     const unsubscribe = viewer.addAnnotationModeChangeListener(syncMode);
     return () => {
       unsubscribe();
@@ -170,11 +163,10 @@ export function PdfAnnotationToolbar({
     };
   }, [openPalette]);
 
-  const applyMode = (mode: ToolbarMode): void => {
-    setActive(mode);
-    if (mode === 'text') viewer?.setAnnotationTool(null);
-    else if (mode === 'select') viewer?.setAnnotationSelectMode(true);
-    else viewer?.setAnnotationTool(mode);
+  const applyMode = (mode: AnnotationTool): void => {
+    const next = active === mode ? null : mode;
+    setActive(next);
+    viewer?.setAnnotationTool(next);
   };
   const pickStroke = (c: string): void => {
     setColor(c);
@@ -220,13 +212,6 @@ export function PdfAnnotationToolbar({
 
   return (
     <div className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
-      <ModeButton mode="text" active={active} onClick={applyMode} title={strings.textSelection}>
-        <IconCursorText />
-      </ModeButton>
-      <ModeButton mode="select" active={active} onClick={applyMode} title={strings.selectObjects}>
-        <IconSelectObject />
-      </ModeButton>
-      <span className="pdfrx-toolbar-separator" aria-hidden />
       {visibleTools.map((tool) => {
         const ToolIcon = TOOL_ICON[tool];
         return (
@@ -515,7 +500,7 @@ export function PdfAnnotationToolbar({
   );
 }
 
-/** One mutually-exclusive mode button in {@link PdfAnnotationToolbar}. */
+/** One drawing-tool toggle in {@link PdfAnnotationToolbar}. */
 function ModeButton({
   mode,
   active,
@@ -523,9 +508,9 @@ function ModeButton({
   title,
   children,
 }: {
-  mode: ToolbarMode;
-  active: ToolbarMode;
-  onClick: (mode: ToolbarMode) => void;
+  mode: AnnotationTool;
+  active: AnnotationTool | null;
+  onClick: (mode: AnnotationTool) => void;
   title: string;
   children: ReactNode;
 }): ReactNode {

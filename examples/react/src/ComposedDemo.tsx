@@ -23,7 +23,7 @@ import {
  */
 export function ComposedDemo({ locale }: { locale?: string }) {
   // The annotation toolbar is revealed by the "Annotate" button; closing it
-  // returns to normal text-selection mode (the toolbar resets the viewer on unmount).
+  // clears any active drawing tool.
   const [annotating, setAnnotating] = useState(false);
   return (
     <PdfrxProvider src="hello.pdf" wasmModulesUrl="pdfium/" initialFit="width" locale={locale}>

@@ -267,12 +267,13 @@ export interface PdfrxViewerOptions {
    */
   doubleClickToZoom?: boolean;
   /**
-   * Enables drag-to-pan (primary-button background drag, right-button drag, or
-   * touch drag). Default: `true`.
+   * Enables drag-to-pan (primary-button background drag or touch drag).
+   * Secondary-button drags are reserved for annotation object selection.
+   * Default: `true`.
    */
   panEnabled?: boolean;
   /**
-   * Restricts primary-button, right-button, and touch drag-panning to one axis.
+   * Restricts primary-button and touch drag-panning to one axis.
    * `'free'` (default) pans in both; `'horizontal'` / `'vertical'` lock to that
    * axis; `'aligned'` locks each pan gesture to whichever axis it starts moving
    * along. Wheel/keyboard scrolling and programmatic navigation are unaffected.
@@ -798,6 +799,7 @@ interface DrawState {
   tool: AnnotationTool;
   pageGeom: PageGeometry;
   pageSize: Size;
+  overlay: AnnotationPageOverlay;
   svg: SVGSVGElement;
   /** Sampled points in page-local px (ink) or `[start]` for shapes. */
   points: Offset[];
@@ -1182,14 +1184,14 @@ function inkStrokeKind(g: { strokes: PdfAnnotationPoint[][] }): 'line' | 'arrow'
 
 /** Whether selection must use distance-to-segment testing instead of SVG bounds. */
 function annotationUsesLineHitTest(a: PdfAnnotationObject): boolean {
-  return a.geometry.kind === 'line' || (a.geometry.kind === 'ink' && inkStrokeKind(a.geometry) !== 'curve');
+  return a.geometry.kind === 'line' || a.geometry.kind === 'ink';
 }
 
-/** Every selectable center-line segment of a straight line or arrow annotation. */
+/** Every selectable center-line segment of a line, arrow, or freehand stroke. */
 function annotationLineSegments(a: PdfAnnotationObject): readonly (readonly [PdfAnnotationPoint, PdfAnnotationPoint])[] {
   const geometry = a.geometry;
   if (geometry.kind === 'line') return [[geometry.start, geometry.end]];
-  if (geometry.kind !== 'ink' || inkStrokeKind(geometry) === 'curve') return [];
+  if (geometry.kind !== 'ink') return [];
   const segments: [PdfAnnotationPoint, PdfAnnotationPoint][] = [];
   for (const stroke of geometry.strokes) {
     for (let index = 1; index < stroke.length; index++) {
@@ -1639,11 +1641,9 @@ export class PdfrxViewer {
     this.container.addEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.addEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.addEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
-    this.container.addEventListener('pointerdown', this.onRightPanPointerDown, { capture: true });
-    this.container.addEventListener('pointermove', this.onRightPanPointerMove, { capture: true });
-    this.container.addEventListener('pointerup', this.onRightPanPointerUp, { capture: true });
-    this.container.addEventListener('pointercancel', this.onRightPanPointerUp, { capture: true });
-    this.container.addEventListener('contextmenu', this.onRightPanContextMenu, { capture: true });
+    this.container.addEventListener('pointerdown', this.onAnnotationPointerDown, { capture: true });
+    this.container.addEventListener('contextmenu', this.onAnnotationContextMenu, { capture: true });
+    this.container.addEventListener('dblclick', this.onAnnotationDoubleClick, { capture: true });
     this.canvas.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
   }
@@ -2820,11 +2820,9 @@ export class PdfrxViewer {
     this.container.removeEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.removeEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.removeEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
-    this.container.removeEventListener('pointerdown', this.onRightPanPointerDown, { capture: true });
-    this.container.removeEventListener('pointermove', this.onRightPanPointerMove, { capture: true });
-    this.container.removeEventListener('pointerup', this.onRightPanPointerUp, { capture: true });
-    this.container.removeEventListener('pointercancel', this.onRightPanPointerUp, { capture: true });
-    this.container.removeEventListener('contextmenu', this.onRightPanContextMenu, { capture: true });
+    this.container.removeEventListener('pointerdown', this.onAnnotationPointerDown, { capture: true });
+    this.container.removeEventListener('contextmenu', this.onAnnotationContextMenu, { capture: true });
+    this.container.removeEventListener('dblclick', this.onAnnotationDoubleClick, { capture: true });
     this.container.style.touchAction = this.previousContainerTouchAction;
     this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
@@ -3768,9 +3766,10 @@ export class PdfrxViewer {
         if (e.pointerType === 'mouse') {
           const docPoint = viewToDocument(this.transform, local);
           const overHandle = this.hitTestHandle(local);
-          const link = overHandle ? null : this.linkAt(docPoint);
-          const p = overHandle || link ? null : findTextAndIndexForPoint(docPoint, this.selectablePages());
-          this.canvas.style.cursor = link ? 'pointer' : overHandle ? 'grab' : p ? 'text' : 'default';
+          const annotation = overHandle ? null : this.annotationHitAtClientPoint(e.clientX, e.clientY, e.pointerType);
+          const link = overHandle || annotation ? null : this.linkAt(docPoint);
+          const p = overHandle || annotation || link ? null : findTextAndIndexForPoint(docPoint, this.selectablePages());
+          this.canvas.style.cursor = annotation || link ? 'pointer' : overHandle ? 'grab' : p ? 'text' : 'default';
           if (link?.link !== this.hoveredLink?.link) {
             this.hoveredLink = link;
             this.invalidate();
@@ -3906,7 +3905,7 @@ export class PdfrxViewer {
 
   /** Fires onInteractionStart/End when the gesture state crosses idle↔active. */
   private reconcileInteraction(): void {
-    const active = this.mode.kind !== 'none' || this.selectTouchGesture !== null || this.rightPan !== null;
+    const active = this.mode.kind !== 'none' || this.selectTouchGesture !== null;
     if (active === this.interactionActive) return;
     this.interactionActive = active;
     const cb = active ? this.options.onInteractionStart : this.options.onInteractionEnd;
@@ -4111,79 +4110,221 @@ export class PdfrxViewer {
     if (this.selectTouchPoints.size === 0) this.selectTouchGesture = null;
   };
 
-  private rightPan: {
-    pointerId: number;
-    start: Offset;
-    last: Offset;
-    moved: boolean;
-    previousCursor: string;
-    lockAxis?: 'x' | 'y';
-  } | null = null;
-  private suppressRightPanContextMenu = false;
-
-  private readonly onRightPanPointerDown = (event: PointerEvent): void => {
-    if (event.pointerType === 'touch' || event.button !== 2 || this.rightPan || this.options.panEnabled === false) return;
-    const point = this.localPoint(event);
-    this.rightPan = {
-      pointerId: event.pointerId,
-      start: point,
-      last: point,
-      moved: false,
-      previousCursor: this.container.style.cursor,
-    };
-    this.stopFling();
-    this.stopAnimation();
-    this.reconcileInteraction();
-    try {
-      this.container.setPointerCapture(event.pointerId);
-    } catch {
-      /* best effort */
-    }
-  };
-
-  private readonly onRightPanPointerMove = (event: PointerEvent): void => {
-    const pan = this.rightPan;
-    if (!pan || event.pointerId !== pan.pointerId || this.options.panEnabled === false) return;
-    const point = this.localPoint(event);
-    if (!pan.moved && Math.hypot(point.x - pan.start.x, point.y - pan.start.y) < TAP_SLOP) return;
-    pan.moved = true;
-    this.container.style.cursor = 'grabbing';
-    const [dx, dy] = this.constrainPan(point.x - pan.last.x, point.y - pan.last.y, pan);
-    pan.last = point;
-    this.setTransform({
-      zoom: this.transform.zoom,
-      xZoomed: this.transform.xZoomed + dx,
-      yZoomed: this.transform.yZoomed + dy,
+  /**
+   * Secondary-button annotation interaction is captured above both the canvas
+   * and the click-through annotation overlay. This keeps primary input entirely
+   * on the canvas while still allowing a right drag to start anywhere.
+   */
+  private annotationHitAtClientPoint(
+    clientX: number,
+    clientY: number,
+    pointerType: string,
+  ): { overlay: AnnotationPageOverlay; id: string } | null {
+    const overlay = [...this.annotationOverlays.values()].find((candidate) => {
+      if (candidate.container.style.display === 'none') return false;
+      const rect = candidate.svg.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
     });
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  };
-
-  private readonly onRightPanPointerUp = (event: PointerEvent): void => {
-    const pan = this.rightPan;
-    if (!pan || event.pointerId !== pan.pointerId) return;
-    this.rightPan = null;
-    this.reconcileInteraction();
-    this.container.style.cursor = pan.previousCursor;
-    try {
-      this.container.releasePointerCapture(event.pointerId);
-    } catch {
-      /* best effort */
+    if (!overlay) return null;
+    const point = this.clientToPagePx(overlay.svg, clientX, clientY);
+    const line = this.lineAnnotationHit(overlay, point, pointerType);
+    if (line) return { overlay, id: line.id };
+    const entries = [...overlay.annotations.entries()];
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const entry = entries[index];
+      if (!entry) continue;
+      const [id, annotation] = entry;
+      if (annotationUsesLineHitTest(annotation)) continue;
+      if (this.annotationPointHit(annotation, overlay, point, pointerType)) return { overlay, id };
     }
-    if (!pan.moved) return;
-    this.suppressRightPanContextMenu = true;
-    window.setTimeout(() => {
-      this.suppressRightPanContextMenu = false;
-    }, 0);
+    return null;
+  }
+
+  /** Shape-aware point hit test used by hover and primary-click selection. */
+  private annotationPointHit(
+    annotation: PdfAnnotationObject,
+    overlay: AnnotationPageOverlay,
+    point: Offset,
+    pointerType: string,
+  ): boolean {
+    const bounds = this.annotationPxBounds(annotation, overlay);
+    if (!bounds) return false;
+    const hollow =
+      (annotation.subtype === 'square' || annotation.subtype === 'circle') &&
+      (!annotation.interiorColor || annotation.interiorColor.a === 0);
+    const inside =
+      point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
+    if (!hollow) return inside;
+    const tolerance =
+      (pointerType === 'touch' ? TOUCH_LINE_HIT_SCREEN_PX : LINE_HIT_SCREEN_PX) / this.transform.zoom +
+      Math.max(0, annotation.borderWidth) / 2;
+    if (
+      point.x < bounds.left - tolerance ||
+      point.x > bounds.right + tolerance ||
+      point.y < bounds.top - tolerance ||
+      point.y > bounds.bottom + tolerance
+    ) {
+      return false;
+    }
+    if (annotation.subtype === 'square') {
+      const topLeft = { x: bounds.left, y: bounds.top };
+      const topRight = { x: bounds.right, y: bounds.top };
+      const bottomRight = { x: bounds.right, y: bounds.bottom };
+      const bottomLeft = { x: bounds.left, y: bounds.bottom };
+      return Math.min(
+        pointToSegmentDistance(point, topLeft, topRight),
+        pointToSegmentDistance(point, topRight, bottomRight),
+        pointToSegmentDistance(point, bottomRight, bottomLeft),
+        pointToSegmentDistance(point, bottomLeft, topLeft),
+      ) <= tolerance;
+    }
+    const rx = (bounds.right - bounds.left) / 2;
+    const ry = (bounds.bottom - bounds.top) / 2;
+    if (rx <= 0 || ry <= 0) return false;
+    const dx = point.x - (bounds.left + bounds.right) / 2;
+    const dy = point.y - (bounds.top + bounds.bottom) / 2;
+    const normalizedRadius = Math.hypot(dx / rx, dy / ry);
+    return Math.abs(normalizedRadius - 1) * Math.min(rx, ry) <= tolerance;
+  }
+
+  /** Whether a marquee crosses a selectable part of an annotation shape. */
+  private annotationIntersectsMarquee(
+    annotation: PdfAnnotationObject,
+    overlay: AnnotationPageOverlay,
+    marquee: Rect,
+  ): boolean {
+    const bounds = this.annotationPxBounds(annotation, overlay);
+    if (!bounds) return false;
+    const hollow =
+      (annotation.subtype === 'square' || annotation.subtype === 'circle') &&
+      (!annotation.interiorColor || annotation.interiorColor.a === 0);
+    if (!hollow) return rectsOverlap(marquee, bounds);
+    const tolerance = LINE_HIT_SCREEN_PX / this.transform.zoom + Math.max(0, annotation.borderWidth) / 2;
+    const expandedBounds = {
+      left: bounds.left - tolerance,
+      top: bounds.top - tolerance,
+      right: bounds.right + tolerance,
+      bottom: bounds.bottom + tolerance,
+    };
+    if (!rectsOverlap(marquee, expandedBounds)) return false;
+    if (annotation.subtype === 'square') {
+      return [
+        { left: bounds.left - tolerance, top: bounds.top - tolerance, right: bounds.right + tolerance, bottom: bounds.top + tolerance },
+        { left: bounds.left - tolerance, top: bounds.bottom - tolerance, right: bounds.right + tolerance, bottom: bounds.bottom + tolerance },
+        { left: bounds.left - tolerance, top: bounds.top, right: bounds.left + tolerance, bottom: bounds.bottom },
+        { left: bounds.right - tolerance, top: bounds.top, right: bounds.right + tolerance, bottom: bounds.bottom },
+      ].some((edge) => rectsOverlap(marquee, edge));
+    }
+    const cx = (bounds.left + bounds.right) / 2;
+    const cy = (bounds.top + bounds.bottom) / 2;
+    const rx = (bounds.right - bounds.left) / 2;
+    const ry = (bounds.bottom - bounds.top) / 2;
+    const samples = 48;
+    const expandedMarquee = {
+      left: marquee.left - tolerance,
+      top: marquee.top - tolerance,
+      right: marquee.right + tolerance,
+      bottom: marquee.bottom + tolerance,
+    };
+    let previous = { x: cx + rx, y: cy };
+    for (let index = 1; index <= samples; index++) {
+      const angle = (index / samples) * Math.PI * 2;
+      const current = { x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry };
+      if (segmentIntersectsRect(previous, current, expandedMarquee)) return true;
+      previous = current;
+    }
+    return false;
+  }
+
+  private readonly onAnnotationPointerDown = (event: PointerEvent): void => {
+    if ((event.button !== 0 && event.button !== 2) || !this.isAnnotationSelectMode()) return;
+    if (event.button === 0 && this.drawingTool()) return;
+    const hit = this.annotationHitAtClientPoint(event.clientX, event.clientY, event.pointerType);
+    const overlay = hit?.overlay ?? [...this.annotationOverlays.values()].find((candidate) => {
+      if (candidate.container.style.display === 'none') return false;
+      const rect = candidate.svg.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+    if (!overlay) return;
+    const start = this.clientToPagePx(overlay.svg, event.clientX, event.clientY);
+    const hitId = hit?.id;
+
+    if (event.button === 0) {
+      if (
+        event.target instanceof Element &&
+        event.target.tagName.toLowerCase() === 'circle' &&
+        event.target.closest('.pdfrx-anchors')
+      ) {
+        const circle = event.target as SVGCircleElement;
+        const circles = [...overlay.anchorLayer.querySelectorAll('circle')];
+        const index = circles.indexOf(circle);
+        const selected = this.selectedAnnotationsOn(overlay);
+        if (index >= 0 && selected.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (selected.length > 1) {
+            this.beginGroupResize(
+              overlay,
+              selected,
+              unionBounds(selected.map((annotation) => annotationBounds(annotation))),
+              index,
+              circle,
+              event.pointerId,
+            );
+          } else {
+            this.beginAnchorDrag(overlay, selected[0]!, index, circle, event.pointerId);
+          }
+          return;
+        }
+      }
+      if (!hitId) return;
+      const group = overlay.svg.querySelector<SVGGElement>(`g[data-annot-id="${CSS.escape(hitId)}"]`);
+      if (group) {
+        this.beginAnnotationSelection(
+          event,
+          overlay.pageNumber,
+          overlay,
+          overlay.pageGeom,
+          overlay.pageSize,
+          group,
+          hitId,
+          start,
+        );
+      }
+      return;
+    }
+
+    // Secondary-button drag always owns marquee selection, even when it starts
+    // over an existing object.
+    event.preventDefault();
+    event.stopPropagation();
+    this.beginMarquee(overlay, start, event.pointerId, event.metaKey || event.ctrlKey);
+  };
+
+  private suppressAnnotationContextMenu = false;
+
+  private readonly onAnnotationContextMenu = (event: MouseEvent): void => {
+    if (!this.suppressAnnotationContextMenu) return;
+    this.suppressAnnotationContextMenu = false;
     event.preventDefault();
     event.stopImmediatePropagation();
   };
 
-  private readonly onRightPanContextMenu = (event: MouseEvent): void => {
-    if (!this.suppressRightPanContextMenu && !this.rightPan?.moved) return;
-    this.suppressRightPanContextMenu = false;
+  private readonly onAnnotationDoubleClick = (event: MouseEvent): void => {
+    if (!this.isAnnotationSelectMode() || this.drawingTool()) return;
+    const hit = this.annotationHitAtClientPoint(event.clientX, event.clientY, 'mouse');
+    if (!hit) return;
+    const annotation = hit.overlay.annotations.get(hit.id);
+    if (
+      !annotation ||
+      (annotation.subtype !== 'text' && annotation.subtype !== 'freeText' && annotation.subtype !== 'square')
+    ) {
+      return;
+    }
     event.preventDefault();
     event.stopImmediatePropagation();
+    this.setSelectedAnnotation(hit.id);
+    this.trackAnnotationTextEdit(this.editTextAnnotation(hit.overlay, annotation));
   };
 
   /** Document-space distance scrolled per arrow-key press (view px). */
@@ -4227,13 +4368,13 @@ export class PdfrxViewer {
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'a') {
-        if (this.isAnnotationSelectMode()) void this.selectAllAnnotationsOnPage();
+        if (this.selectedAnnotationIds.size) void this.selectAllAnnotationsOnPage();
         else void this.selectAll();
         return true;
       }
       switch (e.key) {
         case 'Escape':
-          // Cancel the active tool / select mode / annotation selection first,
+          // Cancel the active drawing tool / annotation selection first,
           // else fall back to clearing the text selection.
           if (this.annotationMode !== null) {
             this.annotationMode = null;
@@ -5092,31 +5233,30 @@ export class PdfrxViewer {
         overlay.highlightContainer.style.display = '';
         overlay.container.style.transform = `translate(${vr.left}px, ${vr.top}px) scale(${t.zoom})`;
         overlay.highlightContainer.style.transform = overlay.container.style.transform;
-        // A drawing tool or select mode makes the SVG capture drags anywhere on
-        // the page (to draw / rubber-band); otherwise only the shapes are
-        // interactive so empty areas still pan / select text.
+        // With no drawing tool, the entire annotation overlay is click-through
+        // so the canvas owns primary hover, text selection, and panning.
+        // Annotation clicks and secondary input are intercepted by
+        // onAnnotationPointerDown.
         const drawing = this.drawingTool() !== null;
-        const capturing = drawing || this.isAnnotationSelectMode();
+        const capturing = drawing;
         overlay.container.style.pointerEvents = capturing ? 'auto' : 'none';
         overlay.svg.style.pointerEvents = capturing ? 'auto' : 'none';
-        overlay.svg.style.cursor = drawing ? 'crosshair' : this.isAnnotationSelectMode() ? 'default' : '';
-        // Existing annotation shapes are genuine hit targets only in explicit
-        // object-select mode. Otherwise make them click-through so normal
-        // viewing can pan/select text even when a gesture starts over a shape.
+        overlay.svg.style.cursor = drawing ? 'crosshair' : '';
+        // Existing annotation shapes are always genuine hit targets.
         for (const child of Array.from(overlay.svg.children)) {
           const g = child as SVGGElement;
           const id = g.dataset.annotId;
           if (!id) continue;
           const annotation = overlay.annotations.get(id);
           const selected = this.selectedAnnotationIds.has(id);
-          g.style.pointerEvents = this.isAnnotationSelectMode()
+          g.style.pointerEvents = drawing
             ? annotation && annotationUsesLineHitTest(annotation)
               ? 'none'
               : selected || annotation?.subtype === 'freeText'
               ? 'bounding-box'
               : 'auto'
             : 'none';
-          g.style.cursor = this.isAnnotationSelectMode() ? 'pointer' : '';
+          g.style.cursor = '';
         }
         // Keep the selection anchors + bounding box a constant on-screen size as
         // the zoom changes.
@@ -5166,8 +5306,7 @@ export class PdfrxViewer {
     svg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
     // Prevent the browser from converting a touch drag into page scrolling and
     // cancelling our pointer stream. Empty page areas remain click-through when
-    // annotation drawing/select mode is inactive, so normal viewer panning is
-    // unaffected.
+    // annotation editing is disabled, so normal viewer panning is unaffected.
     svg.style.cssText =
       'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;touch-action:none;';
     const highlightSvg = document.createElementNS(SVG_NS, 'svg');
@@ -5587,8 +5726,8 @@ export class PdfrxViewer {
 
   /**
    * Selects a drawing tool (or `null` for idle/viewing). While a drawing tool is
-   * active the annotation overlay captures pointer drags to create annotations.
-   * Setting a tool leaves select mode. Requires `interactiveAnnotations`.
+   * active the annotation overlay captures primary-button pointer drags to
+   * create annotations. Requires `interactiveAnnotations`.
    */
   setAnnotationTool(tool: AnnotationTool | null): void {
     if (tool && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
@@ -5596,20 +5735,18 @@ export class PdfrxViewer {
     this.setAnnotationMode(tool);
   }
 
-  /** The active drawing tool, or null (idle or select mode). */
+  /** The active drawing tool, or null when no drawing tool is selected. */
   getAnnotationTool(): AnnotationTool | null {
     return this.annotationMode === 'select' ? null : this.annotationMode;
   }
 
   /**
-   * Enters (or leaves) annotation *select* mode: dragging on empty page area
-   * rubber-band-selects every overlapping annotation, and a multi-selection can
-   * be moved/resized as a group. Annotation selection and editing are disabled
-   * outside this mode, leaving annotations display-only during normal viewing.
+   * Legacy compatibility switch. Annotation selection is now always available;
+   * enabling it simply clears the active drawing tool. Disabling it is a no-op.
    */
   setAnnotationSelectMode(on: boolean): void {
     if (on && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
-    this.setAnnotationMode(on ? 'select' : null);
+    if (on) this.setAnnotationMode(null);
   }
 
   /** Current annotation interaction mode. */
@@ -5661,9 +5798,9 @@ export class PdfrxViewer {
     }
   }
 
-  /** Whether annotation select mode is active. */
+  /** Whether annotation object interaction is available. */
   isAnnotationSelectMode(): boolean {
-    return this.annotationMode === 'select';
+    return this.annotationsEditable();
   }
 
   /** The active drawing tool, or null. @internal */
@@ -6314,8 +6451,9 @@ export class PdfrxViewer {
   ): void {
     const anchor = annotationAnchors(annotation)[index];
     if (!anchor) return;
+    const dragSurface = this.container;
     try {
-      circle.setPointerCapture(pointerId);
+      dragSurface.setPointerCapture(pointerId);
     } catch {
       /* ignore */
     }
@@ -6346,9 +6484,9 @@ export class PdfrxViewer {
       ]);
     };
     const up = (): void => {
-      circle.removeEventListener('pointermove', move);
-      circle.removeEventListener('pointerup', up);
-      circle.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', up);
       circle.style.cursor = 'crosshair';
       this.renderAnnotationSnapGuides(overlay);
       if (!lastSpec || !this.doc) return;
@@ -6361,9 +6499,9 @@ export class PdfrxViewer {
         this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
       })();
     };
-    circle.addEventListener('pointermove', move);
-    circle.addEventListener('pointerup', up);
-    circle.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointermove', move);
+    dragSurface.addEventListener('pointerup', up);
+    dragSurface.addEventListener('pointercancel', up);
   }
 
   /** Replaces the selected annotation's shape with a live preview from `spec`. */
@@ -6444,17 +6582,16 @@ export class PdfrxViewer {
       },
       true,
     );
-    // On the SVG surface (empty page area, since shapes stop propagation): draw
-    // when a tool is active, rubber-band-select in select mode.
+    // Primary drags draw with an active tool or follow normal viewer behavior.
+    // Secondary drags always rubber-band-select annotation objects.
     svg.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
       this.lastPointerType = e.pointerType;
       const start = this.clientToPagePx(svg, e.clientX, e.clientY);
-      if (this.drawingTool()) {
+      if (e.button === 0 && this.drawingTool()) {
         e.preventDefault();
         e.stopPropagation();
         this.beginDraw(pageNumber, overlay, pageGeom, pageSize, start, e.pointerId);
-      } else if (this.isAnnotationSelectMode()) {
+      } else if (e.button === 2 && this.isAnnotationSelectMode()) {
         e.preventDefault();
         e.stopPropagation();
         const hit = this.lineAnnotationHit(overlay, start, e.pointerType);
@@ -6464,6 +6601,10 @@ export class PdfrxViewer {
           return;
         }
         this.beginMarquee(overlay, start, e.pointerId, e.metaKey || e.ctrlKey);
+      } else if (e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onPointerDown(e);
       }
     });
     svg.addEventListener('pointermove', (e) => {
@@ -6481,8 +6622,6 @@ export class PdfrxViewer {
       const g = child as SVGGElement;
       const id = g.dataset.annotId;
       if (!id) continue;
-      // Select mode makes shapes interactive while normal viewing leaves them
-      // click-through (synchronized by updateAnnotationOverlays).
       const annotation = overlay.annotations.get(id);
       // An unfilled FreeText box otherwise only receives events on its glyphs
       // and stroke. Treat its complete rectangular bounds as the hit target.
@@ -6492,11 +6631,12 @@ export class PdfrxViewer {
           : annotation?.subtype === 'freeText'
             ? 'bounding-box'
             : 'auto';
-      g.style.cursor = this.isAnnotationSelectMode() ? 'pointer' : '';
+      g.style.cursor = '';
       g.addEventListener('pointerdown', (e) => {
-        if (!this.isAnnotationSelectMode() || e.button !== 0) return;
-        const start = this.clientToPagePx(svg, e.clientX, e.clientY);
-        this.beginAnnotationSelection(e, pageNumber, overlay, pageGeom, pageSize, g, id, start);
+        if (!this.isAnnotationSelectMode()) return;
+        // Secondary-button selection is handled once in the container capture
+        // phase. Primary input reaches this group only while drawing, then
+        // bubbles to the SVG drawing handler.
       });
       g.addEventListener('dblclick', (e) => {
         if (!this.isAnnotationSelectMode()) return;
@@ -6531,12 +6671,13 @@ export class PdfrxViewer {
     point: Offset,
     pointerType: string,
   ): { id: string; distance: number } | null {
-    const tolerance = (pointerType === 'touch' ? TOUCH_LINE_HIT_SCREEN_PX : LINE_HIT_SCREEN_PX) / this.transform.zoom;
+    const baseTolerance = (pointerType === 'touch' ? TOUCH_LINE_HIT_SCREEN_PX : LINE_HIT_SCREEN_PX) / this.transform.zoom;
     const toPx = (pdfPoint: PdfAnnotationPoint): Offset =>
       pdfPointToOffset(pdfPoint, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
     let closest: { id: string; distance: number } | null = null;
     for (const [id, annotation] of overlay.annotations) {
       if (!annotationUsesLineHitTest(annotation)) continue;
+      const tolerance = baseTolerance + Math.max(0, annotation.borderWidth) / 2;
       for (const [start, end] of annotationLineSegments(annotation)) {
         const distance = pointToSegmentDistance(point, toPx(start), toPx(end));
         if (distance <= tolerance && (!closest || distance < closest.distance)) closest = { id, distance };
@@ -6603,6 +6744,10 @@ export class PdfrxViewer {
     pointerId: number,
   ): void {
     const tool = this.drawingTool()!;
+    const snappedStart =
+      tool === 'ink'
+        ? start
+        : this.snapAnnotationPoint(overlay, start, new Set<string>()).point;
     const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight' || tool === 'freeText';
     const previewTag = tool === 'ellipse' ? 'ellipse' : isShape ? 'rect' : tool === 'ink' ? 'polyline' : 'line';
     const preview = document.createElementNS(SVG_NS, previewTag);
@@ -6628,11 +6773,21 @@ export class PdfrxViewer {
     } catch {
       /* capture is best-effort */
     }
-    this.drawState = { pageNumber, tool, pageGeom, pageSize, svg: overlay.svg, points: [start], preview, pointerId };
+    this.drawState = {
+      pageNumber,
+      tool,
+      pageGeom,
+      pageSize,
+      overlay,
+      svg: overlay.svg,
+      points: [snappedStart],
+      preview,
+      pointerId,
+    };
     if (tool === 'note') {
       // Click-to-place: no drag needed; commit immediately at pointerup.
     }
-    this.updateDraw(start);
+    this.updateDraw(snappedStart);
   }
 
   private updateDraw(current: Offset): void {
@@ -6643,6 +6798,9 @@ export class PdfrxViewer {
       (s.preview as SVGPolylineElement).setAttribute('points', s.points.map(offsetPair).join(' '));
       return;
     }
+    const snapped = this.snapAnnotationPoint(s.overlay, current, new Set<string>());
+    current = snapped.point;
+    this.renderAnnotationSnapGuides(s.overlay, snapped.guideX, snapped.guideY);
     const start = s.points[0]!;
     if (s.tool === 'line' || s.tool === 'arrow') {
       const ln = s.preview as SVGLineElement;
@@ -6684,6 +6842,8 @@ export class PdfrxViewer {
       /* ignore */
     }
     s.preview.remove();
+    if (s.tool !== 'ink') end = this.snapAnnotationPoint(overlay, end, new Set<string>()).point;
+    this.renderAnnotationSnapGuides(overlay);
     const spec = this.buildSpecFromDraw(s, end);
     if (!spec) return;
     if (spec.subtype === 'text') {
@@ -7096,12 +7256,17 @@ export class PdfrxViewer {
     const display = this.annotationDisplayGroup(overlay, id, g);
     const sourceBox = this.annotationPxBounds(annotation, overlay);
     const excludedIds = new Set([id]);
-    const dragSurface = overlay.svg;
+    const dragSurface = this.container;
     try {
-      g.setPointerCapture(pointerId);
+      dragSurface.setPointerCapture(pointerId);
     } catch {
       /* ignore */
     }
+    g.style.cursor = 'grabbing';
+    const previousSurfaceCursor = dragSurface.style.cursor;
+    const previousCanvasCursor = this.canvas.style.cursor;
+    dragSurface.style.cursor = 'grabbing';
+    this.canvas.style.cursor = 'grabbing';
     const preview = duplicate ? (display.cloneNode(true) as SVGGElement) : display;
     let previewed = false;
     if (duplicate) {
@@ -7129,11 +7294,7 @@ export class PdfrxViewer {
       const raw = rawDisplacement(e);
       if (Math.hypot(raw.x, raw.y) < TAP_SLOP / this.transform.zoom) return;
       if (!duplicate) {
-        try {
-          dragSurface.setPointerCapture(pointerId);
-        } catch {
-          /* best-effort */
-        }
+        // Pointer capture is already held by the viewer container.
       }
       previewed = true;
       const snapped = displacement(e);
@@ -7159,6 +7320,9 @@ export class PdfrxViewer {
       dragSurface.removeEventListener('pointermove', move);
       dragSurface.removeEventListener('pointerup', up);
       dragSurface.removeEventListener('pointercancel', up);
+      g.style.cursor = 'pointer';
+      dragSurface.style.cursor = previousSurfaceCursor;
+      this.canvas.style.cursor = previousCanvasCursor;
       const raw = rawDisplacement(e);
       const delta = displacement(e).point;
       this.renderAnnotationSnapGuides(overlay);
@@ -7289,10 +7453,14 @@ export class PdfrxViewer {
     rect.style.pointerEvents = 'none';
     overlay.anchorLayer.appendChild(rect);
     try {
-      overlay.svg.setPointerCapture(pointerId);
+      this.container.setPointerCapture(pointerId);
     } catch {
       /* best-effort */
     }
+    const previousCursor = this.container.style.cursor;
+    const previousCanvasCursor = this.canvas.style.cursor;
+    this.container.style.cursor = 'crosshair';
+    this.canvas.style.cursor = 'crosshair';
     const place = (cur: Offset): { left: number; top: number; right: number; bottom: number } => {
       const left = Math.min(start.x, cur.x);
       const top = Math.min(start.y, cur.y);
@@ -7303,23 +7471,30 @@ export class PdfrxViewer {
       return { left, top, right: Math.max(start.x, cur.x), bottom: Math.max(start.y, cur.y) };
     };
     place(start);
+    let moved = false;
     const selectOverlapping = (boxPx: Rect): void => {
       const hit = new Set(initialSelection);
       for (const [id, annotation] of overlay.annotations) {
         if (annotationUsesLineHitTest(annotation)) {
           const toPx = (pdfPoint: PdfAnnotationPoint): Offset =>
             pdfPointToOffset(pdfPoint, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+          const tolerance = LINE_HIT_SCREEN_PX / this.transform.zoom + Math.max(0, annotation.borderWidth) / 2;
+          const hitBox = {
+            left: boxPx.left - tolerance,
+            top: boxPx.top - tolerance,
+            right: boxPx.right + tolerance,
+            bottom: boxPx.bottom + tolerance,
+          };
           if (
             annotationLineSegments(annotation).some(([start, end]) =>
-              segmentIntersectsRect(toPx(start), toPx(end), boxPx),
+              segmentIntersectsRect(toPx(start), toPx(end), hitBox),
             )
           ) {
             hit.add(id);
           }
           continue;
         }
-        const shapeBox = this.annotationPxBounds(annotation, overlay);
-        if (shapeBox && rectsOverlap(boxPx, shapeBox)) hit.add(id);
+        if (this.annotationIntersectsMarquee(annotation, overlay, boxPx)) hit.add(id);
       }
       this.setSelectedAnnotations(hit);
       // Updating selection redraws this layer, so put the live marquee back on
@@ -7327,20 +7502,32 @@ export class PdfrxViewer {
       if (!rect.isConnected) overlay.anchorLayer.appendChild(rect);
     };
     const move = (e: PointerEvent): void => {
-      const boxPx = place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
+      const current = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
+      if (!moved && Math.hypot(current.x - start.x, current.y - start.y) >= TAP_SLOP / this.transform.zoom) {
+        moved = true;
+        this.suppressAnnotationContextMenu = true;
+      }
+      const boxPx = place(current);
       selectOverlapping(boxPx);
     };
     const up = (e: PointerEvent): void => {
-      overlay.svg.removeEventListener('pointermove', move);
-      overlay.svg.removeEventListener('pointerup', up);
-      overlay.svg.removeEventListener('pointercancel', up);
+      this.container.removeEventListener('pointermove', move);
+      this.container.removeEventListener('pointerup', up);
+      this.container.removeEventListener('pointercancel', up);
       const boxPx = place(this.clientToPagePx(overlay.svg, e.clientX, e.clientY));
       selectOverlapping(boxPx);
       rect.remove();
+      this.container.style.cursor = previousCursor;
+      this.canvas.style.cursor = previousCanvasCursor;
+      if (moved) {
+        window.setTimeout(() => {
+          this.suppressAnnotationContextMenu = false;
+        }, 0);
+      }
     };
-    overlay.svg.addEventListener('pointermove', move);
-    overlay.svg.addEventListener('pointerup', up);
-    overlay.svg.addEventListener('pointercancel', up);
+    this.container.addEventListener('pointermove', move);
+    this.container.addEventListener('pointerup', up);
+    this.container.addEventListener('pointercancel', up);
   }
 
   /** On-page px bounding box of an annotation, or null. */
@@ -7483,6 +7670,7 @@ export class PdfrxViewer {
     duplicate: boolean,
   ): void {
     const svg = overlay.svg;
+    const dragSurface = this.container;
     const selectedIds = new Set(sel.map((annotation) => annotation.id));
     const selectedBoxes = sel
       .map((annotation) => this.annotationPxBounds(annotation, overlay))
@@ -7514,10 +7702,14 @@ export class PdfrxViewer {
         })
       : [...displayGroups.values()];
     try {
-      svg.setPointerCapture(pointerId);
+      dragSurface.setPointerCapture(pointerId);
     } catch {
       /* best-effort */
     }
+    const previousCursor = dragSurface.style.cursor;
+    const previousCanvasCursor = this.canvas.style.cursor;
+    dragSurface.style.cursor = 'grabbing';
+    this.canvas.style.cursor = 'grabbing';
     const rawDisplacement = (e: PointerEvent): Offset => {
       const cur = this.clientToPagePx(svg, e.clientX, e.clientY);
       let dx = cur.x - start.x;
@@ -7560,9 +7752,11 @@ export class PdfrxViewer {
       }
     };
     const up = (e: PointerEvent): void => {
-      svg.removeEventListener('pointermove', move);
-      svg.removeEventListener('pointerup', up);
-      svg.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', up);
+      dragSurface.style.cursor = previousCursor;
+      this.canvas.style.cursor = previousCanvasCursor;
       const raw = rawDisplacement(e);
       const delta = displacement(e).point;
       this.renderAnnotationSnapGuides(overlay);
@@ -7588,9 +7782,9 @@ export class PdfrxViewer {
         void this.commitGroupTransform(overlay, sel, (a) => translateAnnotationSpec(a, dx, dy));
       }
     };
-    svg.addEventListener('pointermove', move);
-    svg.addEventListener('pointerup', up);
-    svg.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointermove', move);
+    dragSurface.addEventListener('pointerup', up);
+    dragSurface.addEventListener('pointercancel', up);
   }
 
   /** Drags one group-box handle, scaling every selected annotation together. */
@@ -7602,8 +7796,9 @@ export class PdfrxViewer {
     circle: SVGCircleElement,
     pointerId: number,
   ): void {
+    const dragSurface = this.container;
     try {
-      circle.setPointerCapture(pointerId);
+      dragSurface.setPointerCapture(pointerId);
     } catch {
       /* best-effort */
     }
@@ -7634,18 +7829,18 @@ export class PdfrxViewer {
       this.emitAnnotationPreviewChanges(previewChanges);
     };
     const up = (): void => {
-      circle.removeEventListener('pointermove', move);
-      circle.removeEventListener('pointerup', up);
-      circle.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', up);
       circle.style.cursor = 'crosshair';
       this.renderAnnotationSnapGuides(overlay);
       if (!newBox) return;
       const target = newBox;
       void this.commitGroupTransform(overlay, sel, (a) => scaleAnnotationSpec(a, box, target));
     };
-    circle.addEventListener('pointermove', move);
-    circle.addEventListener('pointerup', up);
-    circle.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointermove', move);
+    dragSurface.addEventListener('pointerup', up);
+    dragSurface.addEventListener('pointercancel', up);
   }
 
   /** Moves the group box + its handles to a new box in place (during a resize). */

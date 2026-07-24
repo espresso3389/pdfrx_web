@@ -100,9 +100,9 @@ the canvas approach enables selection behavior DOM ranges cannot express. The
 shell adds:
 
 - a pointer state machine (`pan / select / dragHandle / pinch`): mouse text-drag
-  selects, primary-button background drag or right-button drag pans, and touch
-  pans with long-press word selection and draggable A/B handles; a moved
-  right-button drag suppresses its context menu. Two-finger midpoint movement
+  selects, primary-button background drag pans, secondary-button drag selects
+  or moves annotation objects, and touch pans with long-press word selection
+  and draggable A/B handles. Two-finger midpoint movement
   pans while separation changes zoom; the two parts independently honor
   `panEnabled` / `panAxis` and `zoomEnabled`;
 - the selection magnifier lens (positioning logic with edge flipping);
@@ -271,8 +271,8 @@ pre-drag selection and adds intersections, and modifier-click toggles one
 object. Straight lines and arrows bypass SVG bounding-box hits: selection uses
 the closest finite line segment within 6 screen pixels for mouse/pen or 10
 screen pixels for touch. Marquee selection likewise tests segment/rectangle
-intersection rather than line/arrow bounds. Single-click select still works
-with or without select mode. The
+intersection rather than line/arrow bounds. Single-click select is always
+available. The
 selection is a `Set<id>`. A single selection shows the
 annotation's own handles; a multi-selection shows one group bounding box whose
 eight handles scale every member together (`scaleAnnotationSpec` maps each

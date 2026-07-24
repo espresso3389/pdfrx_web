@@ -153,7 +153,7 @@ converts the rectangle to FreeText; clearing all text converts it back to a
 plain square. The inline editor follows the annotation stroke, text color,
 font size, wrapping, and clipping while it is resized.
 
-Object-select mode updates a marquee selection continuously during its drag.
+Secondary-button drag updates a marquee selection continuously during its drag.
 Objects that leave the marquee are removed from the selection; holding
 `Ctrl`/`Cmd` preserves the existing selection and adds intersecting objects.
 The same modifier toggles objects on click. Straight lines and arrows are
