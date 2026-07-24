@@ -15,7 +15,7 @@
     "notDocumented": false
   },
   "navigationLinks": {
-    "Demo": "https://espresso3389.github.io/pdfrx_web/demo/",
+    "Demo": "https://espresso3389.github.io/pdfrx_web/demo-react/",
     "GitHub": "https://github.com/espresso3389/pdfrx_web",
     "npm": "https://www.npmjs.com/package/@pdfrx/viewer"
   }
