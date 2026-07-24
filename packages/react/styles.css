@@ -482,6 +482,10 @@
 .pdfrx-thumb-item {
   position: relative;
   flex: 0 0 auto;
+  /* scrollIntoView must also reveal the current thumbnail's 2px accent ring,
+     which is painted outside the item's layout box, with breathing room on
+     both sides. */
+  scroll-margin-block: 6px;
 }
 
 .pdfrx-thumb-button {
