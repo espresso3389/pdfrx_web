@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-25
+
+### Added
+
+- Added persistent explicit, page-fit, and width-fit zoom modes, plus a popup
+  page navigator for compact toolbar layouts.
+- Added a localized **Add text** affordance for selected empty rectangles and
+  unified rectangle/FreeText inline editing.
+
+### Changed
+
+- Annotation selection is now always available: primary click selects objects,
+  primary drag moves or resizes them, and secondary drag performs marquee
+  selection without opening a trailing context menu.
+- Annotation creation and manipulation now share coordinate snapping, and
+  shape-aware hit testing covers ink, lines, arrows, and unfilled shapes.
+- The annotation toolbar, narrow-screen search row, and error banner now use
+  reduced-motion-aware enter and leave transitions.
+
+### Fixed
+
+- Kept thumbnail navigation targets visible with an appropriate scroll margin.
+- Restored annotation color and slider popups above the document after adding
+  animated toolbar rows.
+- Matched FreeText border thickness to PDFium and other PDF viewers.
+
 ## [0.14.0] - 2026-07-24
 
 ### Added
@@ -341,7 +367,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.11.0...v0.12.0

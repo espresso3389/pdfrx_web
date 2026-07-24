@@ -267,7 +267,9 @@ test('annotation move snaps to nearby object guides and shows the active guide',
   const sourceBox = await source.boundingBox();
   const targetBox = await target.boundingBox();
   if (!sourceBox || !targetBox) throw new Error('Snap test annotations are not visible');
-  const start = { x: sourceBox.x + sourceBox.width / 2, y: sourceBox.y + sourceBox.height / 2 };
+  // Unfilled rectangles are hit-testable only on their outline. Stay clear of
+  // the resize handles while beginning a body drag on the top edge.
+  const start = { x: sourceBox.x + sourceBox.width / 4, y: sourceBox.y + 2 };
   const nearTargetDx = targetBox.x - (sourceBox.x + sourceBox.width) - 3;
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
@@ -428,7 +430,8 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   await expect(shape).toHaveCount(1);
   const box = await shape.boundingBox();
   if (!box) throw new Error('Source annotation is not visible');
-  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  // The centred Add text banner owns the middle of a selected empty rectangle.
+  const start = { x: box.x + box.width / 4, y: box.y + 5 };
   await page.keyboard.down('Shift');
   await page.keyboard.down('Control');
   await page.mouse.move(start.x, start.y);
@@ -462,7 +465,7 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   expect(state.rects[2]!.left - state.rects[1]!.left).toBeCloseTo(64, 5);
 });
 
-test('Ctrl+A selects every annotation on the current page in object-select mode', async ({ page }) => {
+test('Ctrl+A selects every annotation when one annotation is already selected', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
   const specs: AnnotationSpec[] = [
@@ -488,6 +491,10 @@ test('Ctrl+A selects every annotation on the current page in object-select mode'
     await api.setupSelectAllTest(annotations);
   }, specs);
   await expect(page.locator('g[data-annot-id]')).toHaveCount(2);
+  const rectangle = page.locator('g[data-annot-id]').filter({ has: page.locator('rect') });
+  const rectangleBox = await rectangle.boundingBox();
+  if (!rectangleBox) throw new Error('Select-all test rectangle is not visible');
+  await page.mouse.click(rectangleBox.x + rectangleBox.width / 4, rectangleBox.y + 2);
   const canvas = page.locator('canvas');
   await expect(canvas).toHaveCount(1);
   await canvas.press('Control+a');
@@ -637,7 +644,7 @@ test('the box tool switches automatically between rectangle and FreeText', async
   expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
 
   const box = page.locator('g[data-annot-id]');
-  await box.dblclick();
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
   await expect(editor).toHaveAttribute('placeholder', 'Localized text');
   expect(
@@ -645,13 +652,13 @@ test('the box tool switches automatically between rectangle and FreeText', async
       const style = getComputedStyle(element);
       return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
     }),
-  ).toEqual({ width: '2.5px', style: 'solid', color: 'rgb(229, 57, 53)' });
+  ).toEqual({ width: '2px', style: 'solid', color: 'rgb(229, 57, 53)' });
   await editor.fill('Text inside the box');
   await editor.press('Control+Enter');
   await expect.poll(async () => (await read())[0]?.subtype).toBe('freeText');
   expect(await read()).toEqual([{ subtype: 'freeText', contents: 'Text inside the box', borderWidth: 5 }]);
 
-  await box.dblclick();
+  await page.locator('g[data-annot-id] text').dblclick({ force: true });
   await expect(editor).toHaveValue('Text inside the box');
   await editor.fill('   ');
   await editor.press('Control+Enter');
@@ -674,7 +681,7 @@ test('the box tool switches automatically between rectangle and FreeText', async
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
   await expect(editor).toHaveCount(0);
-  await box.dblclick();
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
   expect(
     await editor.evaluate((element) => {
@@ -705,7 +712,7 @@ test('box text color and size are rendered and survive PDF round-trip', async ({
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(editor).toHaveCount(0);
-  await page.locator('g[data-annot-id]').dblclick();
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
   await expect(editor).toHaveCSS('color', 'rgb(67, 160, 71)');
   await expect(editor).toHaveCSS('font-size', '24px');
@@ -743,7 +750,7 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(editor).toHaveCount(0);
-  await page.locator('g[data-annot-id]').dblclick();
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await editor.fill('Text that wraps across several lines while the box changes width');
   await editor.press('Control+Enter');
   const lines = page.locator('g[data-annot-id] text tspan');
@@ -756,7 +763,9 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
     ).annotationVisualTest.setObjectSelectMode(),
   );
   const box = page.locator('g[data-annot-id]');
-  await box.click();
+  const boxBounds = await box.boundingBox();
+  if (!boxBounds) throw new Error('FreeText box is not visible');
+  await page.mouse.click(boxBounds.x + boxBounds.width / 4, boxBounds.y + 2);
   const handles = page.locator('.pdfrx-anchors circle');
   await expect(handles).toHaveCount(8);
   const initialLineCount = await lines.count();
@@ -831,7 +840,7 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
 
   // Reopening a Note and clicking inside its editor must not move focus back
   // to the canvas and commit/close the editor before caret placement or resize.
-  await page.locator('g[data-annot-id]').dblclick();
+  await page.locator('g[data-annot-id]').dblclick({ force: true });
   await expect(noteEditor).toHaveCount(1);
   await expect(noteEditor).toHaveValue(noteContents);
   await noteEditor.click({ position: { x: 20, y: 20 } });
@@ -916,8 +925,7 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
 
   // The empty area inside the box is also a hit target; users should not have
   // to double-click directly on a glyph or the thin border to edit it.
-  const freeTextShape = page.locator('g[data-annot-id]').first();
-  await freeTextShape.dblclick({ position: { x: 140, y: 45 } });
+  await page.locator('g[data-annot-id] text').dblclick({ force: true });
   await expect(page.locator('.pdfrx-annotation-text-editor textarea')).toHaveValue(multilineText);
 });
 

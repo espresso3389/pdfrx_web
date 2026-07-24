@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/engine",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "TypeScript client for the pdfrx pdfium WASM engine (worker protocol)",
   "type": "module",
   "main": "./dist/index.js",
