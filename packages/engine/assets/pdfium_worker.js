@@ -3829,7 +3829,13 @@ function _getAnnotAppearanceImage(annot, docHandle, pageHandle) {
   for (let objectIndex = 0; objectIndex < objectCount; objectIndex++) {
     const object = w.FPDFAnnot_GetObject(annot, objectIndex);
     if (!object || w.FPDFPageObj_GetType(object) !== 3) continue; // FPDF_PAGEOBJ_IMAGE
-    const bitmap = w.FPDFImageObj_GetRenderedBitmap(docHandle, pageHandle, object);
+    // Prefer the image object's intrinsic bitmap. GetRenderedBitmap applies
+    // the object's placement matrix and can return pixels at the annotation's
+    // current on-page size; feeding those pixels back during a later resize
+    // causes an immediate resolution drop and then progressive resampling.
+    const bitmap =
+      w.FPDFImageObj_GetBitmap(object) ||
+      w.FPDFImageObj_GetRenderedBitmap(docHandle, pageHandle, object);
     if (!bitmap) continue;
     try {
       const width = w.FPDFBitmap_GetWidth(bitmap);

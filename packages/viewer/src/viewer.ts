@@ -798,6 +798,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_SCREEN_PX = 8;
 /** Touch handles need a finger-sized hit target while remaining visually compact. */
 const TOUCH_ANCHOR_SCREEN_PX = 24;
+/** Maximum screen-space distance from a line/arrow that a mouse or pen can select. */
+const LINE_HIT_SCREEN_PX = 6;
+/** Slightly wider line/arrow selection target for a fingertip. */
+const TOUCH_LINE_HIT_SCREEN_PX = 10;
 /** Maximum on-screen distance at which annotation smart guides engage. */
 const ANNOTATION_SNAP_SCREEN_PX = 6;
 
@@ -1162,6 +1166,69 @@ function inkStrokeKind(g: { strokes: PdfAnnotationPoint[][] }): 'line' | 'arrow'
   const s0 = g.strokes[0];
   if (!s0 || s0.length <= 2) return 'line'; // a straight 2-point stroke
   return 'curve'; // freehand pen
+}
+
+/** Whether selection must use distance-to-segment testing instead of SVG bounds. */
+function annotationUsesLineHitTest(a: PdfAnnotationObject): boolean {
+  return a.geometry.kind === 'line' || (a.geometry.kind === 'ink' && inkStrokeKind(a.geometry) !== 'curve');
+}
+
+/** Every selectable center-line segment of a straight line or arrow annotation. */
+function annotationLineSegments(a: PdfAnnotationObject): readonly (readonly [PdfAnnotationPoint, PdfAnnotationPoint])[] {
+  const geometry = a.geometry;
+  if (geometry.kind === 'line') return [[geometry.start, geometry.end]];
+  if (geometry.kind !== 'ink' || inkStrokeKind(geometry) === 'curve') return [];
+  const segments: [PdfAnnotationPoint, PdfAnnotationPoint][] = [];
+  for (const stroke of geometry.strokes) {
+    for (let index = 1; index < stroke.length; index++) {
+      const start = stroke[index - 1];
+      const end = stroke[index];
+      if (start && end) segments.push([start, end]);
+    }
+  }
+  return segments;
+}
+
+/** Euclidean distance from `point` to the finite line segment `start`–`end`. */
+export function pointToSegmentDistance(point: Offset, start: Offset, end: Offset): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+  const projection = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return Math.hypot(point.x - (start.x + projection * dx), point.y - (start.y + projection * dy));
+}
+
+/** Whether a finite line segment intersects an axis-aligned rectangle. */
+export function segmentIntersectsRect(
+  start: Offset,
+  end: Offset,
+  rect: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  const inside = (point: Offset) =>
+    point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+  if (inside(start) || inside(end)) return true;
+
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  let entry = 0;
+  let exit = 1;
+  for (const [p, q] of [
+    [-dx, start.x - rect.left],
+    [dx, rect.right - start.x],
+    [-dy, start.y - rect.top],
+    [dy, rect.bottom - start.y],
+  ] as const) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const ratio = q / p;
+    if (p < 0) entry = Math.max(entry, ratio);
+    else exit = Math.min(exit, ratio);
+    if (entry > exit) return false;
+  }
+  return true;
 }
 
 /** Whether a selected annotation shows the faint bounding-box guide. */
@@ -1595,6 +1662,15 @@ export class PdfrxViewer {
   private annotationReloadGeneration = 0;
   /** Last known objects by id; survives the brief gap while SVG overlays rebuild. */
   private readonly annotationSnapshots = new Map<string, { pageNumber: number; annotation: PdfAnnotationObject }>();
+  /**
+   * First-generation pixels for image stamps. PDFium may read an appearance
+   * back at its current display size, so reusing that readback on every resize
+   * would progressively resample the image.
+   */
+  private readonly annotationImageSources = new Map<
+    string,
+    NonNullable<PdfAnnotationObject['appearanceImage']>
+  >();
   /**
    * Active annotation mode: a drawing tool, `'select'` (marquee/multi-select
    * editing), or null (normal viewing — pan/text-select, single-click select).
@@ -2462,6 +2538,7 @@ export class PdfrxViewer {
     if (content.has('annotations')) {
       this.annotationReloadGeneration++;
       this.annotationSnapshots.clear();
+      this.annotationImageSources.clear();
       for (const pageNumber of pageNumbers) {
         if (this.annotationOverlays.has(pageNumber)) this.dirtyAnnotationOverlayPages.add(pageNumber);
       }
@@ -2726,6 +2803,7 @@ export class PdfrxViewer {
     this.clearFormOverlays();
     this.pageAnnotations.clear();
     this.annotationSnapshots.clear();
+    this.annotationImageSources.clear();
     this.clearAnnotationOverlays();
     this.overlayContainers.clear();
     this.overlayRoot.replaceChildren();
@@ -2800,6 +2878,7 @@ export class PdfrxViewer {
     this.syncFormDocumentListeners();
     this.pageAnnotations.clear();
     this.annotationSnapshots.clear();
+    this.annotationImageSources.clear();
     this.clearAnnotationOverlays();
     this.hoveredLink = null;
     this.clearSelection();
@@ -4943,7 +5022,9 @@ export class PdfrxViewer {
           const annotation = overlay.annotations.get(id);
           const selected = this.selectedAnnotationIds.has(id);
           g.style.pointerEvents = this.isAnnotationSelectMode()
-            ? selected || annotation?.subtype === 'freeText'
+            ? annotation && annotationUsesLineHitTest(annotation)
+              ? 'none'
+              : selected || annotation?.subtype === 'freeText'
               ? 'bounding-box'
               : 'auto'
             : 'none';
@@ -5007,7 +5088,19 @@ export class PdfrxViewer {
     highlightSvg.setAttribute('viewBox', `0 0 ${pageSize.width} ${pageSize.height}`);
     highlightSvg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
     const byId = new Map<string, PdfAnnotationObject>();
-    for (const a of annotations) {
+    for (const loadedAnnotation of annotations) {
+      const imageSourceKey = `${pageNumber}\0${loadedAnnotation.id}`;
+      let a = loadedAnnotation;
+      if (loadedAnnotation.appearanceImage) {
+        let source = this.annotationImageSources.get(imageSourceKey);
+        if (!source) {
+          source = structuredClone(loadedAnnotation.appearanceImage);
+          this.annotationImageSources.set(imageSourceKey, source);
+        }
+        // Render and build transform specs from the original pixels rather than
+        // PDFium's latest transformed appearance readback.
+        a = { ...loadedAnnotation, appearanceImage: source };
+      }
       this.annotationSnapshots.set(a.id, { pageNumber, annotation: a });
       const el = this.buildAnnotationShape(a, pageGeom, pageSize);
       if (el) {
@@ -6012,7 +6105,12 @@ export class PdfrxViewer {
       // users can therefore drag from the interior/empty part of a shape rather
       // than having to hit its painted stroke again. Unselected annotations keep
       // their precise hit testing so overlapping objects remain distinguishable.
-      g.style.pointerEvents = selected || annotation?.subtype === 'freeText' ? 'bounding-box' : 'auto';
+      g.style.pointerEvents =
+        annotation && annotationUsesLineHitTest(annotation)
+          ? 'none'
+          : selected || annotation?.subtype === 'freeText'
+            ? 'bounding-box'
+            : 'auto';
       g.style.filter = multi && selected ? 'drop-shadow(0 0 2px #2196f3)' : '';
     }
     const sel = this.selectedAnnotationsOn(overlay);
@@ -6271,6 +6369,12 @@ export class PdfrxViewer {
       } else if (this.isAnnotationSelectMode()) {
         e.preventDefault();
         e.stopPropagation();
+        const hit = this.lineAnnotationHit(overlay, start, e.pointerType);
+        if (hit) {
+          const group = overlay.svg.querySelector<SVGGElement>(`g[data-annot-id="${CSS.escape(hit.id)}"]`);
+          if (group) this.beginAnnotationSelection(e, pageNumber, overlay, pageGeom, pageSize, group, hit.id, start);
+          return;
+        }
         this.beginMarquee(overlay, start, e.pointerId, e.metaKey || e.ctrlKey);
       }
     });
@@ -6294,47 +6398,17 @@ export class PdfrxViewer {
       const annotation = overlay.annotations.get(id);
       // An unfilled FreeText box otherwise only receives events on its glyphs
       // and stroke. Treat its complete rectangular bounds as the hit target.
-      g.style.pointerEvents = annotation?.subtype === 'freeText' ? 'bounding-box' : 'auto';
+      g.style.pointerEvents =
+        annotation && annotationUsesLineHitTest(annotation)
+          ? 'none'
+          : annotation?.subtype === 'freeText'
+            ? 'bounding-box'
+            : 'auto';
       g.style.cursor = this.isAnnotationSelectMode() ? 'pointer' : '';
       g.addEventListener('pointerdown', (e) => {
         if (!this.isAnnotationSelectMode() || e.button !== 0) return;
-        this.lastPointerType = e.pointerType;
-        e.preventDefault();
-        e.stopPropagation();
         const start = this.clientToPagePx(svg, e.clientX, e.clientY);
-        // Cmd/Ctrl-click toggles this shape in the current selection. Keep
-        // Shift+Cmd/Ctrl available for the existing constrained duplicate drag.
-        if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
-          const next = new Set(this.selectedAnnotationIds);
-          if (next.has(id)) next.delete(id);
-          else next.add(id);
-          this.setSelectedAnnotations(next);
-          return;
-        }
-        // Dragging a member of a multi-selection moves the whole group; otherwise
-        // select just this shape and move it.
-        if (this.selectedAnnotationIds.size > 1 && this.selectedAnnotationIds.has(id)) {
-          this.beginGroupMove(
-            overlay,
-            this.selectedAnnotationsOn(overlay),
-            start,
-            e.pointerId,
-            e.shiftKey && (e.ctrlKey || e.metaKey),
-          );
-        } else {
-          this.setSelectedAnnotation(id);
-          this.beginMove(
-            pageNumber,
-            overlay,
-            pageGeom,
-            pageSize,
-            g,
-            id,
-            start,
-            e.pointerId,
-            e.shiftKey && (e.ctrlKey || e.metaKey),
-          );
-        }
+        this.beginAnnotationSelection(e, pageNumber, overlay, pageGeom, pageSize, g, id, start);
       });
       g.addEventListener('dblclick', (e) => {
         if (!this.isAnnotationSelectMode()) return;
@@ -6361,6 +6435,75 @@ export class PdfrxViewer {
     pt.y = clientY;
     const local = pt.matrixTransform(ctm.inverse());
     return { x: local.x, y: local.y };
+  }
+
+  /** Closest straight line/arrow within the input-specific screen-space tolerance. */
+  private lineAnnotationHit(
+    overlay: AnnotationPageOverlay,
+    point: Offset,
+    pointerType: string,
+  ): { id: string; distance: number } | null {
+    const tolerance = (pointerType === 'touch' ? TOUCH_LINE_HIT_SCREEN_PX : LINE_HIT_SCREEN_PX) / this.transform.zoom;
+    const toPx = (pdfPoint: PdfAnnotationPoint): Offset =>
+      pdfPointToOffset(pdfPoint, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+    let closest: { id: string; distance: number } | null = null;
+    for (const [id, annotation] of overlay.annotations) {
+      if (!annotationUsesLineHitTest(annotation)) continue;
+      for (const [start, end] of annotationLineSegments(annotation)) {
+        const distance = pointToSegmentDistance(point, toPx(start), toPx(end));
+        if (distance <= tolerance && (!closest || distance < closest.distance)) closest = { id, distance };
+      }
+    }
+    return closest;
+  }
+
+  /** Applies click/toggle selection and starts the corresponding move gesture. */
+  private beginAnnotationSelection(
+    event: PointerEvent,
+    pageNumber: number,
+    overlay: AnnotationPageOverlay,
+    pageGeom: PageGeometry,
+    pageSize: Size,
+    group: SVGGElement,
+    id: string,
+    start: Offset,
+  ): void {
+    this.lastPointerType = event.pointerType;
+    event.preventDefault();
+    event.stopPropagation();
+    // Cmd/Ctrl-click toggles this shape in the current selection. Keep
+    // Shift+Cmd/Ctrl available for the existing constrained duplicate drag.
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
+      const next = new Set(this.selectedAnnotationIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      this.setSelectedAnnotations(next);
+      return;
+    }
+    // Dragging a member of a multi-selection moves the whole group; otherwise
+    // select just this shape and move it.
+    if (this.selectedAnnotationIds.size > 1 && this.selectedAnnotationIds.has(id)) {
+      this.beginGroupMove(
+        overlay,
+        this.selectedAnnotationsOn(overlay),
+        start,
+        event.pointerId,
+        event.shiftKey && (event.ctrlKey || event.metaKey),
+      );
+    } else {
+      this.setSelectedAnnotation(id);
+      this.beginMove(
+        pageNumber,
+        overlay,
+        pageGeom,
+        pageSize,
+        group,
+        id,
+        start,
+        event.pointerId,
+        event.shiftKey && (event.ctrlKey || event.metaKey),
+      );
+    }
   }
 
   private beginDraw(
@@ -7075,6 +7218,18 @@ export class PdfrxViewer {
     const selectOverlapping = (boxPx: Rect): void => {
       const hit = new Set(initialSelection);
       for (const [id, annotation] of overlay.annotations) {
+        if (annotationUsesLineHitTest(annotation)) {
+          const toPx = (pdfPoint: PdfAnnotationPoint): Offset =>
+            pdfPointToOffset(pdfPoint, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+          if (
+            annotationLineSegments(annotation).some(([start, end]) =>
+              segmentIntersectsRect(toPx(start), toPx(end), boxPx),
+            )
+          ) {
+            hit.add(id);
+          }
+          continue;
+        }
         const shapeBox = this.annotationPxBounds(annotation, overlay);
         if (shapeBox && rectsOverlap(boxPx, shapeBox)) hit.add(id);
       }
