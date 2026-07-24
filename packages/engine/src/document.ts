@@ -92,6 +92,7 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
     fontFace: annotation.fontFace,
     appearanceLines: annotation.appearanceLines ? [...annotation.appearanceLines] : undefined,
     appearanceRuns: annotation.appearanceRuns?.map((line) => line.map((run) => structuredClone(run))),
+    appearanceImage: annotation.appearanceImage ? structuredClone(annotation.appearanceImage) : undefined,
     geometry: structuredClone(annotation.geometry),
   };
 }
@@ -2637,6 +2638,7 @@ export class PdfPage {
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines,
       appearanceRuns: a.appearanceRuns,
+      appearanceImage: a.appearanceImage,
       appearancePaths: a.appearancePaths.map((path) => ({
         ...path,
         fillColor: colorFromWire(path.fillColor),
@@ -2707,6 +2709,7 @@ export class PdfPage {
       fontFace: spec.fontFace,
       appearanceLines: spec.appearanceLines,
       appearanceRuns: spec.appearanceRuns,
+      appearanceImage: spec.appearanceImage,
       geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
     };
   }

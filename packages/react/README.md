@@ -30,10 +30,14 @@ import '@pdfrx/react/styles.css';
 <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} enableFileOpen />;
 ```
 
-`enableFileOpen` accepts dropped (or picked) **images** too — PNG, JPEG, GIF,
-WebP and friends open as a one-page PDF. With `enablePageEditing`, dropping a PDF
-or image **between two thumbnails** inserts its pages at that spot, and
-thumbnails can be **dragged to reorder** the pages.
+`enableFileOpen` accepts picked **images** too — PNG, JPEG, GIF, WebP and friends
+open as a one-page PDF. With `enablePageEditing`, dropping a PDF or image
+**between two thumbnails** inserts its pages at that spot, and thumbnails can be
+**dragged to reorder** the pages.
+
+Drop an image directly onto a displayed page to add it as a printable stamp
+annotation. Document opening remains an explicit toolbar action, so page drops
+cannot accidentally replace the current document.
 
 ### 2. Composed parts
 

@@ -284,6 +284,7 @@ export interface WireAnnotationObject {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[][] | null;
+  appearanceImage: { width: number; height: number; pixels: Uint8Array } | null;
   appearancePaths: {
     segments: [number, number, number, number][];
     fillColor: WireColor | null;
@@ -342,6 +343,8 @@ export interface WireAnnotationSpec {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[][];
+  /** RGBA pixels used as the normal appearance of a `stamp` annotation. */
+  appearanceImage?: { width: number; height: number; pixels: Uint8Array };
   geometry?: WireAnnotationGeometry;
 }
 

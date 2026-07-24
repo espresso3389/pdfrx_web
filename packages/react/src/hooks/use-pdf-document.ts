@@ -21,7 +21,7 @@ export interface PdfDocumentState {
   error: unknown;
   /** Whether the document's permissions allow copying text. */
   isCopyAllowed: boolean;
-  /** Opens a different document imperatively (file picker, drag & drop, …). */
+  /** Opens a different document imperatively (file picker, application command, …). */
   open: (src: PdfSource) => Promise<void>;
   /** Clears {@link error} — e.g. when the user dismisses an error banner. */
   clearError: () => void;

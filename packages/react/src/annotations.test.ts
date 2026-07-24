@@ -75,6 +75,11 @@ describe('annotation snapshot serialization', () => {
             x: 0,
             image: { width: 1, height: 1, scale: 1, pixels: new Uint8Array([1, 2, 255]) },
           }]],
+          appearanceImage: {
+            width: 1,
+            height: 1,
+            pixels: new Uint8Array([255, 2, 1, 255]),
+          },
         },
       }],
     };
@@ -82,5 +87,6 @@ describe('annotation snapshot serialization', () => {
     const restored = deserializeAnnotationSnapshot(serializeAnnotationSnapshot(snapshot));
     expect(restored).toEqual(snapshot);
     expect(restored.annotations[0]?.spec.appearanceRuns?.[0]?.[0]?.image?.pixels).toBeInstanceOf(Uint8Array);
+    expect(restored.annotations[0]?.spec.appearanceImage?.pixels).toBeInstanceOf(Uint8Array);
   });
 });

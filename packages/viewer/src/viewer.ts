@@ -705,8 +705,10 @@ interface AnnotationAnchor {
   point: PdfAnnotationPoint;
   /** Axes this handle can actually change; omitted when both axes are movable. */
   movableAxes?: { x: boolean; y: boolean };
+  /** Whether Shift may constrain this handle to the annotation's original aspect ratio. */
+  aspectRatioResizable?: boolean;
   /** Produces the full updated spec when this anchor is dragged to `to`. */
-  reshape: (to: PdfAnnotationPoint) => PdfAnnotationSpec;
+  reshape: (to: PdfAnnotationPoint, preserveAspectRatio?: boolean) => PdfAnnotationSpec;
 }
 
 /** Page-local result of independently snapping X and Y to nearby annotation guides. */
@@ -891,6 +893,7 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
       appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
+      appearanceImage: a.appearanceImage ? structuredClone(a.appearanceImage) : undefined,
       geometry: a.geometry,
     },
     dx,
@@ -928,6 +931,7 @@ function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec)
     fontFace: spec.fontFace === undefined ? base.fontFace : spec.fontFace,
     appearanceLines: spec.appearanceLines === undefined ? base.appearanceLines : spec.appearanceLines,
     appearanceRuns: spec.appearanceRuns === undefined ? base.appearanceRuns : spec.appearanceRuns,
+    appearanceImage: spec.appearanceImage === undefined ? base.appearanceImage : spec.appearanceImage,
     geometry: spec.geometry ?? base.geometry,
   };
 }
@@ -980,7 +984,13 @@ function boundingBoxHandleAxes(index: number): { x: boolean; y: boolean } {
 }
 
 /** Applies a bounding-box handle drag (by index) to `box`, returning the new box (normalized). */
-function resizeBoxByHandle(box: PdfRect, index: number, to: PdfAnnotationPoint): PdfRect {
+/** @internal Exported only for geometry regression tests. */
+export function resizeBoxByHandle(
+  box: PdfRect,
+  index: number,
+  to: PdfAnnotationPoint,
+  preserveAspectRatio = false,
+): PdfRect {
   const edges = [
     { left: true, top: true },
     { top: true },
@@ -992,6 +1002,53 @@ function resizeBoxByHandle(box: PdfRect, index: number, to: PdfAnnotationPoint):
     { left: true },
   ][index] as { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };
   let { left, right, top, bottom } = box;
+  if (preserveAspectRatio) {
+    const originalWidth = Math.max(1, box.right - box.left);
+    const originalHeight = Math.max(1, box.top - box.bottom);
+    const ratio = originalWidth / originalHeight;
+    const corner = !!(edges.left || edges.right) && !!(edges.top || edges.bottom);
+    if (corner) {
+      const fixedX = edges.left ? box.right : box.left;
+      const fixedY = edges.top ? box.bottom : box.top;
+      const dx = to.x - fixedX;
+      const dy = to.y - fixedY;
+      let width = Math.max(1, Math.abs(dx));
+      let height = Math.max(1, Math.abs(dy));
+      if (width / height > ratio) height = width / ratio;
+      else width = height * ratio;
+      const movingX = fixedX + (dx < 0 ? -width : width);
+      const movingY = fixedY + (dy < 0 ? -height : height);
+      left = Math.min(fixedX, movingX);
+      right = Math.max(fixedX, movingX);
+      bottom = Math.min(fixedY, movingY);
+      top = Math.max(fixedY, movingY);
+      return { left, right, top, bottom };
+    }
+    if (edges.left || edges.right) {
+      const fixedX = edges.left ? box.right : box.left;
+      const dx = to.x - fixedX;
+      const width = Math.max(1, Math.abs(dx));
+      const height = width / ratio;
+      const centreY = (box.top + box.bottom) / 2;
+      const movingX = fixedX + (dx < 0 ? -width : width);
+      left = Math.min(fixedX, movingX);
+      right = Math.max(fixedX, movingX);
+      bottom = centreY - height / 2;
+      top = centreY + height / 2;
+      return { left, right, top, bottom };
+    }
+    const fixedY = edges.top ? box.bottom : box.top;
+    const dy = to.y - fixedY;
+    const height = Math.max(1, Math.abs(dy));
+    const width = height * ratio;
+    const centreX = (box.left + box.right) / 2;
+    const movingY = fixedY + (dy < 0 ? -height : height);
+    left = centreX - width / 2;
+    right = centreX + width / 2;
+    bottom = Math.min(fixedY, movingY);
+    top = Math.max(fixedY, movingY);
+    return { left, right, top, bottom };
+  }
   if (edges.left) left = to.x;
   if (edges.right) right = to.x;
   if (edges.top) top = to.y;
@@ -1060,7 +1117,9 @@ function boundingBoxAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
   return boundingBoxHandlePoints(b).map((point, index) => ({
     point,
     movableAxes: boundingBoxHandleAxes(index),
-    reshape: (to) => scaleAnnotationSpec(a, b, resizeBoxByHandle(b, index, to)),
+    aspectRatioResizable: true,
+    reshape: (to, preserveAspectRatio) =>
+      scaleAnnotationSpec(a, b, resizeBoxByHandle(b, index, to, preserveAspectRatio)),
   }));
 }
 
@@ -1167,6 +1226,16 @@ function colorCss(c: { r: number; g: number; b: number; a: number } | null, fall
 function colorCss(c: { r: number; g: number; b: number; a: number } | null, fallback: string | null): string | null {
   if (!c) return fallback;
   return `rgb(${c.r}, ${c.g}, ${c.b})`;
+}
+
+function rgbaImageDataUrl(image: { width: number; height: number; pixels: Uint8Array }): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext('2d');
+  if (!context) return '';
+  context.putImageData(new ImageData(new Uint8ClampedArray(image.pixels), image.width, image.height), 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 /** Parses `#rrggbb` (or `#rgb`) to an RGBA color (alpha from `opacity` 0-1). */
@@ -5149,6 +5218,17 @@ export class PdfrxViewer {
             add(line);
           }
         } else if (a.subtype === 'stamp') {
+          if (a.appearanceImage) {
+            const image = document.createElementNS(SVG_NS, 'image');
+            image.setAttribute('x', `${box.left}`);
+            image.setAttribute('y', `${box.top}`);
+            image.setAttribute('width', `${rectWidth(box)}`);
+            image.setAttribute('height', `${rectHeight(box)}`);
+            image.setAttribute('preserveAspectRatio', 'none');
+            image.setAttribute('href', rgbaImageDataUrl(a.appearanceImage));
+            add(image);
+            break;
+          }
           // Standard text stamps (Approved, Draft, …) are a rounded outline
           // with their /Contents label. A generic empty rectangle loses the
           // stamp's essential meaning when an existing PDF is loaded.
@@ -6026,11 +6106,19 @@ export class PdfrxViewer {
     const move = (e: PointerEvent): void => {
       const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
       const snapped = this.snapAnnotationPoint(overlay, raw, excludedIds, anchor.movableAxes);
-      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
-      lastSpec = anchor.reshape(to);
+      lastSpec = anchor.reshape(to, anchor.aspectRatioResizable && e.shiftKey);
       refreshFreeTextLayout(lastSpec);
       const display = syntheticAnnotation(annotation, lastSpec);
+      const displayAnchor = annotationAnchors(display)[index]?.point;
+      const displayPoint = displayAnchor
+        ? pdfPointToOffset(displayAnchor, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize })
+        : snapped.point;
+      this.renderAnnotationSnapGuides(
+        overlay,
+        snapped.guideX !== undefined && Math.abs(displayPoint.x - snapped.guideX) < 0.5 ? snapped.guideX : undefined,
+        snapped.guideY !== undefined && Math.abs(displayPoint.y - snapped.guideY) < 0.5 ? snapped.guideY : undefined,
+      );
       this.previewAnnotationShape(overlay, annotation, lastSpec);
       // Move every anchor (and the bounding box) to follow the reshaped geometry.
       this.updateAnchorPositions(overlay, display);
@@ -7249,9 +7337,15 @@ export class PdfrxViewer {
     const move = (e: PointerEvent): void => {
       const raw = this.clientToPagePx(overlay.svg, e.clientX, e.clientY);
       const snapped = this.snapAnnotationPoint(overlay, raw, selectedIds, boundingBoxHandleAxes(index));
-      this.renderAnnotationSnapGuides(overlay, snapped.guideX, snapped.guideY);
       const to = offsetToPdfPoint(snapped.point, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
-      newBox = resizeBoxByHandle(box, index, to);
+      newBox = resizeBoxByHandle(box, index, to, e.shiftKey);
+      const displayHandle = boundingBoxHandlePoints(newBox)[index]!;
+      const displayPoint = pdfPointToOffset(displayHandle, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      this.renderAnnotationSnapGuides(
+        overlay,
+        snapped.guideX !== undefined && Math.abs(displayPoint.x - snapped.guideX) < 0.5 ? snapped.guideX : undefined,
+        snapped.guideY !== undefined && Math.abs(displayPoint.y - snapped.guideY) < 0.5 ? snapped.guideY : undefined,
+      );
       // Live-preview every member scaled into the new group box.
       const previewChanges: AnnotationPreviewChange[] = [];
       for (const a of sel) {

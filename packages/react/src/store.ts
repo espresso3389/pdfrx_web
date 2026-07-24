@@ -68,7 +68,7 @@ export class PdfrxViewerStore {
 
   /**
    * Default password provider applied to every built-in open (the `src` prop,
-   * the file-open button, drag & drop, page insertion) whose source does not
+   * the file-open button and page insertion) whose source does not
    * carry its own. Set from the `passwordProvider` prop by `PdfrxProvider`.
    */
   #passwordProvider: PdfPasswordProvider | undefined;

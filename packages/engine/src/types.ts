@@ -537,6 +537,12 @@ export interface PdfAnnotationObject {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[])[] | null;
+  /** RGBA image extracted from the annotation's normal appearance, or null. */
+  readonly appearanceImage: {
+    readonly width: number;
+    readonly height: number;
+    readonly pixels: Uint8Array;
+  } | null;
   /** Vector paths extracted from the annotation's normal appearance stream. */
   readonly appearancePaths: readonly {
     readonly segments: readonly {
@@ -635,6 +641,12 @@ export interface PdfAnnotationSpec {
     x: number;
     image?: { width: number; height: number; scale: number; pixels: Uint8Array };
   }[][];
+  /** RGBA pixels used as the normal appearance of a `stamp` annotation. */
+  appearanceImage?: {
+    width: number;
+    height: number;
+    pixels: Uint8Array;
+  };
   geometry?: PdfAnnotationGeometry;
 }
 

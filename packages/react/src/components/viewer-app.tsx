@@ -1,7 +1,7 @@
 import type { PdfPage } from '@pdfrx/engine';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
-import { isImageFile, isPdfFile, openFileAsDocument } from '../file-open.js';
+import { isImageFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
@@ -36,9 +36,8 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    */
   sidebarSide?: 'left' | 'right';
   /**
-   * Add an "open file" button and accept dropped files. PDFs open directly;
-   * images (PNG, JPEG, GIF, WebP, …) are converted to a one-page PDF and shown.
-   * Defaults to `false`.
+   * Add an "open file" button. PDFs open directly; images (PNG, JPEG, GIF,
+   * WebP, …) are converted to a one-page PDF and shown. Defaults to `false`.
    */
   enableFileOpen?: boolean;
   /**
@@ -48,12 +47,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * drag-to-reorder of thumbnails. Defaults to `false`.
    */
   enablePageEditing?: boolean;
-  /**
-   * Show the toolbar's "open file" button. Independent of drag & drop, which
-   * {@link enableFileOpen} controls. Defaults to {@link enableFileOpen}, so
-   * set it to override just the button (e.g. `false` for drop-only, or `true`
-   * without `enableFileOpen` for a picker with no drag & drop).
-   */
+  /** Show the toolbar's "open file" button. Defaults to {@link enableFileOpen}. */
   showOpenButton?: boolean;
   /**
    * Show the toolbar's download button. Works with or without
@@ -63,8 +57,9 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   showDownloadButton?: boolean;
   /**
    * Show the toolbar's *Annotate* button (right of search), which reveals the
-   * annotation toolbar; closing it returns to text selection. Requires the
-   * viewer's `interactiveAnnotations` (on by default). Defaults to `true`.
+   * annotation toolbar; closing it returns to text selection. Images dropped
+   * onto a page are added as stamp annotations. Requires the viewer's
+   * `interactiveAnnotations` (on by default). Defaults to `true`.
    */
   enableAnnotations?: boolean;
   /** Extra toolbar controls, placed after the built-in ones. */
@@ -125,7 +120,6 @@ export function PdfrxViewerApp({
         sidebarProps={sidebarProps}
         sidebarWidth={sidebarWidth}
         sidebarSide={sidebarSide}
-        enableFileOpen={enableFileOpen}
         enablePageEditing={pageEditingEnabled}
         // Each button follows its capability flag unless overridden.
         showOpenButton={showOpenButton ?? enableFileOpen}
@@ -149,7 +143,6 @@ type ChromeProps = Pick<
   | 'sidebarProps'
   | 'sidebarWidth'
   | 'sidebarSide'
-  | 'enableFileOpen'
   | 'enablePageEditing'
   | 'showOpenButton'
   | 'showDownloadButton'
@@ -170,7 +163,6 @@ function PdfrxViewerAppChrome({
   sidebarProps,
   sidebarWidth,
   sidebarSide = 'left',
-  enableFileOpen,
   enablePageEditing,
   showOpenButton,
   showDownloadButton,
@@ -211,17 +203,6 @@ function PdfrxViewerAppChrome({
     [open],
   );
 
-  const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      if (!enableFileOpen) return;
-      const file = [...(e.dataTransfer.files ?? [])].find((f) => isPdfFile(f) || isImageFile(f));
-      if (!file) return;
-      e.preventDefault();
-      openFile(file);
-    },
-    [enableFileOpen, openFile],
-  );
-
   // Insert dropped files as pages at `index`. Each file is opened in the
   // viewer's own engine (cross-document page import only works within one
   // engine); the source documents stay open because the arrangement borrows
@@ -246,6 +227,38 @@ function PdfrxViewerAppChrome({
       viewer.setPages([...pages.slice(0, at), ...inserted, ...pages.slice(at)]);
     },
     [viewer, store],
+  );
+
+  const dropImageAnnotation = useCallback(
+    async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+      if (!enableAnnotations || !viewer) return;
+      const file = Array.from(event.dataTransfer.files).find(isImageFile);
+      if (!file) return;
+      event.preventDefault();
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const hit = viewer.getPageHitTestResult({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      if (!hit) return;
+      try {
+        const image = await decodeAnnotationImage(file);
+        const pointScale = Math.min(1, 240 / image.width, hit.page.width / image.width, hit.page.height / image.height);
+        const width = image.width * pointScale;
+        const height = image.height * pointScale;
+        const left = Math.max(0, Math.min(hit.page.width - width, hit.pdfPoint.x - width / 2));
+        const bottom = Math.max(0, Math.min(hit.page.height - height, hit.pdfPoint.y - height / 2));
+        await hit.page.addAnnotation({
+          subtype: 'stamp',
+          rect: { left, bottom, right: left + width, top: bottom + height },
+          flags: 4,
+          appearanceImage: image,
+        });
+      } catch (error) {
+        console.error(`Failed to add image annotation from ${file.name}:`, error);
+      }
+    },
+    [enableAnnotations, viewer],
   );
 
   // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
@@ -300,8 +313,6 @@ function PdfrxViewerAppChrome({
       style={style}
       data-sidebar-open={isSidebarOpen}
       data-sidebar-side={sidebarSide}
-      onDragOver={enableFileOpen ? (e) => e.preventDefault() : undefined}
-      onDrop={onDrop}
     >
       {toolbar && (
         <PdfToolbar
@@ -397,7 +408,16 @@ function PdfrxViewerAppChrome({
             anyway (a hidden element never intersects the viewport). The sidebar
             renders before or after the surface so it lands on the chosen side. */}
         {sidebar && sidebarSide === 'left' && sidebarNode}
-        <PdfViewerSurface style={{ flex: 1 }} />
+        <PdfViewerSurface
+          style={{ flex: 1 }}
+          onDragOver={enableAnnotations ? (event) => {
+            if (Array.from(event.dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/'))) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }
+          } : undefined}
+          onDrop={enableAnnotations ? (event) => void dropImageAnnotation(event) : undefined}
+        />
         {sidebar && sidebarSide === 'right' && sidebarNode}
         {sidebar && isSidebarOpen && isNarrow && (
           <button className="pdfrx-scrim" aria-label={strings.closeSidebar} onClick={() => setIsSidebarOpen(false)} />
@@ -405,6 +425,27 @@ function PdfrxViewerAppChrome({
       </div>
     </div>
   );
+}
+
+/** Decodes an image file to bounded RGBA pixels suitable for worker transfer. */
+async function decodeAnnotationImage(file: File): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const maxDimension = 2048;
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas 2D is unavailable');
+    context.drawImage(bitmap, 0, 0, width, height);
+    const data = context.getImageData(0, 0, width, height);
+    return { width, height, pixels: new Uint8Array(data.data) };
+  } finally {
+    bitmap.close();
+  }
 }
 
 /** Serializes the (possibly edited) document and downloads it. */

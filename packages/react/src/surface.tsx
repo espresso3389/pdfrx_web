@@ -1,10 +1,18 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type DragEventHandler,
+  type ReactNode,
+} from 'react';
 import { usePdfrxStore } from './context.js';
 
 /** Props for {@link PdfViewerSurface}. */
 export interface PdfViewerSurfaceProps {
   className?: string;
   style?: CSSProperties;
+  onDragOver?: DragEventHandler<HTMLDivElement>;
+  onDrop?: DragEventHandler<HTMLDivElement>;
 }
 
 /**
@@ -24,7 +32,7 @@ export interface PdfViewerSurfaceProps {
  * </div>
  * ```
  */
-export function PdfViewerSurface({ className, style }: PdfViewerSurfaceProps): ReactNode {
+export function PdfViewerSurface({ className, style, onDragOver, onDrop }: PdfViewerSurfaceProps): ReactNode {
   const store = usePdfrxStore();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,5 +43,13 @@ export function PdfViewerSurface({ className, style }: PdfViewerSurfaceProps): R
     return () => store.detach();
   }, [store]);
 
-  return <div ref={ref} className={className ? `pdfrx-surface ${className}` : 'pdfrx-surface'} style={style} />;
+  return (
+    <div
+      ref={ref}
+      className={className ? `pdfrx-surface ${className}` : 'pdfrx-surface'}
+      style={style}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    />
+  );
 }

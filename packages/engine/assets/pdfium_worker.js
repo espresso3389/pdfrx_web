@@ -3822,6 +3822,47 @@ function _getAnnotAppearanceTextStyles(annot) {
   return styles;
 }
 
+/** Extracts the first image object in an annotation appearance as RGBA pixels. */
+function _getAnnotAppearanceImage(annot, docHandle, pageHandle) {
+  const w = Pdfium.wasmExports;
+  const objectCount = w.FPDFAnnot_GetObjectCount(annot);
+  for (let objectIndex = 0; objectIndex < objectCount; objectIndex++) {
+    const object = w.FPDFAnnot_GetObject(annot, objectIndex);
+    if (!object || w.FPDFPageObj_GetType(object) !== 3) continue; // FPDF_PAGEOBJ_IMAGE
+    const bitmap = w.FPDFImageObj_GetRenderedBitmap(docHandle, pageHandle, object);
+    if (!bitmap) continue;
+    try {
+      const width = w.FPDFBitmap_GetWidth(bitmap);
+      const height = w.FPDFBitmap_GetHeight(bitmap);
+      const stride = w.FPDFBitmap_GetStride(bitmap);
+      const format = w.FPDFBitmap_GetFormat(bitmap);
+      const buffer = w.FPDFBitmap_GetBuffer(bitmap);
+      if (width <= 0 || height <= 0 || !buffer) continue;
+      const source = new Uint8Array(Pdfium.memory.buffer, buffer, stride * height);
+      const pixels = new Uint8Array(width * height * 4);
+      const bytesPerPixel = format === 1 ? 1 : format === 2 ? 3 : 4;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const src = y * stride + x * bytesPerPixel;
+          const dst = (y * width + x) * 4;
+          if (format === 1) {
+            pixels[dst] = pixels[dst + 1] = pixels[dst + 2] = source[src];
+          } else {
+            pixels[dst] = source[src + 2];
+            pixels[dst + 1] = source[src + 1];
+            pixels[dst + 2] = source[src];
+          }
+          pixels[dst + 3] = format === 4 ? source[src + 3] : 255;
+        }
+      }
+      return { width, height, pixels };
+    } finally {
+      w.FPDFBitmap_Destroy(bitmap);
+    }
+  }
+  return null;
+}
+
 /** Subtype-specific geometry object for the wire. */
 function _getAnnotGeometry(annot, subtypeName) {
   switch (subtypeName) {
@@ -3849,7 +3890,7 @@ function _getAnnotGeometry(annot, subtypeName) {
  * @param {number} index page-local annotation index (used for the fallback id)
  * @returns {object} WireAnnotationObject
  */
-function _readAnnotationObject(annot, index) {
+function _readAnnotationObject(annot, index, docHandle, pageHandle) {
   const w = Pdfium.wasmExports;
   const subtype = ANNOT_SUBTYPE_NAMES[w.FPDFAnnot_GetSubtype(annot)] ?? 'unknown';
   const content = _getAnnotationContent(annot);
@@ -3896,6 +3937,7 @@ function _readAnnotationObject(annot, index) {
         return null;
       }
     })(),
+    appearanceImage: _getAnnotAppearanceImage(annot, docHandle, pageHandle),
     appearancePaths: _getAnnotAppearancePaths(annot),
     appearanceTextStyles: _getAnnotAppearanceTextStyles(annot),
     subject: content ? content.subject : null,
@@ -3927,7 +3969,7 @@ function loadAnnotations(params) {
         if (subtype === FPDF_ANNOT_WIDGET || subtype === FPDF_ANNOT_SUBTYPE_LINK || subtype === FPDF_ANNOT_SUBTYPE_POPUP)
           continue;
         if (_getAnnotField('pdfrx:FreeTextAppearance', annot)) continue;
-        annotations.push(_readAnnotationObject(annot, i));
+        annotations.push(_readAnnotationObject(annot, i, docHandle, pageHandle));
       } finally {
         w.FPDFPage_CloseAnnot(annot);
       }
@@ -4243,7 +4285,7 @@ function _findAnnotIndexById(pageHandle, id) {
 }
 
 /** Creates an annotation from `spec` on a live page handle and returns its id. */
-function _createAnnotOnPage(docHandle, pageHandle, spec, forcedId) {
+function _createAnnotOnPage(docHandle, pageHandle, pageIndex, spec, forcedId) {
   const w = Pdfium.wasmExports;
   const code = ANNOT_SUBTYPE_CODES[spec.subtype];
   if (code == null) throw new Error(`Unsupported annotation subtype: ${spec.subtype}`);
@@ -4253,6 +4295,12 @@ function _createAnnotOnPage(docHandle, pageHandle, spec, forcedId) {
   try {
     _setAnnotStringKey(annot, 'NM', id);
     _applyAnnotSpec(annot, spec, docHandle);
+    if (spec.subtype === 'stamp' && spec.appearanceImage && spec.rect) {
+      const [left, top, right] = spec.rect;
+      const image = spec.appearanceImage;
+      const scale = image.width / Math.max(0.01, right - left);
+      _appendFreeTextImage(docHandle, pageHandle, annot, { ...image, scale }, left, top);
+    }
     // PDFium cannot append page objects to a FreeText /AP. Keep the semantic
     // FreeText annotation hidden and paint its deterministic appearance in an
     // internal companion Stamp annotation instead.
@@ -4297,7 +4345,7 @@ function addAnnotation(params) {
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
   if (!pageHandle) throw new Error(`Failed to load page ${pageIndex}`);
   try {
-    const id = _createAnnotOnPage(docHandle, pageHandle, spec);
+    const id = _createAnnotOnPage(docHandle, pageHandle, pageIndex, spec);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     _releasePendingAnnotImageBitmaps();
@@ -4335,7 +4383,7 @@ function updateAnnotation(params) {
     spec = { ...spec, revision };
     _removeAnnotById(pageHandle, `${id}:appearance`);
     _removeAnnotById(pageHandle, id);
-    const newId = _createAnnotOnPage(docHandle, pageHandle, spec, spec.id || id);
+    const newId = _createAnnotOnPage(docHandle, pageHandle, pageIndex, spec, spec.id || id);
     _forceAnnotAppearances(pageHandle);
     w.FPDFPage_GenerateContent(pageHandle);
     _releasePendingAnnotImageBitmaps();

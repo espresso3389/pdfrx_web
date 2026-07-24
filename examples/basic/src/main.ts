@@ -150,19 +150,6 @@ openUrlBtn.addEventListener('click', async () => {
   }
 });
 
-// Drag & drop a PDF file onto the viewer
-el.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  e.dataTransfer!.dropEffect = 'copy';
-});
-el.addEventListener('drop', (e) => {
-  e.preventDefault();
-  const file = [...(e.dataTransfer?.files ?? [])].find(
-    (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
-  );
-  if (file) void openLocalFile(file);
-});
-
 // --- Search UI ---
 
 searchBox.addEventListener('input', () => {

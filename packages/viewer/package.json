@@ -16,14 +16,16 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@pdfrx/engine": "^0.12.0",
     "@pdfrx/viewer-core": "^0.12.0"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "license": "MIT",
   "author": "Takashi Kawasaki <espresso3389@gmail.com>",

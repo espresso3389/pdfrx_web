@@ -27,7 +27,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
   onError?: (error: unknown) => void;
   /**
    * Supplies passwords for encrypted documents, applied to every built-in open
-   * (the `src` prop, the file-open button, drag & drop, page insertion) whose
+   * (the `src` prop, the file-open button, page insertion) whose
    * source does not carry its own. Called again on each wrong password until it
    * returns a correct one or `null` (which aborts). See {@link PdfPasswordProvider}.
    *
