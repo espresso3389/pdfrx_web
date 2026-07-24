@@ -216,6 +216,10 @@ For imported pages, `PdfPage.document` is the arrangement receiving the event,
 while `PdfPage.sourceDocument` owns the physical PDF object being mutated;
 duplicate placements therefore share annotation state.
 `@pdfrx/react` exposes the `useAnnotations` hook and a `PdfAnnotationToolbar`.
+The toolbar's image picker and the all-in-one viewer's image-drop handler share
+one stamp-creation path: picked images target the current page center, dropped
+images target the drop point, and both are capped at 240 PDF points wide before
+being scaled further when required to fit the page.
 
 External collaboration uses a versioned `PdfAnnotationSnapshot` for full
 save/restore and `PdfAnnotationChange[]` for incremental synchronization. IDs

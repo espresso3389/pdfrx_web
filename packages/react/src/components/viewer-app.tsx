@@ -7,7 +7,7 @@ import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
-import { parseSvgAnnotation } from '../svg-annotation.js';
+import { addDroppedImageAnnotation } from '../annotation-image.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
 import { PdfPageActions } from './page-actions.js';
 import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
@@ -58,8 +58,10 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   showDownloadButton?: boolean;
   /**
    * Show the toolbar's *Annotate* button (right of search), which reveals the
-   * annotation toolbar; closing it returns to text selection. Images dropped
-   * onto a page are added as stamp annotations. Requires the viewer's
+   * annotation toolbar; closing it returns to text selection. The annotation
+   * toolbar can add an image stamp at the center of the current page, while
+   * images dropped onto a page are centered at the drop point. Both paths use
+   * the same bounded size and fit oversized images within the page. Requires the viewer's
    * `interactiveAnnotations` (on by default). Defaults to `true`.
    */
   enableAnnotations?: boolean;
@@ -243,27 +245,7 @@ function PdfrxViewerAppChrome({
       });
       if (!hit) return;
       try {
-        const vector = isSvgFile(file) ? parseSvgAnnotation(await file.text()) : null;
-        const image = vector ? null : await decodeAnnotationImage(file);
-        const sourceWidth = vector?.width ?? image!.width;
-        const sourceHeight = vector?.height ?? image!.height;
-        const pointScale = Math.min(
-          1,
-          240 / sourceWidth,
-          hit.page.width / sourceWidth,
-          hit.page.height / sourceHeight,
-        );
-        const width = sourceWidth * pointScale;
-        const height = sourceHeight * pointScale;
-        const left = Math.max(0, Math.min(hit.page.width - width, hit.pdfPoint.x - width / 2));
-        const bottom = Math.max(0, Math.min(hit.page.height - height, hit.pdfPoint.y - height / 2));
-        await hit.page.addAnnotation({
-          subtype: 'stamp',
-          rect: { left, bottom, right: left + width, top: bottom + height },
-          flags: 4,
-          appearanceImage: image ?? undefined,
-          appearancePaths: vector?.paths,
-        });
+        await addDroppedImageAnnotation(hit.page, file, hit.pdfPoint);
       } catch (error) {
         console.error(`Failed to add image annotation from ${file.name}:`, error);
       }
@@ -438,31 +420,6 @@ function PdfrxViewerAppChrome({
       </div>
     </div>
   );
-}
-
-function isSvgFile(file: File): boolean {
-  return file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
-}
-
-/** Decodes an image file to bounded RGBA pixels suitable for worker transfer. */
-async function decodeAnnotationImage(file: File): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-  const bitmap = await createImageBitmap(file);
-  try {
-    const maxDimension = 2048;
-    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas 2D is unavailable');
-    context.drawImage(bitmap, 0, 0, width, height);
-    const data = context.getImageData(0, 0, width, height);
-    return { width, height, pixels: new Uint8Array(data.data) };
-  } finally {
-    bitmap.close();
-  }
 }
 
 /** Serializes the (possibly edited) document and downloads it. */

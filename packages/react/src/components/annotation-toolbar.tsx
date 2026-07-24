@@ -1,5 +1,6 @@
 import type { AnnotationMode, AnnotationTool } from '@pdfrx/viewer';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { addCenteredImageAnnotation } from '../annotation-image.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import {
@@ -8,6 +9,7 @@ import {
   IconCursorText,
   IconEllipse,
   IconHighlighter,
+  IconImage,
   IconLine,
   IconNote,
   IconOpacity,
@@ -73,8 +75,11 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
 
 /**
  * The annotation mode bar: mutually-exclusive toggles for text selection,
- * object selection and each drawing tool, plus color/width pickers — wired to
- * {@link PdfrxViewer.setAnnotationTool} /
+ * object selection and each drawing tool, an image picker, plus color/width
+ * pickers. The image picker adds a printable stamp annotation to the center of
+ * the current page, using the same sizing as image drop (240pt wide at most,
+ * with additional proportional scaling when needed to fit the page). Drawing
+ * controls are wired to {@link PdfrxViewer.setAnnotationTool} /
  * `setAnnotationSelectMode` / `setAnnotationStyle`. Requires a
  * {@link PdfrxProvider} ancestor and the viewer's `interactiveAnnotations`
  * option (on by default). Import `@pdfrx/react/styles.css` for the default
@@ -118,6 +123,7 @@ export function PdfAnnotationToolbar({
   const paletteHostRef = useRef<HTMLSpanElement>(null);
   const sliderGestureRef = useRef<{ key: string; sequence: number } | null>(null);
   const sliderSequenceRef = useRef(0);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const beginSliderGesture = (key: string): void => {
     if (sliderGestureRef.current?.key === key) return;
@@ -227,6 +233,30 @@ export function PdfAnnotationToolbar({
           </ModeButton>
         );
       })}
+      <button
+        type="button"
+        className="pdfrx-button"
+        onClick={() => imageInputRef.current?.click()}
+        disabled={!viewer?.document}
+        title={strings.addImage}
+        aria-label={strings.addImage}
+      >
+        <IconImage />
+      </button>
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*,.svg"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file && viewer) {
+            void addCenteredImageAnnotation(viewer, file)
+              .catch((error: unknown) => console.error(`Failed to add image annotation from ${file.name}:`, error));
+          }
+        }}
+      />
       <span className="pdfrx-toolbar-separator" aria-hidden />
       <span className="pdfrx-annot-colors" ref={paletteHostRef}>
         <span className="pdfrx-annot-colorbtn">

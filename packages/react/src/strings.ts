@@ -78,6 +78,8 @@ export interface PdfrxStrings {
   highlighterTool: string;
   noteTool: string;
   textBoxTool: string;
+  /** Add an image annotation to the center of the current page. */
+  addImage: string;
   /** Placeholder shown while editing text inside a box. */
   annotationTextPlaceholder: string;
   /** Placeholder shown while editing a sticky note. */
@@ -159,6 +161,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   highlighterTool: 'Highlighter',
   noteTool: 'Note',
   textBoxTool: 'Text box',
+  addImage: 'Add image',
   annotationTextPlaceholder: 'Text',
   annotationNotePlaceholder: 'Note',
   strokeColor: 'Stroke color',

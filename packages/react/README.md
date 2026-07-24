@@ -35,9 +35,14 @@ open as a one-page PDF. With `enablePageEditing`, dropping a PDF or image
 **between two thumbnails** inserts its pages at that spot, and thumbnails can be
 **dragged to reorder** the pages.
 
-Drop an image directly onto a displayed page to add it as a printable stamp
-annotation. Document opening remains an explicit toolbar action, so page drops
-cannot accidentally replace the current document.
+The standard annotation toolbar includes an **Add image** button. It adds the
+selected image as a printable stamp annotation at the center of the current
+page. The image is inserted at no more than 240 PDF points wide and is scaled
+down proportionally again when necessary to remain within the page.
+
+Dropping an image directly onto a displayed page creates the same stamp at the
+drop point with the same sizing rules. Document opening remains an explicit
+toolbar action, so page drops cannot accidentally replace the current document.
 
 Static SVG drops keep paths and basic shapes as vector PDF appearance content,
 including nested transforms, solid fills/strokes, opacity, and arc conversion.
@@ -67,7 +72,9 @@ import '@pdfrx/react/styles.css';
 
 Individually available: `PdfToolbar`, `PdfSidebar`, `PdfThumbnailList`,
 `PdfOutlineTree`, `PdfSearchBox`, `PdfPageIndicator`, `PdfZoomControls`,
-`PdfPrintButton`, `PdfLoadingBar`, `PdfAnnotationToolbar`, and `PdfSaveButton`.
+`PdfPrintButton`, `PdfLoadingBar`,
+[`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html),
+and `PdfSaveButton`.
 
 ### 3. Headless hooks
 
@@ -94,7 +101,7 @@ function Toolbar() {
 | `usePdfSelection()` | Selected range, resolved text and rects, copy |
 | `usePdfPageThumbnail()` | One page rendered to a canvas, through a shared cache |
 | `usePdfPrint()` | `print()` plus an `isPrinting` flag |
-| `useAnnotations()` | Annotation data and direct add/update/remove operations |
+| [`useAnnotations()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useAnnotations.html) | Annotation data and direct add/update/remove operations |
 | `useEditHistory()` | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
 
 For an annotation-only collaboration viewer, disable page edits and local
@@ -114,9 +121,11 @@ to `document.addEventListener('annotationsChanged', ...)` to publish its exact
 `document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`;
 the `origin` lets the publisher ignore it and avoid a synchronization echo.
 
-The standard annotation toolbar orders text controls after line thickness and
-provides independent text color and font-size settings. Rectangle and text-box
-tools share the same on-page behavior: placing a rectangle does not
+The standard
+[`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html)
+orders text controls after line thickness, provides independent text color and
+font-size settings, and adds image stamps from its image picker. Rectangle and
+text-box tools share the same on-page behavior: placing a rectangle does not
 automatically start typing, while double-clicking either a rectangle or
 FreeText annotation opens localized inline editing. Adding non-blank text
 converts the rectangle to FreeText; clearing all text converts it back to a

@@ -26,8 +26,8 @@ It renders pages, text selection, links, and search highlights onto a single
   [docs/FONT-FALLBACK.md](docs/FONT-FALLBACK.md)
 - Password-protected documents
 - Interactive AcroForm filling with JS-free standard calculations
-- SVG annotation editing: ink, shapes, markup, notes/free text, live
-  move/resize, snapping guides, multi-selection, and undo/redo
+- SVG annotation editing: ink, shapes, markup, notes/free text, centered image
+  insertion, live move/resize, snapping guides, multi-selection, and undo/redo
 - Non-destructive page reorder, rotate, remove, and cross-document insertion
 - Non-destructive PDF download through a temporary encoded copy
 

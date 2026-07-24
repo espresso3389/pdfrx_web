@@ -34,9 +34,10 @@ Upstream API names are given so you can find the reference implementation.
 > `updateAnnotation()` / `removeAnnotation()`, document snapshot/synchronization
 > APIs, the `annotationsChanged` event, the `interactiveAnnotations`
 > viewer option with `setAnnotationTool()`, and the React `useAnnotations` hook +
-> `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text, independent
-> text color/font size, live marquee selection, snapping guides, and unified
-> rectangle/FreeText editing).
+> `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text, centered
+> image-stamp insertion with page fitting, independent text color/font size,
+> live marquee selection, snapping guides, and unified rectangle/FreeText
+> editing).
 
 ---
 

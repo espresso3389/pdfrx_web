@@ -126,6 +126,15 @@ export const IconOpenFile = (): ReactNode => (
   </Icon>
 );
 
+/** @internal Add an image annotation. */
+export const IconImage = (): ReactNode => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="8.5" cy="9" r="1.5" />
+    <path d="M4 17l5-5 3.5 3.5 2.5-2.5 5 5" />
+  </Icon>
+);
+
 /** @internal */
 export const IconSave = (): ReactNode => (
   <Icon>
