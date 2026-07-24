@@ -23,7 +23,7 @@ export interface PdfrxStrings {
   toggleSidebar: string;
   /** Collapsed-search toggle button (title + aria-label). */
   search: string;
-  /** Page-number input aria-label. */
+  /** Page-navigation controls aria-label. */
   pageNumber: string;
   zoomOut: string;
   zoomIn: string;

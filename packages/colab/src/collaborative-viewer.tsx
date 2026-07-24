@@ -524,7 +524,7 @@ function CollaborativeViewerContent({
         </div>
       ))}
       <PdfToolbar
-        beforeSearch={(
+        afterZoom={(
           <button
             type="button"
             className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}

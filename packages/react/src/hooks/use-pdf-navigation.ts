@@ -14,7 +14,10 @@ export interface PdfNavigation {
   canGoPrevious: boolean;
   /** Whether {@link goToNextPage} would do anything. */
   canGoNext: boolean;
-  /** Scrolls to a 1-based page number, fitting it in the viewport. */
+  /**
+   * Navigates to a 1-based page number while preserving the current zoom mode.
+   * Fit modes refit the target page; an explicit zoom preserves its factor.
+   */
   goToPage: (pageNumber: number, duration?: number) => void;
   goToPreviousPage: (duration?: number) => void;
   goToNextPage: (duration?: number) => void;

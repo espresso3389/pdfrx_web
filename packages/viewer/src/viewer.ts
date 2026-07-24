@@ -164,8 +164,11 @@ export interface PdfrxViewerOptions {
    */
   minZoom?: number;
   /**
-   * How the first page is fitted into the viewport when a document loads (and
-   * on viewport resize, until the user pans/zooms). See {@link PdfrxViewer.fitToPage}.
+   * How the first page is fitted into the viewport when a document loads.
+   * `'page'` and `'width'` become persistent responsive zoom modes and are
+   * recalculated on viewport resize. `'height'` is retained as a one-time
+   * initial fit and then behaves as an explicit numeric zoom.
+   * See {@link PdfrxViewer.fitToPage}.
    *
    * - `'page'` (default) — the whole first page fits within the viewport.
    * - `'width'` — the first page's width fills the viewport (top-aligned).
