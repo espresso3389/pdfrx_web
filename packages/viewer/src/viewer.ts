@@ -464,6 +464,15 @@ export type ContextMenuBuilder = (context: ContextMenuContext) => HTMLElement | 
 export type FitMode = 'page' | 'width' | 'height';
 
 /**
+ * The viewer's persistent zoom mode.
+ *
+ * A number is an explicit zoom factor (`1` = one PDF point per CSS pixel).
+ * `'page'` and `'width'` are responsive modes: their effective {@link PdfrxViewer.zoom}
+ * is recomputed when the viewport size changes.
+ */
+export type ZoomMode = number | 'page' | 'width';
+
+/**
  * Drop shadow drawn behind each page. All
  * lengths are in CSS pixels and are **not** scaled by zoom, so the shadow keeps
  * a constant on-screen appearance.
@@ -1742,6 +1751,8 @@ export class PdfrxViewer {
 
   private viewSize: Size = { width: 0, height: 0 };
   private transform: ViewTransform = { zoom: 1, xZoomed: 0, yZoomed: 0 };
+  /** Numeric zoom, responsive page fit, or responsive width fit. */
+  private zoomModeValue: ZoomMode = 1;
   private get maxZoom(): number {
     return this.options.maxZoom ?? 8;
   }
@@ -1789,6 +1800,8 @@ export class PdfrxViewer {
   private lastNotifiedPage: number | null = null;
   /** Last transform notified to {@link transformChangeListeners}. */
   private lastNotifiedTransform: ViewTransform | null = null;
+  /** Last zoom mode notified alongside the transform. */
+  private lastNotifiedZoomMode: ZoomMode | null = null;
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
@@ -2228,18 +2241,46 @@ export class PdfrxViewer {
   }
 
   /**
-   * Fit the given page (1-based) into the view — alias of {@link fitToPage}.
+   * Navigates to the given page (1-based) without changing {@link zoomMode}.
+   * In page- or width-fit mode the target page is fitted using the active mode;
+   * at an explicit zoom its top edge is shown while preserving that zoom.
    *
    * @param duration - Animation duration in ms (defaults to
    *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
    */
   goToPage(pageNumber: number, duration?: number): void {
-    this.fitToPage(pageNumber, duration);
+    if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return;
+    let target: ViewTransform | null;
+    if (this.zoomModeValue === 'page' || this.zoomModeValue === 'width') {
+      target = this.fitTransform(pageNumber, this.zoomModeValue);
+    } else {
+      const pageRect = this.layout.pageLayouts[pageNumber - 1];
+      if (!pageRect) return;
+      const inflated = rectInflate(pageRect, this.margin);
+      const zoom = this.transform.zoom;
+      target = calcTransformFor(
+        {
+          x: rectCenter(inflated).x,
+          y: inflated.top + this.viewSize.height / 2 / zoom,
+        },
+        zoom,
+        this.viewSize,
+      );
+    }
+    if (target) this.navigateTo(target, duration ?? this.defaultAnimationDuration);
   }
 
   /** The current zoom factor (`1` = 72 DPI, one PDF point per CSS pixel). */
   get zoom(): number {
     return this.transform.zoom;
+  }
+
+  /**
+   * The active zoom mode. Numeric values are explicit zoom factors; `'page'`
+   * and `'width'` remain active across viewport resizes.
+   */
+  get zoomMode(): ZoomMode {
+    return typeof this.zoomModeValue === 'number' ? this.transform.zoom : this.zoomModeValue;
   }
 
   /**
@@ -2319,7 +2360,10 @@ export class PdfrxViewer {
    */
   fitToPage(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'page');
-    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    if (t) {
+      this.zoomModeValue = 'page';
+      this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    }
   }
 
   /**
@@ -2329,7 +2373,10 @@ export class PdfrxViewer {
    */
   fitToWidth(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'width');
-    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    if (t) {
+      this.zoomModeValue = 'width';
+      this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    }
   }
 
   /**
@@ -2338,7 +2385,10 @@ export class PdfrxViewer {
    */
   fitToHeight(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'height');
-    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    if (t) {
+      this.zoomModeValue = t.zoom;
+      this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    }
   }
 
   /** The page (1-based) currently covering the largest visible area, or null. */
@@ -2369,7 +2419,10 @@ export class PdfrxViewer {
   goToDest(dest: PdfDest | null, duration?: number): void {
     if (!dest) return;
     const t = this.calcTransformForDest(dest);
-    if (t) this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    if (t) {
+      if (t.zoom !== this.transform.zoom) this.zoomModeValue = this.clampZoom(t.zoom);
+      this.navigateTo(t, duration ?? this.defaultAnimationDuration);
+    }
     else this.goToPage(dest.pageNumber, duration);
   }
 
@@ -2665,7 +2718,22 @@ export class PdfrxViewer {
    */
   setZoom(zoom: number, viewCenter?: Offset, duration?: number): void {
     const center = viewCenter ?? { x: this.viewSize.width / 2, y: this.viewSize.height / 2 };
+    this.zoomModeValue = this.clampZoom(zoom);
     this.zoomAt(center, zoom, duration ?? this.defaultAnimationDuration);
+  }
+
+  /**
+   * Switches between an explicit zoom factor, fit-page, and fit-width mode.
+   * Fit modes are responsive and are recalculated on viewport resize.
+   */
+  setZoomMode(mode: ZoomMode, duration?: number): void {
+    if (mode === 'page') {
+      this.fitToPage(undefined, duration);
+    } else if (mode === 'width') {
+      this.fitToWidth(undefined, duration);
+    } else {
+      this.setZoom(mode, undefined, duration);
+    }
   }
 
   /**
@@ -2942,8 +3010,12 @@ export class PdfrxViewer {
 
   private resetView(): void {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return;
-    const t = this.fitTransform(1, this.options.initialFit ?? 'page');
-    if (t) this.setTransform(t);
+    const initialFit = this.options.initialFit ?? 'page';
+    const t = this.fitTransform(1, initialFit);
+    if (t) {
+      this.zoomModeValue = initialFit === 'height' ? t.zoom : initialFit;
+      this.setTransform(t);
+    }
   }
 
   /** Applies {@link PdfrxViewerOptions.panAxis} to a raw pan delta. */
@@ -2964,6 +3036,7 @@ export class PdfrxViewer {
   private onResize(): void {
     const rect = this.container.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const pageNumber = this.currentPageNumber ?? 1;
     const changed = rect.width !== this.viewSize.width || rect.height !== this.viewSize.height;
     this.viewSize = { width: rect.width, height: rect.height };
     // Assigning canvas.width/height clears the bitmap, so only do it when the
@@ -2976,7 +3049,10 @@ export class PdfrxViewer {
       this.canvas.width = canvasW;
       this.canvas.height = canvasH;
     }
-    if (this.layout && this.transform.zoom === 1 && this.transform.xZoomed === 0 && this.transform.yZoomed === 0) {
+    if (this.layout && (this.zoomModeValue === 'page' || this.zoomModeValue === 'width')) {
+      const fitted = this.fitTransform(pageNumber, this.zoomModeValue);
+      if (fitted) this.setTransform(fitted);
+    } else if (this.layout && this.transform.zoom === 1 && this.transform.xZoomed === 0 && this.transform.yZoomed === 0) {
       this.resetView();
     } else {
       this.setTransform(this.transform); // re-clamp
@@ -3016,6 +3092,7 @@ export class PdfrxViewer {
 
   private zoomAt(viewPoint: Offset, newZoom: number, duration = 0): void {
     const zoom = this.clampZoom(newZoom);
+    this.zoomModeValue = zoom;
     const docPoint = viewToDocument(this.transform, viewPoint);
     this.navigateTo(
       { zoom, xZoomed: viewPoint.x - docPoint.x * zoom, yZoomed: viewPoint.y - docPoint.y * zoom },
@@ -3385,8 +3462,16 @@ export class PdfrxViewer {
   /** Notifies transform-change listeners when the view actually moved. */
   private notifyTransformChanged(t: ViewTransform): void {
     const last = this.lastNotifiedTransform;
-    if (last && last.zoom === t.zoom && last.xZoomed === t.xZoomed && last.yZoomed === t.yZoomed) return;
+    const zoomMode = this.zoomMode;
+    if (
+      last &&
+      last.zoom === t.zoom &&
+      last.xZoomed === t.xZoomed &&
+      last.yZoomed === t.yZoomed &&
+      this.lastNotifiedZoomMode === zoomMode
+    ) return;
     this.lastNotifiedTransform = { ...t };
+    this.lastNotifiedZoomMode = zoomMode;
     for (const listener of this.transformChangeListeners) {
       try {
         listener();

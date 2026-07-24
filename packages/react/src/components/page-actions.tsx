@@ -41,7 +41,11 @@ export function PdfPageActions({
       onRotatePage(pageNumber, delta);
       return;
     }
-    if (page) viewer?.setPage(pageNumber, page.rotatedBy(delta));
+    // Page replacement does not remount these controls. Resolve the page at
+    // click time so repeated rotations build on the latest replacement rather
+    // than repeatedly rotating the page captured by the initial render.
+    const currentPage = viewer?.document?.pages[pageNumber - 1];
+    if (currentPage) viewer.setPage(pageNumber, currentPage.rotatedBy(delta));
   };
   const remove = (): void => {
     if (onDeletePage) {

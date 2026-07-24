@@ -56,7 +56,7 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
 
 /** Zoom out / current percentage / zoom in, plus fit-page and fit-width buttons. */
 export function PdfZoomControls({ className, style }: PdfControlProps): ReactNode {
-  const { zoom, zoomIn, zoomOut, canZoomIn, canZoomOut, fitToPage, fitToWidth } = usePdfZoom();
+  const { zoom, zoomMode, zoomIn, zoomOut, canZoomIn, canZoomOut, fitToPage, fitToWidth } = usePdfZoom();
   const strings = usePdfrxStrings();
   return (
     <span className={joinClass('pdfrx-zoom-controls', className)} style={style}>
@@ -67,13 +67,22 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
       <button className="pdfrx-button" onClick={() => zoomIn()} disabled={!canZoomIn} title={strings.zoomIn}>
         <IconZoomIn />
       </button>
-      <button className="pdfrx-button" onClick={() => fitToPage(undefined, 200)} title={strings.fitPage}>
+      <button
+        className={joinClass('pdfrx-button', zoomMode === 'page' ? 'pdfrx-button-active' : undefined)}
+        onClick={() => fitToPage(undefined, 200)}
+        title={strings.fitPage}
+        aria-pressed={zoomMode === 'page'}
+      >
         <IconFitPage />
       </button>
       <button
-        className="pdfrx-button pdfrx-fit-width-button"
+        className={joinClass(
+          'pdfrx-button pdfrx-fit-width-button',
+          zoomMode === 'width' ? 'pdfrx-button-active' : undefined,
+        )}
         onClick={() => fitToWidth(undefined, 200)}
         title={strings.fitWidth}
+        aria-pressed={zoomMode === 'width'}
       >
         <IconFitWidth />
       </button>

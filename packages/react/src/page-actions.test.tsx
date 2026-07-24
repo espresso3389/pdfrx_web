@@ -49,4 +49,24 @@ describe('PdfPageActions', () => {
     expect(setPage).toHaveBeenCalledWith(1, rotated);
     expect(setPages).toHaveBeenCalledWith([{ pageNumber: 2 }]);
   });
+
+  it('rotates the latest replacement page on repeated clicks', () => {
+    const twiceRotated = { pageNumber: 1, rotatedBy: vi.fn() };
+    const onceRotated = { pageNumber: 1, rotatedBy: vi.fn(() => twiceRotated) };
+    const original = { pageNumber: 1, rotatedBy: vi.fn(() => onceRotated) };
+    const document = { pages: [original] };
+    const setPage = vi.fn((pageNumber: number, page: typeof original) => {
+      document.pages[pageNumber - 1] = page;
+    });
+    state.viewer = { document, setPage };
+    render(<PdfPageActions pageNumber={1} />);
+
+    const rotateButton = screen.getByRole('button', { name: defaultPdfrxStrings.rotatePage });
+    fireEvent.click(rotateButton);
+    fireEvent.click(rotateButton);
+
+    expect(original.rotatedBy).toHaveBeenCalledTimes(1);
+    expect(onceRotated.rotatedBy).toHaveBeenCalledWith(90);
+    expect(setPage.mock.calls).toEqual([[1, onceRotated], [1, twiceRotated]]);
+  });
 });

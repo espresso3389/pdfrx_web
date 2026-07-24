@@ -105,7 +105,7 @@ function Toolbar() {
 | [`usePdfrxViewer()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxViewer.html) | The underlying [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html) — the escape hatch for anything below |
 | [`usePdfDocument()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfDocument.html) | Load state, page count, download progress, errors, [`open()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfDocumentState.html#open) |
 | [`usePdfNavigation()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfNavigation.html) | Current page, page count, `goToPage`/`goToDest` |
-| [`usePdfZoom()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfZoom.html) | Zoom level, zoom/fit actions, whether the limits are reached |
+| [`usePdfZoom()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfZoom.html) | Zoom level, persistent explicit/page/width zoom mode, zoom/fit actions, whether the limits are reached |
 | [`usePdfOutline()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfOutline.html) | The bookmark tree, reloaded per document |
 | [`useFormFields()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useFormFields.html) | AcroForm fields, live values, loading state, and [`setValue()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfFormFieldsState.html#setvalue) |
 | [`usePdfSearch()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSearch.html) | Query, matches, current index, next/previous |

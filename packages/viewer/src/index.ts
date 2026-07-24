@@ -25,6 +25,7 @@ export {
   type AnnotationMode,
   type AnnotationStyle,
   type FitMode,
+  type ZoomMode,
   type PageDropShadow,
   type PageBorder,
   type PagePaintCallback,
