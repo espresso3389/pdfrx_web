@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-07-25
+
+### Fixed
+
+- Preserved in-progress annotation text editing, including IME composition,
+  while remote collaboration updates refresh page annotation overlays.
+
 ## [0.15.0] - 2026-07-25
 
 ### Added
@@ -367,7 +374,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.12.0...v0.13.0
