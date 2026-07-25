@@ -56,6 +56,7 @@ describe('resolvePdfrxStrings', () => {
     expect(ja.textSize).toBe('文字サイズ');
     expect(ja.annotationTextPlaceholder).toBe('テキスト');
     expect(ja.annotationNotePlaceholder).toBe('ノート');
+    expect(ja.deleteAnnotations).toBe('選択した注釈を削除');
     expect(ja.closeAnnotationToolbar).toBe('注釈ツールバーを閉じる');
   });
 });

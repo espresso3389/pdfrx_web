@@ -101,6 +101,8 @@ export interface PdfrxStrings {
   alignBottom: string;
   opacity: string;
   thickness: string;
+  /** Delete the currently selected annotation objects. */
+  deleteAnnotations: string;
   closeAnnotationToolbar: string;
 
   // Viewer app chrome
@@ -191,6 +193,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   alignBottom: 'Align bottom',
   opacity: 'Opacity',
   thickness: 'Thickness',
+  deleteAnnotations: 'Delete selected annotations',
   closeAnnotationToolbar: 'Close annotation toolbar',
 
   openFile: 'Open a PDF file',

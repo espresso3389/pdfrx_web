@@ -663,8 +663,8 @@
   z-index: 2;
   inset-block: var(--pdfrx-toolbar-height) 0;
   inset-inline-start: 0;
-  /* Off-screen to the inline-start, so it slides in from the left. */
-  transform: translateX(-100%);
+  /* Clear the shadow's blur radius as well as the drawer itself. */
+  transform: translateX(calc(-100% - 16px));
   transition: transform 180ms ease;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
 }
@@ -673,7 +673,7 @@
 .pdfrx-app-narrow[data-sidebar-side='right'] .pdfrx-sidebar {
   inset-inline-start: auto;
   inset-inline-end: 0;
-  transform: translateX(100%);
+  transform: translateX(calc(100% + 16px));
   box-shadow: -2px 0 12px rgba(0, 0, 0, 0.25);
 }
 
@@ -742,6 +742,7 @@
 /* The second toolbar row hosting the annotation mode bar. */
 .pdfrx-toolbar-annot {
   flex-wrap: wrap;
+  padding-inline-start: 6px;
 }
 
 /* Spacer that sets a control group apart within the toolbar (e.g. Annotate

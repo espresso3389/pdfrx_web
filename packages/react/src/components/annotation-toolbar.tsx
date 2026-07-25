@@ -17,6 +17,7 @@ import {
   IconRectangle,
   IconTextSize,
   IconThickness,
+  IconTrash,
 } from './icons.js';
 
 /** Props for {@link PdfAnnotationToolbar}. */
@@ -160,6 +161,7 @@ export function PdfAnnotationToolbar({
   /** Whole-annotation opacity, 0-1. */
   const [opacity, setOpacity] = useState(1);
   const [width, setWidth] = useState(3);
+  const [hasSelection, setHasSelection] = useState(false);
   const [mixed, setMixed] = useState<Readonly<Record<MixedAttribute, boolean>>>(NO_MIXED_ATTRIBUTES);
   const defaultsRef = useRef<AnnotationToolbarDefaults>({
     color: colors[0] ?? '#e53935',
@@ -208,6 +210,7 @@ export function PdfAnnotationToolbar({
     if (!viewer) return;
     const syncSelectionStyle = (): void => {
       const annotations = viewer.getSelectedAnnotations();
+      setHasSelection(viewer.getSelectedAnnotationIds().length > 0);
       if (annotations.length === 0) {
         const defaults = defaultsRef.current;
         setColor(defaults.color);
@@ -671,9 +674,19 @@ export function PdfAnnotationToolbar({
           )}
         </span>
       </span>
+      <span className="pdfrx-toolbar-separator" aria-hidden />
+      <button
+        type="button"
+        className="pdfrx-button pdfrx-danger"
+        disabled={!viewer || !hasSelection}
+        onClick={() => void viewer?.deleteSelectedAnnotation()}
+        title={strings.deleteAnnotations}
+        aria-label={strings.deleteAnnotations}
+      >
+        <IconTrash />
+      </button>
       {onClose && (
         <>
-          <span className="pdfrx-toolbar-separator" aria-hidden />
           <button
             type="button"
             className="pdfrx-button pdfrx-annot-close"
