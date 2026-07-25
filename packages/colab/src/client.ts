@@ -137,6 +137,25 @@ export async function uploadRelaySource(
   if (!response.ok) throw new Error(`PDF source upload failed (${response.status}): ${await response.text()}`);
 }
 
+/** Uploads immutable non-PDF bytes through the relay's out-of-band source store. */
+/** @internal */
+export async function uploadRelayAsset(
+  relayUrl: string,
+  sessionId: string,
+  assetId: string,
+  bytes: ArrayBuffer,
+  transport: CollaborationTransport = {},
+): Promise<void> {
+  const url = (transport.resolveSourceUrl ?? relaySourceUrl)(relayUrl, sessionId, assetId);
+  const init: RequestInit = {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: bytes,
+  };
+  const response = transport.fetch ? await transport.fetch(url, init) : await globalThis.fetch(url, init);
+  if (!response.ok) throw new Error(`Annotation image upload failed (${response.status}): ${await response.text()}`);
+}
+
 interface QueuedOperation {
   readonly operationId: string;
   readonly operation: PagePlacementOperation;

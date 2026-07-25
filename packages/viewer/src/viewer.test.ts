@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { clientPointToPagePx, pointToSegmentDistance, resizeBoxByHandle, segmentIntersectsRect } from './viewer.js';
+import {
+  clientPointToPagePx,
+  constrainAnnotationTranslation,
+  pointToSegmentDistance,
+  resizeBoxByHandle,
+  segmentIntersectsRect,
+  translateSpec,
+} from './viewer.js';
 
 const box = { left: 10, bottom: 20, right: 110, top: 70 };
 
@@ -24,6 +31,41 @@ describe('clientPointToPagePx', () => {
         130,
       ),
     ).toEqual({ x: 300, y: 400 });
+  });
+});
+
+describe('constrainAnnotationTranslation', () => {
+  it('keeps an ordinary object fully within the page', () => {
+    const annotation = { left: 20, top: 30, right: 80, bottom: 90 };
+    const page = { width: 200, height: 240 };
+    expect(constrainAnnotationTranslation(annotation, { x: -100, y: -100 }, page)).toEqual({ x: -20, y: -30 });
+    expect(constrainAnnotationTranslation(annotation, { x: 200, y: 200 }, page)).toEqual({ x: 120, y: 150 });
+  });
+
+  it('leaves a recoverable strip of an object larger than the page', () => {
+    const annotation = { left: -50, top: -80, right: 250, bottom: 320 };
+    const page = { width: 200, height: 240 };
+    expect(constrainAnnotationTranslation(annotation, { x: -1000, y: -1000 }, page)).toEqual({ x: -249, y: -319 });
+    expect(constrainAnnotationTranslation(annotation, { x: 1000, y: 1000 }, page)).toEqual({ x: 249, y: 319 });
+  });
+});
+
+describe('translateSpec', () => {
+  it('preserves a raster appearance by reference while translating geometry', () => {
+    const appearanceImage = { width: 1, height: 1, pixels: new Uint8Array([1, 2, 3, 4]) };
+    const source = {
+      subtype: 'stamp' as const,
+      rect: { left: 10, bottom: 20, right: 30, top: 40 },
+      appearanceImage,
+      geometry: { kind: 'line' as const, start: { x: 10, y: 20 }, end: { x: 30, y: 40 } },
+    };
+
+    const translated = translateSpec(source, 5, -3);
+
+    expect(translated.appearanceImage).toBe(appearanceImage);
+    expect(translated.rect).toEqual({ left: 15, bottom: 17, right: 35, top: 37 });
+    expect(translated.geometry).toEqual({ kind: 'line', start: { x: 15, y: 17 }, end: { x: 35, y: 37 } });
+    expect(source.rect).toEqual({ left: 10, bottom: 20, right: 30, top: 40 });
   });
 });
 

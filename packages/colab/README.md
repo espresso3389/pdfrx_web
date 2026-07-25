@@ -60,13 +60,14 @@ must provide both:
    [`ServerRelayMessage`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_colab.ServerRelayMessage.html)
    messages. It joins sessions, validates base revisions, sequences operations,
    and broadcasts authoritative page, annotation, and form commits.
-2. HTTP `PUT` and `GET` endpoints for immutable source PDFs at
+2. HTTP `PUT` and `GET` endpoints for immutable PDF and raster bytes at
    `/sessions/:sessionId/sources/:documentId` on the same host. The helper
    [`relaySourceUrl()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_colab.relaySourceUrl.html)
    converts `ws:` to `http:` (or `wss:` to `https:`) and constructs this path.
 
-Thus, for `relayUrl="wss://relay.example.com/collaboration"`, uploaded source
-PDFs are stored and fetched through URLs such as:
+Thus, for `relayUrl="wss://relay.example.com/collaboration"`, uploaded PDF
+sources and raster annotation appearances are stored and fetched through URLs
+such as:
 
 ```text
 https://relay.example.com/sessions/<sessionId>/sources/<documentId>
@@ -220,7 +221,7 @@ served from the package CDN:
 ```tsx
 <CollaborativePdfViewer
   // ...
-  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.15.2/assets/"
+  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.15.3/assets/"
 />
 ```
 
@@ -268,7 +269,9 @@ Annotation movement and resizing additionally use best-effort transient
 previews. They are broadcast to the other participants without consuming an
 annotation revision, changing the authoritative snapshot, or entering the PDF
 and edit history. The final pointer-up geometry is still submitted and
-broadcast as a normal authoritative annotation operation.
+broadcast as a normal authoritative annotation operation. Raster appearances
+are uploaded once through the immutable HTTP endpoint and cached by source ID;
+pixel arrays are never repeated in preview or geometry-update WebSocket frames.
 
 Remote PDF mutations are applied with `origin: 'remote'`, which prevents
 annotation and form event feedback loops. Missing source PDFs are fetched and

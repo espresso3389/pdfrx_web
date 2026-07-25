@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   fetchRelaySource,
+  uploadRelayAsset,
   uploadRelaySource,
   type CollaborationTransport,
 } from '../src/client.js';
@@ -24,6 +25,13 @@ describe('collaboration transport hooks', () => {
     expect(request).toHaveBeenNthCalledWith(2, 'https://api.example.test/private/session-a/document-b', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf' },
+      body: bytes,
+    });
+
+    await uploadRelayAsset('wss://relay.example.test/ws', 'session-a', 'annotation-image-1', bytes, transport);
+    expect(request).toHaveBeenNthCalledWith(3, 'https://api.example.test/private/session-a/annotation-image-1', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
       body: bytes,
     });
   });

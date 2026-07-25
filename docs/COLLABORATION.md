@@ -35,7 +35,7 @@ remote commands with a remote origin so they are not echoed. The application
 mounts one instance after creating or joining a protected session. See
 [COLLABORATION-PROTOCOL.md](COLLABORATION-PROTOCOL.md) for the complete
 WebSocket envelopes, sequencing rules, rejection codes, transient annotation
-previews, and source-PDF HTTP endpoints.
+previews, and immutable-binary HTTP endpoints.
 
 ## Collaboration adapter boundary
 
@@ -57,9 +57,12 @@ owns the physical source page while their change events retain the arrangement's
 annotatable without first materializing the combined document.
 
 The application uploads an imported PDF once to the relay under a session-scoped
-source document ID. Page placements reference that ID and a physical page
+source document ID. Raster annotation appearances use the same immutable HTTP
+side channel instead of being embedded in WebSocket JSON; their annotation
+records carry a source ID and dimensions, while movement and resize messages
+carry geometry only. Page placements reference a PDF source ID and physical page
 index; each participant downloads and opens a missing source before applying
-the committed placement. The relay stores source PDFs on disk, persists
+the committed placement. The relay stores immutable source bytes on disk, persists
 materialized state using atomic file replacement, admits new devices after any
 connected member approves them, and defaults to a 50 MiB limit.
 Retention, malware scanning, per-user quotas, and multi-instance coordination
@@ -107,8 +110,9 @@ participant reconstruct the current shared annotation set.
 During object movement and anchor/group resizing, the viewer also broadcasts
 non-persistent annotation previews. These update the other participants' SVG
 overlays immediately but do not change the PDF, annotation revision, snapshot,
-or undo history. Pointer release submits the final full annotation spec through
-the ordered, revision-checked operation stream.
+or undo history. Pointer release submits final geometry through the ordered,
+revision-checked operation stream. Raster pixels are uploaded once through the
+HTTP side channel, cached by source ID, and are not resent during manipulation.
 
 Forms use an independent ordered, revision-checked operation stream. A field is
 addressed by immutable source `documentId` plus its fully-qualified AcroForm

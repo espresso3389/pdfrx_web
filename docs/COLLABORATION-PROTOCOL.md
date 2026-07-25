@@ -367,9 +367,10 @@ according to their idempotency policy. The reference relay does not keep a
 deduplication table, so production relays should add one if retrying the same
 operation ID must be exactly-once.
 
-## Source PDF HTTP side channel
+## Immutable binary HTTP side channel
 
-Source bytes are not sent over WebSocket. The default endpoint is:
+PDF source and raster annotation bytes are not sent over WebSocket. The default
+endpoint is:
 
 ```text
 PUT /sessions/:sessionId/sources/:documentId
@@ -381,19 +382,29 @@ converting `ws:` to `http:` and `wss:` to `https:`.
 
 Reference relay behavior:
 
-- `PUT` stores a non-empty PDF under the session-scoped document ID and returns
-  `201`.
+- `PUT` stores non-empty immutable bytes under the session-scoped document ID
+  and returns `201`. PDF sources use `application/pdf`; raster annotation
+  payloads use `application/octet-stream`.
 - Re-uploading identical bytes is accepted and returns `201`.
 - Reusing an ID for different bytes returns `409`.
 - A source larger than 50 MiB returns `413`.
 - Unknown paths or sources return `404`; unsupported methods return `405`.
-- `GET` returns `application/pdf`.
+- `GET` returns the stored bytes. The reference relay currently uses
+  `application/pdf` for this shared endpoint; annotation image consumers read
+  the response as an `ArrayBuffer`.
 - `OPTIONS` returns `204` with permissive development CORS headers.
 
 Production services must authenticate both transports, authorize the session
 on every request, validate content, impose quotas, and provide durable storage,
 retention, malware scanning, and TLS. Long-lived credentials should not be put
 in WebSocket URLs.
+
+Raster annotation specs use `appearanceImageSource` with a source `documentId`,
+pixel width, and pixel height. The source contains tightly packed RGBA bytes.
+Clients upload it before committing the annotation and hydrate it after
+receiving a snapshot or commit. Geometry-only updates and previews omit both
+inline pixels and the source reference; reducers merge those updates with the
+existing authoritative annotation record.
 
 ## Example: live resize followed by commit
 

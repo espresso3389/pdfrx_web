@@ -39,4 +39,37 @@ describe('annotation collaboration protocol', () => {
       change: { type: 'add', placementId: 'missing', id: 'a', spec },
     })).toThrow('Page placement not found');
   });
+
+  it('merges compact geometry updates with an out-of-band image reference', () => {
+    const imageSpec = {
+      ...spec,
+      appearanceImageSource: {
+        documentId: 'annotation-image-1',
+        width: 320,
+        height: 200,
+      },
+    };
+    const snapshot = {
+      revision: 1,
+      annotations: [{ placementId: 'page-a', id: 'image-1', spec: imageSpec }],
+    };
+    const result = commitAnnotationOperation(snapshot, pages, {
+      operationId: 'move-image',
+      actorId: 'alice',
+      baseRevision: 1,
+      change: {
+        type: 'update',
+        placementId: 'page-a',
+        id: 'image-1',
+        spec: { ...spec, rect: { left: 20, bottom: 20, right: 50, top: 50 } },
+      },
+    });
+
+    expect(result.committed.change.type === 'update' && result.committed.change.spec.appearanceImageSource).toBeUndefined();
+    expect(result.snapshot.annotations[0]?.spec).toMatchObject({
+      rect: { left: 20, bottom: 20, right: 50, top: 50 },
+      appearanceImageSource: imageSpec.appearanceImageSource,
+    });
+    expect(applyCommittedAnnotationOperation(snapshot, result.committed)).toEqual(result.snapshot);
+  });
 });

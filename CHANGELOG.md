@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-07-25
+
+### Changed
+
+- Moved collaborative raster-annotation payloads to the immutable HTTP
+  `PUT`/`GET` side channel. WebSocket previews and geometry updates now carry
+  only compact annotation state, and received raster bytes are cached by source
+  ID.
+- Reused raster appearance buffers and rendered image data URLs while
+  translating annotations, avoiding repeated multi-megabyte clones and
+  encodes during interaction.
+
+### Fixed
+
+- Prevented annotation objects from being dragged completely outside a page;
+  oversized objects retain a recoverable one-pixel strip.
+- Treated mobile `pointercancel` as a cancelled annotation move instead of
+  committing its sometimes-zero coordinates and jumping the object to the
+  page origin.
+
 ## [0.15.2] - 2026-07-25
 
 ### Added
@@ -398,7 +418,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...v0.15.0

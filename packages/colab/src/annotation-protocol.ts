@@ -1,17 +1,32 @@
 import type { PdfAnnotationSpec } from '@pdfrx/engine';
 import type { PagePlacement } from '@pdfrx/viewer-core';
 
+/** Reference to immutable raster bytes stored through the relay's HTTP source endpoint. */
+export interface SharedAnnotationImageSource {
+  readonly documentId: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Serializable annotation state used by the collaboration protocol. */
+export type SharedAnnotationSpec = Omit<PdfAnnotationSpec, 'appearanceImage'> & {
+  /** Inline pixels retained for backwards compatibility with older relays. */
+  readonly appearanceImage?: PdfAnnotationSpec['appearanceImage'];
+  /** Preferred out-of-band storage for a raster appearance. */
+  readonly appearanceImageSource?: SharedAnnotationImageSource;
+};
+
 /** Add, replace, or remove one annotation addressed by stable page placement. */
 /** @internal */
 export interface SharedAnnotationUpdate {
   readonly type: 'update';
   readonly placementId: string;
   readonly id: string;
-  readonly spec: PdfAnnotationSpec;
+  readonly spec: SharedAnnotationSpec;
 }
 
 export type SharedAnnotationChange =
-  | { readonly type: 'add'; readonly placementId: string; readonly id: string; readonly spec: PdfAnnotationSpec }
+  | { readonly type: 'add'; readonly placementId: string; readonly id: string; readonly spec: SharedAnnotationSpec }
   | SharedAnnotationUpdate
   | { readonly type: 'remove'; readonly placementId: string; readonly id: string };
 
@@ -22,7 +37,7 @@ export interface SharedAnnotationRecord {
   /** PDF annotation `/NM` identity, unique within the placement. */
   readonly id: string;
   /** Serializable annotation geometry, content, and appearance properties. */
-  readonly spec: PdfAnnotationSpec;
+  readonly spec: SharedAnnotationSpec;
 }
 
 /** Authoritative annotation state, versioned independently from page operations. */
@@ -76,7 +91,16 @@ export function commitAnnotationOperation(
     (item) => item.placementId !== request.change.placementId || item.id !== request.change.id,
   );
   if (request.change.type !== 'remove') {
-    annotations.push({ placementId: request.change.placementId, id: request.change.id, spec: request.change.spec });
+    const previous = snapshot.annotations.find(
+      (item) => item.placementId === request.change.placementId && item.id === request.change.id,
+    );
+    annotations.push({
+      placementId: request.change.placementId,
+      id: request.change.id,
+      spec: request.change.type === 'update' && previous
+        ? { ...previous.spec, ...request.change.spec }
+        : request.change.spec,
+    });
   }
   const revision = snapshot.revision + 1;
   return { snapshot: { revision, annotations }, committed: { ...request, revision } };
@@ -97,7 +121,16 @@ export function applyCommittedAnnotationOperation(
     (item) => item.placementId !== committed.change.placementId || item.id !== committed.change.id,
   );
   if (committed.change.type !== 'remove') {
-    annotations.push({ placementId: committed.change.placementId, id: committed.change.id, spec: committed.change.spec });
+    const previous = snapshot.annotations.find(
+      (item) => item.placementId === committed.change.placementId && item.id === committed.change.id,
+    );
+    annotations.push({
+      placementId: committed.change.placementId,
+      id: committed.change.id,
+      spec: committed.change.type === 'update' && previous
+        ? { ...previous.spec, ...committed.change.spec }
+        : committed.change.spec,
+    });
   }
   return { revision: committed.revision, annotations };
 }

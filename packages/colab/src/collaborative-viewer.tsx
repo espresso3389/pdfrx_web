@@ -28,10 +28,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   fetchRelaySource,
   PageCollaborationClient,
+  uploadRelayAsset,
   uploadRelaySource,
   type CollaborationConnectionState,
   type CollaborationTransport,
 } from './client.js';
+import type { SharedAnnotationSpec } from './annotation-protocol.js';
 import { applyPagePlacementsToViewer, PageSourceRegistry } from './page-adapter.js';
 import { encodeCollaborativePdf } from './export-composer.js';
 import type { PageSessionSnapshot } from './protocol.js';
@@ -231,6 +233,33 @@ function CollaborativeViewerContent({
     observeSourceFormsRef.current = observeSourceForms;
     observeSourceForms('main', document);
     let applying = Promise.resolve();
+    const annotationImageLoads = new Map<string, Promise<Uint8Array>>();
+    const resolveAnnotationSpec = async (shared: SharedAnnotationSpec): Promise<PdfAnnotationSnapshot['annotations'][number]['spec']> => {
+      const { appearanceImageSource, ...spec } = structuredClone(shared);
+      if (!appearanceImageSource || spec.appearanceImage) return spec;
+      let loading = annotationImageLoads.get(appearanceImageSource.documentId);
+      if (!loading) {
+        loading = (async () => {
+          const response = await fetchRelaySource(relayUrl, sessionId, appearanceImageSource.documentId, transport);
+          if (!response.ok) throw new Error(`共有アノテーション画像を取得できません (${response.status})`);
+          return new Uint8Array(await response.arrayBuffer());
+        })();
+        annotationImageLoads.set(appearanceImageSource.documentId, loading);
+      }
+      const pixels = await loading;
+      const expected = appearanceImageSource.width * appearanceImageSource.height * 4;
+      if (pixels.byteLength !== expected) {
+        throw new Error(`共有アノテーション画像のサイズが不正です (${pixels.byteLength} / ${expected})`);
+      }
+      return {
+        ...spec,
+        appearanceImage: {
+          width: appearanceImageSource.width,
+          height: appearanceImageSource.height,
+          pixels,
+        },
+      };
+    };
     const unsubscribe = client.subscribe((next) => {
       applying = applying.then(async () => {
         const documentIds = new Set(next.pages.map((page) => page.source.documentId));
@@ -255,7 +284,7 @@ function CollaborativeViewerContent({
           for (const record of annotationSnapshot.annotations) {
             const pageIndex = client.snapshot?.pages.findIndex((page) => page.placementId === record.placementId) ?? -1;
             if (pageIndex < 0) continue;
-            const spec = structuredClone(record.spec);
+            const spec = await resolveAnnotationSpec(record.spec);
             await viewer.prepareAnnotationAppearance(spec);
             annotations.push({ id: record.id, pageNumber: pageIndex + 1, spec });
           }
@@ -265,9 +294,13 @@ function CollaborativeViewerContent({
           );
           return;
         }
-        const records = committed
+        const records = committed.change.type === 'remove'
           ? [committed.change]
-          : [];
+          : annotationSnapshot.annotations.filter(
+            (record) =>
+              record.placementId === committed.change.placementId
+              && record.id === committed.change.id,
+          ).map((record) => ({ ...record, type: committed.change.type } as const));
         const changes: PdfAnnotationChange[] = [];
         for (const record of records) {
           const pageIndex = client.snapshot?.pages.findIndex((page) => page.placementId === record.placementId) ?? -1;
@@ -276,7 +309,7 @@ function CollaborativeViewerContent({
             changes.push({ type: 'remove', id: record.id, pageNumber: pageIndex + 1 });
             continue;
           }
-          const spec = structuredClone(record.spec);
+          const spec = await resolveAnnotationSpec(record.spec);
           await viewer.prepareAnnotationAppearance(spec);
           changes.push({ type: record.type, id: record.id, pageNumber: pageIndex + 1, spec });
         }
@@ -361,21 +394,53 @@ function CollaborativeViewerContent({
         for (const change of event.changes) {
           const placement = client.snapshot?.pages[change.pageNumber - 1];
           if (!placement) throw new Error(`アノテーション対象ページ ${change.pageNumber} が見つかりません`);
+          let sharedSpec: SharedAnnotationSpec | undefined;
+          if (change.type !== 'remove') {
+            const previous = client.annotationSnapshot?.annotations.find(
+              (record) => record.placementId === placement.placementId && record.id === change.id,
+            );
+            const { appearanceImage, ...specWithoutImage } = change.spec;
+            if (appearanceImage) {
+              const existingSource = previous?.spec.appearanceImageSource;
+              const appearanceImageSource = existingSource ?? {
+                documentId: `annotation-image-${crypto.randomUUID()}`,
+                width: appearanceImage.width,
+                height: appearanceImage.height,
+              };
+              if (!existingSource) {
+                const pixels = appearanceImage.pixels.slice();
+                await uploadRelayAsset(relayUrl, sessionId, appearanceImageSource.documentId, pixels.buffer, transport);
+              }
+              sharedSpec = { ...specWithoutImage, appearanceImageSource };
+            } else {
+              sharedSpec = specWithoutImage;
+            }
+          }
           await client.submitAnnotation(change.type === 'remove'
             ? { type: 'remove', placementId: placement.placementId, id: change.id }
-            : { type: change.type, placementId: placement.placementId, id: change.id, spec: change.spec });
+            : { type: change.type, placementId: placement.placementId, id: change.id, spec: sharedSpec! });
         }
       })().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
     const unsubscribeLocalAnnotationPreviews = viewer.addAnnotationPreviewChangeListener((changes) => {
       const shared = changes.flatMap((change) => {
         const placement = client.snapshot?.pages[change.pageNumber - 1];
+        // Preview messages only need mutable geometry/style. Raster pixels and
+        // other appearance payloads already exist in every participant's
+        // authoritative annotation and can be very large when JSON encoded.
+        const {
+          appearanceImage: _appearanceImage,
+          appearancePaths: _appearancePaths,
+          appearanceLines: _appearanceLines,
+          appearanceRuns: _appearanceRuns,
+          ...previewSpec
+        } = change.spec;
         return placement
           ? [{
               type: 'update' as const,
               placementId: placement.placementId,
               id: change.id,
-              spec: structuredClone(change.spec),
+              spec: structuredClone(previewSpec),
             }]
           : [];
       });

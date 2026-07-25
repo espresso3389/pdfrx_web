@@ -865,9 +865,12 @@ function arrowInkStrokes(s: PdfPoint, e: PdfPoint): PdfPoint[][] {
 }
 
 /** Returns a detached copy of a spec, translated by (dx, dy) in PDF points. */
-function translateSpec(spec: PdfAnnotationSpec, dx: number, dy: number): PdfAnnotationSpec {
+/** @internal */
+export function translateSpec(spec: PdfAnnotationSpec, dx: number, dy: number): PdfAnnotationSpec {
   const tp = (p: PdfPoint): PdfPoint => ({ x: p.x + dx, y: p.y + dy });
-  const translated = structuredClone(spec);
+  // Translation does not mutate appearance payloads. Keep large raster pixels
+  // by reference instead of cloning them on every pointermove preview.
+  const translated: PdfAnnotationSpec = { ...spec };
   if (spec.rect) {
     translated.rect = {
       left: spec.rect.left + dx,
@@ -921,7 +924,7 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
       appearanceRuns: a.appearanceRuns?.map((line) => line.map((run) => ({ ...run }))),
-      appearanceImage: a.appearanceImage ? structuredClone(a.appearanceImage) : undefined,
+      appearanceImage: a.appearanceImage ?? undefined,
       appearancePaths: a.subtype === 'stamp' && !a.contents && !a.appearanceImage
         ? a.appearancePaths.map((path) => ({
             ...structuredClone(path),
@@ -1232,6 +1235,25 @@ export function clientPointToPagePx(
   };
 }
 
+/**
+ * Clamps a rigid annotation translation to the page. Objects that fit remain
+ * fully inside; an oversized object retains at least a thin visible strip so
+ * it can always be selected and dragged back.
+ *
+ * @internal
+ */
+export function constrainAnnotationTranslation(box: Rect, delta: Offset, pageSize: Size): Offset {
+  const clampAxis = (start: number, end: number, span: number, value: number): number => {
+    if (end - start <= span) return Math.max(-start, Math.min(value, span - end));
+    const visible = Math.min(1, span / 2);
+    return Math.max(visible - end, Math.min(value, span - visible - start));
+  };
+  return {
+    x: clampAxis(box.left, box.right, pageSize.width, delta.x),
+    y: clampAxis(box.top, box.bottom, pageSize.height, delta.y),
+  };
+}
+
 /** Euclidean distance from `point` to the finite line segment `start`–`end`. */
 export function pointToSegmentDistance(point: Offset, start: Offset, end: Offset): number {
   const dx = end.x - start.x;
@@ -1297,7 +1319,13 @@ function annotationAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
   // may be resized independently, but scaling the icon itself is not meaningful.
   if (a.subtype === 'text') return [];
   const base = annotationToSpec(a);
-  const clone = (): PdfAnnotationSpec => structuredClone(base);
+  const clone = (): PdfAnnotationSpec => {
+    const copy = structuredClone(base);
+    // Reshaping changes geometry/rect only. Preserve the immutable source
+    // pixels so image previews reuse their already encoded SVG URL.
+    if (base.appearanceImage) copy.appearanceImage = base.appearanceImage;
+    return copy;
+  };
   const g = a.geometry;
   switch (g.kind) {
     case 'line':
@@ -1712,6 +1740,8 @@ export class PdfrxViewer {
     string,
     NonNullable<PdfAnnotationObject['appearanceImage']>
   >();
+  /** Encoded SVG image href per immutable raster payload; avoids PNG encoding on every drag frame. */
+  private readonly annotationImageDataUrls = new WeakMap<object, string>();
   /**
    * Active drawing tool, or null. The legacy `'select'` value remains accepted
    * by the type but is no longer entered by the public selection API.
@@ -5637,7 +5667,12 @@ export class PdfrxViewer {
             image.setAttribute('width', `${rectWidth(box)}`);
             image.setAttribute('height', `${rectHeight(box)}`);
             image.setAttribute('preserveAspectRatio', 'none');
-            image.setAttribute('href', rgbaImageDataUrl(a.appearanceImage));
+            let href = this.annotationImageDataUrls.get(a.appearanceImage);
+            if (href === undefined) {
+              href = rgbaImageDataUrl(a.appearanceImage);
+              this.annotationImageDataUrls.set(a.appearanceImage, href);
+            }
+            image.setAttribute('href', href);
             add(image);
             break;
           }
@@ -7407,8 +7442,16 @@ export class PdfrxViewer {
     };
     const displacement = (e: PointerEvent): AnnotationSnapResult => {
       const raw = rawDisplacement(e);
-      if (duplicate || !sourceBox) return { point: raw };
-      return this.snapAnnotationTranslation(overlay, sourceBox, raw, excludedIds);
+      const snapped = duplicate || !sourceBox
+        ? { point: raw }
+        : this.snapAnnotationTranslation(overlay, sourceBox, raw, excludedIds);
+      if (!sourceBox) return snapped;
+      const point = constrainAnnotationTranslation(sourceBox, snapped.point, overlay.pageSize);
+      return {
+        point,
+        ...(point.x === snapped.point.x && snapped.guideX !== undefined ? { guideX: snapped.guideX } : {}),
+        ...(point.y === snapped.point.y && snapped.guideY !== undefined ? { guideY: snapped.guideY } : {}),
+      };
     };
     const move = (e: PointerEvent): void => {
       const raw = rawDisplacement(e);
@@ -7440,7 +7483,7 @@ export class PdfrxViewer {
     const up = (e: PointerEvent): void => {
       dragSurface.removeEventListener('pointermove', move);
       dragSurface.removeEventListener('pointerup', up);
-      dragSurface.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointercancel', cancel);
       g.style.cursor = 'pointer';
       dragSurface.style.cursor = previousSurfaceCursor;
       this.canvas.style.cursor = previousCanvasCursor;
@@ -7472,9 +7515,23 @@ export class PdfrxViewer {
         void this.commitMove(pageNumber, annotation, dx, dy);
       }
     };
+    const cancel = (): void => {
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', cancel);
+      g.style.cursor = 'pointer';
+      dragSurface.style.cursor = previousSurfaceCursor;
+      this.canvas.style.cursor = previousCanvasCursor;
+      this.renderAnnotationSnapGuides(overlay);
+      if (duplicate) preview.remove();
+      else if (previewed) {
+        this.previewAnnotationShape(overlay, annotation, annotationToSpec(annotation));
+        this.updateAnchorPositions(overlay, annotation);
+      }
+    };
     dragSurface.addEventListener('pointermove', move);
     dragSurface.addEventListener('pointerup', up);
-    dragSurface.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointercancel', cancel);
   }
 
   private async commitMove(pageNumber: number, a: PdfAnnotationObject, dx: number, dy: number): Promise<void> {
@@ -7843,8 +7900,16 @@ export class PdfrxViewer {
     };
     const displacement = (e: PointerEvent): AnnotationSnapResult => {
       const raw = rawDisplacement(e);
-      if (duplicate || !sourceBox) return { point: raw };
-      return this.snapAnnotationTranslation(overlay, sourceBox, raw, selectedIds);
+      const snapped = duplicate || !sourceBox
+        ? { point: raw }
+        : this.snapAnnotationTranslation(overlay, sourceBox, raw, selectedIds);
+      if (!sourceBox) return snapped;
+      const point = constrainAnnotationTranslation(sourceBox, snapped.point, overlay.pageSize);
+      return {
+        point,
+        ...(point.x === snapped.point.x && snapped.guideX !== undefined ? { guideX: snapped.guideX } : {}),
+        ...(point.y === snapped.point.y && snapped.guideY !== undefined ? { guideY: snapped.guideY } : {}),
+      };
     };
     const move = (e: PointerEvent): void => {
       const snapped = displacement(e);
@@ -7875,7 +7940,7 @@ export class PdfrxViewer {
     const up = (e: PointerEvent): void => {
       dragSurface.removeEventListener('pointermove', move);
       dragSurface.removeEventListener('pointerup', up);
-      dragSurface.removeEventListener('pointercancel', up);
+      dragSurface.removeEventListener('pointercancel', cancel);
       dragSurface.style.cursor = previousCursor;
       this.canvas.style.cursor = previousCanvasCursor;
       const raw = rawDisplacement(e);
@@ -7903,9 +7968,26 @@ export class PdfrxViewer {
         void this.commitGroupTransform(overlay, sel, (a) => translateAnnotationSpec(a, dx, dy));
       }
     };
+    const cancel = (): void => {
+      dragSurface.removeEventListener('pointermove', move);
+      dragSurface.removeEventListener('pointerup', up);
+      dragSurface.removeEventListener('pointercancel', cancel);
+      dragSurface.style.cursor = previousCursor;
+      this.canvas.style.cursor = previousCanvasCursor;
+      this.renderAnnotationSnapGuides(overlay);
+      if (duplicate) {
+        for (const g of previews) g.remove();
+      } else {
+        for (const annotation of sel) {
+          this.previewAnnotationShape(overlay, annotation, annotationToSpec(annotation));
+        }
+      }
+      overlay.anchorLayer.removeAttribute('transform');
+      if (sourceBox) this.updateGroupAnchorPositions(overlay, sourceBox);
+    };
     dragSurface.addEventListener('pointermove', move);
     dragSurface.addEventListener('pointerup', up);
-    dragSurface.addEventListener('pointercancel', up);
+    dragSurface.addEventListener('pointercancel', cancel);
   }
 
   /** Drags one group-box handle, scaling every selected annotation together. */
