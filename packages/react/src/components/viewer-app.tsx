@@ -1,4 +1,4 @@
-import type { PdfPage } from '@pdfrx/engine';
+import type { PdfDocument, PdfPage } from '@pdfrx/engine';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
 import { isImageFile, openFileAsDocument } from '../file-open.js';
@@ -9,7 +9,7 @@ import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
 import { useImageAnnotationDrop } from '../use-image-annotation-drop.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
-import { PdfPageActions } from './page-actions.js';
+import { PdfPageActions, type PdfPageRotationDelta } from './page-actions.js';
 import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
@@ -68,6 +68,75 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   enableAnnotations?: boolean;
   /** Extra toolbar controls, placed after the built-in ones. */
   children?: ReactNode;
+  /**
+   * Renders a controller inside the app's viewer provider. Call
+   * `context.renderChrome()` with only the editing operations and slots the
+   * host needs to replace; omitted behavior keeps the standard implementation.
+   */
+  renderContent?: (context: PdfrxViewerAppRenderContext) => ReactNode;
+}
+
+/**
+ * Host overrides for the standard {@link PdfrxViewerApp} chrome.
+ *
+ * Hosts can replace selected editing operations while retaining the built-in
+ * responsive layout and controls.
+ */
+export interface PdfrxViewerAppOverrides {
+  /**
+   * Handles a file selected through the standard Open button. Omit this to
+   * replace the current document locally through the built-in store.
+   */
+  readonly openFile?: (file: File) => void | Promise<void>;
+  /**
+   * Handles files dropped into a thumbnail insertion slot. `index` is the
+   * zero-based slot before which new pages should be inserted, from `0`
+   * through the current page count. Omit this for local page import.
+   */
+  readonly insertFiles?: (files: File[], index: number) => void | Promise<void>;
+  /**
+   * Handles thumbnail reordering. `fromPageNumber` is one-based and `toIndex`
+   * is the zero-based insertion slot in the pre-move page list. Omit this to
+   * reorder the local document directly.
+   */
+  readonly movePage?: (fromPageNumber: number, toIndex: number) => void;
+  /**
+   * Handles a sidebar rotation action for a one-based page number. Omit this
+   * to replace the page with the locally rotated page.
+   */
+  readonly rotatePage?: (pageNumber: number, delta: PdfPageRotationDelta) => void;
+  /**
+   * Handles a sidebar deletion action for a one-based page number. Omit this
+   * to remove the page from the local document.
+   */
+  readonly deletePage?: (pageNumber: number) => void;
+  /**
+   * Produces the PDF bytes downloaded by the standard Download button. The app
+   * flushes active annotation text editing before calling this function and
+   * still owns blob creation and browser download. Omit it to use
+   * `document.encodePdfCopy()`.
+   */
+  readonly encode?: (document: PdfDocument) => Promise<Uint8Array>;
+  /**
+   * Compact host UI rendered below the standard toolbar, annotation toolbar,
+   * and built-in error banner, but above the sidebar/surface row.
+   */
+  readonly beforeBody?: ReactNode;
+  /**
+   * Disables host-sensitive editing entry points without hiding the document.
+   * This covers open, page actions and drops, history buttons, download,
+   * annotation entry, and image drops.
+   */
+  readonly editingDisabled?: boolean;
+}
+
+/** Render API passed to {@link PdfrxViewerAppProps.renderContent}. */
+export interface PdfrxViewerAppRenderContext {
+  /**
+   * Renders the complete standard viewer chrome with optional behavior
+   * overrides. Call this exactly once from the controller's rendered output.
+   */
+  readonly renderChrome: (overrides?: PdfrxViewerAppOverrides) => ReactNode;
 }
 
 /** Below this width the sidebar becomes an overlay drawer. */
@@ -108,6 +177,7 @@ export function PdfrxViewerApp({
   showDownloadButton,
   enableAnnotations = true,
   children,
+  renderContent,
   ...providerProps
 }: PdfrxViewerAppProps): ReactNode {
   const pageEditingEnabled = enablePageEditing && providerProps.editing?.pages !== false;
@@ -115,24 +185,18 @@ export function PdfrxViewerApp({
   const historyEnabled = providerProps.editing?.history !== false;
   return (
     <PdfrxProvider {...providerProps}>
-      <PdfrxViewerAppChrome
-        className={className}
-        style={style}
-        toolbar={toolbar}
-        toolbarProps={toolbarProps}
-        sidebar={sidebar}
-        sidebarProps={sidebarProps}
-        sidebarWidth={sidebarWidth}
-        sidebarSide={sidebarSide}
-        enablePageEditing={pageEditingEnabled}
-        // Each button follows its capability flag unless overridden.
-        showOpenButton={showOpenButton ?? enableFileOpen}
-        showDownloadButton={showDownloadButton ?? pageEditingEnabled}
-        enableAnnotations={annotationEditingEnabled}
-        historyEnabled={historyEnabled}
-      >
-        {children}
-      </PdfrxViewerAppChrome>
+      <PdfrxViewerAppHost
+        chromeProps={{
+          className, style, toolbar, toolbarProps, sidebar, sidebarProps, sidebarWidth, sidebarSide,
+          enablePageEditing: pageEditingEnabled,
+          showOpenButton: showOpenButton ?? enableFileOpen,
+          showDownloadButton: showDownloadButton ?? pageEditingEnabled,
+          enableAnnotations: annotationEditingEnabled,
+          historyEnabled,
+          children,
+        }}
+        renderContent={renderContent}
+      />
     </PdfrxProvider>
   );
 }
@@ -154,6 +218,19 @@ type ChromeProps = Pick<
   | 'children'
 > & { historyEnabled: boolean };
 
+function PdfrxViewerAppHost({
+  chromeProps,
+  renderContent,
+}: {
+  chromeProps: ChromeProps;
+  renderContent?: PdfrxViewerAppProps['renderContent'];
+}): ReactNode {
+  const renderChrome = (overrides?: PdfrxViewerAppOverrides): ReactNode => (
+    <PdfrxViewerAppChrome {...chromeProps} overrides={overrides} />
+  );
+  return renderContent ? renderContent({ renderChrome }) : renderChrome();
+}
+
 /**
  * The chrome, rendered inside the provider so it can use the hooks. Split out
  * only because a component cannot consume a context it renders itself.
@@ -173,7 +250,8 @@ function PdfrxViewerAppChrome({
   enableAnnotations,
   historyEnabled,
   children,
-}: ChromeProps): ReactNode {
+  overrides,
+}: ChromeProps & { overrides?: PdfrxViewerAppOverrides }): ReactNode {
   const { open, error, clearError } = usePdfDocument();
   const store = usePdfrxStore();
   const viewer = usePdfrxViewer();
@@ -209,9 +287,10 @@ function PdfrxViewerAppChrome({
 
   const openFile = useCallback(
     (file: File) => {
-      void open(file).catch((e: unknown) => console.error(`Failed to open ${file.name}:`, e));
+      const result = overrides?.openFile ? overrides.openFile(file) : open(file);
+      void Promise.resolve(result).catch((e: unknown) => console.error(`Failed to open ${file.name}:`, e));
     },
-    [open],
+    [open, overrides],
   );
 
   // Insert dropped files as pages at `index`. Each file is opened in the
@@ -245,12 +324,16 @@ function PdfrxViewerAppChrome({
   );
 
   const imageAnnotationDrop = useImageAnnotationDrop({
-    enabled: enableAnnotations,
+    enabled: enableAnnotations && !overrides?.editingDisabled,
     onError: (error, file) => {
       console.error(`Failed to add image annotation from ${file.name}:`, error);
       store.reportImportError(error, file.name);
     },
   });
+
+  useEffect(() => {
+    if (overrides?.editingDisabled) setAnnotating(false);
+  }, [overrides?.editingDisabled]);
 
   // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
   // rearrangement — no worker round-trip until the document is serialized.
@@ -276,7 +359,14 @@ function PdfrxViewerAppChrome({
   }, [isNarrow]);
 
   const renderPageActions = enablePageEditing
-    ? (pageNumber: number): ReactNode => <PdfPageActions pageNumber={pageNumber} />
+    ? (pageNumber: number): ReactNode => (
+      <PdfPageActions
+        pageNumber={pageNumber}
+        onRotatePage={overrides?.rotatePage}
+        onDeletePage={overrides?.deletePage}
+        disabled={overrides?.editingDisabled}
+      />
+    )
     : undefined;
 
   // On a wide screen the slot animates its width between `sidebarWidth` and 0
@@ -290,8 +380,10 @@ function PdfrxViewerAppChrome({
         style={{ width: sidebarWidth, ...sidebarProps?.style }}
         onNavigate={closeDrawerIfNarrow}
         renderPageActions={renderPageActions}
-        onInsertFiles={enablePageEditing ? (files, index) => void insertFiles(files, index) : undefined}
-        onMovePage={enablePageEditing ? movePage : undefined}
+        onInsertFiles={enablePageEditing && !overrides?.editingDisabled
+          ? (files, index) => void (overrides?.insertFiles ?? insertFiles)(files, index)
+          : undefined}
+        onMovePage={enablePageEditing && !overrides?.editingDisabled ? (overrides?.movePage ?? movePage) : undefined}
       />
     </div>
   ) : null;
@@ -318,7 +410,7 @@ function PdfrxViewerAppChrome({
                 type="button"
                 className="pdfrx-button"
                 onClick={() => void undo()}
-                disabled={!canUndo}
+                disabled={overrides?.editingDisabled || !canUndo}
                 title={`${strings.undo} (Ctrl+Z)`}
                 aria-label={strings.undo}
               >
@@ -328,7 +420,7 @@ function PdfrxViewerAppChrome({
                 type="button"
                 className="pdfrx-button"
                 onClick={() => void redo()}
-                disabled={!canRedo}
+                disabled={overrides?.editingDisabled || !canRedo}
                 title={`${strings.redo} (Ctrl+Shift+Z)`}
                 aria-label={strings.redo}
               >
@@ -338,6 +430,7 @@ function PdfrxViewerAppChrome({
                 <button
                   className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
                   aria-pressed={annotating}
+                  disabled={overrides?.editingDisabled}
                   onClick={() => setAnnotating((v) => !v)}
                   title={strings.annotate}
                   aria-label={strings.annotate}
@@ -353,6 +446,7 @@ function PdfrxViewerAppChrome({
               <button
                 className="pdfrx-button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={overrides?.editingDisabled}
                 title={strings.openFile}
                 aria-label={strings.openFile}
               >
@@ -371,7 +465,7 @@ function PdfrxViewerAppChrome({
               />
             </>
           )}
-          {showDownloadButton && <SaveButton />}
+          {showDownloadButton && <SaveButton encode={overrides?.encode} disabled={overrides?.editingDisabled} />}
           {children}
         </PdfToolbar>
       )}
@@ -407,6 +501,7 @@ function PdfrxViewerAppChrome({
           </div>
         </div>
       </div>
+      {overrides?.beforeBody}
       <div className="pdfrx-app-body">
         {/* Kept mounted while closed: the drawer animates out on narrow screens,
             and a `display: none` sidebar stops its thumbnails from rendering
@@ -427,7 +522,13 @@ function PdfrxViewerAppChrome({
 }
 
 /** Serializes the (possibly edited) document and downloads it. */
-function SaveButton(): ReactNode {
+function SaveButton({
+  encode,
+  disabled = false,
+}: {
+  encode?: (document: PdfDocument) => Promise<Uint8Array>;
+  disabled?: boolean;
+}): ReactNode {
   const viewer = usePdfrxViewer();
   const { pageCount, sourceName } = usePdfDocument();
   const strings = usePdfrxStrings();
@@ -440,7 +541,7 @@ function SaveButton(): ReactNode {
     try {
       await viewer.flushAnnotationTextEdit();
       // Assemble a temporary copy so saving does not invalidate editing history.
-      const data = await document.encodePdfCopy();
+      const data = encode ? await encode(document) : await document.encodePdfCopy();
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;
@@ -458,7 +559,7 @@ function SaveButton(): ReactNode {
     <button
       className="pdfrx-button"
       onClick={() => void save()}
-      disabled={isSaving || pageCount === 0}
+      disabled={disabled || isSaving || pageCount === 0}
       title={strings.download}
     >
       <IconSave />

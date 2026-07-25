@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `PdfrxViewerApp.renderContent` and `PdfrxViewerAppOverrides` so host
+  applications can customize editing operations while retaining the complete
+  standard viewer chrome.
+
+### Changed
+
+- Rebuilt `CollaborativePdfViewer` directly on `PdfrxViewerApp`, leaving only
+  relay-backed editing operations and collaboration notices as overrides.
+
 ## [0.16.2] - 2026-07-26
 
 ### Added

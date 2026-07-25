@@ -73,7 +73,12 @@ export {
 } from './locales.js';
 
 // --- Components ---
-export { PdfrxViewerApp, type PdfrxViewerAppProps } from './components/viewer-app.js';
+export {
+  PdfrxViewerApp,
+  type PdfrxViewerAppOverrides,
+  type PdfrxViewerAppProps,
+  type PdfrxViewerAppRenderContext,
+} from './components/viewer-app.js';
 export { PdfToolbar, type PdfToolbarProps } from './components/toolbar.js';
 export { PdfSidebar, type PdfSidebarProps, type PdfSidebarTab } from './components/sidebar.js';
 export {

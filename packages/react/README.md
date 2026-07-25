@@ -34,6 +34,13 @@ The annotation toolbar, narrow-screen search row, and dismissible error banner
 animate as they enter and leave the layout. The default stylesheet disables
 these transitions when the user requests reduced motion.
 
+For application-controlled editing behavior, `renderContent` can retain the
+standard viewer chrome while selectively overriding file, page, and export
+operations through
+[`PdfrxViewerAppOverrides`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxViewerAppOverrides.html);
+see [Customizing `PdfrxViewerApp`](https://github.com/espresso3389/pdfrx_web/blob/master/docs/REACT-VIEWER-APP-CUSTOMIZATION.md)
+for the complete pattern.
+
 `enableFileOpen` accepts picked **images** too — PNG, JPEG, GIF, WebP and friends
 open as a one-page PDF. With `enablePageEditing`, dropping a PDF or image
 **between two thumbnails** inserts its pages at that spot, and thumbnails can be
@@ -91,8 +98,8 @@ function ViewerSurface() {
 [`useImageAnnotationDrop()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useImageAnnotationDrop.html)
 adds the all-in-one viewer's standard drop-to-insert image behavior to a
 composed surface. Local annotation change listeners observe the resulting
-stamp normally, so custom persistence and collaboration layers do not need to
-reimplement file classification, canvas hit testing, or image decoding.
+stamp normally, so host applications do not need to reimplement file
+classification, canvas hit testing, or image decoding.
 
 Individually available:
 [`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html),

@@ -1,21 +1,12 @@
 import {
-  PdfSidebar,
-  PdfViewerLayout,
-  PdfAnnotationToolbar,
-  PdfPageActions,
-  PdfSaveButton,
-  PdfToolbar,
-  PdfViewerSurface,
-  PdfrxProvider,
-  IconAnnotate,
-  IconOpenFile,
+  PdfrxViewerApp,
   imageBytesToPdf,
   isImageFile,
   isPdfFile,
   type PdfSource,
   usePdfDocument,
-  useImageAnnotationDrop,
   usePdfrxViewer,
+  type PdfrxViewerAppRenderContext,
 } from '@pdfrx/react';
 import type {
   PdfAnnotationChange,
@@ -111,16 +102,21 @@ export function CollaborativePdfViewer({
   const displayName = name ?? actorId;
   return (
     <section className={`collab-pane ${className ?? ''}`.trim()} data-testid={`pane-${actorId}`}>
-      <PdfrxProvider
+      <PdfrxViewerApp
         src={src}
         wasmModulesUrl={wasmModulesUrl}
+        className="collab-viewer-layout"
+        sidebarWidth={126}
+        sidebarProps={{ tabs: ['thumbnails', 'outline'], thumbnailWidth: 96 }}
+        enableFileOpen
+        enablePageEditing
         // Local history stores page positions, annotation snapshots, and form
         // values that can become stale after another participant edits the
         // session. Keep it disabled until collaborative undo is expressed as
         // relay operations.
         editing={{ pages: true, annotations: true, history: false, actorId }}
-      >
-        <CollaborativeViewerContent
+        renderContent={({ renderChrome }) => (
+          <CollaborativeViewerContent
           name={displayName}
           actorId={actorId}
           relayUrl={relayUrl}
@@ -130,8 +126,10 @@ export function CollaborativePdfViewer({
           onPresenceChange={onPresenceChange}
           transport={transport}
           srcDocumentId={srcDocumentId}
-        />
-      </PdfrxProvider>
+            renderChrome={renderChrome}
+          />
+        )}
+      />
     </section>
   );
 }
@@ -146,6 +144,7 @@ function CollaborativeViewerContent({
   onPresenceChange,
   transport,
   srcDocumentId,
+  renderChrome,
 }: {
   name: string;
   actorId: string;
@@ -156,13 +155,13 @@ function CollaborativeViewerContent({
   onPresenceChange?: (connectedCount: number) => void;
   transport?: CollaborationTransport;
   srcDocumentId: string;
+  renderChrome: PdfrxViewerAppRenderContext['renderChrome'];
 }): ReactNode {
   const viewer = usePdfrxViewer();
   const documentState = usePdfDocument();
   const [snapshot, setSnapshot] = useState<PageSessionSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [annotating, setAnnotating] = useState(true);
   const [joinRequests, setJoinRequests] = useState<readonly {
     requestId: string;
     actorId: string;
@@ -173,7 +172,6 @@ function CollaborativeViewerContent({
   const sourceDocumentsRef = useRef<PdfDocument[]>([]);
   const sourceOpensRef = useRef(new Map<string, Promise<PdfDocument>>());
   const observeSourceFormsRef = useRef<(documentId: string, document: PdfDocument) => void>(() => {});
-  const openFileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureSource = useCallback(async (documentId: string): Promise<PdfDocument> => {
     const sources = sourcesRef.current;
@@ -590,10 +588,6 @@ function CollaborativeViewerContent({
     }
   };
 
-  const imageAnnotationDrop = useImageAnnotationDrop({
-    onError: (reason) => setError(reason instanceof Error ? reason.message : String(reason)),
-  });
-
   const connected = snapshot !== null && !pending;
   const notices = (
     <>
@@ -612,100 +606,30 @@ function CollaborativeViewerContent({
       ))}
     </>
   );
-  return (
-    <PdfViewerLayout
-      className="collab-viewer-layout"
-      sidebarWidth={126}
-      toolbar={({ toggleSidebar }) => (
-      <PdfToolbar
-        showSidebarToggle
-        onToggleSidebar={toggleSidebar}
-        afterZoom={(
-          <button
-            type="button"
-            className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
-            aria-pressed={annotating}
-            aria-label="アノテーション"
-            title="アノテーション"
-            onClick={() => setAnnotating((value) => !value)}
-          >
-            <IconAnnotate />
-          </button>
-        )}
-      >
-        <button
-          type="button"
-          className="pdfrx-button"
-          aria-label="ファイルを開く"
-          title="ファイルを開く"
-          disabled={!connected}
-          onClick={() => openFileInputRef.current?.click()}
-        >
-          <IconOpenFile />
-        </button>
-        <input
-          ref={openFileInputRef}
-          type="file"
-          accept="application/pdf,.pdf,image/*"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) void openSharedFile(file);
-          }}
-        />
-        <PdfSaveButton
-          encode={async (rootDocument) => {
-            const placements = clientRef.current?.snapshot?.pages;
-            const sources = sourcesRef.current;
-            return placements && sources
-              ? encodeCollaborativePdf(rootDocument, placements, sources)
-              : rootDocument.encodePdfCopy();
-          }}
-        />
-      </PdfToolbar>
-      )}
-      beforeBody={(
+  return renderChrome({
+    openFile: openSharedFile,
+    insertFiles,
+    movePage: reorder,
+    rotatePage,
+    deletePage: removePage,
+    editingDisabled: !connected,
+    encode: async (rootDocument) => {
+      const placements = clientRef.current?.snapshot?.pages;
+      const sources = sourcesRef.current;
+      return placements && sources
+        ? encodeCollaborativePdf(rootDocument, placements, sources)
+        : rootDocument.encodePdfCopy();
+    },
+    beforeBody: (
         <>
-      {notices}
-      {annotating && (
-        <div className="pdfrx-toolbar pdfrx-toolbar-annot collab-annotation-toolbar">
-          <PdfAnnotationToolbar
-            onClose={() => setAnnotating(false)}
-          />
-        </div>
-      )}
-      {error && (
-        <div className="collab-error" role="alert">
-          <span>{error}</span>
-          <button type="button" aria-label="エラーを閉じる" onClick={() => setError(null)}>×</button>
-        </div>
-      )}
+          {notices}
+          {error && (
+            <div className="collab-error" role="alert">
+              <span>{error}</span>
+              <button type="button" aria-label="エラーを閉じる" onClick={() => setError(null)}>×</button>
+            </div>
+          )}
         </>
-      )}
-      sidebar={(onNavigate) => (
-        <PdfSidebar
-            tabs={['thumbnails', 'outline']}
-            thumbnailWidth={96}
-            style={{ width: 126 }}
-            onNavigate={onNavigate}
-            renderPageActions={(pageNumber) => (
-              <PdfPageActions
-                pageNumber={pageNumber}
-                onRotatePage={rotatePage}
-                onDeletePage={removePage}
-                disabled={!connected}
-              />
-            )}
-            onMovePage={connected ? reorder : undefined}
-            onInsertFiles={connected ? (files, index) => void insertFiles(files, index) : undefined}
-        />
-      )}
-    >
-      <PdfViewerSurface
-        style={{ flex: 1, minWidth: 0 }}
-        {...imageAnnotationDrop}
-      />
-    </PdfViewerLayout>
-  );
+    ),
+  });
 }

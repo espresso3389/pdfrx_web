@@ -198,6 +198,14 @@ controls, connection state, and recent page activity. Opening a new file adds
 it as an immutable shared source; its pages can then be arranged alongside
 pages from every other source in the session.
 
+This UI is the standard
+[`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html)
+from `@pdfrx/react`. The collaboration controller replaces only its open,
+insert, move, rotate, delete, and encode operations through
+[`PdfrxViewerAppOverrides`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxViewerAppOverrides.html);
+toolbar, sidebar, responsive layout, annotations, image drops, and error chrome
+remain the standard implementation.
+
 ### Component props
 
 See [`CollaborativePdfViewerProps`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_colab.CollaborativePdfViewerProps.html)
