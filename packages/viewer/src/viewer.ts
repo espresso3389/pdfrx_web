@@ -7370,15 +7370,7 @@ export class PdfrxViewer {
       foreign.setAttribute('height', `${nextHeight}`);
     });
     resizeObserver.observe(textarea);
-    // Pointerup is followed by the browser's click/focus default action. Focus
-    // on the next frame so that action cannot immediately blur and commit an
-    // empty FreeText editor after a drag.
-    requestAnimationFrame(() => {
-      if (!textarea.isConnected) return;
-      textarea.focus({ preventScroll: true });
-      textarea.select();
-    });
-    return new Promise((resolve) => {
+    const result = new Promise<string | null>((resolve) => {
       let finished = false;
       let composing = false;
       let finishAfterComposition = false;
@@ -7423,6 +7415,14 @@ export class PdfrxViewer {
         }
       });
     });
+    // iOS only opens its software keyboard when focus happens synchronously
+    // inside the activating pointer/click event. Delaying this until the next
+    // animation frame leaves the textarea focused visually but without a
+    // keyboard. Register the blur/composition handlers first, then focus before
+    // returning to the browser's event loop.
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    return result;
   }
 
   /** Chooses rectangle or FreeText representation from a GUI box's contents. */

@@ -812,6 +812,7 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await page.mouse.click(120, 80);
   const noteEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(noteEditor).toHaveCount(1);
+  await expect(noteEditor).toBeFocused();
   await expect(noteEditor).toHaveAttribute('placeholder', 'Localized note');
   await noteEditor.evaluate((element) => {
     element.style.width = '80px';
@@ -878,6 +879,7 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await page.mouse.up();
   const freeTextEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(freeTextEditor).toHaveCount(1);
+  await expect(freeTextEditor).toBeFocused();
   const multilineText =
     'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji.';
   await freeTextEditor.fill(multilineText);
