@@ -1,4 +1,4 @@
-import type { PdfOpenOptions, PdfOpenUrlOptions } from '@pdfrx/engine';
+import type { PdfOpenDataOptions, PdfOpenUrlOptions } from '@pdfrx/engine';
 
 /**
  * A document to open, in whatever shape is most convenient.
@@ -25,14 +25,14 @@ export type PdfSource =
   | Uint8Array
   | ArrayBuffer
   | ({ url: string | URL } & PdfOpenUrlOptions)
-  | ({ data: Uint8Array | ArrayBuffer | File | Blob } & PdfOpenOptions)
+  | ({ data: Uint8Array | ArrayBuffer | File | Blob } & PdfOpenDataOptions)
   | null
   | undefined;
 
 /** A {@link PdfSource} reduced to the two shapes the viewer actually accepts. */
 export type NormalizedPdfSource =
   | { kind: 'url'; url: string | URL; options: PdfOpenUrlOptions }
-  | { kind: 'data'; data: Uint8Array | ArrayBuffer | File | Blob; options: PdfOpenOptions };
+  | { kind: 'data'; data: Uint8Array | ArrayBuffer | File | Blob; options: PdfOpenDataOptions };
 
 /** Narrows a {@link PdfSource} to {@link NormalizedPdfSource}, or `null` for no document. */
 export function normalizeSource(src: PdfSource): NormalizedPdfSource | null {

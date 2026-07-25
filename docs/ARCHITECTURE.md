@@ -56,7 +56,9 @@ behaviors:
   the engine resolves relative document URLs against `document.baseURI` before
   sending them.
 - Password retry loop: empty-password first attempt, then the
-  `passwordProvider` until success or `null`.
+  `passwordProvider` until success or `null`. For `openData`, bytes are
+  transferred once and retained behind an opaque worker handle while a
+  password is requested; retries send only that handle and the new password.
 - The engine renders BGRA8888, but the vendored worker swaps channels while
   copying the bitmap out (folded into the copy, so effectively free), so
   `renderPage` returns tightly-packed **RGBA8888** and `PdfImage.toImageData()`

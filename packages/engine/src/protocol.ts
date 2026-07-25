@@ -27,6 +27,8 @@ export interface WireError {
   errorCodeStr?: string;
   /** Human-readable error description. */
   message: string;
+  /** Opaque worker handle present while an in-memory open awaits another password. */
+  dataHandle?: number;
 }
 
 /** Type guard: true if `result` is a {@link WireError} rather than a success payload. */
@@ -426,6 +428,21 @@ export interface WorkerCommandMap {
       url?: string;
     };
     result: WireDocument | WireError;
+  };
+  /** Retries a password-protected in-memory open; the worker already owns the bytes. */
+  retryDocumentFromData: {
+    params: {
+      dataHandle: number;
+      password: string;
+    };
+    result: WireDocument | WireError;
+  };
+  /** Releases bytes retained after an abandoned password-protected in-memory open. */
+  cancelDocumentFromData: {
+    params: {
+      dataHandle: number;
+    };
+    result: Record<string, never>;
   };
   /** Creates a new empty document. */
   createNewDocument: {

@@ -1297,10 +1297,17 @@ function _mergeDownloadSegments(segments) {
   return merged;
 }
 
+let nextDataOpenHandle = 1;
+const PDF_ERROR_PASSWORD = 4;
+/** @type {Object<number, {data: ArrayBuffer, useProgressiveLoading: boolean|undefined, url: string}>} */
+const pendingDataOpens = {};
+
 /**
- * @param {{data: ArrayBuffer, password: string|undefined, useProgressiveLoading: boolean|undefined}} params
+ * Attempts to open worker-owned bytes. Native/virtual-file allocations are
+ * retained only by a successfully opened document.
+ * @param {{data: ArrayBuffer, password: string|undefined, useProgressiveLoading: boolean|undefined, url: string}} params
  */
-function loadDocumentFromData(params) {
+function _tryLoadDocumentFromData(params) {
   const data = params.data;
   const password = params.password || '';
   const useProgressiveLoading = params.useProgressiveLoading;
@@ -1315,10 +1322,12 @@ function loadDocumentFromData(params) {
     const passwordPtr = StringUtils.allocateUTF8(password);
     const docHandle = Pdfium.wasmExports.FPDF_LoadMemDocument(buffer, data.byteLength, passwordPtr);
     StringUtils.freeUTF8(passwordPtr);
-    return _loadDocument(docHandle, useProgressiveLoading, () => Pdfium.wasmExports.free(buffer), password);
+    const result = _loadDocument(docHandle, useProgressiveLoading, () => Pdfium.wasmExports.free(buffer), password);
+    if (result.errorCode !== undefined) Pdfium.wasmExports.free(buffer);
+    return result;
   }
 
-  const tempFileName = params.url ?? '/tmp/temp.pdf';
+  const tempFileName = params.url;
   fileSystem.registerFileWithData(tempFileName, data);
 
   const fileNamePtr = StringUtils.allocateUTF8(tempFileName);
@@ -1326,7 +1335,49 @@ function loadDocumentFromData(params) {
   const docHandle = Pdfium.wasmExports.FPDF_LoadDocument(fileNamePtr, passwordPtr);
   StringUtils.freeUTF8(passwordPtr);
   StringUtils.freeUTF8(fileNamePtr);
-  return _loadDocument(docHandle, useProgressiveLoading, () => fileSystem.unregisterFile(tempFileName), password);
+  const result = _loadDocument(docHandle, useProgressiveLoading, () => fileSystem.unregisterFile(tempFileName), password);
+  if (result.errorCode !== undefined) fileSystem.unregisterFile(tempFileName);
+  return result;
+}
+
+/**
+ * @param {{data: ArrayBuffer, password: string|undefined, useProgressiveLoading: boolean|undefined}} params
+ */
+function loadDocumentFromData(params) {
+  const dataHandle = nextDataOpenHandle++;
+  const pending = {
+    data: params.data,
+    useProgressiveLoading: params.useProgressiveLoading,
+    url: `/tmp/pdfrx-data-open-${dataHandle}.pdf`,
+  };
+  const result = _tryLoadDocumentFromData({ ...pending, password: params.password });
+  if (result.errorCode === PDF_ERROR_PASSWORD) {
+    pendingDataOpens[dataHandle] = pending;
+    return { ...result, dataHandle };
+  }
+  return result;
+}
+
+/**
+ * @param {{dataHandle: number, password: string}} params
+ */
+function retryDocumentFromData(params) {
+  const pending = pendingDataOpens[params.dataHandle];
+  if (!pending) throw new Error(`Unknown pending data-open handle: ${params.dataHandle}`);
+  const result = _tryLoadDocumentFromData({ ...pending, password: params.password });
+  if (result.errorCode === PDF_ERROR_PASSWORD) {
+    return { ...result, dataHandle: params.dataHandle };
+  }
+  delete pendingDataOpens[params.dataHandle];
+  return result;
+}
+
+/**
+ * @param {{dataHandle: number}} params
+ */
+function cancelDocumentFromData(params) {
+  delete pendingDataOpens[params.dataHandle];
+  return {};
 }
 
 /** @type {Object<number, function():void>} */
@@ -4811,6 +4862,8 @@ function rawApplyPatch(params) {
 const functions = {
   loadDocumentFromUrl,
   loadDocumentFromData,
+  retryDocumentFromData,
+  cancelDocumentFromData,
   createNewDocument,
   createDocumentFromImages,
   loadPagesProgressively,

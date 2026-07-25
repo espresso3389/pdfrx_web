@@ -131,6 +131,16 @@ export interface PdfOpenOptions {
   sourceName?: string;
 }
 
+/** Options for {@link PdfrxEngine.openData}; extends {@link PdfOpenOptions} with ownership control. */
+export interface PdfOpenDataOptions extends PdfOpenOptions {
+  /**
+   * Transfer ownership of a full input buffer to the worker. Default: true.
+   * Set to false to keep the caller's buffer usable; the engine transfers an
+   * internal copy instead.
+   */
+  transferData?: boolean;
+}
+
 /** Options for {@link PdfrxEngine.openUrl}; extends {@link PdfOpenOptions} with fetch-related settings. */
 export interface PdfOpenUrlOptions extends PdfOpenOptions {
   /** Invoked as the document downloads (see {@link PdfDownloadProgressCallback}). */
@@ -426,32 +436,64 @@ export class PdfrxEngine {
   /**
    * Opens a document from in-memory PDF bytes.
    *
-   * A `Uint8Array` view over part of a buffer is copied into a fresh
-   * `ArrayBuffer` first. The bytes are then handed to the worker by
-   * `postMessage`, which copies them again — they are deliberately *not*
-   * transferred, because `data` must stay usable: a wrong-password retry
-   * re-sends it, and callers such as `PdfrxViewer` reopen from the same bytes
-   * after registering fallback fonts.
+   * Ownership of a full `ArrayBuffer` (or a full `Uint8Array` view) is
+   * transferred to the worker, detaching it from the caller. Partial views are
+   * first copied into a tightly sized buffer and that copy is transferred.
+   * Password retries reuse the worker-owned bytes and transfer only the new
+   * password.
    */
-  async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<PdfDocument> {
+  async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenDataOptions = {}): Promise<PdfDocument> {
     await this.init();
-    const buffer =
-      data instanceof ArrayBuffer
-        ? data
-        : data.byteOffset === 0 && data.byteLength === data.buffer.byteLength && data.buffer instanceof ArrayBuffer
-          ? data.buffer
-          : data.slice().buffer;
-    return await this.openByFunc(
-      (password) =>
-        this.comm.sendCommand('loadDocumentFromData', {
-          data: buffer,
-          password,
-          useProgressiveLoading: options.useProgressiveLoading ?? false,
-        }),
-      options,
-      options.sourceName ?? `data%${buffer.byteLength}`,
-      null,
-    );
+    const canTransferInput =
+      data instanceof ArrayBuffer ||
+      (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength && data.buffer instanceof ArrayBuffer);
+    const sourceBuffer = data instanceof ArrayBuffer
+      ? data
+      : canTransferInput
+        ? (data.buffer as ArrayBuffer)
+        : data.slice().buffer;
+    const buffer = options.transferData === false && canTransferInput ? sourceBuffer.slice(0) : sourceBuffer;
+    const sourceName = options.sourceName ?? `data%${buffer.byteLength}`;
+    const firstAttemptByEmptyPassword = options.firstAttemptByEmptyPassword ?? true;
+    let dataHandle: number | undefined;
+    try {
+      for (let i = 0; ; i++) {
+        let password: string | null = null;
+        if (!(firstAttemptByEmptyPassword && i === 0)) {
+          password = (await options.passwordProvider?.()) ?? null;
+          if (password === null) {
+            throw new PdfPasswordException(`No password supplied by passwordProvider (${sourceName})`);
+          }
+        }
+
+        const result = dataHandle === undefined
+          ? await this.comm.sendCommand(
+              'loadDocumentFromData',
+              {
+                data: buffer,
+                password,
+                useProgressiveLoading: options.useProgressiveLoading ?? false,
+              },
+              [buffer],
+            )
+          : await this.comm.sendCommand('retryDocumentFromData', { dataHandle, password: password ?? '' });
+        if (isWireError(result)) {
+          if (result.errorCode === PdfErrorCode.password && result.dataHandle !== undefined) {
+            dataHandle = result.dataHandle;
+            continue;
+          }
+          throw new Error(`Failed to open document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
+        }
+        dataHandle = undefined;
+        const doc = new PdfDocument(this.comm, result, sourceName, null);
+        if (!(options.useProgressiveLoading ?? false)) doc.notifyLoadComplete();
+        return doc;
+      }
+    } finally {
+      if (dataHandle !== undefined) {
+        await this.comm.sendCommand('cancelDocumentFromData', { dataHandle });
+      }
+    }
   }
 
   /**

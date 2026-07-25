@@ -31,6 +31,7 @@ export {
   type PdfCopyOptions,
   type PdfEncodeMode,
   type PdfEncodeOptions,
+  type PdfOpenDataOptions,
   type PdfOpenOptions,
   type PdfOpenUrlOptions,
   type PdfPageRenderOptions,

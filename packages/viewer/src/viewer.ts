@@ -26,7 +26,7 @@ import {
   type PdfTextOrientation,
   type PdfPageChangeOrigin,
   type PdfPageMutationOptions,
-  type PdfOpenOptions,
+  type PdfOpenDataOptions,
   type PdfOpenUrlOptions,
   type PdfOutlineNode,
   type PdfrxEngineOptions,
@@ -1847,7 +1847,7 @@ export class PdfrxViewer {
   private searcher: PdfTextSearcher | null = null;
   private currentSource:
     | { kind: 'url'; url: string | URL; options: PdfOpenUrlOptions }
-    | { kind: 'data'; data: Uint8Array | ArrayBuffer; options: PdfOpenOptions }
+    | { kind: 'data'; data: Uint8Array | ArrayBuffer; options: PdfOpenDataOptions }
     | null = null;
   /** Non-zero while a document is opening; a counter so overlapping opens nest. */
   private loadingCount = 0;
@@ -1925,13 +1925,18 @@ export class PdfrxViewer {
 
   /**
    * Opens a document from in-memory bytes and displays it, replacing any current
-   * document. The source is retained for the missing-font reopen (see
-   * {@link openUrl}).
+   * document. The viewer keeps its own source copy for the missing-font reopen
+   * (see {@link openUrl}); the supplied buffer is consumed by the engine.
    */
-  async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenOptions = {}): Promise<void> {
+  async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenDataOptions = {}): Promise<void> {
     return await this.whileLoading(async () => {
+      const retainedData = options.transferData === false
+        ? data
+        : data instanceof ArrayBuffer
+          ? data.slice(0)
+          : data.slice();
       const doc = await this.#engine.openData(data, options);
-      this.currentSource = { kind: 'data', data, options };
+      this.currentSource = { kind: 'data', data: retainedData, options };
       await this.setDocument(doc);
     });
   }
@@ -3321,6 +3326,10 @@ export class PdfrxViewer {
       if (source.kind === 'url') {
         await this.setDocument(await this.#engine.openUrl(source.url, source.options));
       } else {
+        if (source.options.transferData !== false) {
+          const retainedData = source.data instanceof ArrayBuffer ? source.data.slice(0) : source.data.slice();
+          this.currentSource = { ...source, data: retainedData };
+        }
         await this.setDocument(await this.#engine.openData(source.data, source.options));
       }
       this.setTransform(saved);
