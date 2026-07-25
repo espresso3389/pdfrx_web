@@ -1,13 +1,13 @@
 import type { PdfPage } from '@pdfrx/engine';
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { PdfrxProvider, usePdfrxStore, type PdfrxProviderProps } from '../context.js';
-import { dragMayContainImage, isImageFile, openFileAsDocument } from '../file-open.js';
+import { isImageFile, openFileAsDocument } from '../file-open.js';
 import { usePdfDocument } from '../hooks/use-pdf-document.js';
 import { useEditHistory } from '../hooks/use-edit-history.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStrings } from '../strings.js';
 import { PdfViewerSurface } from '../surface.js';
-import { addDroppedImageAnnotation } from '../annotation-image.js';
+import { useImageAnnotationDrop } from '../use-image-annotation-drop.js';
 import { PdfAnnotationToolbar } from './annotation-toolbar.js';
 import { PdfPageActions } from './page-actions.js';
 import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
@@ -244,27 +244,13 @@ function PdfrxViewerAppChrome({
     [viewer, store],
   );
 
-  const dropImageAnnotation = useCallback(
-    async (event: DragEvent<HTMLDivElement>): Promise<void> => {
-      if (!enableAnnotations || !viewer) return;
-      const file = Array.from(event.dataTransfer.files).find(isImageFile);
-      if (!file) return;
-      event.preventDefault();
-      const bounds = event.currentTarget.getBoundingClientRect();
-      const hit = viewer.getPageHitTestResult({
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      });
-      if (!hit) return;
-      try {
-        await addDroppedImageAnnotation(hit.page, file, hit.pdfPoint, store.imageDecoder);
-      } catch (error) {
-        console.error(`Failed to add image annotation from ${file.name}:`, error);
-        store.reportImportError(error, file.name);
-      }
+  const imageAnnotationDrop = useImageAnnotationDrop({
+    enabled: enableAnnotations,
+    onError: (error, file) => {
+      console.error(`Failed to add image annotation from ${file.name}:`, error);
+      store.reportImportError(error, file.name);
     },
-    [enableAnnotations, viewer, store],
-  );
+  });
 
   // Move a page (1-based) to the slot before `toIndex` (0-based). A synchronous
   // rearrangement — no worker round-trip until the document is serialized.
@@ -429,13 +415,7 @@ function PdfrxViewerAppChrome({
         {sidebar && sidebarSide === 'left' && sidebarNode}
         <PdfViewerSurface
           style={{ flex: 1 }}
-          onDragOver={enableAnnotations ? (event) => {
-            if (dragMayContainImage(event.dataTransfer.items, event.dataTransfer.files)) {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'copy';
-            }
-          } : undefined}
-          onDrop={enableAnnotations ? (event) => void dropImageAnnotation(event) : undefined}
+          {...imageAnnotationDrop}
         />
         {sidebar && sidebarSide === 'right' && sidebarNode}
         {sidebar && isSidebarOpen && isNarrow && (

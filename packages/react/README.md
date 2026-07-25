@@ -63,19 +63,36 @@ exactly one
 somewhere inside.
 
 ```tsx
-import { PdfrxProvider, PdfSidebar, PdfToolbar, PdfViewerSurface } from '@pdfrx/react';
+import {
+  PdfrxProvider,
+  PdfSidebar,
+  PdfToolbar,
+  PdfViewerSurface,
+  useImageAnnotationDrop,
+} from '@pdfrx/react';
 import '@pdfrx/react/styles.css';
+
+function ViewerSurface() {
+  const imageDrop = useImageAnnotationDrop();
+  return <PdfViewerSurface style={{ flex: 1 }} {...imageDrop} />;
+}
 
 <PdfrxProvider src="/manual.pdf" wasmModulesUrl="/pdfium/">
   <div className="pdfrx-app" style={{ height: '100vh' }}>
     <PdfToolbar />
     <div className="pdfrx-app-body">
       <PdfSidebar style={{ width: 190 }} />
-      <PdfViewerSurface style={{ flex: 1 }} />
+      <ViewerSurface />
     </div>
   </div>
 </PdfrxProvider>;
 ```
+
+[`useImageAnnotationDrop()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useImageAnnotationDrop.html)
+adds the all-in-one viewer's standard drop-to-insert image behavior to a
+composed surface. Local annotation change listeners observe the resulting
+stamp normally, so custom persistence and collaboration layers do not need to
+reimplement file classification, canvas hit testing, or image decoding.
 
 Individually available:
 [`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html),
@@ -361,7 +378,7 @@ and then leave older Undo/Redo entries available.
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.1/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.2/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other

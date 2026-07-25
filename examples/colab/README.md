@@ -125,6 +125,7 @@ state.json
 sources/
   main.pdf
   <imported-document-id>.pdf
+  annotation-image-<id>.webp
 ```
 
 State writes use a temporary file followed by an atomic rename. Accepted

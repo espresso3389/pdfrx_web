@@ -14,6 +14,7 @@ import {
   isPdfFile,
   type PdfSource,
   usePdfDocument,
+  useImageAnnotationDrop,
   usePdfrxViewer,
 } from '@pdfrx/react';
 import type {
@@ -589,6 +590,10 @@ function CollaborativeViewerContent({
     }
   };
 
+  const imageAnnotationDrop = useImageAnnotationDrop({
+    onError: (reason) => setError(reason instanceof Error ? reason.message : String(reason)),
+  });
+
   const connected = snapshot !== null && !pending;
   const notices = (
     <>
@@ -697,7 +702,10 @@ function CollaborativeViewerContent({
         />
       )}
     >
-      <PdfViewerSurface style={{ flex: 1, minWidth: 0 }} />
+      <PdfViewerSurface
+        style={{ flex: 1, minWidth: 0 }}
+        {...imageAnnotationDrop}
+      />
     </PdfViewerLayout>
   );
 }

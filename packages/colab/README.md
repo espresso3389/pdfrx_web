@@ -222,7 +222,7 @@ served from the package CDN:
 ```tsx
 <CollaborativePdfViewer
   // ...
-  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.1/assets/"
+  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.2/assets/"
 />
 ```
 
@@ -274,8 +274,13 @@ previews. They are broadcast to the other participants without consuming an
 annotation revision, changing the authoritative snapshot, or entering the PDF
 and edit history. The final pointer-up geometry is still submitted and
 broadcast as a normal authoritative annotation operation. Raster appearances
-are uploaded once through the immutable HTTP endpoint and cached by source ID;
-pixel arrays are never repeated in preview or geometry-update WebSocket frames.
+are encoded as alpha-preserving WebP, uploaded once through the immutable HTTP
+endpoint, and cached by source ID; pixel arrays are never repeated in preview
+or geometry-update WebSocket frames. The composed viewer uses
+[`useImageAnnotationDrop()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useImageAnnotationDrop.html)
+from `@pdfrx/react`, so dropping an image on a page creates the same stamp
+annotation as the all-in-one viewer and then flows through the normal
+collaboration change stream.
 
 Remote PDF mutations are applied with `origin: 'remote'`, which prevents
 annotation and form event feedback loops. Missing source PDFs are fetched and
