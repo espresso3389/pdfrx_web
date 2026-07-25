@@ -80,6 +80,7 @@ import '@pdfrx/react/styles.css';
 Individually available:
 [`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html),
 [`PdfSidebar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSidebar.html),
+[`PdfViewerLayout`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerLayout.html),
 [`PdfThumbnailList`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfThumbnailList.html),
 [`PdfOutlineTree`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfOutlineTree.html),
 [`PdfSearchBox`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSearchBox.html),

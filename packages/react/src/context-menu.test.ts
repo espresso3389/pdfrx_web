@@ -122,4 +122,53 @@ describe('buildDefaultContextMenu', () => {
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 80 }));
     expect(host.querySelector('.pdfrx-highlight-palette')).toBeNull();
   });
+
+  it('keeps the highlight palette inside the viewport', () => {
+    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
+    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
+      viewPoint: { x: 0, y: 0 },
+      hasSelection: true,
+      isCopyAllowed: true,
+      pointerType: 'mouse',
+      close: vi.fn(),
+    });
+    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      left: 280,
+      right: 320,
+      top: 190,
+      bottom: 220,
+      width: 40,
+      height: 30,
+      x: 280,
+      y: 190,
+      toJSON: () => ({}),
+    });
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if ((this as HTMLElement).classList.contains('pdfrx-highlight-palette')) {
+        return {
+          left: 325,
+          right: 425,
+          top: 186,
+          bottom: 286,
+          width: 100,
+          height: 100,
+          x: 325,
+          y: 186,
+          toJSON: () => ({}),
+        };
+      }
+      return new DOMRect();
+    });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 240 });
+
+    host.dispatchEvent(new MouseEvent('mouseenter'));
+
+    const palette = host.querySelector<HTMLElement>('.pdfrx-highlight-palette')!;
+    expect(palette.style.position).toBe('fixed');
+    expect(palette.style.left).toBe('175px');
+    expect(palette.style.top).toBe('136px');
+    rectSpy.mockRestore();
+  });
 });

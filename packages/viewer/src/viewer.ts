@@ -1211,6 +1211,27 @@ function annotationLineSegments(a: PdfAnnotationObject): readonly (readonly [Pdf
   return segments;
 }
 
+/**
+ * Converts viewport client coordinates into an axis-aligned SVG page's local
+ * coordinate space. Both the pointer and bounding rectangle use CSS viewport
+ * coordinates, avoiding browser-specific `getScreenCTM()` handling of ancestor
+ * CSS transforms.
+ *
+ * @internal
+ */
+export function clientPointToPagePx(
+  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+  pageSize: Size,
+  clientX: number,
+  clientY: number,
+): Offset {
+  if (rect.width <= 0 || rect.height <= 0 || pageSize.width <= 0 || pageSize.height <= 0) return { x: 0, y: 0 };
+  return {
+    x: ((clientX - rect.left) * pageSize.width) / rect.width,
+    y: ((clientY - rect.top) * pageSize.height) / rect.height,
+  };
+}
+
 /** Euclidean distance from `point` to the finite line segment `start`–`end`. */
 export function pointToSegmentDistance(point: Offset, start: Offset, end: Offset): number {
   const dx = end.x - start.x;
@@ -4504,11 +4525,25 @@ export class PdfrxViewer {
     if (!menu) return;
     // The viewer owns placement and dismissal regardless of who built the menu.
     menu.style.position = 'absolute';
+    menu.style.boxSizing = 'border-box';
+    menu.style.maxWidth = 'calc(100vw - 8px)';
+    menu.style.maxHeight = 'calc(100vh - 8px)';
+    menu.style.overflow = 'auto';
     this.container.appendChild(menu);
     const mw = menu.offsetWidth;
     const mh = menu.offsetHeight;
-    const x = Math.max(4, Math.min(viewPos.x, this.viewSize.width - mw - 4));
-    const y = Math.max(4, Math.min(viewPos.y, this.viewSize.height - mh - 4));
+    let x = Math.max(4, Math.min(viewPos.x, this.viewSize.width - mw - 4));
+    let y = Math.max(4, Math.min(viewPos.y, this.viewSize.height - mh - 4));
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    // The viewer itself can be partly outside the browser viewport. Correct
+    // the rendered position as well as clamping to the viewer's local bounds.
+    const rect = menu.getBoundingClientRect();
+    const viewportMargin = 4;
+    if (rect.left < viewportMargin) x += viewportMargin - rect.left;
+    else if (rect.right > window.innerWidth - viewportMargin) x -= rect.right - (window.innerWidth - viewportMargin);
+    if (rect.top < viewportMargin) y += viewportMargin - rect.top;
+    else if (rect.bottom > window.innerHeight - viewportMargin) y -= rect.bottom - (window.innerHeight - viewportMargin);
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
     this.menuEl = menu;
@@ -6732,13 +6767,11 @@ export class PdfrxViewer {
 
   /** Maps client (screen) coordinates to the overlay SVG's page-local px space. */
   private clientToPagePx(svg: SVGSVGElement, clientX: number, clientY: number): Offset {
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return { x: 0, y: 0 };
-    const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    const local = pt.matrixTransform(ctm.inverse());
-    return { x: local.x, y: local.y };
+    const rect = svg.getBoundingClientRect();
+    const viewBox = svg.viewBox.baseVal;
+    const width = viewBox.width || Number(svg.getAttribute('width'));
+    const height = viewBox.height || Number(svg.getAttribute('height'));
+    return clientPointToPagePx(rect, { width, height }, clientX, clientY);
   }
 
   /** Closest straight line/arrow within the input-specific screen-space tolerance. */

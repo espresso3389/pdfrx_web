@@ -65,6 +65,11 @@ export {
 export { PdfrxViewerApp, type PdfrxViewerAppProps } from './components/viewer-app.js';
 export { PdfToolbar, type PdfToolbarProps } from './components/toolbar.js';
 export { PdfSidebar, type PdfSidebarProps, type PdfSidebarTab } from './components/sidebar.js';
+export {
+  PdfViewerLayout,
+  type PdfViewerLayoutControls,
+  type PdfViewerLayoutProps,
+} from './components/viewer-layout.js';
 export { PdfThumbnailList, type PdfThumbnailListProps } from './components/thumbnail-list.js';
 export { PdfOutlineTree, type PdfOutlineTreeProps } from './components/outline-tree.js';
 export { PdfSearchBox, type PdfSearchBoxProps } from './components/search-box.js';

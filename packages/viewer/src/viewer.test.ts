@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { pointToSegmentDistance, resizeBoxByHandle, segmentIntersectsRect } from './viewer.js';
+import { clientPointToPagePx, pointToSegmentDistance, resizeBoxByHandle, segmentIntersectsRect } from './viewer.js';
 
 const box = { left: 10, bottom: 20, right: 110, top: 70 };
+
+describe('clientPointToPagePx', () => {
+  it('maps client coordinates through the rendered SVG rectangle', () => {
+    expect(
+      clientPointToPagePx(
+        { left: 40, top: 80, width: 300, height: 400 },
+        { width: 600, height: 800 },
+        190,
+        280,
+      ),
+    ).toEqual({ x: 300, y: 400 });
+  });
+
+  it('stays correct when an ancestor CSS transform scales the rendered rectangle', () => {
+    expect(
+      clientPointToPagePx(
+        { left: 20, top: 30, width: 150, height: 200 },
+        { width: 600, height: 800 },
+        95,
+        130,
+      ),
+    ).toEqual({ x: 300, y: 400 });
+  });
+});
 
 describe('resizeBoxByHandle', () => {
   it('keeps unconstrained corner resizing unchanged', () => {

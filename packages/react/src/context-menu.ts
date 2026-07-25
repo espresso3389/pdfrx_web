@@ -115,9 +115,25 @@ export function buildDefaultContextMenu(
         }
         host.appendChild(palette);
         item.setAttribute('aria-expanded', 'true');
-        // Prefer a conventional right-side submenu, but flip it at the window edge.
-        const rect = palette.getBoundingClientRect();
-        if (rect.right > window.innerWidth - 4) palette.classList.add('pdfrx-highlight-palette-left');
+        // Use viewport coordinates so all four edges remain visible even when
+        // the viewer or its context menu is itself close to a window edge.
+        const viewportMargin = 4;
+        const submenuGap = 5;
+        const hostRect = host.getBoundingClientRect();
+        const paletteRect = palette.getBoundingClientRect();
+        let left = hostRect.right + submenuGap;
+        if (left + paletteRect.width > window.innerWidth - viewportMargin) {
+          left = hostRect.left - submenuGap - paletteRect.width;
+        }
+        left = Math.max(viewportMargin, Math.min(left, window.innerWidth - viewportMargin - paletteRect.width));
+        const top = Math.max(
+          viewportMargin,
+          Math.min(hostRect.top - 4, window.innerHeight - viewportMargin - paletteRect.height),
+        );
+        palette.style.position = 'fixed';
+        palette.style.inset = 'auto';
+        palette.style.left = `${left}px`;
+        palette.style.top = `${top}px`;
         trackPalettePointer = (event): void => {
           if (host.matches(':hover')) return;
           const paletteRect = palette.getBoundingClientRect();

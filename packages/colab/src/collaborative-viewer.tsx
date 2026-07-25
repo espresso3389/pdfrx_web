@@ -1,5 +1,6 @@
 import {
   PdfSidebar,
+  PdfViewerLayout,
   PdfAnnotationToolbar,
   PdfPageActions,
   PdfSaveButton,
@@ -508,7 +509,7 @@ function CollaborativeViewerContent({
   };
 
   const connected = snapshot !== null && !pending;
-  return (
+  const notices = (
     <>
       {joinRequests.map((request) => (
         <div className="collab-join-request" key={request.requestId}>
@@ -523,7 +524,16 @@ function CollaborativeViewerContent({
           </span>
         </div>
       ))}
+    </>
+  );
+  return (
+    <PdfViewerLayout
+      className="collab-viewer-layout"
+      sidebarWidth={126}
+      toolbar={({ toggleSidebar }) => (
       <PdfToolbar
+        showSidebarToggle
+        onToggleSidebar={toggleSidebar}
         afterZoom={(
           <button
             type="button"
@@ -568,6 +578,10 @@ function CollaborativeViewerContent({
           }}
         />
       </PdfToolbar>
+      )}
+      beforeBody={(
+        <>
+      {notices}
       {annotating && (
         <div className="pdfrx-toolbar pdfrx-toolbar-annot collab-annotation-toolbar">
           <PdfAnnotationToolbar
@@ -581,24 +595,28 @@ function CollaborativeViewerContent({
           <button type="button" aria-label="エラーを閉じる" onClick={() => setError(null)}>×</button>
         </div>
       )}
-      <div className="collab-viewer-body">
+        </>
+      )}
+      sidebar={(onNavigate) => (
         <PdfSidebar
-          tabs={['thumbnails']}
-          thumbnailWidth={96}
-          style={{ width: 126 }}
-          renderPageActions={(pageNumber) => (
-            <PdfPageActions
-              pageNumber={pageNumber}
-              onRotatePage={rotatePage}
-              onDeletePage={removePage}
-              disabled={!connected}
-            />
-          )}
-          onMovePage={connected ? reorder : undefined}
-          onInsertFiles={connected ? (files, index) => void insertFiles(files, index) : undefined}
+            tabs={['thumbnails', 'outline']}
+            thumbnailWidth={96}
+            style={{ width: 126 }}
+            onNavigate={onNavigate}
+            renderPageActions={(pageNumber) => (
+              <PdfPageActions
+                pageNumber={pageNumber}
+                onRotatePage={rotatePage}
+                onDeletePage={removePage}
+                disabled={!connected}
+              />
+            )}
+            onMovePage={connected ? reorder : undefined}
+            onInsertFiles={connected ? (files, index) => void insertFiles(files, index) : undefined}
         />
-        <PdfViewerSurface style={{ flex: 1, minWidth: 0 }} />
-      </div>
-    </>
+      )}
+    >
+      <PdfViewerSurface style={{ flex: 1, minWidth: 0 }} />
+    </PdfViewerLayout>
   );
 }
