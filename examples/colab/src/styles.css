@@ -59,6 +59,7 @@ button, input { font: inherit; }
 .reconnecting-spinner { width: 14px; height: 14px; border: 2px solid rgba(112, 77, 0, .25); border-top-color: #a66b00; border-radius: 50%; animation: reconnecting-spin .8s linear infinite; }
 @keyframes reconnecting-spin { to { transform: rotate(360deg); } }
 @media (max-width: 680px) {
+  .collab-app { padding: 2px; }
   .collab-header { align-items: flex-start; }
   .session-actions { gap: 4px; }
   .elapsed-time { display: none; }
