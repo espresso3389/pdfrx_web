@@ -86,28 +86,107 @@ export interface PdfrxViewerAppOverrides {
   /**
    * Handles a file selected through the standard Open button. Omit this to
    * replace the current document locally through the built-in store.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * const { open } = usePdfDocument();
+   * return renderChrome({ openFile: (file) => open(file) });
+   * ```
    */
   readonly openFile?: (file: File) => void | Promise<void>;
   /**
    * Handles files dropped into a thumbnail insertion slot. `index` is the
    * zero-based slot before which new pages should be inserted, from `0`
    * through the current page count. Omit this for local page import.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * const viewer = usePdfrxViewer();
+   * const store = usePdfrxStore();
+   *
+   * const insertFiles = async (files: File[], index: number) => {
+   *   const document = viewer?.document;
+   *   const engine = viewer?.engine;
+   *   if (!document || !engine) return;
+   *
+   *   const inserted: PdfPage[] = [];
+   *   for (const file of files) {
+   *     try {
+   *       const source = await openFileAsDocument(engine, file, {
+   *         passwordProvider: store.passwordProvider,
+   *         imageDecoder: store.imageDecoder,
+   *       });
+   *       inserted.push(...source.pages);
+   *     } catch (error) {
+   *       store.reportImportError(error, file.name);
+   *     }
+   *   }
+   *
+   *   const at = Math.max(0, Math.min(index, document.pages.length));
+   *   if (inserted.length > 0) {
+   *     viewer.setPages([
+   *       ...document.pages.slice(0, at),
+   *       ...inserted,
+   *       ...document.pages.slice(at),
+   *     ]);
+   *   }
+   * };
+   *
+   * return renderChrome({ insertFiles });
+   * ```
    */
   readonly insertFiles?: (files: File[], index: number) => void | Promise<void>;
   /**
    * Handles thumbnail reordering. `fromPageNumber` is one-based and `toIndex`
    * is the zero-based insertion slot in the pre-move page list. Omit this to
    * reorder the local document directly.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * const viewer = usePdfrxViewer();
+   * const movePage = (fromPageNumber: number, toIndex: number) => {
+   *   const pages = viewer?.document?.pages.slice();
+   *   if (!pages) return;
+   *   const from = fromPageNumber - 1;
+   *   if (toIndex === from || toIndex === from + 1) return;
+   *   const [moved] = pages.splice(from, 1);
+   *   if (!moved) return;
+   *   pages.splice(toIndex > from ? toIndex - 1 : toIndex, 0, moved);
+   *   viewer.setPages(pages);
+   * };
+   * return renderChrome({ movePage });
+   * ```
    */
   readonly movePage?: (fromPageNumber: number, toIndex: number) => void;
   /**
    * Handles a sidebar rotation action for a one-based page number. Omit this
    * to replace the page with the locally rotated page.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * const viewer = usePdfrxViewer();
+   * const rotatePage = (pageNumber: number, delta: PdfPageRotationDelta) => {
+   *   const page = viewer?.document?.pages[pageNumber - 1];
+   *   if (page) viewer.setPage(pageNumber, page.rotatedBy(delta));
+   * };
+   * return renderChrome({ rotatePage });
+   * ```
    */
   readonly rotatePage?: (pageNumber: number, delta: PdfPageRotationDelta) => void;
   /**
    * Handles a sidebar deletion action for a one-based page number. Omit this
    * to remove the page from the local document.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * const viewer = usePdfrxViewer();
+   * const deletePage = (pageNumber: number) => {
+   *   const pages = viewer?.document?.pages;
+   *   if (!pages || pages.length <= 1) return;
+   *   viewer.setPages(pages.filter((page) => page.pageNumber !== pageNumber));
+   * };
+   * return renderChrome({ deletePage });
+   * ```
    */
   readonly deletePage?: (pageNumber: number) => void;
   /**
@@ -115,6 +194,13 @@ export interface PdfrxViewerAppOverrides {
    * flushes active annotation text editing before calling this function and
    * still owns blob creation and browser download. Omit it to use
    * `document.encodePdfCopy()`.
+   *
+   * @example Equivalent to the default behavior
+   * ```tsx
+   * return renderChrome({
+   *   encode: (document) => document.encodePdfCopy(),
+   * });
+   * ```
    */
   readonly encode?: (document: PdfDocument) => Promise<Uint8Array>;
   /**
