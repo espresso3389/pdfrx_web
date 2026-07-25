@@ -91,6 +91,12 @@ export interface PdfrxStrings {
   fillColor: string;
   noFill: string;
   textColor: string;
+  otherColor: string;
+  customColor: string;
+  saturationBrightness: string;
+  hue: string;
+  colorCode: string;
+  applyColor: string;
   textSize: string;
   textAlignment: string;
   alignLeft: string;
@@ -183,6 +189,12 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   fillColor: 'Fill color',
   noFill: 'No fill',
   textColor: 'Text color',
+  otherColor: 'Other…',
+  customColor: 'Custom color',
+  saturationBrightness: 'Saturation and brightness',
+  hue: 'Hue',
+  colorCode: 'Color code (#RRGGBB)',
+  applyColor: 'Apply color',
   textSize: 'Text size',
   textAlignment: 'Text alignment',
   alignLeft: 'Align left',

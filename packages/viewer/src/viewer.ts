@@ -1790,10 +1790,14 @@ export class PdfrxViewer {
   private annotationHistoryMergeKey: string | null = null;
   /** Keeps annotation style writes single-flight. */
   private annotationStyleUpdateQueue: Promise<void> = Promise.resolve();
+  /** Serializes keyboard nudges so key repeat always builds on the latest position. */
+  private annotationNudgeQueue: Promise<void> = Promise.resolve();
   /** Includes an active Text/FreeText editor and the worker write it starts. */
   private pendingAnnotationTextEdit: Promise<void> = Promise.resolve();
   /** Latest queued generation per slider gesture; older waiting writes are skipped. */
   private readonly annotationStyleLatestGeneration = new Map<string, number>();
+  /** Annotation ids whose overlay shapes currently show a non-persistent style preview. */
+  private readonly annotationStylePreviewIds = new Set<string>();
   /** True while a pointer gesture is in progress (for onInteractionStart/End). */
   private interactionActive = false;
   private readonly resizeObserver: ResizeObserver;
@@ -4480,12 +4484,28 @@ export class PdfrxViewer {
           this.goToPage(this.doc?.pages.length ?? 1);
           return true;
         case 'ArrowDown':
+          if (this.selectedAnnotationIds.size) {
+            this.nudgeSelectedAnnotations(0, e.shiftKey ? 10 : 1);
+            return true;
+          }
           return this.scrollByKey(0, k);
         case 'ArrowUp':
+          if (this.selectedAnnotationIds.size) {
+            this.nudgeSelectedAnnotations(0, e.shiftKey ? -10 : -1);
+            return true;
+          }
           return this.scrollByKey(0, -k);
         case 'ArrowLeft':
+          if (this.selectedAnnotationIds.size) {
+            this.nudgeSelectedAnnotations(e.shiftKey ? -10 : -1, 0);
+            return true;
+          }
           return this.scrollByKey(-k, 0);
         case 'ArrowRight':
+          if (this.selectedAnnotationIds.size) {
+            this.nudgeSelectedAnnotations(e.shiftKey ? 10 : 1, 0);
+            return true;
+          }
           return this.scrollByKey(k, 0);
         case '+':
         case '=':
@@ -5956,12 +5976,56 @@ export class PdfrxViewer {
     return { ...this.annotationStyle };
   }
 
+  /** @internal Live-previews colors on the selection without writing the PDF or undo history. */
+  previewStyleToSelection(style: Pick<Partial<AnnotationStyle>, 'color' | 'fillColor' | 'textColor'>): void {
+    this.clearSelectionStylePreview();
+    for (const id of this.selectedAnnotationIds) {
+      const target = this.locateAnnotation(id);
+      if (!target) continue;
+      const after = annotationToSpec(target.annotation);
+      if (style.color !== undefined) {
+        after.color = cssColorToRgba(style.color, this.annotationStyle.opacity);
+      }
+      if (style.fillColor !== undefined) {
+        after.interiorColor =
+          style.fillColor === null
+            ? null
+            : cssColorToRgba(style.fillColor, this.annotationStyle.opacity);
+      }
+      if (
+        style.textColor !== undefined
+        && (target.annotation.subtype === 'square' || target.annotation.subtype === 'freeText')
+      ) {
+        after.textColor = cssColorToRgba(style.textColor, this.annotationStyle.opacity);
+      }
+      const overlay = this.annotationOverlays.get(target.pageNumber);
+      if (!overlay) continue;
+      this.previewAnnotationShape(overlay, target.annotation, after);
+      this.annotationStylePreviewIds.add(id);
+    }
+    this.refreshAnnotationSelectionAll();
+  }
+
+  /** @internal Clears any non-persistent selection style preview. */
+  clearSelectionStylePreview(): void {
+    for (const id of this.annotationStylePreviewIds) {
+      const target = this.locateAnnotation(id);
+      const overlay = target ? this.annotationOverlays.get(target.pageNumber) : undefined;
+      if (target && overlay) {
+        this.previewAnnotationShape(overlay, target.annotation, annotationToSpec(target.annotation));
+      }
+    }
+    this.annotationStylePreviewIds.clear();
+    this.refreshAnnotationSelectionAll();
+  }
+
   /**
    * Applies drawing and text style changes to every currently selected annotation
    * as one undoable step. No-op when nothing is selected. Use alongside
    * {@link setAnnotationStyle} (which only affects newly drawn annotations).
    */
   async applyStyleToSelection(style: Partial<AnnotationStyle>, historyMergeKey?: string): Promise<void> {
+    this.clearSelectionStylePreview();
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
     const { color, opacity, fillColor, strokeWidth, textColor, fontSize, textAlign, textVerticalAlign } = style;
     if (
@@ -7288,12 +7352,13 @@ export class PdfrxViewer {
         ? `${visibleStrokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
         : 'none';
     const editorTextColor = colorCss(spec.textColor ?? null, '#000000') ?? '#000000';
+    const editorBackgroundColor = colorCss(spec.interiorColor ?? null, 'transparent') ?? 'transparent';
     const editorFontSize = spec.fontSize ?? FREE_TEXT_FONT_SIZE;
     textarea.style.cssText =
       `box-sizing:border-box;width:100%;height:100%;resize:both;min-width:40px;min-height:28px;` +
       `max-width:${Math.max(40, overlay.pageSize.width - editorX)}px;` +
       `max-height:${Math.max(28, overlay.pageSize.height - editorY)}px;padding:5px;` +
-      `font:${editorFontSize}px Arial,Helvetica,sans-serif;color:${editorTextColor};background:rgba(255,255,255,.96);` +
+      `font:${editorFontSize}px Arial,Helvetica,sans-serif;color:${editorTextColor};background:${editorBackgroundColor};` +
       `border:${editorBorder};border-radius:2px;outline:none;box-shadow:0 2px 8px rgba(0,0,0,.22);`;
     textarea.addEventListener('pointerdown', (event) => event.stopPropagation());
     foreign.appendChild(textarea);
@@ -7667,6 +7732,69 @@ export class PdfrxViewer {
     const after = translateAnnotationSpec(a, dx, dy);
     await this.annotationPage(pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber, id: a.id, before, after });
+  }
+
+  /** Moves the current annotation selection by a screen-space keyboard delta. */
+  private nudgeSelectedAnnotations(dxScreen: number, dyScreen: number): void {
+    const nudge = async (): Promise<void> => {
+      if (!this.doc || this.selectedAnnotationIds.size === 0) return;
+      const targets = [...this.selectedAnnotationIds]
+        .map((id) => this.locateAnnotation(id))
+        .filter((target): target is { pageNumber: number; annotation: PdfAnnotationObject } => target !== null);
+      const byPage = new Map<number, PdfAnnotationObject[]>();
+      for (const target of targets) {
+        const pageTargets = byPage.get(target.pageNumber) ?? [];
+        pageTargets.push(target.annotation);
+        byPage.set(target.pageNumber, pageTargets);
+      }
+      const commands: AnnotationCommand[] = [];
+      for (const [pageNumber, annotations] of byPage) {
+        const overlay = this.annotationOverlays.get(pageNumber);
+        if (!overlay) continue;
+        const boxes = annotations
+          .map((annotation) => this.annotationPxBounds(annotation, overlay))
+          .filter((box): box is Rect => box !== null);
+        if (boxes.length === 0) continue;
+        const sourceBox = {
+          left: Math.min(...boxes.map((box) => box.left)),
+          top: Math.min(...boxes.map((box) => box.top)),
+          right: Math.max(...boxes.map((box) => box.right)),
+          bottom: Math.max(...boxes.map((box) => box.bottom)),
+        };
+        const deltaPx = constrainAnnotationTranslation(
+          sourceBox,
+          { x: dxScreen / this.transform.zoom, y: dyScreen / this.transform.zoom },
+          overlay.pageSize,
+        );
+        if (deltaPx.x === 0 && deltaPx.y === 0) continue;
+        const pdfDelta = offsetDeltaToPdfDelta(deltaPx, {
+          page: overlay.pageGeom,
+          scaledPageSize: overlay.pageSize,
+        });
+        for (const annotation of annotations) {
+          const before = annotationToSpec(annotation);
+          const after = translateAnnotationSpec(annotation, pdfDelta.x, pdfDelta.y);
+          refreshFreeTextLayout(after);
+          if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
+          this.previewAnnotationShape(overlay, annotation, after);
+          const display = syntheticAnnotation(annotation, after);
+          overlay.annotations.set(annotation.id, display);
+          this.annotationSnapshots.set(annotation.id, { pageNumber, annotation: display });
+          await this.annotationPage(pageNumber).updateAnnotation(
+            annotation.id,
+            after,
+            this.annotationMutationOptions(),
+          );
+          commands.push({ pageNumber, id: annotation.id, before, after });
+        }
+        this.refreshAnnotationSelection(overlay);
+      }
+      this.recordAnnotationCommandGroup(commands);
+    };
+    const pending = this.annotationNudgeQueue.then(nudge, nudge);
+    this.annotationNudgeQueue = pending.catch((error: unknown) => {
+      console.error('Failed to move selected annotations:', error);
+    });
   }
 
   /** Commits a constrained modifier-drag as newly created annotations. */

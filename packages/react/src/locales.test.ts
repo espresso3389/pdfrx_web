@@ -53,6 +53,10 @@ describe('resolvePdfrxStrings', () => {
     expect(ja.textSelection).toBe('テキストを選択');
     expect(ja.strokeColor).toBe('線の色');
     expect(ja.textColor).toBe('文字色');
+    expect(ja.otherColor).toBe('その他…');
+    expect(ja.saturationBrightness).toBe('彩度と明度');
+    expect(ja.hue).toBe('色相');
+    expect(ja.colorCode).toBe('カラーコード（#RRGGBB）');
     expect(ja.textSize).toBe('文字サイズ');
     expect(ja.annotationTextPlaceholder).toBe('テキスト');
     expect(ja.annotationNotePlaceholder).toBe('ノート');
