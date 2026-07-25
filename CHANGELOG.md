@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-26
+
+### Added
+
+- Added `PdfOpenDataOptions.transferData` so callers can explicitly retain
+  in-memory PDF input while the engine transfers an internal copy.
+
+### Changed
+
+- Transferred full `ArrayBuffer` inputs to the PDF worker by default and kept
+  password-protected sources behind an opaque worker handle, so password
+  retries send only the new password rather than copying the complete PDF.
+
+### Fixed
+
+- Released native and virtual-file allocations after failed in-memory password
+  attempts and discarded worker-retained source bytes when opening is
+  cancelled.
+
 ## [0.17.0] - 2026-07-26
 
 ### Added
@@ -530,7 +549,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.3...v0.17.0
 [0.16.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.1...v0.16.2
