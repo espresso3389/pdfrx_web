@@ -276,6 +276,8 @@ export interface WireAnnotationObject {
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   textColor: WireColor | null;
   fontSize: number | null;
+  textAlign: 'left' | 'center' | 'right';
+  textVerticalAlign: 'top' | 'middle' | 'bottom';
   fontFace: string | null;
   appearanceLines: string[] | null;
   appearanceRuns: {
@@ -332,6 +334,8 @@ export interface WireAnnotationSpec {
   textColor?: WireColor | null;
   /** FreeText font size in points. */
   fontSize?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  textVerticalAlign?: 'top' | 'middle' | 'bottom';
   /** Registered worker font face used to build a FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines for the generated FreeText appearance. */

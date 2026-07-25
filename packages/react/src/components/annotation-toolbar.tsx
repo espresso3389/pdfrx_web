@@ -112,11 +112,13 @@ export function PdfAnnotationToolbar({
   const [fillColor, setFillColor] = useState<string | null>(null);
   const [textColor, setTextColor] = useState('#000000');
   const [fontSize, setFontSize] = useState(12);
+  const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('left');
+  const [textVerticalAlign, setTextVerticalAlign] = useState<'top' | 'middle' | 'bottom'>('top');
   /** Whole-annotation opacity, 0-1. */
   const [opacity, setOpacity] = useState(1);
   const [width, setWidth] = useState(3);
   /** Which attribute popup is open, if any. */
-  const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'opacity' | 'width' | null>(null);
+  const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'textAlign' | 'opacity' | 'width' | null>(null);
   const paletteHostRef = useRef<HTMLSpanElement>(null);
   const sliderGestureRef = useRef<{ key: string; sequence: number } | null>(null);
   const sliderSequenceRef = useRef(0);
@@ -199,6 +201,15 @@ export function PdfAnnotationToolbar({
     setFontSize(size);
     viewer?.setAnnotationStyle({ fontSize: size });
     void viewer?.applyStyleToSelection({ fontSize: size }, sliderMergeKey('fontSize'));
+  };
+  const pickTextAlignment = (
+    horizontal: 'left' | 'center' | 'right',
+    vertical: 'top' | 'middle' | 'bottom',
+  ): void => {
+    setTextAlign(horizontal);
+    setTextVerticalAlign(vertical);
+    viewer?.setAnnotationStyle({ textAlign: horizontal, textVerticalAlign: vertical });
+    void viewer?.applyStyleToSelection({ textAlign: horizontal, textVerticalAlign: vertical });
   };
   const pickOpacity = (v: number): void => {
     setOpacity(v);
@@ -482,6 +493,44 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        <span className="pdfrx-annot-colorbtn">
+          <button
+            type="button"
+            className={['pdfrx-button', openPalette === 'textAlign' ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
+            title={strings.textAlignment}
+            aria-label={strings.textAlignment}
+            aria-expanded={openPalette === 'textAlign'}
+            onClick={() => setOpenPalette(openPalette === 'textAlign' ? null : 'textAlign')}
+          >
+            <TextAlignIcon horizontal={textAlign} vertical={textVerticalAlign} />
+          </button>
+          {openPalette === 'textAlign' && (
+            <div className="pdfrx-annot-align-popup" role="dialog" aria-label={strings.textAlignment}>
+              {(['top', 'middle', 'bottom'] as const).flatMap((vertical) =>
+                (['left', 'center', 'right'] as const).map((horizontal) => {
+                  const horizontalLabel =
+                    horizontal === 'left' ? strings.alignLeft : horizontal === 'center' ? strings.alignCenter : strings.alignRight;
+                  const verticalLabel =
+                    vertical === 'top' ? strings.alignTop : vertical === 'middle' ? strings.alignMiddle : strings.alignBottom;
+                  const selected = textAlign === horizontal && textVerticalAlign === vertical;
+                  return (
+                    <button
+                      key={`${vertical}-${horizontal}`}
+                      type="button"
+                      className={['pdfrx-annot-align-option', selected ? 'pdfrx-annot-align-option-active' : ''].filter(Boolean).join(' ')}
+                      aria-pressed={selected}
+                      aria-label={`${verticalLabel}, ${horizontalLabel}`}
+                      title={`${verticalLabel}, ${horizontalLabel}`}
+                      onClick={() => pickTextAlignment(horizontal, vertical)}
+                    >
+                      <TextAlignIcon horizontal={horizontal} vertical={vertical} />
+                    </button>
+                  );
+                }),
+              )}
+            </div>
+          )}
+        </span>
       </span>
       {onClose && (
         <>
@@ -498,6 +547,32 @@ export function PdfAnnotationToolbar({
         </>
       )}
     </div>
+  );
+}
+
+function TextAlignIcon({
+  horizontal,
+  vertical,
+}: {
+  horizontal: 'left' | 'center' | 'right';
+  vertical: 'top' | 'middle' | 'bottom';
+}): ReactNode {
+  const top = vertical === 'top' ? 2 : vertical === 'middle' ? 5 : 8;
+  const widths = [13, 9, 11];
+  const line = (width: number, index: number): string => {
+    const x = horizontal === 'left' ? 2 : horizontal === 'center' ? (18 - width) / 2 : 16 - width;
+    return `M${x} ${top + index * 3}h${width}`;
+  };
+  return (
+    <svg className="pdfrx-icon" viewBox="0 0 18 18" aria-hidden>
+      <path
+        d={widths.map(line).join('')}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

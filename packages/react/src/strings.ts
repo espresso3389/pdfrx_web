@@ -92,6 +92,13 @@ export interface PdfrxStrings {
   noFill: string;
   textColor: string;
   textSize: string;
+  textAlignment: string;
+  alignLeft: string;
+  alignCenter: string;
+  alignRight: string;
+  alignTop: string;
+  alignMiddle: string;
+  alignBottom: string;
   opacity: string;
   thickness: string;
   closeAnnotationToolbar: string;
@@ -175,6 +182,13 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   noFill: 'No fill',
   textColor: 'Text color',
   textSize: 'Text size',
+  textAlignment: 'Text alignment',
+  alignLeft: 'Align left',
+  alignCenter: 'Align center',
+  alignRight: 'Align right',
+  alignTop: 'Align top',
+  alignMiddle: 'Align middle',
+  alignBottom: 'Align bottom',
   opacity: 'Opacity',
   thickness: 'Thickness',
   closeAnnotationToolbar: 'Close annotation toolbar',

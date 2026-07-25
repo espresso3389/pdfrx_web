@@ -792,6 +792,10 @@ export interface AnnotationStyle {
   textColor: string;
   /** Text size in PDF points for rectangle/text-box contents. */
   fontSize: number;
+  /** Horizontal placement of text within rectangle/text-box annotations. */
+  textAlign: 'left' | 'center' | 'right';
+  /** Vertical placement of text within rectangle/text-box annotations. */
+  textVerticalAlign: 'top' | 'middle' | 'bottom';
 }
 
 /** @internal Transient annotation geometry shared while a drag is active. */
@@ -920,6 +924,8 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
       revision: a.revision,
       textColor: a.textColor,
       fontSize: a.fontSize ?? undefined,
+      textAlign: a.textAlign,
+      textVerticalAlign: a.textVerticalAlign,
       textOrientation: a.textOrientation,
       fontFace: a.fontFace,
       appearanceLines: a.appearanceLines ? [...a.appearanceLines] : undefined,
@@ -976,6 +982,8 @@ function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec)
     author: spec.author === undefined ? base.author : spec.author,
     textColor: spec.textColor === undefined ? base.textColor : spec.textColor,
     fontSize: spec.fontSize === undefined ? base.fontSize : spec.fontSize,
+    textAlign: spec.textAlign ?? base.textAlign,
+    textVerticalAlign: spec.textVerticalAlign ?? base.textVerticalAlign,
     textOrientation: spec.textOrientation ?? base.textOrientation,
     fontFace: spec.fontFace === undefined ? base.fontFace : spec.fontFace,
     appearanceLines: spec.appearanceLines === undefined ? base.appearanceLines : spec.appearanceLines,
@@ -1755,6 +1763,8 @@ export class PdfrxViewer {
     opacity: 1,
     textColor: '#000000',
     fontSize: FREE_TEXT_FONT_SIZE,
+    textAlign: 'left',
+    textVerticalAlign: 'top',
   };
   /** Ids of the currently selected annotations (empty when none). */
   private readonly selectedAnnotationIds = new Set<string>();
@@ -5758,19 +5768,42 @@ export class PdfrxViewer {
             clipPath.appendChild(clipRect);
             add(clipPath);
             const text = document.createElementNS(SVG_NS, 'text');
-            const textX = appearanceOrigin?.x ?? logicalBox.left + width + FREE_TEXT_PADDING;
-            const textY = appearanceOrigin?.y ?? logicalBox.top + width + FREE_TEXT_PADDING + fontSize;
+            const horizontalInset = width + FREE_TEXT_PADDING;
+            const textX = appearanceOrigin?.x ?? (
+              a.textAlign === 'right'
+                ? logicalBox.right - horizontalInset
+                : a.textAlign === 'center'
+                  ? (logicalBox.left + logicalBox.right) / 2
+                  : logicalBox.left + horizontalInset
+            );
+            const lines = a.appearanceLines ?? wrapFreeText(a.contents, logicalWidth - width * 2, fontSize);
+            const lineHeight = fontSize * 1.2;
+            // Match the PDF appearance and leave room below the final baseline
+            // for descenders (g/p/y), especially when bottom-aligned.
+            const descent = fontSize * 0.15;
+            const contentHeight =
+              lines.length > 0 ? fontSize + (lines.length - 1) * lineHeight + descent : 0;
+            const availableHeight = Math.max(0, rectHeight(logicalBox) - horizontalInset * 2);
+            const verticalOffset =
+              a.textVerticalAlign === 'bottom'
+                ? Math.max(0, availableHeight - contentHeight)
+                : a.textVerticalAlign === 'middle'
+                  ? Math.max(0, (availableHeight - contentHeight) / 2)
+                  : 0;
+            const textY = appearanceOrigin?.y ?? logicalBox.top + horizontalInset + fontSize + verticalOffset;
             text.setAttribute('x', `${textX}`);
             text.setAttribute('y', `${textY}`);
             text.setAttribute('fill', colorCss(a.textColor ?? appearanceText?.fillColor ?? null, '#000') ?? '#000');
             text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
             text.setAttribute('font-size', `${fontSize}`);
+            if (!appearanceOrigin) {
+              text.setAttribute('text-anchor', a.textAlign === 'right' ? 'end' : a.textAlign === 'center' ? 'middle' : 'start');
+            }
             if (textRotation !== 0) text.setAttribute('transform', `rotate(${textRotation} ${centreX} ${centreY})`);
-            const lines = a.appearanceLines ?? wrapFreeText(a.contents, logicalWidth - width * 2, fontSize);
             lines.forEach((line, index) => {
               const tspan = document.createElementNS(SVG_NS, 'tspan');
               tspan.setAttribute('x', `${textX}`);
-              tspan.setAttribute('y', `${textY + index * (fontSize * 1.2)}`);
+              tspan.setAttribute('y', `${textY + index * lineHeight}`);
               tspan.textContent = line || '\u00a0';
               text.appendChild(tspan);
             });
@@ -5926,14 +5959,16 @@ export class PdfrxViewer {
    */
   async applyStyleToSelection(style: Partial<AnnotationStyle>, historyMergeKey?: string): Promise<void> {
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
-    const { color, opacity, fillColor, strokeWidth, textColor, fontSize } = style;
+    const { color, opacity, fillColor, strokeWidth, textColor, fontSize, textAlign, textVerticalAlign } = style;
     if (
       color === undefined &&
       opacity === undefined &&
       fillColor === undefined &&
       strokeWidth === undefined &&
       textColor === undefined &&
-      fontSize === undefined
+      fontSize === undefined &&
+      textAlign === undefined &&
+      textVerticalAlign === undefined
     ) {
       return;
     }
@@ -5967,6 +6002,8 @@ export class PdfrxViewer {
         if (text) after.textColor = text;
         else if (opacity !== undefined && after.textColor) after.textColor = { ...after.textColor, a: toAlpha(opacity) };
         if (fontSize !== undefined) after.fontSize = Math.max(1, fontSize);
+        if (textAlign !== undefined) after.textAlign = textAlign;
+        if (textVerticalAlign !== undefined) after.textVerticalAlign = textVerticalAlign;
       }
       refreshFreeTextLayout(after);
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after });
@@ -7090,6 +7127,17 @@ export class PdfrxViewer {
         runs.push({ text: group.text, fontFace, x, ...(image ? { image } : {}) });
         x += context?.measureText(group.text).width ?? group.text.length * fontSize * 0.6;
       }
+      const availableWidth = Math.max(
+        0,
+        (spec.rect?.right ?? 0) - (spec.rect?.left ?? 0) - (spec.borderWidth ?? 0) * 2 - 6,
+      );
+      const offset =
+        spec.textAlign === 'right'
+          ? Math.max(0, availableWidth - x)
+          : spec.textAlign === 'center'
+            ? Math.max(0, (availableWidth - x) / 2)
+            : 0;
+      if (offset > 0) for (const run of runs) run.x += offset;
       spec.appearanceRuns.push(runs);
     }
     spec.fontFace = spec.appearanceRuns.flat().find((run) => run.fontFace)?.fontFace ?? null;
@@ -7389,6 +7437,8 @@ export class PdfrxViewer {
           contents: '',
           textColor,
           fontSize,
+          textAlign: this.annotationStyle.textAlign,
+          textVerticalAlign: this.annotationStyle.textVerticalAlign,
           textOrientation: { rotation: 0, behavior: 'page' },
         };
       }

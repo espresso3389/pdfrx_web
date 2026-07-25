@@ -3613,6 +3613,8 @@ const ANNOT_INTERIOR_COLOR_KEY = 'pdfrx:IC';
 const ANNOT_FONT_FACE_KEY = 'pdfrx:FontFace';
 const ANNOT_TEXT_COLOR_KEY = 'pdfrx:TextColor';
 const ANNOT_FONT_SIZE_KEY = 'pdfrx:FontSize';
+const ANNOT_TEXT_ALIGN_KEY = 'pdfrx:TextAlign';
+const ANNOT_TEXT_VERTICAL_ALIGN_KEY = 'pdfrx:TextVerticalAlign';
 const ANNOT_ACTOR_ID_KEY = 'pdfrx:ActorId';
 const ANNOT_REVISION_KEY = 'pdfrx:Revision';
 /** Bitmap backing stores retained until FPDFPage_GenerateContent consumes them. */
@@ -3922,6 +3924,12 @@ function _readAnnotationObject(annot, index, docHandle, pageHandle) {
       const value = Number.parseFloat(_getAnnotField(ANNOT_FONT_SIZE_KEY, annot));
       return Number.isFinite(value) && value > 0 ? value : null;
     })(),
+    textAlign: ['left', 'center', 'right'].includes(_getAnnotField(ANNOT_TEXT_ALIGN_KEY, annot))
+      ? _getAnnotField(ANNOT_TEXT_ALIGN_KEY, annot)
+      : 'left',
+    textVerticalAlign: ['top', 'middle', 'bottom'].includes(_getAnnotField(ANNOT_TEXT_VERTICAL_ALIGN_KEY, annot))
+      ? _getAnnotField(ANNOT_TEXT_VERTICAL_ALIGN_KEY, annot)
+      : 'top',
     fontFace: _getAnnotField(ANNOT_FONT_FACE_KEY, annot) || null,
     appearanceLines: (() => {
       const value = _getAnnotField('pdfrx:FreeTextLines', annot);
@@ -4038,6 +4046,8 @@ function _applyAnnotSpec(annot, spec, docHandle) {
   }
   if (spec.textColor) _setAnnotStringKey(annot, ANNOT_TEXT_COLOR_KEY, _colorToKey(spec.textColor));
   if (typeof spec.fontSize === 'number') _setAnnotStringKey(annot, ANNOT_FONT_SIZE_KEY, String(spec.fontSize));
+  if (spec.textAlign) _setAnnotStringKey(annot, ANNOT_TEXT_ALIGN_KEY, spec.textAlign);
+  if (spec.textVerticalAlign) _setAnnotStringKey(annot, ANNOT_TEXT_VERTICAL_ALIGN_KEY, spec.textVerticalAlign);
   if (spec.fontFace != null) _setAnnotStringKey(annot, ANNOT_FONT_FACE_KEY, spec.fontFace);
   if (spec.appearanceLines) _setAnnotStringKey(annot, 'pdfrx:FreeTextLines', JSON.stringify(spec.appearanceLines));
   if (spec.appearanceRuns) {
@@ -4125,6 +4135,18 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
     const textColor = spec.textColor ?? [0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255];
     const lineHeight = fontSize * 1.2;
     const lines = spec.appearanceLines ?? String(spec.contents).replace(/\r\n?/g, '\n').split('\n');
+    // Reserve a small descent below the final baseline so glyphs such as g/p/y
+    // stay inside the annotation clip when bottom-aligned.
+    const descent = fontSize * 0.15;
+    const contentHeight = lines.length > 0
+      ? fontSize + (lines.length - 1) * lineHeight + descent
+      : 0;
+    const availableHeight = Math.max(0, top - bottom - borderWidth * 2 - 6);
+    const verticalOffset = spec.textVerticalAlign === 'bottom'
+      ? Math.max(0, availableHeight - contentHeight)
+      : spec.textVerticalAlign === 'middle'
+        ? Math.max(0, (availableHeight - contentHeight) / 2)
+        : 0;
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index];
       if (!line) continue;
@@ -4138,7 +4160,7 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
             annot,
             run.image,
             left + borderWidth + 3 + (run.x ?? 0),
-            top - borderWidth - 3 - index * lineHeight,
+            top - borderWidth - 3 - verticalOffset - index * lineHeight,
             intrinsicRotation,
             centreX,
             centreY,
@@ -4179,7 +4201,7 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
         const sin = Math.sin(radians);
         const position = rotatePoint(
           left + borderWidth + 3 + (run.x ?? 0),
-          top - borderWidth - 3 - fontSize - index * lineHeight,
+          top - borderWidth - 3 - verticalOffset - fontSize - index * lineHeight,
         );
         w.FPDFPageObj_Transform(text, cos, sin, -sin, cos, position[0], position[1]);
         if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);

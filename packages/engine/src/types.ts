@@ -529,6 +529,10 @@ export interface PdfAnnotationObject {
   readonly textColor: PdfAnnotationColor | null;
   /** FreeText font size in points, or null when inferred from an existing appearance. */
   readonly fontSize: number | null;
+  /** Horizontal placement of FreeText content within its box. */
+  readonly textAlign: 'left' | 'center' | 'right';
+  /** Vertical placement of FreeText content within its box. */
+  readonly textVerticalAlign: 'top' | 'middle' | 'bottom';
   readonly fontFace: string | null;
   readonly appearanceLines: readonly string[] | null;
   readonly appearanceRuns: readonly (readonly {
@@ -630,6 +634,10 @@ export interface PdfAnnotationSpec {
   textColor?: PdfAnnotationColor | null;
   /** FreeText font size in points. Defaults to 12. */
   fontSize?: number;
+  /** Horizontal placement of FreeText content within its box. Defaults to `left`. */
+  textAlign?: 'left' | 'center' | 'right';
+  /** Vertical placement of FreeText content within its box. Defaults to `top`. */
+  textVerticalAlign?: 'top' | 'middle' | 'bottom';
   /** Font face registered with the engine for a generated FreeText appearance. */
   fontFace?: string | null;
   /** Pre-wrapped lines used by the generated FreeText appearance. */
