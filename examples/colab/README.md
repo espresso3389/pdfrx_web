@@ -37,6 +37,12 @@ existing session. Any currently connected member may approve a request. Each
 approved device receives a random membership token, stored locally and never
 included in the shared URL.
 
+When an admitted participant joins or returns, the client requests
+`GET <api-prefix>/sessions/<session-id>/current-source`. The relay returns the
+PDF containing the current first page and identifies it with the
+`X-Pdfrx-Document-Id` response header. This lets the viewer open the current
+session PDF once, even when the original `main` PDF was later replaced.
+
 Opening a shared `?session=...` URL shows a join-only screen: the create/join
 switch and internal session id are hidden, and the public session name is
 shown. Manual id entry is not exposed; participants join through the invitation

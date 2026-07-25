@@ -72,8 +72,10 @@ export interface CollaborativePdfViewerProps {
   readonly onPresenceChange?: (connectedCount: number) => void;
   /** Accessible participant label shown in the built-in chrome. */
   readonly name?: string;
-  /** Initial PDF used for the session's `main` source. */
+  /** Initial PDF opened before the authoritative session snapshot arrives. */
   readonly src: PdfSource;
+  /** Document id represented by `src`. Defaults to `main`. */
+  readonly srcDocumentId?: string;
   /** Directory containing the PDFium worker assets. */
   readonly wasmModulesUrl?: string;
   /** Additional class applied to the outer `.collab-pane` element. */
@@ -99,6 +101,7 @@ export function CollaborativePdfViewer({
   onConnectionStateChange,
   onPresenceChange,
   src,
+  srcDocumentId = 'main',
   wasmModulesUrl = '/pdfium/',
   className,
   transport,
@@ -124,6 +127,7 @@ export function CollaborativePdfViewer({
           onConnectionStateChange={onConnectionStateChange}
           onPresenceChange={onPresenceChange}
           transport={transport}
+          srcDocumentId={srcDocumentId}
         />
       </PdfrxProvider>
     </section>
@@ -139,6 +143,7 @@ function CollaborativeViewerContent({
   onConnectionStateChange,
   onPresenceChange,
   transport,
+  srcDocumentId,
 }: {
   name: string;
   actorId: string;
@@ -148,6 +153,7 @@ function CollaborativeViewerContent({
   onConnectionStateChange?: (state: CollaborationConnectionState) => void;
   onPresenceChange?: (connectedCount: number) => void;
   transport?: CollaborationTransport;
+  srcDocumentId: string;
 }): ReactNode {
   const viewer = usePdfrxViewer();
   const documentState = usePdfDocument();
@@ -196,7 +202,7 @@ function CollaborativeViewerContent({
     const client = new PageCollaborationClient(actorId, undefined, transport?.createWebSocket);
     clientRef.current = client;
     const sources = new PageSourceRegistry();
-    sources.register('main', document);
+    sources.register(srcDocumentId, document);
     sourcesRef.current = sources;
     let active = true;
     const formValues = new Map<string, PdfFormFieldValue>();
@@ -231,7 +237,7 @@ function CollaborativeViewerContent({
       formObservers.set(documentId, unsubscribeForms);
     };
     observeSourceFormsRef.current = observeSourceForms;
-    observeSourceForms('main', document);
+    observeSourceForms(srcDocumentId, document);
     let applying = Promise.resolve();
     const annotationImageLoads = new Map<string, Promise<Uint8Array>>();
     const resolveAnnotationSpec = async (shared: SharedAnnotationSpec): Promise<PdfAnnotationSnapshot['annotations'][number]['spec']> => {
@@ -465,7 +471,7 @@ function CollaborativeViewerContent({
       observeSourceFormsRef.current = () => {};
       if (clientRef.current === client) clientRef.current = null;
       client.close();
-      sources.unregister('main');
+      sources.unregister(srcDocumentId);
       if (sourcesRef.current === sources) sourcesRef.current = null;
       for (const sourceDocument of sourceDocumentsRef.current.splice(0)) void sourceDocument.dispose();
       sourceOpensRef.current.clear();
@@ -478,6 +484,7 @@ function CollaborativeViewerContent({
     name,
     onConnectionStateChange,
     onPresenceChange,
+    srcDocumentId,
     transport,
     viewer,
     viewer?.document,

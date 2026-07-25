@@ -326,6 +326,28 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
     json(response, 200, publicSession(session));
     return;
   }
+  const currentSourceMatch = url.pathname.match(
+    new RegExp(`^${escapeRegExp(apiPrefix)}/sessions/([^/]+)/current-source$`),
+  );
+  if (request.method === 'GET' && currentSourceMatch) {
+    const session = authenticatedSession(request, decodeURIComponent(currentSourceMatch[1]!));
+    const documentId = session.pageSnapshot.pages[0]?.source.documentId;
+    if (!documentId || !await store.sourceExists(session.id, documentId)) {
+      return void json(response, 404, { error: 'source-not-found' });
+    }
+    const bytes = await readFile(store.sourcePath(session.id, documentId));
+    response.writeHead(200, {
+      'Cache-Control': 'private, no-store',
+      'Content-Type': 'application/pdf',
+      'Content-Length': bytes.byteLength,
+      'X-Pdfrx-Document-Id': encodeURIComponent(documentId),
+      ...(session.sourcePasswords?.[documentId]
+        ? { 'X-Pdfrx-Source-Password': encodeURIComponent(session.sourcePasswords[documentId]) }
+        : {}),
+    });
+    response.end(bytes);
+    return;
+  }
   const sourceMatch = url.pathname.match(
     new RegExp(`^${escapeRegExp(apiPrefix)}/sessions/([^/]+)/sources/([^/]+)$`),
   );

@@ -42,6 +42,7 @@ interface ActiveSession {
   readonly actorId: string;
   readonly displayName: string;
   readonly source: ArrayBuffer;
+  readonly sourceDocumentId: string;
   readonly sourcePassword?: string;
 }
 
@@ -143,10 +144,12 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
       let info: SessionInfo;
       let memberToken: string;
       let source: ArrayBuffer;
+      let sourceDocumentId: string;
       let sourcePassword: string | undefined;
       if (!isInvitation) {
         if (!preparedFile) throw new Error('PDFまたは画像ファイルを選択してください');
         source = preparedFile.source;
+        sourceDocumentId = 'main';
         sourcePassword = preparedFile.password;
         const response = await fetch(`${config.apiBase}/sessions`, {
           method: 'POST',
@@ -167,16 +170,18 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
         ));
         const tokenKey = `pdfrx-member-${info.id}`;
         memberToken = localStorage.getItem(tokenKey) ?? '';
-        let response = memberToken ? await fetchSource(info.id, memberToken) : null;
+        let response = memberToken ? await fetchCurrentSource(info.id, memberToken) : null;
         if (!response?.ok) {
           localStorage.removeItem(tokenKey);
           setAdmissionState('waiting');
           memberToken = await requestAdmission(config.relayUrl, info.id, getActorId(), displayName.trim());
           setAdmissionState('idle');
-          response = await fetchSource(info.id, memberToken);
+          response = await fetchCurrentSource(info.id, memberToken);
         }
         if (!response.ok) throw new Error(await responseError(response));
         sourcePassword = decodedResponseHeader(response, 'X-Pdfrx-Source-Password') || undefined;
+        sourceDocumentId = decodedResponseHeader(response, 'X-Pdfrx-Document-Id');
+        if (!sourceDocumentId) throw new Error('共有PDFの文書IDを取得できません');
         source = await response.arrayBuffer();
       }
       localStorage.setItem(`pdfrx-member-${info.id}`, memberToken);
@@ -186,6 +191,7 @@ function SessionGate({ onOpen }: { onOpen: (session: ActiveSession) => void }) {
         displayName: displayName.trim(),
         actorId: getActorId(),
         source,
+        sourceDocumentId,
         ...(sourcePassword ? { sourcePassword } : {}),
       });
     } catch (reason) {
@@ -514,6 +520,7 @@ function SessionViewer({ active, onLeave }: { active: ActiveSession; onLeave: ()
           sourceName: 'main.pdf',
           ...(active.sourcePassword ? { passwordProvider: () => active.sourcePassword ?? null } : {}),
         }}
+        srcDocumentId={active.sourceDocumentId}
         wasmModulesUrl={config.wasmModulesUrl}
         transport={transport}
       />
@@ -532,8 +539,8 @@ function formatElapsed(createdAt: string): string {
   return `${days}日${totalHours % 24}時間`;
 }
 
-const fetchSource = (sessionId: string, memberToken: string): Promise<Response> =>
-  fetch(`${config.apiBase}/sessions/${encodeURIComponent(sessionId)}/sources/main`, {
+const fetchCurrentSource = (sessionId: string, memberToken: string): Promise<Response> =>
+  fetch(`${config.apiBase}/sessions/${encodeURIComponent(sessionId)}/current-source`, {
     headers: { 'X-Pdfrx-Member-Token': encodeURIComponent(memberToken) },
   });
 

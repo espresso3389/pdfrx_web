@@ -209,7 +209,8 @@ for the complete source definition.
 | `relayUrl` | `string` | Application-hosted `ws:`/`wss:` endpoint described in [Provide a relay](#before-you-start-provide-a-relay). |
 | `sessionId` | `string` | Shared room/session identifier. Treat it as untrusted input, not authorization. |
 | `memberToken` | `string?` | Device-specific membership token issued after approval and never appended to the URL. |
-| `src` | `string \| URL \| ArrayBuffer \| Uint8Array \| Blob` | Initial PDF registered as the session's `main` source. |
+| `src` | `string \| URL \| ArrayBuffer \| Uint8Array \| Blob` | PDF opened before the authoritative session snapshot arrives. |
+| `srcDocumentId` | `string?` | Session document ID represented by `src`; defaults to `main`. Pass the current source ID after page replacement to avoid opening and fetching two PDFs. |
 | `name` | `string?` | Accessible display label; defaults to `actorId`. |
 | `wasmModulesUrl` | `string?` | Directory containing `pdfium_worker.js` and `pdfium.wasm`; defaults to `/pdfium/`. |
 | `className` | `string?` | Additional class on the outer `.collab-pane`. |
@@ -263,7 +264,10 @@ after receiving the relay's authoritative commit. It does not optimistically
 apply a second copy of an operation that the local viewer already performed.
 Joining completes only after page, annotation, and form snapshots have all
 arrived. The ready-made viewer automatically reconnects and rejoins after a
-completed connection is interrupted.
+completed connection is interrupted. Hosts that preload a source for an
+existing session should set `srcDocumentId` to that source's document ID. The
+viewer then reuses the already-open document when applying the authoritative
+snapshot instead of fetching and opening it again.
 
 Annotation movement and resizing additionally use best-effort transient
 previews. They are broadcast to the other participants without consuming an
