@@ -694,7 +694,13 @@ export interface WorkerCommandMap {
   };
   /** Replaces the annotation identified by `id` with a fresh one built from `spec` (same id). */
   updateAnnotation: {
-    params: { docHandle: number; pageIndex: number; id: string; spec: WireAnnotationSpec };
+    params: {
+      docHandle: number;
+      pageIndex: number;
+      id: string;
+      spec: WireAnnotationSpec;
+      preserveAppearance?: boolean;
+    };
     result: { id: string; revision: number };
   };
   /** Removes the annotation identified by `id` (its `/NM` key, or `@<index>`). */

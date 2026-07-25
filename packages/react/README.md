@@ -147,8 +147,9 @@ function Toolbar() {
 | [`useAnnotations()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useAnnotations.html) | Annotation data and direct add/update/remove operations |
 | [`useEditHistory()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useEditHistory.html) | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
 
-For an annotation-only collaboration viewer, disable page edits and local
-Undo/Redo while attaching a stable user id to mutations:
+Editing capabilities can be enabled independently. For example, an
+annotation-only viewer can disable page edits and history while attaching an
+application-defined actor id to mutations:
 
 ```tsx
 <PdfrxViewerApp
@@ -161,12 +162,12 @@ The annotation toolbar remains available, page-edit controls and history
 buttons are hidden, and
 [`viewer.setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpages) /
 [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpage)
-reject edits. Subscribe to
+reject edits. Annotation changes expose complete mutation batches through
 [`document.addEventListener('annotationsChanged', ...)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#addeventlistener)
-to publish its exact
-`changes` batch. Apply an incoming batch with
+and can be reapplied with
 [`document.applyAnnotationChanges(changes, { origin: 'remote', transactionId })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#applyannotationchanges);
-the `origin` lets the publisher ignore it and avoid a synchronization echo.
+`origin`, `transactionId`, and `actorId` provide application-defined mutation
+metadata for persistence, synchronization, and event filtering.
 
 The standard
 [`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html)
@@ -193,8 +194,8 @@ that placement does not determine the embedded resolution: raster inputs retain
 their decoded pixels up to a 2048-pixel longest side, and SVG inputs remain
 vector paths. Repeated image resize operations reuse the retained source pixels
 instead of progressively resampling PDFium's transformed appearance. The
-rectangle tool (including the legacy `freeText` tool alias) creates the same
-GUI object: placing a rectangle does not automatically start typing, while
+rectangle tool creates the same GUI object: placing a rectangle does not
+automatically start typing, while
 double-clicking either a rectangle or FreeText annotation opens localized inline
 editing. Adding non-blank text
 converts the rectangle to FreeText; clearing all text converts it back to a
@@ -246,9 +247,8 @@ annotation commands, which refer to 1-based page numbers, consistent.
 
 For the standard rotate/delete UI, use
 [`PdfPageActions`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfPageActions.html).
-It performs local
-viewer mutations by default, while collaborative hosts can intercept the same
-controls and submit stable operations to their relay:
+It performs viewer mutations by default. Supply callbacks when page operations
+must be handled by another state-management or persistence layer:
 
 ```tsx
 <PdfPageActions
@@ -336,7 +336,7 @@ automatically and has the same consequence. Calling either while retaining the
 history can therefore leave Undo/Redo inconsistent with the live document.
 
 The built-in download buttons avoid this by using
-[`PdfDocument.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy).
+[`PdfDocument.encodePdf({ mode: 'copy' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf).
 Assembly happens on a temporary document, while
 the live document and its history remain intact. While encoding, their download
 icon changes to a busy indicator and the button exposes `aria-busy="true"`.
@@ -344,19 +344,18 @@ Custom editor save UI should normally do the same:
 
 ```tsx
 await viewer.flushAnnotationTextEdit();
-const data = await viewer.document!.encodePdfCopy();
+const data = await viewer.document!.encodePdf({ mode: 'copy' });
 ```
 
 [`PdfSaveButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSaveButton.html)
 accepts an
 [`encode(document)`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfSaveButtonProps.html#encode)
-override when an application must
-post-process the bytes—for example, to merge outlines and AcroForm catalogs
-from several source PDFs. The default remains
-[`document.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy):
+override when an application must post-process the bytes—for example, to apply
+an application-specific export policy. The default remains
+[`document.encodePdf({ mode: 'copy' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf):
 
 ```tsx
-<PdfSaveButton encode={(document) => exportVirtualDocument(document, session)} />
+<PdfSaveButton encode={(document) => exportDocument(document, exportOptions)} />
 ```
 
 The engine preserves document-level structures from a sole imported source. A
@@ -365,9 +364,14 @@ name collisions, outline destinations, calculation order, signatures, and
 other catalog entries; page import alone cannot decide those semantics.
 
 The temporary native document and its encoded buffers increase peak memory
-usage during the save. For memory-constrained applications, it can instead be
-reasonable to make assembly an explicit, irreversible history boundary: clear
-the history first, then encode the live document.
+usage during the save. A PDF that may contain unreachable page-level objects
+can use
+[`encodePdf({ mode: 'compact' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
+to rebuild only its reachable page-level objects; applications must reconstruct
+required outlines, metadata, name trees, signatures, or AcroForm catalog
+configuration. Alternatively, a memory-constrained application can make
+assembly an explicit, irreversible history boundary: clear the history first,
+then encode the live document.
 
 ```tsx
 const { clearHistory } = useEditHistory();

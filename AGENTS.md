@@ -115,6 +115,17 @@ do not use an intermediate commit/push or wait for the deployed Pages site:
 4. Commit and push the API and README updates together. Do not create a release
    tag until the local documentation and README checks pass.
 
+### Package documentation boundaries
+
+Describe each published package in terms of its own general-purpose API
+contracts, behavior, costs, and limitations. In particular, documentation and
+public API comments in lower-level packages such as `@pdfrx/engine` and
+`@pdfrx/react` should not use `@pdfrx/colab`, a specific application workflow,
+or a previously observed bug as the premise for an API or architectural
+decision. Explain synchronization, persistence, export, memory, and compaction
+capabilities generically; put Colab-specific composition and operational
+guidance in `@pdfrx/colab` or its example.
+
 ## TypeScript conventions
 
 Set in [tsconfig.base.json](tsconfig.base.json); the build will reject

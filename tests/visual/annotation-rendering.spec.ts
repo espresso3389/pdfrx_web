@@ -618,7 +618,7 @@ test('the box tool switches automatically between rectangle and FreeText', async
     (
       window as unknown as {
         annotationVisualTest: {
-          setupTextTool(t: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void>;
+          setupTextTool(t: 'note' | 'rectangle', strokeWidth?: number): Promise<void>;
         };
       }
     ).annotationVisualTest.setupTextTool('rectangle', 5),
@@ -671,7 +671,7 @@ test('the box tool switches automatically between rectangle and FreeText', async
     (
       window as unknown as {
         annotationVisualTest: {
-          setupTextTool(t: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void>;
+          setupTextTool(t: 'note' | 'rectangle', strokeWidth?: number): Promise<void>;
         };
       }
     ).annotationVisualTest.setupTextTool('rectangle', 0),
@@ -783,14 +783,14 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
   await page.mouse.up();
 });
 
-test('note and FreeText use inline editors instead of browser prompts', async ({ page }) => {
+test('note and box text use inline editors instead of browser prompts', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
-  const setup = (tool: 'note' | 'freeText'): Promise<void> =>
+  const setup = (tool: 'note' | 'rectangle'): Promise<void> =>
     page.evaluate((value) => {
       const api = (
         window as unknown as {
-          annotationVisualTest: { setupTextTool(t: 'note' | 'freeText', strokeWidth?: number): Promise<void> };
+          annotationVisualTest: { setupTextTool(t: 'note' | 'rectangle', strokeWidth?: number): Promise<void> };
         }
       ).annotationVisualTest;
       return api.setupTextTool(value);
@@ -868,15 +868,16 @@ test('note and FreeText use inline editors instead of browser prompts', async ({
   await page.evaluate(() =>
     (
       window as unknown as {
-        annotationVisualTest: { setupTextTool(t: 'note' | 'freeText', strokeWidth?: number): Promise<void> };
+        annotationVisualTest: { setupTextTool(t: 'note' | 'rectangle', strokeWidth?: number): Promise<void> };
       }
-    ).annotationVisualTest.setupTextTool('freeText', 7),
+    ).annotationVisualTest.setupTextTool('rectangle', 7),
   );
   await expect(page.locator('svg[style*="crosshair"]')).toHaveCount(1);
   await page.mouse.move(40, 80);
   await page.mouse.down();
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
+  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   const freeTextEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(freeTextEditor).toHaveCount(1);
   await expect(freeTextEditor).toBeFocused();

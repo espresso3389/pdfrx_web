@@ -10,9 +10,6 @@ export interface SharedAnnotationImageSource {
 
 /** Serializable annotation state used by the collaboration protocol. */
 export type SharedAnnotationSpec = Omit<PdfAnnotationSpec, 'appearanceImage'> & {
-  /** Inline pixels retained for backwards compatibility with older relays. */
-  readonly appearanceImage?: PdfAnnotationSpec['appearanceImage'];
-  /** Preferred out-of-band storage for a raster appearance. */
   readonly appearanceImageSource?: SharedAnnotationImageSource;
 };
 

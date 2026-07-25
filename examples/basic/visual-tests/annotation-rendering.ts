@@ -231,7 +231,7 @@ async function runClipboardTest(spec: PdfAnnotationSpec): Promise<ClipboardTestR
       dy: pasted.rect.top - spec.rect.top,
       countAfterUndo: 0,
     };
-    await viewer.undoAnnotation();
+    await viewer.undo();
     copyPaste.countAfterUndo = (await doc.loadAnnotations(1)).length;
 
     viewer.setSelectedAnnotation(originalId);
@@ -262,7 +262,7 @@ async function setupDuplicateGesture(spec: PdfAnnotationSpec): Promise<string> {
   await clearAnnotations();
   const id = await doc.pages[0]!.addAnnotation(spec);
   await waitForShape(id);
-  viewer.setAnnotationSelectMode(true);
+  viewer.setAnnotationTool(null);
   viewer.setSelectedAnnotation(id);
   return id;
 }
@@ -285,7 +285,7 @@ async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
   if (!doc) throw new Error('Test PDF is not open');
   await clearAnnotations();
   for (const spec of specs) await doc.pages[0]!.addAnnotation(spec);
-  viewer.setAnnotationSelectMode(true);
+  viewer.setAnnotationTool(null);
   viewer.setSelectedAnnotations([]);
 }
 
@@ -296,7 +296,7 @@ async function setupSnapGesture(specs: PdfAnnotationSpec[]): Promise<string[]> {
   const ids: string[] = [];
   for (const spec of specs) ids.push(await doc.pages[0]!.addAnnotation(spec));
   for (const id of ids) await waitForShape(id);
-  viewer.setAnnotationSelectMode(true);
+  viewer.setAnnotationTool(null);
   viewer.setSelectedAnnotation(ids[0] ?? null);
   return ids;
 }
@@ -309,7 +309,7 @@ function readAnnotationPreviewRects(): typeof lastAnnotationPreviewRects {
   return structuredClone(lastAnnotationPreviewRects);
 }
 
-async function setupTextTool(tool: 'note' | 'freeText' | 'rectangle', strokeWidth?: number): Promise<void> {
+async function setupTextTool(tool: 'note' | 'rectangle', strokeWidth?: number): Promise<void> {
   await clearAnnotations();
   if (strokeWidth !== undefined) viewer.setAnnotationStyle({ strokeWidth });
   viewer.setAnnotationTool(tool);
@@ -320,7 +320,7 @@ function setTextStyle(textColor: string, fontSize: number): void {
 }
 
 function setObjectSelectMode(): void {
-  viewer.setAnnotationSelectMode(true);
+  viewer.setAnnotationTool(null);
 }
 
 async function readTextStyleRoundTrip(): Promise<{ textColor: unknown; fontSize: number | null } | null> {

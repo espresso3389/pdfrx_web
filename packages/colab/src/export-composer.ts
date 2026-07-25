@@ -28,8 +28,6 @@ export async function encodeCollaborativePdf(
   sources: PageSourceRegistry,
 ): Promise<Uint8Array> {
   const documentIds = [...new Set(placements.map((page) => page.source.documentId))];
-  if (documentIds.length <= 1) return rootDocument.encodePdfCopy();
-
   const mapped: MappedOutlineNode[] = [];
   for (const documentId of documentIds) {
     const sourceDocument = sources.document(documentId);
@@ -37,7 +35,9 @@ export async function encodeCollaborativePdf(
     mapped.push(...outline.map((node) => mapOutlineNode(node, documentId, placements)));
   }
   const { mergeAcroForms, writeOutline } = await import('./outline-writer.js');
-  const copy = await rootDocument.createPdfCopy();
+  // Importing the arranged pages into a fresh document also drops unreachable
+  // image appearance objects accumulated by older collaboration clients.
+  const copy = await rootDocument.createCopy({ mode: 'compact' });
   try {
     if (mapped.length > 0) await writeOutline(copy, mapped);
     await mergeAcroForms(

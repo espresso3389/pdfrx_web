@@ -10,6 +10,7 @@
 import {
   PdfrxEngine,
   type PdfAnnotationObject,
+  type PdfAnnotationMutationOptions,
   type PdfAnnotationPoint,
   type PdfAnnotationQuad,
   type PdfAnnotationRenderingMode,
@@ -769,14 +770,7 @@ interface AnnotationDuplicateRepeat {
 }
 
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
-export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'freeText';
-
-/**
- * Current drawing interaction state. `null` means no drawing tool; annotation
- * selection remains available. `'select'` is retained for source compatibility
- * with the former explicit selection mode.
- */
-export type AnnotationMode = AnnotationTool | 'select' | null;
+export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note';
 
 /** Style applied to newly drawn annotations. */
 export interface AnnotationStyle {
@@ -1452,8 +1446,6 @@ function freeTextRunKind(text: string): FreeTextRunKind {
 const FREE_TEXT_FONT_SIZE = 12;
 const FREE_TEXT_PADDING = 3;
 /** Minimum on-screen box created by a click or very short FreeText drag. */
-const FREE_TEXT_MIN_SCREEN_WIDTH = 120;
-const FREE_TEXT_MIN_SCREEN_HEIGHT = 48;
 /** Minimum on-screen dimensions for click/short-drag geometry tools. */
 const SHAPE_MIN_SCREEN_SIZE = 72;
 const LINE_MIN_SCREEN_LENGTH = 96;
@@ -1754,7 +1746,7 @@ export class PdfrxViewer {
    * Active drawing tool, or null. The legacy `'select'` value remains accepted
    * by the type but is no longer entered by the public selection API.
    */
-  private annotationMode: AnnotationMode = null;
+  private annotationTool: AnnotationTool | null = null;
   /** Current style applied to newly drawn annotations. */
   private annotationStyle: AnnotationStyle = {
     color: '#e53935',
@@ -1866,7 +1858,7 @@ export class PdfrxViewer {
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
-  private readonly annotationModeChangeListeners = new Set<(mode: AnnotationMode) => void>();
+  private readonly annotationToolChangeListeners = new Set<(tool: AnnotationTool | null) => void>();
   private readonly annotationSelectionChangeListeners = new Set<() => void>();
   private readonly annotationPreviewChangeListeners = new Set<
     (changes: readonly AnnotationPreviewChange[]) => void
@@ -2714,7 +2706,7 @@ export class PdfrxViewer {
     const doc = this.doc;
     if (!doc) return;
     const transform = { ...this.transform };
-    const replacement = await doc.createPdfCopy();
+    const replacement = await doc.createCopy();
     this.currentSource = null;
     await this.setDocument(replacement);
     this.setTransform(transform);
@@ -4459,10 +4451,9 @@ export class PdfrxViewer {
         case 'Escape':
           // Cancel the active drawing tool / annotation selection first,
           // else fall back to clearing the text selection.
-          if (this.annotationMode !== null) {
-            this.annotationMode = null;
+          if (this.annotationTool !== null) {
+            this.updateAnnotationTool(null);
             this.setSelectedAnnotations([]);
-            this.invalidate();
             return true;
           }
           if (this.selectedAnnotationIds.size) {
@@ -5261,8 +5252,14 @@ export class PdfrxViewer {
     return this.annotationsEnabled() && this.options.editing?.annotations !== false;
   }
 
-  private annotationMutationOptions(): { origin: 'user'; actorId?: string } {
-    return { origin: 'user', actorId: this.options.editing?.actorId };
+  private annotationMutationOptions(
+    spec?: PdfAnnotationSpec | PdfAnnotationObject,
+  ): PdfAnnotationMutationOptions {
+    return {
+      origin: 'user',
+      actorId: this.options.editing?.actorId,
+      ...(spec?.subtype === 'stamp' && spec.appearanceImage ? { preserveAppearance: true } : {}),
+    };
   }
 
   /** Resolves one current arrangement slot for a page-scoped annotation operation. */
@@ -5901,35 +5898,18 @@ export class PdfrxViewer {
   setAnnotationTool(tool: AnnotationTool | null): void {
     if (tool && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
     if (tool) this.setSelectedAnnotations([]);
-    this.setAnnotationMode(tool);
+    this.updateAnnotationTool(tool);
   }
 
   /** The active drawing tool, or null when no drawing tool is selected. */
   getAnnotationTool(): AnnotationTool | null {
-    return this.annotationMode === 'select' ? null : this.annotationMode;
-  }
-
-  /**
-   * Legacy compatibility switch. Annotation selection is now always available;
-   * enabling it simply clears the active drawing tool. Disabling it is a no-op.
-   */
-  setAnnotationSelectMode(on: boolean): void {
-    if (on && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
-    if (on) this.setAnnotationMode(null);
-  }
-
-  /**
-   * Current drawing state. Returns the selected drawing tool or `null`;
-   * annotation selection is always available and is not represented here.
-   */
-  getAnnotationMode(): AnnotationMode {
-    return this.annotationMode;
+    return this.annotationTool;
   }
 
   /** Subscribes to drawing-tool changes. */
-  addAnnotationModeChangeListener(listener: (mode: AnnotationMode) => void): () => void {
-    this.annotationModeChangeListeners.add(listener);
-    return () => this.annotationModeChangeListeners.delete(listener);
+  addAnnotationToolChangeListener(listener: (tool: AnnotationTool | null) => void): () => void {
+    this.annotationToolChangeListeners.add(listener);
+    return () => this.annotationToolChangeListeners.delete(listener);
   }
 
   /** @internal Subscribes to non-persistent live annotation drag previews. */
@@ -5956,16 +5936,16 @@ export class PdfrxViewer {
     for (const listener of this.annotationPreviewChangeListeners) listener(changes);
   }
 
-  private setAnnotationMode(mode: AnnotationMode): void {
-    if (mode === this.annotationMode) return;
-    if (mode !== 'select') this.setSelectedAnnotations([]);
-    this.annotationMode = mode;
+  private updateAnnotationTool(tool: AnnotationTool | null): void {
+    if (tool === this.annotationTool) return;
+    if (tool !== null) this.setSelectedAnnotations([]);
+    this.annotationTool = tool;
     this.invalidate();
-    for (const listener of this.annotationModeChangeListeners) {
+    for (const listener of this.annotationToolChangeListeners) {
       try {
-        listener(mode);
+        listener(tool);
       } catch (e) {
-        console.error('Error in annotation mode change listener:', e);
+        console.error('Error in annotation tool change listener:', e);
       }
     }
   }
@@ -5977,7 +5957,7 @@ export class PdfrxViewer {
 
   /** The active drawing tool, or null. @internal */
   private drawingTool(): AnnotationTool | null {
-    return this.annotationMode === 'select' ? null : this.annotationMode;
+    return this.annotationTool;
   }
 
   /** Updates the style applied to newly drawn annotations. */
@@ -6108,7 +6088,7 @@ export class PdfrxViewer {
         for (const cmd of group) {
           const after = cmd.after!;
           if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-          await this.annotationPage(cmd.pageNumber).updateAnnotation(cmd.id, after, this.annotationMutationOptions());
+          await this.annotationPage(cmd.pageNumber).updateAnnotation(cmd.id, after, this.annotationMutationOptions(after));
           const snapshot = this.annotationSnapshots.get(cmd.id);
           if (snapshot) {
             this.annotationSnapshots.set(cmd.id, {
@@ -6281,7 +6261,7 @@ export class PdfrxViewer {
       if (group.length === 0) return;
       this.annotationClipboardPasteCount = nextCount;
       this.recordAnnotationCommandGroup(group);
-      this.setAnnotationSelectMode(true);
+      this.setAnnotationTool(null);
       this.setSelectedAnnotations(ids);
       pasted = true;
     };
@@ -6428,16 +6408,6 @@ export class PdfrxViewer {
     return this.options.editing?.history !== false && this.historyIndex < this.history.length;
   }
 
-  /** Backwards-compatible alias for {@link canUndo}. */
-  canUndoAnnotation(): boolean {
-    return this.canUndo();
-  }
-
-  /** Backwards-compatible alias for {@link canRedo}. */
-  canRedoAnnotation(): boolean {
-    return this.canRedo();
-  }
-
   /** Undoes the latest annotation, form, or page edit. */
   async undo(): Promise<void> {
     if (!this.canUndo()) return;
@@ -6471,16 +6441,6 @@ export class PdfrxViewer {
     }
     this.annotationHistoryMergeKey = null;
     this.notifyHistoryChanged();
-  }
-
-  /** Backwards-compatible alias for {@link undo}. */
-  async undoAnnotation(): Promise<void> {
-    await this.undo();
-  }
-
-  /** Backwards-compatible alias for {@link redo}. */
-  async redoAnnotation(): Promise<void> {
-    await this.redo();
   }
 
   /** Replaces the page arrangement and records it as one undoable edit. */
@@ -6544,6 +6504,7 @@ export class PdfrxViewer {
       await this.annotationPage(pageNumber).updateAnnotation(id, spec, {
         origin: 'history',
         actorId: this.options.editing?.actorId,
+        ...(spec.subtype === 'stamp' && spec.appearanceImage ? { preserveAppearance: true } : {}),
       });
     }
   }
@@ -6829,7 +6790,11 @@ export class PdfrxViewer {
       refreshFreeTextLayout(after);
       void (async () => {
         if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-        await this.annotationPage(overlay.pageNumber).updateAnnotation(annotation.id, after);
+        await this.annotationPage(overlay.pageNumber).updateAnnotation(
+          annotation.id,
+          after,
+          this.annotationMutationOptions(after),
+        );
         this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
       })();
     };
@@ -7084,7 +7049,7 @@ export class PdfrxViewer {
       tool === 'ink'
         ? start
         : this.snapAnnotationPoint(overlay, start, new Set<string>()).point;
-    const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight' || tool === 'freeText';
+    const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight';
     const previewTag = tool === 'ellipse' ? 'ellipse' : isShape ? 'rect' : tool === 'ink' ? 'polyline' : 'line';
     const preview = document.createElementNS(SVG_NS, previewTag);
     const previewFill =
@@ -7146,7 +7111,7 @@ export class PdfrxViewer {
       ln.setAttribute('y2', `${current.y}`);
       return;
     }
-    // Rect-like preview (rectangle/ellipse/highlight/freeText).
+    // Rect-like preview (rectangle/ellipse/highlight).
     const left = Math.min(start.x, current.x);
     const top = Math.min(start.y, current.y);
     const w = Math.abs(current.x - start.x);
@@ -7186,14 +7151,10 @@ export class PdfrxViewer {
       const contents = await this.requestAnnotationText(overlay, spec);
       if (contents === null) return;
       spec.contents = contents;
-    } else if (s.tool === 'freeText') {
-      const contents = await this.requestAnnotationText(overlay, spec);
-      if (contents === null) return;
-      await this.applyBoxContents(spec, contents);
     }
     const id = await this.annotationPage(s.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
-    this.setAnnotationSelectMode(true);
+    this.setAnnotationTool(null);
     this.setSelectedAnnotation(id);
   }
 
@@ -7480,7 +7441,7 @@ export class PdfrxViewer {
     await this.annotationPage(overlay.pageNumber).updateAnnotation(
       annotation.id,
       after,
-      this.annotationMutationOptions(),
+      this.annotationMutationOptions(after),
     );
     this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
   }
@@ -7572,32 +7533,6 @@ export class PdfrxViewer {
           rect: { left: p.x, top: p.y, right: p.x + 18, bottom: p.y - 18 },
           color,
           contents: '',
-        };
-      }
-      case 'freeText': {
-        // A click (or an imprecise short touch drag) would otherwise create a
-        // zero/tiny PDF rect even though the inline editor itself has a usable
-        // size. Expand in the gesture direction, then shift the box back inside
-        // the page while preserving a zoom-independent minimum on screen.
-        const minWidth = Math.min(s.pageSize.width, FREE_TEXT_MIN_SCREEN_WIDTH / this.transform.zoom);
-        const minHeight = Math.min(s.pageSize.height, FREE_TEXT_MIN_SCREEN_HEIGHT / this.transform.zoom);
-        const box = minimumDrawRect(start, end, minWidth, minHeight, s.pageSize);
-        const r = rectOf({ x: box.left, y: box.top }, { x: box.right, y: box.bottom });
-        const interiorColor = this.annotationStyle.fillColor
-          ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
-          : undefined;
-        return {
-          subtype: 'freeText',
-          rect: r,
-          color,
-          interiorColor,
-          borderWidth,
-          contents: '',
-          textColor,
-          fontSize,
-          textAlign: this.annotationStyle.textAlign,
-          textVerticalAlign: this.annotationStyle.textVerticalAlign,
-          textOrientation: { rotation: 0, behavior: 'page' },
         };
       }
     }
@@ -7746,7 +7681,7 @@ export class PdfrxViewer {
     if (!this.doc) return;
     const before = annotationToSpec(a);
     const after = translateAnnotationSpec(a, dx, dy);
-    await this.annotationPage(pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions());
+    await this.annotationPage(pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions(after));
     this.recordAnnotationCommand({ pageNumber, id: a.id, before, after });
   }
 
@@ -7799,7 +7734,7 @@ export class PdfrxViewer {
           await this.annotationPage(pageNumber).updateAnnotation(
             annotation.id,
             after,
-            this.annotationMutationOptions(),
+            this.annotationMutationOptions(after),
           );
           commands.push({ pageNumber, id: annotation.id, before, after });
         }
@@ -7881,7 +7816,7 @@ export class PdfrxViewer {
     }
     if (group.length === 0) return;
     this.recordAnnotationCommandGroup(group);
-    this.setAnnotationSelectMode(true);
+    this.setAnnotationTool(null);
     this.setSelectedAnnotations(ids);
     this.annotationDuplicateRepeat = { entries: created, selectedIds: ids, dx, dy };
   }
@@ -8353,7 +8288,7 @@ export class PdfrxViewer {
       const after = makeSpec(a);
       refreshFreeTextLayout(after);
       if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
-      await this.annotationPage(overlay.pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions());
+      await this.annotationPage(overlay.pageNumber).updateAnnotation(a.id, after, this.annotationMutationOptions(after));
       group.push({ pageNumber: overlay.pageNumber, id: a.id, before, after });
     }
     this.recordAnnotationCommandGroup(group);

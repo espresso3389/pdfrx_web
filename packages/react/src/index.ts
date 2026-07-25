@@ -132,7 +132,6 @@ export type {
   PdfrxViewerOptions,
   PdfrxPageMutationOptions,
   AnnotationTool,
-  AnnotationMode,
   AnnotationStyle,
   FitMode,
   LayoutDirection,

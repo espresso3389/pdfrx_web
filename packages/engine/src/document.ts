@@ -146,6 +146,37 @@ export interface PdfOpenUrlOptions extends PdfOpenOptions {
   withCredentials?: boolean;
 }
 
+/** How {@link PdfDocument.encodePdf} obtains the document it serializes. */
+export type PdfEncodeMode = 'in-place' | 'copy' | 'compact';
+
+/** Options for {@link PdfDocument.encodePdf}. */
+export interface PdfEncodeOptions {
+  /**
+   * `in-place` materializes the arrangement into the live document; `copy`
+   * clones a catalog-preserving base first; `compact` rebuilds the arranged
+   * pages and their reachable page-level objects in a fresh document. Defaults
+   * to `in-place`.
+   */
+  readonly mode?: PdfEncodeMode;
+  /** Requests incremental serialization. Not supported by `compact`. */
+  readonly incremental?: boolean;
+  /** Removes document security while serializing. */
+  readonly removeSecurity?: boolean;
+}
+
+/** How {@link PdfDocument.createCopy} constructs an independent document. */
+export type PdfCopyMode = 'clone' | 'compact';
+
+/** Options for {@link PdfDocument.createCopy}. */
+export interface PdfCopyOptions {
+  /**
+   * `clone` preserves the selected base document's catalog; `compact` rebuilds
+   * the arranged pages and their reachable page-level objects in a fresh
+   * document. Defaults to `clone`.
+   */
+  readonly mode?: PdfCopyMode;
+}
+
 /**
  * Builds a batch of raw PDF-object edits for {@link PdfDocument.editRawObjects}.
  *
@@ -1261,7 +1292,23 @@ export class PdfDocument {
    * done with {@link setPages} / {@link setPage}; a pending arrangement is
    * written back with {@link assemblePages} first.
    */
-  async encodePdf(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
+  async encodePdf(options: PdfEncodeOptions = {}): Promise<Uint8Array> {
+    const mode = options.mode ?? 'in-place';
+    if (mode !== 'in-place') {
+      if (mode === 'compact' && options.incremental) {
+        throw new Error('incremental encoding is not supported in compact mode');
+      }
+      const copy = await this.createCopy({ mode: mode === 'copy' ? 'clone' : 'compact' });
+      try {
+        return await copy.encodePdf({
+          mode: 'in-place',
+          incremental: mode === 'compact' ? false : options.incremental,
+          removeSecurity: options.removeSecurity,
+        });
+      } finally {
+        await copy.dispose();
+      }
+    }
     await this.assemblePages();
     const result = await this.sendCommand('encodePdf', {
       docHandle: this.docHandle,
@@ -1378,7 +1425,7 @@ export class PdfDocument {
       return;
     }
 
-    const copy = await this.createPdfCopy();
+    const copy = await this.createCopy();
     try {
       await copy.applyRawPatchInternal(editor.operations, { createDictionaries: editor.createDictionaries });
       await this.adoptTransactionalCopy(copy);
@@ -1435,37 +1482,40 @@ export class PdfDocument {
   }
 
   /**
-   * Serializes the current page arrangement through a temporary document,
-   * leaving this document and any outstanding page proxies untouched. The
-   * temporary copy is always disposed before this method returns.
-   *
-   * When the arrangement consists entirely of pages from one imported PDF,
-   * that source PDF becomes the copy base. This preserves its document-level
-   * structures (AcroForm, outline, metadata, name trees) instead of importing
-   * only its page dictionaries into an unrelated root document.
-   * A mixed-source arrangement still uses this document as its base; combining
-   * the other sources' catalog structures requires an application-level merge
-   * policy for field names, destinations, signatures, and similar semantics.
-   */
-  async encodePdfCopy(options: { incremental?: boolean; removeSecurity?: boolean } = {}): Promise<Uint8Array> {
-    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    const copy = await this.createPdfCopy();
-    try {
-      return await copy.encodePdf(options);
-    } finally {
-      await copy.dispose();
-    }
-  }
-
-  /**
    * Creates an independent document materializing the current virtual page
    * arrangement. The caller owns the returned document and must dispose it.
+   *
+   * `clone` chooses the sole imported source as its base when possible,
+   * preserving that source's catalog. `compact` rebuilds the arranged pages in
+   * a new empty PDF and omits objects not reachable from those pages, whether
+   * they originated in the source PDF or from subsequent edits. It does not
+   * automatically copy document-level outlines, metadata, name trees,
+   * signatures, or AcroForm configuration.
    */
-  async createPdfCopy(): Promise<PdfDocument> {
+  async createCopy(options: PdfCopyOptions = {}): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    if ((options.mode ?? 'clone') === 'compact') return this.createCompactArrangementCopy();
     const sourceDocuments = new Set(this._pages.map((page) => page.sourceDocument));
     const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
     return baseDocument.createArrangementCopy(this._pages);
+  }
+
+  /** Imports the current arranged pages into a new empty PDF. */
+  private async createCompactArrangementCopy(): Promise<PdfDocument> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    const result = await this.sendCommand('createNewDocument', {});
+    if (isWireError(result)) {
+      throw new Error(`Failed to create compact copy: ${result.errorCodeStr} (${result.errorCode})`);
+    }
+    const copy = new PdfDocument(this.comm, result, `${this.sourceName} (compact copy)`, null);
+    try {
+      copy.setPages(this._pages);
+      await copy.assemblePages();
+      return copy;
+    } catch (error) {
+      await copy.dispose();
+      throw error;
+    }
   }
 
   /** Creates a materialized copy of `pages` using this document as its catalog base. */
@@ -1718,6 +1768,7 @@ export class PdfDocument {
       pageIndex: page.sourcePageIndex,
       id,
       spec: page.annotationSpecToWire(effectiveSpec),
+      ...(options.preserveAppearance ? { preserveAppearance: true } : {}),
     });
     const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
     page.sourceDocument.emitAnnotationSourceChange(
@@ -1801,6 +1852,7 @@ export class PdfDocument {
         docHandle: page.sourceDocument.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(existingIds.has(item.id) ? { id: item.id } : {}),
+        ...(existingIds.has(item.id) && options.preserveAppearance ? { preserveAppearance: true } : {}),
         spec: page.annotationSpecToWire(spec),
       } as never);
       changes.push({ type: existingIds.has(item.id) ? 'update' : 'add', id: result.id, pageNumber: item.pageNumber, spec });
@@ -1838,6 +1890,7 @@ export class PdfDocument {
         docHandle: page.sourceDocument.docHandle,
         pageIndex: page.sourcePageIndex,
         ...(command === 'updateAnnotation' ? { id: change.id } : {}),
+        ...(command === 'updateAnnotation' && options.preserveAppearance ? { preserveAppearance: true } : {}),
         spec: page.annotationSpecToWire(spec),
       } as never);
       applied.push({ ...change, id: result.id, spec });
@@ -2583,8 +2636,8 @@ export class PdfPage {
    * visible annotation text or the page number. The engine generates one when
    * {@link PdfAnnotationSpec.id} is omitted. Keep the returned value to pass to
    * {@link updateAnnotation} or {@link removeAnnotation}, or to correlate the
-   * annotation with an external store or collaboration message. It is
-   * preserved when the PDF is encoded and opened again.
+   * annotation with another representation. It is preserved when the PDF is
+   * encoded and opened again.
    *
    * The physical write is sent to {@link sourceDocument}; the
    * `annotationsChanged` event is emitted from the source document and every

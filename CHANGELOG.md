@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `compact` modes to `PdfDocument.createCopy()` and `encodePdf()` to
+  rebuild the arranged pages in a fresh PDF and omit objects not reachable from
+  those pages, whether inherited from the source or produced by later edits.
+- Added `PdfAnnotationMutationOptions.preserveAppearance` for geometry-only
+  raster Stamp updates.
+
+### Changed
+
+- Rebuilt collaborative exports through a compact page import before restoring
+  outlines and AcroForms.
+- Consolidated PDF serialization around `PdfDocument.createCopy({ mode })` and
+  `encodePdf({ mode })`, replacing the copy/compact method variants.
+- Consolidated viewer drawing state around `setAnnotationTool()`,
+  `getAnnotationTool()`, and `addAnnotationToolChangeListener()`.
+
+### Removed
+
+- Removed compatibility-only viewer APIs: `AnnotationMode`,
+  `setAnnotationSelectMode()`, the `freeText` drawing-tool alias, and the
+  annotation-specific undo/redo aliases.
+- Removed inline raster pixels from the collaboration annotation protocol;
+  raster appearances now use relay-backed `appearanceImageSource` exclusively.
+
+### Fixed
+
+- Stopped image-annotation moves and resizes from registering the same raster
+  appearance repeatedly and growing long-lived collaborative documents.
+
 ## [0.16.3] - 2026-07-26
 
 ### Added

@@ -4449,7 +4449,7 @@ function addAnnotation(params) {
  * @returns {{id: string}}
  */
 function updateAnnotation(params) {
-  const { docHandle, pageIndex, id } = params;
+  const { docHandle, pageIndex, id, preserveAppearance = false } = params;
   let { spec } = params;
   const w = Pdfium.wasmExports;
   const pageHandle = w.FPDF_LoadPage(docHandle, pageIndex);
@@ -4461,7 +4461,10 @@ function updateAnnotation(params) {
       const existing = w.FPDFPage_GetAnnot(pageHandle, existingIndex);
       if (existing) {
         existingRevision = Number.parseInt(_getAnnotField(ANNOT_REVISION_KEY, existing), 10) || 0;
-        if (spec.subtype === 'stamp' && !spec.appearanceImage && !spec.appearancePaths) {
+        if (
+          spec.subtype === 'stamp' &&
+          ((!spec.appearanceImage && !spec.appearancePaths) || (preserveAppearance && spec.appearanceImage))
+        ) {
           const revision = spec.revision ?? existingRevision + 1;
           spec = { ...spec, revision };
           _applyAnnotSpec(existing, spec, docHandle);

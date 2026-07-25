@@ -242,7 +242,7 @@ function CollaborativeViewerContent({
     const annotationImageLoads = new Map<string, Promise<Uint8Array>>();
     const resolveAnnotationSpec = async (shared: SharedAnnotationSpec): Promise<PdfAnnotationSnapshot['annotations'][number]['spec']> => {
       const { appearanceImageSource, ...spec } = structuredClone(shared);
-      if (!appearanceImageSource || spec.appearanceImage) return spec;
+      if (!appearanceImageSource) return spec;
       let loading = annotationImageLoads.get(appearanceImageSource.documentId);
       if (!loading) {
         loading = (async () => {
@@ -300,7 +300,12 @@ function CollaborativeViewerContent({
           }
           await document.restoreAnnotations(
             { version: 1, annotations },
-            { mode: 'replace', origin: 'remote', transactionId: 'annotation-snapshot' },
+            {
+              mode: 'replace',
+              origin: 'remote',
+              transactionId: 'annotation-snapshot',
+              preserveAppearance: true,
+            },
           );
           return;
         }
@@ -328,6 +333,7 @@ function CollaborativeViewerContent({
             origin: 'remote',
             actorId: committed?.actorId,
             transactionId: committed ? `annotation-revision-${committed.revision}` : 'annotation-snapshot',
+            preserveAppearance: true,
           });
         }
       }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
@@ -618,7 +624,7 @@ function CollaborativeViewerContent({
       const sources = sourcesRef.current;
       return placements && sources
         ? encodeCollaborativePdf(rootDocument, placements, sources)
-        : rootDocument.encodePdfCopy();
+        : rootDocument.encodePdf({ mode: 'copy' });
     },
     onSaveError: (reason) => {
       const detail = reason instanceof Error ? reason.message : String(reason);

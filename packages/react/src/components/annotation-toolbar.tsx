@@ -31,10 +31,7 @@ import {
 export interface PdfAnnotationToolbarProps {
   className?: string;
   style?: CSSProperties;
-  /**
-   * Which tools to show, in order. `rectangle` and legacy `freeText` both map
-   * to the same box tool and are de-duplicated. Note remains opt-in.
-   */
+  /** Which tools to show, in order. Note remains opt-in. */
   tools?: readonly AnnotationTool[];
   /** Preset colors offered in the color picker. */
   colors?: readonly string[];
@@ -278,7 +275,6 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
   arrow: IconArrowTool,
   highlight: IconHighlighter,
   note: IconNote,
-  freeText: IconRectangle,
 };
 
 /**
@@ -313,11 +309,8 @@ export function PdfAnnotationToolbar({
     arrow: strings.arrowTool,
     highlight: strings.highlighterTool,
     note: strings.noteTool,
-    freeText: strings.rectangleTool,
   };
-  const visibleTools = tools
-    .map((tool) => (tool === 'freeText' ? 'rectangle' : tool))
-    .filter((tool, index, all) => all.indexOf(tool) === index);
+  const visibleTools = tools.filter((tool, index, all) => all.indexOf(tool) === index);
   const [initialPreferences] = useState(() =>
     loadAnnotationToolbarPreferences(colors[0] ?? '#e53935'),
   );
@@ -375,7 +368,7 @@ export function PdfAnnotationToolbar({
     if (!viewer) return;
     const syncMode = (): void => setActive(viewer.getAnnotationTool());
     syncMode();
-    const unsubscribe = viewer.addAnnotationModeChangeListener(syncMode);
+    const unsubscribe = viewer.addAnnotationToolChangeListener(syncMode);
     return () => {
       unsubscribe();
       viewer.setAnnotationTool(null);

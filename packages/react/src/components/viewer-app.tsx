@@ -193,12 +193,12 @@ export interface PdfrxViewerAppOverrides {
    * Produces the PDF bytes downloaded by the standard Download button. The app
    * flushes active annotation text editing before calling this function and
    * still owns blob creation and browser download. Omit it to use
-   * `document.encodePdfCopy()`.
+   * `document.encodePdf({ mode: 'copy' })`.
    *
    * @example Equivalent to the default behavior
    * ```tsx
    * return renderChrome({
-   *   encode: (document) => document.encodePdfCopy(),
+   *   encode: (document) => document.encodePdf({ mode: 'copy' }),
    * });
    * ```
    */
@@ -637,7 +637,7 @@ function SaveButton({
     try {
       await viewer.flushAnnotationTextEdit();
       // Assemble a temporary copy so saving does not invalidate editing history.
-      const data = encode ? await encode(document) : await document.encodePdfCopy();
+      const data = encode ? await encode(document) : await document.encodePdf({ mode: 'copy' });
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;

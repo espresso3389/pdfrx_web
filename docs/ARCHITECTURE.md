@@ -24,10 +24,15 @@ partial regions, text with per-character rects, links, outline, font management,
 `assemble` is surfaced on
 `PdfDocument` as `assemblePages()`, which writes back the arrangement built with
 `setPages` / `setPage` — the only page-editing API — and `encodePdf()` reflects
-those edits. `encodePdfCopy()` normally clones the root document, but when its
+those edits. `encodePdf({ mode: 'copy' })` normally clones the root document, but when its
 virtual arrangement contains pages from exactly one imported document it clones
 that source instead; PDFium page import does not copy document-level AcroForm,
-outline, metadata, or name-tree dictionaries. Notable client behaviors:
+outline, metadata, or name-tree dictionaries. `createCopy({ mode: 'compact' })`
+deliberately rebuilds the arranged pages in a new empty document instead. It
+omits objects not reachable from those pages, whether they were already present
+in the source PDF or resulted from subsequent edits, but applications must
+reconstruct any required document-level catalog structures. Notable client
+behaviors:
 
 - The custom PDFium build uses
   [espresso3389/pdfium-binaries](https://github.com/espresso3389/pdfium-binaries/)
@@ -293,9 +298,8 @@ is already selected, it instead selects every annotation on the current page.
 `Delete`/`Backspace` removes the selection. Arrow keys translate it by one
 screen pixel (ten with Shift), converting that screen-space delta through page
 rotation and constraining the group to the page before recording one history
-step.
-`setAnnotationSelectMode(true)` remains only as a compatibility API that clears
-the active drawing tool; `false` is a no-op.
+step. Clear the active drawing tool with `setAnnotationTool(null)`; object
+selection remains available independently of the active tool.
 
 **Rectangle text editing.** Square and FreeText remain distinct PDF annotation
 subtypes but are one GUI object. Double-clicking either opens the same inline
@@ -337,7 +341,7 @@ pointer release remains the authoritative annotation change.
 multi-object move/resize/delete is a single step. Because `updateAnnotation`
 creates the annotation when its id is not found, replaying any state is uniformly
 "remove (null) or create/replace by id", so create/delete/move/reshape all undo
-and redo the same way. `undoAnnotation()`/`redoAnnotation()` drive the document
+and redo the same way. `undo()`/`redo()` drive the document
 to the neighbouring group state without recording.
 
 The engine is the mutation observation boundary. `annotationsChanged` includes

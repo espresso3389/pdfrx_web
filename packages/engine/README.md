@@ -129,7 +129,7 @@ Each symbol links to its entry in the
   corresponding
   [`PdfPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html)
   methods when only one page is needed.
-- External annotation persistence and collaboration:
+- External annotation persistence and synchronization:
   [`exportAnnotations()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#exportannotations) /
   [`restoreAnnotations()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#restoreannotations)
   preserve stable ids,
@@ -137,10 +137,10 @@ Each symbol links to its entry in the
   handles binary FreeText appearance data, and
   [`applyAnnotationChanges()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#applyannotationchanges)
   applies `add` / `update` / `remove` batches. `annotationsChanged` includes the
-  exact changes plus `origin`, `transactionId`, and `actorId`; publish
-  local/user changes and apply incoming changes with `origin: 'remote'` to
-  prevent echo loops. Each annotation carries its last `actorId` and monotonic
-  `revision`.
+  exact changes plus `origin`, `transactionId`, and `actorId`. These fields let
+  applications distinguish mutation sources, correlate batches, avoid applying
+  the same change twice, and implement revision-aware synchronization. Each
+  annotation carries its last `actorId` and monotonic `revision`.
 - Rectangle and FreeText annotation specs preserve independent `textColor`,
   `fontSize`,
   [`textAlign`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationSpec.html#textalign)
@@ -164,8 +164,10 @@ Each symbol links to its entry in the
   [`setPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage)
   over proxy pages; [`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages) writes the arrangement back into the PDF ([`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) calls it for you)
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — materialize the arrangement into the live document and serialize it
-- [`doc.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy) — assemble and serialize through a temporary copy, preserving the live document's proxy arrangement
-- [`encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy) chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
+- [`doc.encodePdf({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) selects `in-place` (default), `copy`, or `compact`. `copy` assembles through a temporary catalog-preserving clone; `compact` rebuilds the arranged pages in a fresh PDF and omits objects that are not reachable from those pages, regardless of whether they were already present in the source PDF or resulted from later edits
+- [`doc.createCopy({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createcopy) returns an owned `clone` (default) or `compact` document. Compact copies retain page resources, annotations, and widgets, while outlines, metadata, name trees, signatures, and AcroForm configuration require application-level reconstruction
+- `encodePdf({ mode: 'copy' })` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
+- Raster Stamp moves/resizes can pass [`preserveAppearance: true`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationMutationOptions.html#preserveappearance) to `updateAnnotation()` so PDFium updates the annotation rectangle without registering the same image stream again
 - Raw PDF-object inspection and editing:
   [`getCatalogObject()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#getcatalogobject)
   reads the catalog,

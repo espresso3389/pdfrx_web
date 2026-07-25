@@ -494,7 +494,7 @@ export interface PdfAnnotationObject {
    * same page. It is an internal identity, not the visible annotation contents
    * or its page number. The engine stores generated and caller-supplied ids in
    * `/NM`, so they survive `PdfDocument.encodePdf()` and can correlate update,
-   * remove, snapshot, and collaboration operations.
+   * remove, snapshot, persistence, and synchronization operations.
    *
    * For an existing annotation without `/NM`, the engine returns a page-local
    * `@<index>` fallback. That fallback is positional rather than stable: after
@@ -612,10 +612,10 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
 export interface PdfAnnotationSpec {
   /**
    * Identity stored in the PDF annotation dictionary's `/NM` ("annotation
-   * name") entry. Use an application id here when the annotation must correlate
-   * with an external store or collaboration protocol. Omit it for a new local
-   * annotation and the engine generates an id; {@link PdfPage.addAnnotation}
-   * returns the generated value.
+   * name") entry. Supply an application id when the annotation must correlate
+   * with another representation, such as an external store. Omit it to let the
+   * engine generate an id; {@link PdfPage.addAnnotation} returns the generated
+   * value.
    */
   id?: string;
   subtype: PdfAnnotationSubtype;
@@ -718,6 +718,13 @@ export interface PdfAnnotationMutationOptions {
   readonly transactionId?: string;
   /** Stable application/user id responsible for the mutation. */
   readonly actorId?: string;
+  /**
+   * Updates a raster Stamp's attributes and geometry without replacing its
+   * existing appearance stream. Set this when the appearance pixels are
+   * unchanged, so the existing image resources remain associated with the
+   * annotation.
+   */
+  readonly preserveAppearance?: boolean;
 }
 
 /** Options for restoring an external snapshot. */

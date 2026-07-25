@@ -54,4 +54,45 @@ describe('vector stamp appearance round-trip', () => {
       await document.dispose();
     }
   });
+
+  it('preserves raster appearances in place and compacts stale replacements', async () => {
+    const background = { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) };
+    const pixels = Uint8Array.from({ length: 64 * 64 * 4 }, (_, index) => (index * 73 + 19) & 0xff);
+    const appearanceImage = { width: 64, height: 64, pixels };
+    const makeSpec = (left: number) => ({
+      subtype: 'stamp' as const,
+      rect: { left, bottom: 0, right: left + 0.8, top: 0.8 },
+      appearanceImage,
+    });
+
+    const preserved = await engine.createFromImages([background]);
+    try {
+      const page = preserved.pages[0]!;
+      const id = await page.addAnnotation(makeSpec(0));
+      for (let index = 0; index < 20; index++) {
+        await page.updateAnnotation(id, makeSpec((index % 2) * 0.01), { preserveAppearance: true });
+      }
+      const bytes = await preserved.encodePdf();
+      expect(bytes.byteLength).toBeLessThan(100_000);
+      const [annotation] = await page.loadAnnotations();
+      expect(annotation?.rect.left).toBeCloseTo(0.01);
+      expect(annotation?.appearanceImage?.pixels.byteLength).toBe(pixels.byteLength);
+    } finally {
+      await preserved.dispose();
+    }
+
+    const replaced = await engine.createFromImages([background]);
+    try {
+      const page = replaced.pages[0]!;
+      const id = await page.addAnnotation(makeSpec(0));
+      for (let index = 0; index < 20; index++) {
+        await page.updateAnnotation(id, makeSpec((index % 2) * 0.01));
+      }
+      const ordinary = await replaced.encodePdf();
+      const compact = await replaced.encodePdf({ mode: 'compact' });
+      expect(compact.byteLength).toBeLessThan(ordinary.byteLength / 3);
+    } finally {
+      await replaced.dispose();
+    }
+  });
 });

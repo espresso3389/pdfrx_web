@@ -440,8 +440,10 @@ const bytes = await encodeCollaborativePdf(
 );
 ```
 
-For a single source, the source document remains the export base, preserving
-its document-level structures. For mixed sources, the export composition pass:
+The export starts from
+[`createCopy({ mode: 'compact' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createcopy),
+so unreachable appearance objects accumulated by older clients are omitted.
+For both single- and mixed-source arrangements, the export composition pass:
 
 - maps outlines/bookmarks to final page indices;
 - merges AcroForms whose Widget annotations arrived with imported pages;
@@ -450,8 +452,9 @@ its document-level structures. For mixed sources, the export composition pass:
 - appends each source's calculation order in source order.
 
 PDFium page import does not merge document catalogs, so this is necessarily an
-export-only composition step. XFA, signature preservation, arbitrary PDF
-JavaScript, and arbitrary cross-document catalog/name-tree merging are not
+export-only composition step. General metadata/name trees, XFA, signature
+preservation, arbitrary PDF JavaScript, and arbitrary cross-document catalog
+merging are not
 supported.
 
 ## Conflict and Undo/Redo policy

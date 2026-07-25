@@ -24,8 +24,8 @@ export interface ImageAnnotationDropHandlers {
  *
  * The hook classifies image files, hit-tests the canvas in PDF coordinates,
  * and creates a stamp annotation centered at the drop point. Annotation change
- * listeners still observe the resulting local mutation, so hosts can layer
- * persistence or collaboration onto the same behavior.
+ * listeners observe the resulting mutation normally, allowing applications to
+ * attach their own persistence or other post-processing.
  */
 export function useImageAnnotationDrop(
   options: UseImageAnnotationDropOptions = {},

@@ -13,7 +13,7 @@ export interface PdfSaveButtonProps {
   fileName?: string;
   /** Custom label/children; defaults to a save icon. */
   children?: ReactNode;
-  /** Overrides serialization, for example to merge collaboration document structures. */
+  /** Overrides serialization when the application needs custom export processing. */
   encode?: (document: PdfDocument) => Promise<Uint8Array>;
 }
 
@@ -34,7 +34,7 @@ export function PdfSaveButton({ className, style, fileName, children, encode }: 
     setIsSaving(true);
     try {
       await viewer.flushAnnotationTextEdit();
-      const data = encode ? await encode(doc) : await doc.encodePdfCopy();
+      const data = encode ? await encode(doc) : await doc.encodePdf({ mode: 'copy' });
       const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/pdf' }));
       const anchor = window.document.createElement('a');
       anchor.href = url;

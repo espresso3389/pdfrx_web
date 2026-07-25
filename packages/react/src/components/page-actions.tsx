@@ -10,16 +10,16 @@ export interface PdfPageActionsProps {
   pageNumber: number;
   /** Rotation choices to render, clockwise. Defaults to `[90]`. */
   rotationDeltas?: readonly PdfPageRotationDelta[];
-  /** Overrides the built-in local viewer mutation, e.g. to submit a collaboration command. */
+  /** Overrides the built-in page-rotation mutation. */
   onRotatePage?: (pageNumber: number, delta: PdfPageRotationDelta) => void;
-  /** Overrides the built-in local viewer mutation, e.g. to submit a collaboration command. */
+  /** Overrides the built-in page-deletion mutation. */
   onDeletePage?: (pageNumber: number) => void;
   disabled?: boolean;
   className?: string;
   style?: CSSProperties;
 }
 
-/** Reusable rotate/delete controls for one page, controllable by collaborative applications. */
+/** Reusable rotate/delete controls for one page with optional mutation overrides. */
 export function PdfPageActions({
   pageNumber,
   rotationDeltas = DEFAULT_ROTATIONS,

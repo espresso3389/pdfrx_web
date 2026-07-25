@@ -219,7 +219,7 @@ describe('collaborative AcroForm export', () => {
   it('registers imported widgets under source-scoped field names and rewrites calculations', async () => {
     const first = await openFixture('form-a.pdf');
     const second = await openFixture('form-b.pdf');
-    const merged = await first.createPdfCopy();
+    const merged = await first.createCopy();
     try {
       merged.setPages([merged.pages[0]!, second.pages[0]!]);
       await merged.assemblePages();
