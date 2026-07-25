@@ -27,6 +27,7 @@ const { PdfPageIndicator } = await import('./components/toolbar-parts.js');
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   state.goToPage.mockReset();
   state.currentPageNumber = 2;
   state.pageCount = 8;
@@ -44,6 +45,24 @@ describe('PdfPageIndicator', () => {
     expect(screen.getByRole('dialog', { name: defaultPdfrxStrings.pageNumber })).not.toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: defaultPdfrxStrings.pageNumber }));
     expect((screen.getByRole('slider', { name: defaultPdfrxStrings.pageNumber }) as HTMLInputElement).value).toBe('2');
+  });
+
+  it('does not initially focus the page input on a touch-first device', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      media: '(hover: none) and (pointer: coarse)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    render(<PdfPageIndicator />);
+
+    fireEvent.click(screen.getByRole('button', { name: defaultPdfrxStrings.pageNumber }));
+
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox', { name: defaultPdfrxStrings.pageNumber }));
   });
 
   it('navigates immediately with the slider and commits typed pages with Enter', () => {

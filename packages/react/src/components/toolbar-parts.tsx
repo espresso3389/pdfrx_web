@@ -27,8 +27,13 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
 
   useEffect(() => {
     if (!open) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    // Avoid summoning the software keyboard as soon as the popup opens on a
+    // touch-first device. The user can still tap the input explicitly.
+    const touchFirst = globalThis.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+    if (!touchFirst) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
     const onDown = (event: PointerEvent): void => {
       if (!hostRef.current?.contains(event.target as Node)) setOpen(false);
     };
