@@ -154,6 +154,26 @@
   height: 18px;
 }
 
+.pdfrx-busy-indicator {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: pdfrx-spin 0.7s linear infinite;
+}
+
+@keyframes pdfrx-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfrx-busy-indicator {
+    animation: none;
+  }
+}
+
 /* --- Page indicator & zoom ----------------------------------------------- */
 
 .pdfrx-page-indicator,

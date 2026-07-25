@@ -57,8 +57,9 @@ export function PdfSaveButton({ className, style, fileName, children, encode }: 
       disabled={isSaving || pageCount === 0}
       title={strings.download}
       aria-label={strings.download}
+      aria-busy={isSaving}
     >
-      {children ?? <IconSave />}
+      {isSaving ? <span className="pdfrx-busy-indicator" aria-hidden="true" /> : (children ?? <IconSave />)}
     </button>
   );
 }

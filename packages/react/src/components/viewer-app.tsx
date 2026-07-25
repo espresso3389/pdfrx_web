@@ -203,6 +203,8 @@ export interface PdfrxViewerAppOverrides {
    * ```
    */
   readonly encode?: (document: PdfDocument) => Promise<Uint8Array>;
+  /** Receives an error thrown while preparing or starting a PDF download. */
+  readonly onSaveError?: (error: unknown) => void;
   /**
    * Compact host UI rendered below the standard toolbar, annotation toolbar,
    * and built-in error banner, but above the sidebar/surface row.
@@ -551,7 +553,13 @@ function PdfrxViewerAppChrome({
               />
             </>
           )}
-          {showDownloadButton && <SaveButton encode={overrides?.encode} disabled={overrides?.editingDisabled} />}
+          {showDownloadButton && (
+            <SaveButton
+              encode={overrides?.encode}
+              onError={overrides?.onSaveError}
+              disabled={overrides?.editingDisabled}
+            />
+          )}
           {children}
         </PdfToolbar>
       )}
@@ -610,9 +618,11 @@ function PdfrxViewerAppChrome({
 /** Serializes the (possibly edited) document and downloads it. */
 function SaveButton({
   encode,
+  onError,
   disabled = false,
 }: {
   encode?: (document: PdfDocument) => Promise<Uint8Array>;
+  onError?: (error: unknown) => void;
   disabled?: boolean;
 }): ReactNode {
   const viewer = usePdfrxViewer();
@@ -636,6 +646,7 @@ function SaveButton({
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Failed to save the document:', e);
+      onError?.(e);
     } finally {
       setIsSaving(false);
     }
@@ -647,8 +658,9 @@ function SaveButton({
       onClick={() => void save()}
       disabled={disabled || isSaving || pageCount === 0}
       title={strings.download}
+      aria-busy={isSaving}
     >
-      <IconSave />
+      {isSaving ? <span className="pdfrx-busy-indicator" aria-hidden="true" /> : <IconSave />}
     </button>
   );
 }

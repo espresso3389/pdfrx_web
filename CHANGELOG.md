@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-07-26
+
 ### Added
 
 - Added `PdfrxViewerApp.renderContent` and `PdfrxViewerAppOverrides` so host
@@ -19,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Rebuilt `CollaborativePdfViewer` directly on `PdfrxViewerApp`, leaving only
   relay-backed editing operations and collaboration notices as overrides.
+
+### Fixed
+
+- Kept active annotation text editors open while rendering remote updates to
+  other annotations on the same page.
+- Made inline annotation text-editor backgrounds fully opaque, falling back to
+  white when the annotation has no fill color.
+- Reported collaboration PDF export failures through the visible error banner
+  instead of only logging serialization errors to the developer console.
 
 ## [0.16.2] - 2026-07-26
 
@@ -487,7 +498,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.2...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.3...HEAD
+[0.16.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.3...v0.16.0

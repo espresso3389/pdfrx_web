@@ -34,6 +34,7 @@ function CustomEditingController({
     rotatePage: editing.rotatePage,
     deletePage: editing.deletePage,
     encode: editing.encode,
+    onSaveError: editing.reportSaveError,
     beforeBody: editing.status,
     editingDisabled: !editing.ready,
   });
@@ -67,6 +68,12 @@ replace the corresponding thumbnail sidebar actions.
 replaces the data-generation step used by the download button;
 [`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html)
 still creates and downloads the resulting PDF blob.
+During this work the button is disabled, shows a busy indicator, and exposes
+`aria-busy="true"`.
+[`onSaveError`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxViewerAppOverrides.html#onsaveerror)
+receives an error thrown by text-edit flushing, encoding, blob creation, or
+download startup so the host can present it through `beforeBody` or another
+application error surface.
 
 These overrides are useful when edits must pass through application-specific
 validation, external persistence, an operation log, or a shared backend. They

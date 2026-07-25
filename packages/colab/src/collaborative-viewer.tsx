@@ -620,6 +620,10 @@ function CollaborativeViewerContent({
         ? encodeCollaborativePdf(rootDocument, placements, sources)
         : rootDocument.encodePdfCopy();
     },
+    onSaveError: (reason) => {
+      const detail = reason instanceof Error ? reason.message : String(reason);
+      setError(`PDFのダウンロードに失敗しました: ${detail}`);
+    },
     beforeBody: (
         <>
           {notices}

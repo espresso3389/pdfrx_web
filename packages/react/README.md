@@ -38,7 +38,10 @@ For application-controlled editing behavior, `renderContent` can retain the
 standard viewer chrome while selectively overriding file, page, and export
 operations through
 [`PdfrxViewerAppOverrides`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxViewerAppOverrides.html);
-see [Customizing `PdfrxViewerApp`](https://github.com/espresso3389/pdfrx_web/blob/master/docs/REACT-VIEWER-APP-CUSTOMIZATION.md)
+its
+[`onSaveError`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxViewerAppOverrides.html#onsaveerror)
+callback lets a host surface export failures in application UI.
+See [Customizing `PdfrxViewerApp`](https://github.com/espresso3389/pdfrx_web/blob/master/docs/REACT-VIEWER-APP-CUSTOMIZATION.md)
 for the complete pattern.
 
 `enableFileOpen` accepts picked **images** too — PNG, JPEG, GIF, WebP and friends
@@ -201,7 +204,8 @@ across its text/background area. Filled rectangles retain full-interior hit
 testing, while unfilled rectangles otherwise use their outline. The inline
 editor follows the annotation stroke, text color, font size, horizontal and
 vertical alignment, wrapping, and clipping while it is resized.
-Its text and background use the annotation's current text and fill colors.
+Its text uses the annotation's current text color. The editing background uses
+the fill color at full opacity, or white when no fill is set.
 
 Annotation selection is always available; the toolbar contains drawing tools,
 not text/object selection mode buttons. A primary click selects one object,
@@ -334,8 +338,9 @@ history can therefore leave Undo/Redo inconsistent with the live document.
 The built-in download buttons avoid this by using
 [`PdfDocument.encodePdfCopy()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdfcopy).
 Assembly happens on a temporary document, while
-the live document and its history remain intact. Custom editor save UI should
-normally do the same:
+the live document and its history remain intact. While encoding, their download
+icon changes to a busy indicator and the button exposes `aria-busy="true"`.
+Custom editor save UI should normally do the same:
 
 ```tsx
 await viewer.flushAnnotationTextEdit();
@@ -385,7 +390,7 @@ and then leave older Undo/Redo entries available.
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.2/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.3/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other
