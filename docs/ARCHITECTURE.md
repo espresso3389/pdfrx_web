@@ -312,7 +312,9 @@ line-height, descent allowance, padding, and clipping model for its SVG overlay
 and the PDF appearance stream so middle/bottom alignment remains visually
 consistent. The input border follows the annotation stroke unless that stroke
 is disabled; its foreground and background follow the annotation text and
-interior colors.
+interior colors. The textarea is focused synchronously within the activating
+pointer or click handler because iOS only opens its software keyboard while
+that user activation is still live.
 
 **Toolbar style state and color preview.** The React toolbar derives common
 values from the current selection and marks differing multi-selection values as
