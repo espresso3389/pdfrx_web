@@ -1863,6 +1863,7 @@ export class PdfrxViewer {
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
   private readonly annotationModeChangeListeners = new Set<(mode: AnnotationMode) => void>();
+  private readonly annotationSelectionChangeListeners = new Set<() => void>();
   private readonly annotationPreviewChangeListeners = new Set<
     (changes: readonly AnnotationPreviewChange[]) => void
   >();
@@ -2957,7 +2958,7 @@ export class PdfrxViewer {
     this.pageLinks.clear();
     this.hoveredLink = null;
     this.clearHistory();
-    this.selectedAnnotationIds.clear();
+    this.setSelectedAnnotations([]);
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
     doc.addEventListener('pagesRearranged', (event) => this.onPagesRearranged(event));
@@ -5465,6 +5466,9 @@ export class PdfrxViewer {
     };
     this.attachAnnotationEditing(overlay, pageNumber, pageGeom, pageSize);
     this.refreshAnnotationSelection(overlay);
+    if (annotations.some((annotation) => this.selectedAnnotationIds.has(annotation.id))) {
+      this.notifyAnnotationSelectionChanged();
+    }
     return overlay;
   }
 
@@ -6061,6 +6065,19 @@ export class PdfrxViewer {
     return [...this.selectedAnnotationIds];
   }
 
+  /** Snapshots of all currently selected annotations that are loaded in the viewer. */
+  getSelectedAnnotations(): PdfAnnotationObject[] {
+    return [...this.selectedAnnotationIds]
+      .map((id) => this.annotationSnapshots.get(id)?.annotation ?? this.locateAnnotation(id)?.annotation)
+      .filter((annotation): annotation is PdfAnnotationObject => annotation !== undefined);
+  }
+
+  /** Subscribes to annotation-object selection changes. */
+  addAnnotationSelectionChangeListener(listener: () => void): () => void {
+    this.annotationSelectionChangeListeners.add(listener);
+    return () => this.annotationSelectionChangeListeners.delete(listener);
+  }
+
   /** Selects (highlights) a single annotation by id, or clears with `null`. */
   setSelectedAnnotation(id: string | null): void {
     this.setSelectedAnnotations(id ? [id] : []);
@@ -6075,6 +6092,17 @@ export class PdfrxViewer {
     this.selectedAnnotationIds.clear();
     for (const id of next) this.selectedAnnotationIds.add(id);
     this.refreshAnnotationSelectionAll();
+    this.notifyAnnotationSelectionChanged();
+  }
+
+  private notifyAnnotationSelectionChanged(): void {
+    for (const listener of this.annotationSelectionChangeListeners) {
+      try {
+        listener();
+      } catch (e) {
+        console.error('Error in annotation selection change listener:', e);
+      }
+    }
   }
 
   /**
@@ -6192,7 +6220,7 @@ export class PdfrxViewer {
       .map((id) => this.locateAnnotation(id))
       .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null);
     if (targets.length === 0) return;
-    this.selectedAnnotationIds.clear();
+    this.setSelectedAnnotations([]);
     const group: AnnotationCommand[] = [];
     for (const t of targets) {
       const before = annotationToSpec(t.annotation);
@@ -6407,7 +6435,9 @@ export class PdfrxViewer {
    */
   private async applyAnnotationState(pageNumber: number, id: string, spec: PdfAnnotationSpec | null): Promise<void> {
     if (!this.doc) return;
-    this.selectedAnnotationIds.delete(id);
+    if (this.selectedAnnotationIds.has(id)) {
+      this.setSelectedAnnotations([...this.selectedAnnotationIds].filter((selectedId) => selectedId !== id));
+    }
     if (spec === null) {
       await this.annotationPage(pageNumber).removeAnnotation(id, {
         origin: 'history',

@@ -43,6 +43,49 @@ const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse',
 
 const DEFAULT_COLORS: readonly string[] = ['#e53935', '#1e88e5', '#43a047', '#fbc02d', '#8e24aa', '#000000'];
 
+type MixedAttribute =
+  | 'stroke'
+  | 'color'
+  | 'fill'
+  | 'textColor'
+  | 'fontSize'
+  | 'textAlign'
+  | 'opacity'
+  | 'width';
+
+interface AnnotationToolbarDefaults {
+  color: string;
+  strokeEnabled: boolean;
+  fillColor: string | null;
+  textColor: string;
+  fontSize: number;
+  textAlign: 'left' | 'center' | 'right';
+  textVerticalAlign: 'top' | 'middle' | 'bottom';
+  opacity: number;
+  width: number;
+}
+
+const NO_MIXED_ATTRIBUTES: Readonly<Record<MixedAttribute, boolean>> = {
+  stroke: false,
+  color: false,
+  fill: false,
+  textColor: false,
+  fontSize: false,
+  textAlign: false,
+  opacity: false,
+  width: false,
+};
+
+function annotationColorToCss(color: { r: number; g: number; b: number } | null): string | null {
+  if (!color) return null;
+  return `#${[color.r, color.g, color.b].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function commonValue<T>(values: readonly T[]): { value: T; mixed: boolean } {
+  const value = values[0]!;
+  return { value, mixed: values.some((candidate) => candidate !== value) };
+}
+
 /** Classifies hexadecimal colors that may disappear into a light/dark toolbar. */
 function textColorTone(color: string): 'dark' | 'light' | null {
   const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color);
@@ -117,6 +160,18 @@ export function PdfAnnotationToolbar({
   /** Whole-annotation opacity, 0-1. */
   const [opacity, setOpacity] = useState(1);
   const [width, setWidth] = useState(3);
+  const [mixed, setMixed] = useState<Readonly<Record<MixedAttribute, boolean>>>(NO_MIXED_ATTRIBUTES);
+  const defaultsRef = useRef<AnnotationToolbarDefaults>({
+    color: colors[0] ?? '#e53935',
+    strokeEnabled: true,
+    fillColor: null as string | null,
+    textColor: '#000000',
+    fontSize: 12,
+    textAlign: 'left',
+    textVerticalAlign: 'top',
+    opacity: 1,
+    width: 3,
+  });
   /** Which attribute popup is open, if any. */
   const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'textAlign' | 'opacity' | 'width' | null>(null);
   const paletteHostRef = useRef<HTMLSpanElement>(null);
@@ -149,6 +204,62 @@ export function PdfAnnotationToolbar({
     };
   }, [viewer]);
 
+  useEffect(() => {
+    if (!viewer) return;
+    const syncSelectionStyle = (): void => {
+      const annotations = viewer.getSelectedAnnotations();
+      if (annotations.length === 0) {
+        const defaults = defaultsRef.current;
+        setColor(defaults.color);
+        setStrokeEnabled(defaults.strokeEnabled);
+        setFillColor(defaults.fillColor);
+        setTextColor(defaults.textColor);
+        setFontSize(defaults.fontSize);
+        setTextAlign(defaults.textAlign);
+        setTextVerticalAlign(defaults.textVerticalAlign);
+        setOpacity(defaults.opacity);
+        setWidth(defaults.width);
+        setMixed(NO_MIXED_ATTRIBUTES);
+        return;
+      }
+
+      const strokes = commonValue(annotations.map((annotation) => annotation.borderWidth > 0));
+      const strokeColors = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.color) ?? '#000000'));
+      const fills = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.interiorColor)));
+      const textColors = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.textColor) ?? defaultsRef.current.textColor));
+      const fontSizes = commonValue(annotations.map((annotation) => annotation.fontSize ?? defaultsRef.current.fontSize));
+      const horizontal = commonValue(annotations.map((annotation) => annotation.textAlign));
+      const vertical = commonValue(annotations.map((annotation) => annotation.textVerticalAlign));
+      const opacities = commonValue(annotations.map((annotation) => {
+        const alpha = annotation.color?.a ?? annotation.interiorColor?.a ?? annotation.textColor?.a ?? 255;
+        return alpha / 255;
+      }));
+      const widths = commonValue(annotations.map((annotation) => annotation.borderWidth));
+
+      setStrokeEnabled(strokes.value);
+      setColor(strokeColors.value);
+      setFillColor(fills.value);
+      setTextColor(textColors.value);
+      setFontSize(fontSizes.value);
+      setTextAlign(horizontal.value);
+      setTextVerticalAlign(vertical.value);
+      setOpacity(opacities.value);
+      setWidth(widths.value);
+      setMixed({
+        stroke: strokes.mixed,
+        color: strokeColors.mixed,
+        fill: fills.mixed,
+        textColor: textColors.mixed,
+        fontSize: fontSizes.mixed,
+        textAlign: horizontal.mixed || vertical.mixed,
+        opacity: opacities.mixed,
+        width: widths.mixed,
+      });
+    };
+    syncSelectionStyle();
+    return viewer.addAnnotationSelectionChangeListener(syncSelectionStyle);
+  }, [viewer]);
+
   // Dismiss an open palette on outside pointerdown or Escape.
   useEffect(() => {
     if (!openPalette) return;
@@ -172,33 +283,46 @@ export function PdfAnnotationToolbar({
     viewer?.setAnnotationTool(next);
   };
   const pickStroke = (c: string): void => {
+    const shouldRestoreWidth = !strokeEnabled || mixed.stroke;
+    const restoredWidth = defaultsRef.current.width;
+    defaultsRef.current.color = c;
+    defaultsRef.current.strokeEnabled = true;
     setColor(c);
     setStrokeEnabled(true);
+    setMixed((value) => ({ ...value, stroke: false, color: false }));
     setOpenPalette(null);
-    viewer?.setAnnotationStyle({ color: c, strokeWidth: width });
+    viewer?.setAnnotationStyle({ color: c, strokeWidth: restoredWidth });
     // Also restyle any currently selected annotations (no-op if none selected).
-    void viewer?.applyStyleToSelection({ color: c, strokeWidth: width });
+    void viewer?.applyStyleToSelection(shouldRestoreWidth ? { color: c, strokeWidth: restoredWidth } : { color: c });
   };
   const pickNoStroke = (): void => {
+    defaultsRef.current.strokeEnabled = false;
     setStrokeEnabled(false);
+    setMixed((value) => ({ ...value, stroke: false }));
     setOpenPalette(null);
     viewer?.setAnnotationStyle({ strokeWidth: 0 });
     void viewer?.applyStyleToSelection({ strokeWidth: 0 });
   };
   const pickFill = (c: string | null): void => {
+    defaultsRef.current.fillColor = c;
     setFillColor(c);
+    setMixed((value) => ({ ...value, fill: false }));
     setOpenPalette(null);
     viewer?.setAnnotationStyle({ fillColor: c });
     void viewer?.applyStyleToSelection({ fillColor: c });
   };
   const pickTextColor = (c: string): void => {
+    defaultsRef.current.textColor = c;
     setTextColor(c);
+    setMixed((value) => ({ ...value, textColor: false }));
     setOpenPalette(null);
     viewer?.setAnnotationStyle({ textColor: c });
     void viewer?.applyStyleToSelection({ textColor: c });
   };
   const pickTextSize = (size: number): void => {
+    defaultsRef.current.fontSize = size;
     setFontSize(size);
+    setMixed((value) => ({ ...value, fontSize: false }));
     viewer?.setAnnotationStyle({ fontSize: size });
     void viewer?.applyStyleToSelection({ fontSize: size }, sliderMergeKey('fontSize'));
   };
@@ -206,18 +330,27 @@ export function PdfAnnotationToolbar({
     horizontal: 'left' | 'center' | 'right',
     vertical: 'top' | 'middle' | 'bottom',
   ): void => {
+    defaultsRef.current.textAlign = horizontal;
+    defaultsRef.current.textVerticalAlign = vertical;
     setTextAlign(horizontal);
     setTextVerticalAlign(vertical);
+    setMixed((value) => ({ ...value, textAlign: false }));
     viewer?.setAnnotationStyle({ textAlign: horizontal, textVerticalAlign: vertical });
     void viewer?.applyStyleToSelection({ textAlign: horizontal, textVerticalAlign: vertical });
   };
   const pickOpacity = (v: number): void => {
+    defaultsRef.current.opacity = v;
     setOpacity(v);
+    setMixed((value) => ({ ...value, opacity: false }));
     viewer?.setAnnotationStyle({ opacity: v });
     void viewer?.applyStyleToSelection({ opacity: v }, sliderMergeKey('opacity'));
   };
   const pickWidth = (w: number): void => {
+    defaultsRef.current.width = w;
+    defaultsRef.current.strokeEnabled = true;
     setWidth(w);
+    setStrokeEnabled(true);
+    setMixed((value) => ({ ...value, stroke: false, width: false }));
     viewer?.setAnnotationStyle({ strokeWidth: w });
     void viewer?.applyStyleToSelection({ strokeWidth: w }, sliderMergeKey('strokeWidth'));
   };
@@ -273,11 +406,12 @@ export function PdfAnnotationToolbar({
             <span
               className={[
                 'pdfrx-annot-color-ring',
+                mixed.stroke || mixed.color ? 'pdfrx-annot-color-mixed' : '',
                 strokeEnabled ? '' : 'pdfrx-annot-color-none',
               ]
                 .filter(Boolean)
                 .join(' ')}
-              style={strokeEnabled ? { borderColor: color } : undefined}
+              style={strokeEnabled && !mixed.color && !mixed.stroke ? { borderColor: color } : undefined}
             />
           </button>
           {openPalette === 'stroke' && (
@@ -285,11 +419,11 @@ export function PdfAnnotationToolbar({
               <button
                 type="button"
                 role="option"
-                aria-selected={!strokeEnabled}
+                aria-selected={!mixed.stroke && !strokeEnabled}
                 className={[
                   'pdfrx-annot-swatch',
                   'pdfrx-annot-color-none',
-                  strokeEnabled ? '' : 'pdfrx-annot-swatch-active',
+                  !mixed.stroke && !strokeEnabled ? 'pdfrx-annot-swatch-active' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -302,8 +436,8 @@ export function PdfAnnotationToolbar({
                   key={c}
                   type="button"
                   role="option"
-                  aria-selected={strokeEnabled && color === c}
-                  className={['pdfrx-annot-swatch', strokeEnabled && color === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
+                  aria-selected={!mixed.stroke && !mixed.color && strokeEnabled && color === c}
+                  className={['pdfrx-annot-swatch', !mixed.stroke && !mixed.color && strokeEnabled && color === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
                   aria-label={`${strings.strokeColor}: ${c}`}
                   onClick={() => pickStroke(c)}
                   style={{ background: c }}
@@ -322,8 +456,12 @@ export function PdfAnnotationToolbar({
             onClick={() => setOpenPalette(openPalette === 'fill' ? null : 'fill')}
           >
             <span
-              className={['pdfrx-annot-color-dot', fillColor ? '' : 'pdfrx-annot-color-none'].filter(Boolean).join(' ')}
-              style={fillColor ? { background: fillColor } : undefined}
+              className={[
+                'pdfrx-annot-color-dot',
+                mixed.fill ? 'pdfrx-annot-color-mixed' : '',
+                !mixed.fill && !fillColor ? 'pdfrx-annot-color-none' : '',
+              ].filter(Boolean).join(' ')}
+              style={!mixed.fill && fillColor ? { background: fillColor } : undefined}
             />
           </button>
           {openPalette === 'fill' && (
@@ -331,11 +469,11 @@ export function PdfAnnotationToolbar({
               <button
                 type="button"
                 role="option"
-                aria-selected={fillColor === null}
+                aria-selected={!mixed.fill && fillColor === null}
                 className={[
                   'pdfrx-annot-swatch',
                   'pdfrx-annot-color-none',
-                  fillColor === null ? 'pdfrx-annot-swatch-active' : '',
+                  !mixed.fill && fillColor === null ? 'pdfrx-annot-swatch-active' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -348,8 +486,8 @@ export function PdfAnnotationToolbar({
                   key={c}
                   type="button"
                   role="option"
-                  aria-selected={fillColor === c}
-                  className={['pdfrx-annot-swatch', fillColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
+                  aria-selected={!mixed.fill && fillColor === c}
+                  className={['pdfrx-annot-swatch', !mixed.fill && fillColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
                   aria-label={`${strings.fillColor}: ${c}`}
                   onClick={() => pickFill(c)}
                   style={{ background: c }}
@@ -371,7 +509,7 @@ export function PdfAnnotationToolbar({
           </button>
           {openPalette === 'opacity' && (
             <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.opacity}>
-              <span className="pdfrx-annot-slider-value">{Math.round(opacity * 100)}%</span>
+              <span className="pdfrx-annot-slider-value">{mixed.opacity ? '—' : `${Math.round(opacity * 100)}%`}</span>
               <input
                 className="pdfrx-annot-slider-vertical"
                 type="range"
@@ -404,7 +542,7 @@ export function PdfAnnotationToolbar({
           </button>
           {openPalette === 'width' && strokeEnabled && (
             <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.thickness}>
-              <span className="pdfrx-annot-slider-value">{width}</span>
+              <span className="pdfrx-annot-slider-value">{mixed.width ? '—' : width}</span>
               <input
                 className="pdfrx-annot-slider-vertical"
                 type="range"
@@ -435,11 +573,12 @@ export function PdfAnnotationToolbar({
               aria-hidden
               className={[
                 'pdfrx-annot-text-color-icon',
+                mixed.textColor ? 'pdfrx-annot-color-mixed' : '',
                 textColorTone(textColor) ? `pdfrx-annot-text-color-icon-${textColorTone(textColor)}` : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
-              style={{ color: textColor }}
+              style={mixed.textColor ? undefined : { color: textColor }}
             >
               A
             </span>
@@ -451,8 +590,8 @@ export function PdfAnnotationToolbar({
                   key={c}
                   type="button"
                   role="option"
-                  aria-selected={textColor === c}
-                  className={['pdfrx-annot-swatch', textColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
+                  aria-selected={!mixed.textColor && textColor === c}
+                  className={['pdfrx-annot-swatch', !mixed.textColor && textColor === c ? 'pdfrx-annot-swatch-active' : ''].filter(Boolean).join(' ')}
                   aria-label={`${strings.textColor}: ${c}`}
                   onClick={() => pickTextColor(c)}
                   style={{ background: c }}
@@ -474,7 +613,7 @@ export function PdfAnnotationToolbar({
           </button>
           {openPalette === 'textSize' && (
             <div className="pdfrx-annot-slider-popup" role="dialog" aria-label={strings.textSize}>
-              <span className="pdfrx-annot-slider-value">{fontSize}</span>
+              <span className="pdfrx-annot-slider-value">{mixed.fontSize ? '—' : fontSize}</span>
               <input
                 className="pdfrx-annot-slider-vertical"
                 type="range"
@@ -512,7 +651,7 @@ export function PdfAnnotationToolbar({
                     horizontal === 'left' ? strings.alignLeft : horizontal === 'center' ? strings.alignCenter : strings.alignRight;
                   const verticalLabel =
                     vertical === 'top' ? strings.alignTop : vertical === 'middle' ? strings.alignMiddle : strings.alignBottom;
-                  const selected = textAlign === horizontal && textVerticalAlign === vertical;
+                  const selected = !mixed.textAlign && textAlign === horizontal && textVerticalAlign === vertical;
                   return (
                     <button
                       key={`${vertical}-${horizontal}`}
