@@ -5227,12 +5227,19 @@ export class PdfrxViewer {
       let overlay = this.annotationOverlays.get(pageNumber);
       const annotations = onScreen ? this.getLoadedAnnotations(pageNumber) : null;
       if (onScreen && overlay && annotations && this.dirtyAnnotationOverlayPages.has(pageNumber)) {
-        const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
-        overlay.container.replaceWith(replacement.container);
-        overlay.highlightContainer.replaceWith(replacement.highlightContainer);
-        this.annotationOverlays.set(pageNumber, replacement);
-        this.dirtyAnnotationOverlayPages.delete(pageNumber);
-        overlay = replacement;
+        // Replacing the SVG also removes its inline textarea. Keep the current
+        // editor alive while local text (including an IME composition) is in
+        // progress; requestAnnotationText invalidates again after it closes so
+        // the deferred remote annotation state is rendered immediately then.
+        const editingText = overlay.svg.querySelector('.pdfrx-annotation-text-editor') !== null;
+        if (!editingText) {
+          const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
+          overlay.container.replaceWith(replacement.container);
+          overlay.highlightContainer.replaceWith(replacement.highlightContainer);
+          this.annotationOverlays.set(pageNumber, replacement);
+          this.dirtyAnnotationOverlayPages.delete(pageNumber);
+          overlay = replacement;
+        }
       }
       if (onScreen && !overlay) {
         if (annotations) {
@@ -7122,6 +7129,10 @@ export class PdfrxViewer {
         finished = true;
         resizeObserver.disconnect();
         foreign.remove();
+        // An annotation update received while this editor was open may have
+        // left the page overlay dirty. Let the next paint replace it now that
+        // doing so cannot interrupt text entry.
+        this.invalidate();
         resolve(value);
       };
       textarea.addEventListener('compositionstart', () => {
