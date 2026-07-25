@@ -143,13 +143,23 @@ the `origin` lets the publisher ignore it and avoid a synchronization echo.
 
 The standard
 [`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html)
-orders text controls after line thickness, provides independent text color and
-font-size settings, and provides one text-alignment button whose popup is a
-3 × 3 position picker (left/center/right combined with top/middle/bottom).
-Choosing one position updates both the selected rectangle/FreeText annotations
-and the defaults for subsequently created text boxes. Alignment is persisted in
-the PDF and retained when color, size, or other styles change. The toolbar also
-adds image stamps from its image picker. Picked images
+reflects the common stroke, fill, text, opacity, thickness, size, and alignment
+of the current annotation selection. A mixed value is shown as unselected until
+the user explicitly chooses a replacement. Explicit choices become the defaults
+for subsequently created objects and are restored from `localStorage` on the
+next visit. The color popup includes the preset swatches, four least-recently
+used custom-color slots, and an inline HSV picker with direct `#RRGGBB` input.
+HSV changes live-preview the selected objects without writing the PDF or undo
+history; **Apply color** commits the result, while Escape or an outside click
+restores the original display.
+
+Text controls follow line thickness and provide independent text color and
+font-size settings plus one alignment button whose popup is a 3 × 3 position
+picker (left/center/right combined with top/middle/bottom). Choosing one
+position updates both selected rectangle/FreeText annotations and future text
+box defaults. Alignment is persisted in the PDF and retained when color, size,
+or other styles change. The toolbar also deletes the current selection and adds
+image stamps from its image picker. Picked images
 are centered on the current page; dropped images use the drop point. Their
 initial placement is capped at 240 PDF points wide and fitted to the page, but
 that placement does not determine the embedded resolution: raster inputs retain
@@ -167,6 +177,7 @@ across its text/background area. Filled rectangles retain full-interior hit
 testing, while unfilled rectangles otherwise use their outline. The inline
 editor follows the annotation stroke, text color, font size, horizontal and
 vertical alignment, wrapping, and clipping while it is resized.
+Its text and background use the annotation's current text and fill colors.
 
 Annotation selection is always available; the toolbar contains drawing tools,
 not text/object selection mode buttons. A primary click selects one object,
@@ -183,6 +194,9 @@ snap to nearby coordinates on other annotations and display alignment guides
 (freehand ink creation remains unsnapped). `Ctrl`/`Cmd`+`A` selects all text
 unless at least one annotation is selected, in which case it selects every
 annotation on the current page.
+`Delete`/`Backspace` removes the selected objects. Arrow keys move them by one
+screen pixel, or ten screen pixels while Shift is held, with page bounds and
+page rotation respected.
 
 ## Editing history and document mutations
 
@@ -347,7 +361,7 @@ and then leave older Undo/Redo entries available.
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.15.3/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.16.0/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other

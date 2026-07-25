@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-26
+
+### Added
+
+- Added horizontal and vertical text placement to `AnnotationStyle`, with a
+  localized 3 × 3 alignment picker for rectangle and FreeText annotations.
+- Added full HSV custom-color selection, direct `#RRGGBB` input, four persisted
+  LRU custom-color slots, live selection preview, and white to the annotation
+  toolbar palette.
+- Added toolbar deletion and keyboard movement of selected annotations; arrow
+  keys move by one screen pixel and Shift+arrow moves by ten.
+
+### Changed
+
+- Synchronized annotation toolbar controls with the current selection, showing
+  mixed values as unselected while retaining explicit user choices as defaults
+  for new objects.
+- Persisted annotation color, fill, text style, opacity, thickness, alignment,
+  and custom colors in `localStorage` for the next viewer session.
+- Matched inline text-editor foreground and background colors to the annotation
+  and refined the mobile annotation toolbar and hidden drawer positioning.
+
+### Fixed
+
+- Removed stale hover highlighting after deleting an annotation and accepted
+  the first `Delete` key press after initial page display.
+- Corrected the centered empty-rectangle text affordance so its label is not
+  clipped.
+- Avoided duplicate PDF loading when joining collaboration sessions and
+  prevented compact page navigation from stealing focus on mobile.
+
 ## [0.15.3] - 2026-07-25
 
 ### Changed
@@ -418,7 +449,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.3...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.3...v0.16.0
 [0.15.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...v0.15.1

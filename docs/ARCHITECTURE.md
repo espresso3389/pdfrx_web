@@ -290,6 +290,10 @@ live preview (freehand ink remains unsnapped).
 
 `Ctrl`/`Cmd`+`A` selects all document text by default. If at least one annotation
 is already selected, it instead selects every annotation on the current page.
+`Delete`/`Backspace` removes the selection. Arrow keys translate it by one
+screen pixel (ten with Shift), converting that screen-space delta through page
+rotation and constraining the group to the page before recording one history
+step.
 `setAnnotationSelectMode(true)` remains only as a compatibility API that clears
 the active drawing tool; `false` is a no-op.
 
@@ -307,7 +311,18 @@ and horizontal/vertical placement. `textAlign` stores left/center/right;
 line-height, descent allowance, padding, and clipping model for its SVG overlay
 and the PDF appearance stream so middle/bottom alignment remains visually
 consistent. The input border follows the annotation stroke unless that stroke
-is disabled.
+is disabled; its foreground and background follow the annotation text and
+interior colors.
+
+**Toolbar style state and color preview.** The React toolbar derives common
+values from the current selection and marks differing multi-selection values as
+mixed. Only an explicit user choice updates the defaults for new annotations.
+Those defaults and the four-entry custom-color LRU are stored in
+`localStorage`. The HSV editor uses an overlay-only style preview: it rebuilds
+the selected SVG shapes from synthetic specs without updating PDF state,
+snapshots, revisions, or undo history. Applying the color performs the normal
+engine update; dismissing the picker rebuilds the shapes from their authoritative
+annotation objects.
 
 Collaborative hosts may subscribe to transient full-spec preview updates during
 body and anchor/group drags. Preview geometry updates only the remote SVG
