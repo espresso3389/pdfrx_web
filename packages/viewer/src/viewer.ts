@@ -818,8 +818,8 @@ interface DrawState {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** On-screen diameter (px) of an annotation drag anchor, held constant across zoom. */
 const ANCHOR_SCREEN_PX = 8;
-/** Touch handles need a finger-sized hit target while remaining visually compact. */
-const TOUCH_ANCHOR_SCREEN_PX = 24;
+/** Touch handles remain larger than mouse handles without obscuring small objects. */
+const TOUCH_ANCHOR_SCREEN_PX = 16;
 /** Maximum screen-space distance from a line/arrow that a mouse or pen can select. */
 const LINE_HIT_SCREEN_PX = 6;
 /** Slightly wider line/arrow selection target for a fingertip. */
