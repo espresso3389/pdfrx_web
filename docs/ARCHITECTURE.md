@@ -301,9 +301,13 @@ banner at its center. Rectangle placement itself only creates and selects an
 empty square. For a FreeText object, the text area and its background accept the
 editing double-click. Filled rectangles retain full-interior hit testing;
 unfilled empty rectangles require their outline or the banner. Both forms
-preserve stroke/fill/opacity/thickness plus independent text color and font
-size. The input border follows the annotation stroke unless that stroke is
-disabled.
+preserve stroke/fill/opacity/thickness plus independent text color, font size,
+and horizontal/vertical placement. `textAlign` stores left/center/right;
+`textVerticalAlign` stores top/middle/bottom. The viewer uses the same
+line-height, descent allowance, padding, and clipping model for its SVG overlay
+and the PDF appearance stream so middle/bottom alignment remains visually
+consistent. The input border follows the annotation stroke unless that stroke
+is disabled.
 
 Collaborative hosts may subscribe to transient full-spec preview updates during
 body and anchor/group drags. Preview geometry updates only the remote SVG

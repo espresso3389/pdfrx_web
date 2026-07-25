@@ -36,6 +36,7 @@ Upstream API names are given so you can find the reference implementation.
 > viewer option with `setAnnotationTool()`, and the React `useAnnotations` hook +
 > `PdfAnnotationToolbar` (ink, shapes, text markup, notes/free text, centered
 > image-stamp insertion with page fitting, independent text color/font size,
+> a 3 × 3 horizontal/vertical text-alignment picker,
 > live marquee selection, snapping guides, and unified rectangle/FreeText
 > editing).
 

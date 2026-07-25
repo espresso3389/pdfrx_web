@@ -144,7 +144,12 @@ the `origin` lets the publisher ignore it and avoid a synchronization echo.
 The standard
 [`PdfAnnotationToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfAnnotationToolbar.html)
 orders text controls after line thickness, provides independent text color and
-font-size settings, and adds image stamps from its image picker. Picked images
+font-size settings, and provides one text-alignment button whose popup is a
+3 × 3 position picker (left/center/right combined with top/middle/bottom).
+Choosing one position updates both the selected rectangle/FreeText annotations
+and the defaults for subsequently created text boxes. Alignment is persisted in
+the PDF and retained when color, size, or other styles change. The toolbar also
+adds image stamps from its image picker. Picked images
 are centered on the current page; dropped images use the drop point. Their
 initial placement is capped at 240 PDF points wide and fitted to the page, but
 that placement does not determine the embedded resolution: raster inputs retain
@@ -160,8 +165,8 @@ plain square. A selected empty rectangle shows a localized **Add text** banner;
 clicking it opens the editor. Text-bearing FreeText accepts a double-click
 across its text/background area. Filled rectangles retain full-interior hit
 testing, while unfilled rectangles otherwise use their outline. The inline
-editor follows the annotation stroke, text color, font size, wrapping, and
-clipping while it is resized.
+editor follows the annotation stroke, text color, font size, horizontal and
+vertical alignment, wrapping, and clipping while it is resized.
 
 Annotation selection is always available; the toolbar contains drawing tools,
 not text/object selection mode buttons. A primary click selects one object,

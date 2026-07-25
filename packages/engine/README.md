@@ -141,10 +141,20 @@ Each symbol links to its entry in the
   local/user changes and apply incoming changes with `origin: 'remote'` to
   prevent echo loops. Each annotation carries its last `actorId` and monotonic
   `revision`.
-- Rectangle and FreeText annotation specs preserve independent `textColor` and
-  `fontSize` appearance properties. A viewer may switch between square and
-  FreeText according to whether edited text is empty while retaining their
-  shared geometry and styling.
+- Rectangle and FreeText annotation specs preserve independent `textColor`,
+  `fontSize`,
+  [`textAlign`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationSpec.html#textalign)
+  (`left` / `center` / `right`), and
+  [`textVerticalAlign`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationSpec.html#textverticalalign)
+  (`top` / `middle` / `bottom`) appearance properties. Loaded
+  [`PdfAnnotationObject`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationObject.html)
+  values expose the persisted alignment through the corresponding
+  [`textAlign`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationObject.html#textalign)
+  and
+  [`textVerticalAlign`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationObject.html#textverticalalign)
+  properties. A viewer may switch between square and FreeText according to
+  whether edited text is empty while retaining their shared geometry and
+  styling.
 - Progressive page loading: [`openUrl(url, { useProgressiveLoading: true })`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#useprogressiveloading) + [`doc.loadPagesProgressively()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadpagesprogressively)
 - Font management: [`addFontData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#addfontdata) / [`reloadFonts`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#reloadfonts) / [`clearAllFontData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#clearallfontdata) (registered fonts persist in IndexedDB). A [`missingFonts`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#missingfonts) event carries [`PdfFontQuery`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfFontQuery.html) entries; interpret their numeric `charset` / `pitchFamily` with the [`PdfFontCharset`](https://espresso3389.github.io/pdfrx_web/variables/_pdfrx_engine.PdfFontCharset.html) ids + [`pdfFontCharsetName`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.pdfFontCharsetName.html), and the [`isFixedPitch`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isFixedPitch.html) / [`isRomanFamily`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isRomanFamily.html) / [`isScriptFamily`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isScriptFamily.html) helpers
 - Non-destructive page editing: [`setPages`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) / [`setPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage) with proxy pages from [`PdfPage.rotatedCW90()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#rotatedcw90) — synchronous, no worker round-trip, no PDF rebuild, so GUI reorder/rotate is instant and undo is just restoring the previous array. Page numbers are assigned automatically from the [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) array order; [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) materializes the arrangement.
