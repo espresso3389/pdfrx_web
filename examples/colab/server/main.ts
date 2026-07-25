@@ -354,12 +354,18 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
   if (sourceMatch) {
     const session = authenticatedSession(request, decodeURIComponent(sourceMatch[1]!));
     const documentId = decodeURIComponent(sourceMatch[2]!);
+    const isAnnotationImage = documentId.startsWith('annotation-image-');
     if (request.method === 'GET') {
-      if (!await store.sourceExists(session.id, documentId)) return void json(response, 404, { error: 'source-not-found' });
-      const bytes = await readFile(store.sourcePath(session.id, documentId));
+      const exists = isAnnotationImage
+        ? await store.assetExists(session.id, documentId)
+        : await store.sourceExists(session.id, documentId);
+      if (!exists) return void json(response, 404, { error: 'source-not-found' });
+      const bytes = isAnnotationImage
+        ? await store.readAsset(session.id, documentId)
+        : await readFile(store.sourcePath(session.id, documentId));
       response.writeHead(200, {
         'Cache-Control': 'private, no-store',
-        'Content-Type': 'application/pdf',
+        'Content-Type': isAnnotationImage ? 'image/webp' : 'application/pdf',
         'Content-Length': bytes.byteLength,
         ...(session.sourcePasswords?.[documentId]
           ? { 'X-Pdfrx-Source-Password': encodeURIComponent(session.sourcePasswords[documentId]) }
@@ -369,9 +375,15 @@ async function handleHttp(request: IncomingMessage, response: ServerResponse): P
       return;
     }
     if (request.method === 'PUT') {
+      if (isAnnotationImage && request.headers['content-type'] !== 'image/webp') {
+        throw new HttpError(415, 'annotation-image-must-be-webp');
+      }
       let result: 'created' | 'existing';
       try {
-        result = await store.putSource(session.id, documentId, await readBody(request));
+        const bytes = await readBody(request);
+        result = isAnnotationImage
+          ? await store.putAsset(session.id, documentId, bytes)
+          : await store.putSource(session.id, documentId, bytes);
       } catch (error) {
         if (error instanceof Error && error.message === 'source-conflict') {
           throw new HttpError(409, 'source-conflict');

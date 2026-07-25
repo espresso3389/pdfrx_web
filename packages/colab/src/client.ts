@@ -149,7 +149,7 @@ export async function uploadRelayAsset(
   const url = (transport.resolveSourceUrl ?? relaySourceUrl)(relayUrl, sessionId, assetId);
   const init: RequestInit = {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream' },
+    headers: { 'Content-Type': 'image/webp' },
     body: bytes,
   };
   const response = transport.fetch ? await transport.fetch(url, init) : await globalThis.fetch(url, init);

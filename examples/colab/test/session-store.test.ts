@@ -74,6 +74,18 @@ describe('persistent collaboration session store', () => {
     expect(await store.putSource(session.id, 'imported', bytes)).toBe('existing');
     await expect(store.putSource(session.id, 'imported', new Uint8Array([1, 2, 3]))).rejects.toThrow('source-conflict');
   });
+
+  it('stores annotation images as WebP assets rather than PDF sources', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pdfrx-colab-'));
+    directories.push(directory);
+    const store = new SessionStore(directory);
+    await store.open();
+    const bytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+
+    expect(await store.putAsset('session-a', 'annotation-image-1', bytes)).toBe('created');
+    expect(store.assetPath('session-a', 'annotation-image-1')).toMatch(/annotation-image-1\.webp$/);
+    expect(await store.readAsset('session-a', 'annotation-image-1')).toEqual(Buffer.from(bytes));
+  });
 });
 
 async function createTestPdf(engine: PdfrxEngine, pageCount: number): Promise<Uint8Array> {

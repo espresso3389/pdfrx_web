@@ -210,12 +210,19 @@ function handleSourceRequest(relay: InMemoryPageRelay, request: IncomingMessage,
       response.writeHead(404).end('Source not found');
       return;
     }
-    response.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': bytes.byteLength });
+    response.writeHead(200, {
+      'Content-Type': documentId.startsWith('annotation-image-') ? 'image/webp' : 'application/pdf',
+      'Content-Length': bytes.byteLength,
+    });
     response.end(bytes);
     return;
   }
   if (request.method !== 'PUT') {
     response.writeHead(405).end('Method not allowed');
+    return;
+  }
+  if (documentId.startsWith('annotation-image-') && request.headers['content-type'] !== 'image/webp') {
+    response.writeHead(415).end('Annotation image must be WebP');
     return;
   }
   const chunks: Buffer[] = [];

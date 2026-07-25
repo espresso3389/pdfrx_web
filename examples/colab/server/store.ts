@@ -126,6 +126,11 @@ export class SessionStore {
     return join(this.#sourceDirectory(sessionId), `${documentId}.pdf`);
   }
 
+  assetPath(sessionId: string, assetId: string): string {
+    if (!safeId(sessionId) || !safeId(assetId)) throw new Error('Invalid asset id');
+    return join(this.#sourceDirectory(sessionId), `${assetId}.webp`);
+  }
+
   async sourceExists(sessionId: string, documentId: string): Promise<boolean> {
     try {
       return (await stat(this.sourcePath(sessionId, documentId))).isFile();
@@ -146,6 +151,37 @@ export class SessionStore {
       const digest = (value: Uint8Array): string => createHash('sha256').update(value).digest('hex');
       if (digest(existing) !== digest(bytes)) throw new Error('source-conflict');
       return 'existing';
+    }
+  }
+
+  async assetExists(sessionId: string, assetId: string): Promise<boolean> {
+    try {
+      return (await stat(this.assetPath(sessionId, assetId))).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  async readAsset(sessionId: string, assetId: string): Promise<Uint8Array> {
+    return readFile(this.assetPath(sessionId, assetId));
+  }
+
+  async putAsset(sessionId: string, assetId: string, bytes: Uint8Array): Promise<'created' | 'existing'> {
+    const path = this.assetPath(sessionId, assetId);
+    await mkdir(this.#sourceDirectory(sessionId), { recursive: true });
+    try {
+      await writeFile(path, bytes, { flag: 'wx' });
+      return 'created';
+    } catch (error) {
+      try {
+        const existing = await readFile(path);
+        const digest = (value: Uint8Array): string => createHash('sha256').update(value).digest('hex');
+        if (digest(existing) !== digest(bytes)) throw new Error('source-conflict');
+        return 'existing';
+      } catch (readError) {
+        if (readError instanceof Error && readError.message === 'source-conflict') throw readError;
+        throw error;
+      }
     }
   }
 

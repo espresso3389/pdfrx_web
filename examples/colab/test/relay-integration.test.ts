@@ -6,6 +6,7 @@ import {
   relaySourceUrl,
   startPageRelayServer,
   uploadRelaySource,
+  uploadRelayAsset,
   type CollaborationWebSocket,
   type PageSessionSnapshot,
   type RunningPageRelayServer,
@@ -121,6 +122,17 @@ describe('WebSocket page relay', () => {
 
     await expect(uploadRelaySource(server.url, 'shared', 'attachment-1', new Uint8Array([1]).buffer))
       .rejects.toThrow('409');
+  });
+
+  it('serves annotation images as WebP assets', async () => {
+    server = await startPageRelayServer({ sessions: { shared: initial } });
+    const bytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+    await uploadRelayAsset(server.url, 'shared', 'annotation-image-1', bytes.buffer);
+
+    const response = await fetch(relaySourceUrl(server.url, 'shared', 'annotation-image-1'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/webp');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
   });
 
   it('broadcasts annotation changes in their own strict revision stream', async () => {

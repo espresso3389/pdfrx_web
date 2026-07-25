@@ -34,6 +34,7 @@ import {
   type CollaborationTransport,
 } from './client.js';
 import type { SharedAnnotationSpec } from './annotation-protocol.js';
+import { decodeAnnotationImage, encodeAnnotationImageWebp } from './annotation-image-codec.js';
 import { applyPagePlacementsToViewer, PageSourceRegistry } from './page-adapter.js';
 import { encodeCollaborativePdf } from './export-composer.js';
 import type { PageSessionSnapshot } from './protocol.js';
@@ -248,7 +249,11 @@ function CollaborativeViewerContent({
         loading = (async () => {
           const response = await fetchRelaySource(relayUrl, sessionId, appearanceImageSource.documentId, transport);
           if (!response.ok) throw new Error(`共有アノテーション画像を取得できません (${response.status})`);
-          return new Uint8Array(await response.arrayBuffer());
+          return decodeAnnotationImage(
+            await response.arrayBuffer(),
+            appearanceImageSource.width,
+            appearanceImageSource.height,
+          );
         })();
         annotationImageLoads.set(appearanceImageSource.documentId, loading);
       }
@@ -414,8 +419,12 @@ function CollaborativeViewerContent({
                 height: appearanceImage.height,
               };
               if (!existingSource) {
-                const pixels = appearanceImage.pixels.slice();
-                await uploadRelayAsset(relayUrl, sessionId, appearanceImageSource.documentId, pixels.buffer, transport);
+                const encoded = await encodeAnnotationImageWebp(
+                  appearanceImage.pixels,
+                  appearanceImage.width,
+                  appearanceImage.height,
+                );
+                await uploadRelayAsset(relayUrl, sessionId, appearanceImageSource.documentId, encoded, transport);
               }
               sharedSpec = { ...specWithoutImage, appearanceImageSource };
             } else {

@@ -31,7 +31,7 @@ describe('collaboration transport hooks', () => {
     await uploadRelayAsset('wss://relay.example.test/ws', 'session-a', 'annotation-image-1', bytes, transport);
     expect(request).toHaveBeenNthCalledWith(3, 'https://api.example.test/private/session-a/annotation-image-1', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/octet-stream' },
+      headers: { 'Content-Type': 'image/webp' },
       body: bytes,
     });
   });
