@@ -6225,9 +6225,28 @@ export class PdfrxViewer {
     for (const t of targets) {
       const before = annotationToSpec(t.annotation);
       await this.annotationPage(t.pageNumber).removeAnnotation(t.annotation.id, this.annotationMutationOptions());
+      this.removeAnnotationFromOverlay(t.pageNumber, t.annotation.id);
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after: null });
     }
     this.recordAnnotationCommandGroup(group);
+  }
+
+  /**
+   * Removes a successfully deleted annotation from the current SVG immediately.
+   * The normal annotation reload still reconciles the complete page afterward,
+   * but must not leave the old invisible hit target active in the meantime.
+   */
+  private removeAnnotationFromOverlay(pageNumber: number, id: string): void {
+    const overlay = this.annotationOverlays.get(pageNumber);
+    if (overlay) {
+      overlay.annotations.delete(id);
+      overlay.svg.querySelector<SVGGElement>(`g[data-annot-id="${CSS.escape(id)}"]`)?.remove();
+      overlay.highlightSvg
+        .querySelector<SVGGElement>(`g[data-annot-visual-id="${CSS.escape(id)}"]`)
+        ?.remove();
+    }
+    this.annotationSnapshots.delete(id);
+    this.annotationImageSources.delete(`${pageNumber}\0${id}`);
   }
 
   /** Finds the page number and last known object of an annotation by id. */
@@ -6520,34 +6539,58 @@ export class PdfrxViewer {
     const bounds = this.annotationPxBounds(annotation, overlay);
     if (!bounds) return;
     const zoom = this.transform.zoom;
-    const width = 96 / zoom;
-    const height = 26 / zoom;
-    const foreignObject = document.createElementNS(SVG_NS, 'foreignObject');
-    foreignObject.setAttribute('class', 'pdfrx-add-text-banner');
-    foreignObject.setAttribute('x', `${(bounds.left + bounds.right - width) / 2}`);
-    foreignObject.setAttribute('y', `${(bounds.top + bounds.bottom - height) / 2}`);
-    foreignObject.setAttribute('width', `${width}`);
-    foreignObject.setAttribute('height', `${height}`);
-    foreignObject.style.pointerEvents = 'auto';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = this.options.annotationEditorPlaceholders?.addText ?? 'Add text';
-    button.style.cssText =
-      `box-sizing:border-box;width:100%;height:100%;padding:0 ${8 / zoom}px;border:${1 / zoom}px solid #2196f3;` +
-      `border-radius:${4 / zoom}px;background:rgba(255,255,255,.94);color:#1565c0;font:${12 / zoom}px sans-serif;` +
-      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;box-shadow:0 1px 3px #0003;';
-    button.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      foreignObject.remove();
+    const label = this.options.annotationEditorPlaceholders?.addText ?? 'Add text';
+    this.ctx.save();
+    this.ctx.font = '12px sans-serif';
+    const labelWidth = this.ctx.measureText(label).width;
+    this.ctx.restore();
+    const width = Math.ceil(labelWidth + 20) / zoom;
+    const height = 30 / zoom;
+    const centerX = (bounds.left + bounds.right) / 2;
+    const centerY = (bounds.top + bounds.bottom) / 2;
+    const banner = document.createElementNS(SVG_NS, 'g');
+    banner.setAttribute('class', 'pdfrx-add-text-banner');
+    banner.setAttribute('role', 'button');
+    banner.setAttribute('tabindex', '0');
+    banner.setAttribute('aria-label', label);
+    banner.style.cssText = 'pointer-events:auto;cursor:text;';
+    const hitArea = document.createElementNS(SVG_NS, 'rect');
+    hitArea.setAttribute('x', `${centerX - width / 2}`);
+    hitArea.setAttribute('y', `${centerY - height / 2}`);
+    hitArea.setAttribute('width', `${width}`);
+    hitArea.setAttribute('height', `${height}`);
+    hitArea.setAttribute('fill', 'transparent');
+    const text = document.createElementNS(SVG_NS, 'text');
+    text.setAttribute('x', `${centerX}`);
+    text.setAttribute('y', `${centerY}`);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    text.setAttribute('fill', '#1565c0');
+    text.setAttribute('font-family', 'sans-serif');
+    text.setAttribute('font-size', `${12 / zoom}`);
+    text.style.pointerEvents = 'none';
+    text.textContent = label;
+    const activate = (): void => {
+      banner.remove();
       this.trackAnnotationTextEdit(this.editTextAnnotation(overlay, annotation));
+    };
+    banner.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
     });
-    foreignObject.appendChild(button);
-    overlay.anchorLayer.appendChild(foreignObject);
+    banner.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      activate();
+    });
+    banner.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      activate();
+    });
+    banner.append(hitArea, text);
+    overlay.anchorLayer.appendChild(banner);
   }
 
   /** Hides the empty-rectangle affordance while its geometry is changing. */
@@ -6911,6 +6954,10 @@ export class PdfrxViewer {
     this.lastPointerType = event.pointerType;
     event.preventDefault();
     event.stopPropagation();
+    // Selection is intercepted in the container's capture phase while the SVG
+    // overlay is click-through, so the canvas never receives pointerdown and
+    // cannot focus itself. Keep Delete/Undo/etc. available immediately.
+    this.canvas.focus({ preventScroll: true });
     // Cmd/Ctrl-click toggles this shape in the current selection. Keep
     // Shift+Cmd/Ctrl available for the existing constrained duplicate drag.
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
