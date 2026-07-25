@@ -5323,19 +5323,33 @@ export class PdfrxViewer {
       let overlay = this.annotationOverlays.get(pageNumber);
       const annotations = onScreen ? this.getLoadedAnnotations(pageNumber) : null;
       if (onScreen && overlay && annotations && this.dirtyAnnotationOverlayPages.has(pageNumber)) {
-        // Replacing the SVG also removes its inline textarea. Keep the current
-        // editor alive while local text (including an IME composition) is in
-        // progress; requestAnnotationText invalidates again after it closes so
-        // the deferred remote annotation state is rendered immediately then.
-        const editingText = overlay.svg.querySelector('.pdfrx-annotation-text-editor') !== null;
-        if (!editingText) {
-          const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
+        const replacement = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
+        const textEditor = overlay.svg.querySelector<SVGForeignObjectElement>(
+          '.pdfrx-annotation-text-editor',
+        );
+        if (textEditor) {
+          // Keep the focused textarea (and an active IME composition) in the
+          // connected SVG, but reconcile every annotation around it. Deferring
+          // the whole page would also hide unrelated peers' text updates.
+          for (const child of [...overlay.svg.children]) {
+            if (child !== textEditor) child.remove();
+          }
+          for (const child of [...replacement.svg.children]) {
+            overlay.svg.insertBefore(child, textEditor);
+          }
+          overlay.highlightSvg.replaceChildren(...replacement.highlightSvg.children);
+          overlay.pageGeom = replacement.pageGeom;
+          overlay.pageSize = replacement.pageSize;
+          overlay.anchorLayer = replacement.anchorLayer;
+          overlay.annotations = replacement.annotations;
+          this.refreshAnnotationSelection(overlay);
+        } else {
           overlay.container.replaceWith(replacement.container);
           overlay.highlightContainer.replaceWith(replacement.highlightContainer);
           this.annotationOverlays.set(pageNumber, replacement);
-          this.dirtyAnnotationOverlayPages.delete(pageNumber);
           overlay = replacement;
         }
+        this.dirtyAnnotationOverlayPages.delete(pageNumber);
       }
       if (onScreen && !overlay) {
         if (annotations) {
@@ -7352,7 +7366,9 @@ export class PdfrxViewer {
         ? `${visibleStrokeWidth}px solid rgba(${stroke.r}, ${stroke.g}, ${stroke.b}, ${stroke.a / 255})`
         : 'none';
     const editorTextColor = colorCss(spec.textColor ?? null, '#000000') ?? '#000000';
-    const editorBackgroundColor = colorCss(spec.interiorColor ?? null, 'transparent') ?? 'transparent';
+    const editorBackgroundColor = spec.interiorColor
+      ? `rgb(${spec.interiorColor.r}, ${spec.interiorColor.g}, ${spec.interiorColor.b})`
+      : '#ffffff';
     const editorFontSize = spec.fontSize ?? FREE_TEXT_FONT_SIZE;
     textarea.style.cssText =
       `box-sizing:border-box;width:100%;height:100%;resize:both;min-width:40px;min-height:28px;` +
