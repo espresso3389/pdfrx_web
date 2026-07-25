@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-07-25
+
+### Added
+
+- Added the reusable React `PdfViewerLayout` chrome with the standard
+  wide-screen sidebar and narrow-screen overlay drawer behavior.
+
+### Changed
+
+- Added thumbnails and outline tabs to the collaborative viewer sidebar and
+  made it toggleable from the standard toolbar.
+- Reduced touch annotation anchors from 24 to 16 screen pixels so they obscure
+  less of small objects while remaining larger than mouse anchors.
+
+### Fixed
+
+- Kept context menus and text-highlight palettes within all four viewport
+  edges, including when the viewer itself is partially off-screen.
+- Replaced SVG screen-CTM annotation hit coordinates with client-rectangle
+  mapping, avoiding incorrect object selection and dragging on iOS Safari.
+- Updated the documentation toolchain's transitive `brace-expansion`
+  dependency to 5.0.8, resolving its unbounded-expansion denial-of-service
+  advisory.
+
 ## [0.15.1] - 2026-07-25
 
 ### Fixed
@@ -374,7 +398,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.13.0...v0.14.0

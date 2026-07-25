@@ -191,7 +191,8 @@ Give the component a definite height through its parent or class:
 ```
 
 The built-in viewer includes the standard toolbar, search, open/import,
-printing, download, thumbnails, page actions, annotation tools, AcroForm
+printing, download, a toggleable thumbnails/outline sidebar that becomes an
+overlay drawer on narrow screens, page actions, annotation tools, AcroForm
 controls, connection state, and recent page activity. Opening a new file adds
 it as an immutable shared source; its pages can then be arranged alongside
 pages from every other source in the session.
@@ -219,7 +220,7 @@ served from the package CDN:
 ```tsx
 <CollaborativePdfViewer
   // ...
-  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.15.1/assets/"
+  wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.15.2/assets/"
 />
 ```
 
