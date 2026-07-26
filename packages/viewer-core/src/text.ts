@@ -174,6 +174,69 @@ export function enumerateFragmentBoundingRects(r: PdfPageTextRange): PdfTextFrag
   return result;
 }
 
+/** A selection highlight rectangle covering one visual text line. */
+export interface PdfTextLineBoundingRect {
+  /** Rectangle in PDF page coordinates for the selected part of the line. */
+  bounds: PdfRect;
+  /** `vrtl` for a vertical line; otherwise the direction of its first fragment. */
+  direction: PdfTextDirection;
+}
+
+/**
+ * Build one highlight rectangle per visual line in a text range.
+ *
+ * Text extraction commonly splits a line into several fragments (words,
+ * spaces, font runs, or direction runs). Painting those fragments separately
+ * leaves seams and gaps in what is visually one selected line. This function
+ * joins consecutive fragments whose cross-axis extents overlap, while explicit
+ * line breaks and horizontal/vertical orientation changes always start a new
+ * rectangle.
+ */
+export function enumerateLineBoundingRects(r: PdfPageTextRange): PdfTextLineBoundingRect[] {
+  const result: PdfTextLineBoundingRect[] = [];
+  let current: PdfTextLineBoundingRect | null = null;
+
+  const flush = (): void => {
+    if (current) result.push(current);
+    current = null;
+  };
+
+  for (const fr of enumerateFragmentBoundingRects(r)) {
+    const text = r.pageText.fullText.substring(fr.fragment.index + fr.sif, fr.fragment.index + fr.eif);
+    const isLineBreak = /[\r\n]/.test(text);
+    const vertical = fr.direction === 'vrtl';
+    const hasArea = fr.bounds.right > fr.bounds.left && fr.bounds.top > fr.bounds.bottom;
+    if (isLineBreak || !hasArea) {
+      flush();
+      continue;
+    }
+
+    if (!current) {
+      current = { bounds: { ...fr.bounds }, direction: fr.direction };
+      continue;
+    }
+
+    const currentVertical = current.direction === 'vrtl';
+    const crossAxisOverlaps = vertical
+      ? Math.min(current.bounds.right, fr.bounds.right) > Math.max(current.bounds.left, fr.bounds.left)
+      : Math.min(current.bounds.top, fr.bounds.top) > Math.max(current.bounds.bottom, fr.bounds.bottom);
+    if (vertical !== currentVertical || !crossAxisOverlaps) {
+      flush();
+      current = { bounds: { ...fr.bounds }, direction: fr.direction };
+      continue;
+    }
+
+    current.bounds = {
+      left: Math.min(current.bounds.left, fr.bounds.left),
+      top: Math.max(current.bounds.top, fr.bounds.top),
+      right: Math.max(current.bounds.right, fr.bounds.right),
+      bottom: Math.min(current.bounds.bottom, fr.bounds.bottom),
+    };
+  }
+  flush();
+  return result;
+}
+
 /** Find all matches of a pattern on the page. */
 export function allMatches(
   text: PdfPageText,

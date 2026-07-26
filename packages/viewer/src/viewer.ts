@@ -46,7 +46,7 @@ import {
   documentRectToView,
   documentToView,
   edgeInsetsZero,
-  enumerateFragmentBoundingRects,
+  enumerateLineBoundingRects,
   findTextAndIndexForPoint,
   formatText,
   getSelectedRanges,
@@ -6212,7 +6212,7 @@ export class PdfrxViewer {
     const group: AnnotationCommand[] = [];
     for (const range of ranges) {
       const quads: PdfAnnotationQuad[] = [];
-      for (const fr of enumerateFragmentBoundingRects({ pageText: range.pageText, start: range.start, end: range.end })) {
+      for (const fr of enumerateLineBoundingRects({ pageText: range.pageText, start: range.start, end: range.end })) {
         const b = fr.bounds; // bbox-relative PDF page coords (y-up, top >= bottom)
         quads.push({
           topLeft: { x: b.left, y: b.top },
@@ -8437,7 +8437,7 @@ export class PdfrxViewer {
         const pageIndex = range.pageText.pageNumber - 1;
         const pageGeom = this.pageGeoms[pageIndex]!;
         const pageRect = this.layout.pageLayouts[pageIndex]!;
-        for (const fr of enumerateFragmentBoundingRects({
+        for (const fr of enumerateLineBoundingRects({
           pageText: range.pageText,
           start: range.start,
           end: range.end,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allMatches,
   enumerateFragmentBoundingRects,
+  enumerateLineBoundingRects,
   getFragmentIndexForTextIndex,
   getRangeFromAB,
   rangeText,
@@ -52,6 +53,41 @@ describe('enumerateFragmentBoundingRects', () => {
     ]);
     // "llo" bounds: chars 2..5 -> left 30, right 60
     expect(rects[0]!.bounds).toEqual({ left: 30, top: 80, right: 60, bottom: 70 });
+  });
+});
+
+describe('enumerateLineBoundingRects', () => {
+  it('joins separate fragments on the same visual line', () => {
+    const rects = enumerateLineBoundingRects({ pageText: text, start: 2, end: 8 });
+    expect(rects).toEqual([
+      {
+        bounds: { left: 30, top: 80, right: 90, bottom: 70 },
+        direction: 'ltr',
+      },
+    ]);
+  });
+
+  it('keeps consecutive visual lines separate at a line break', () => {
+    const pageText = {
+      pageNumber: 1,
+      fullText: 'ab\ncd',
+      charRects: [
+        { left: 10, top: 80, right: 20, bottom: 70 },
+        { left: 20, top: 80, right: 30, bottom: 70 },
+        { left: 30, top: 80, right: 30, bottom: 70 },
+        { left: 10, top: 60, right: 20, bottom: 50 },
+        { left: 20, top: 60, right: 30, bottom: 50 },
+      ],
+      fragments: [
+        { index: 0, length: 2, bounds: { left: 10, top: 80, right: 30, bottom: 70 }, direction: 'ltr' as const },
+        { index: 2, length: 1, bounds: { left: 30, top: 80, right: 30, bottom: 70 }, direction: 'ltr' as const },
+        { index: 3, length: 2, bounds: { left: 10, top: 60, right: 30, bottom: 50 }, direction: 'ltr' as const },
+      ],
+    };
+    expect(enumerateLineBoundingRects({ pageText, start: 0, end: 5 }).map((line) => line.bounds)).toEqual([
+      { left: 10, top: 80, right: 30, bottom: 70 },
+      { left: 10, top: 60, right: 30, bottom: 50 },
+    ]);
   });
 });
 
