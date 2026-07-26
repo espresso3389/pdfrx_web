@@ -126,6 +126,58 @@ describe('raw PDF object API', () => {
 });
 
 describe('page-scoped annotation API', () => {
+  it('replaces editable link annotations while preserving other annotations', async () => {
+    const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel, pixel]);
+    try {
+      const linkPage = document.pages[0]!;
+      const destinationPage = document.pages[1]!;
+      await linkPage.addAnnotation(squareAnnotation());
+      const destination = destinationPage.dest({ by: 'id', command: 'fit', params: [] });
+      document.setPages([destinationPage, linkPage]);
+      linkPage.setLinks([
+        {
+          id: 'internal-link',
+          rect: { left: 1, bottom: 1, right: 20, top: 10 },
+          target: { kind: 'destination', dest: destination },
+        },
+        {
+          id: 'web-link',
+          rect: { left: 1, bottom: 12, right: 20, top: 22 },
+          target: { kind: 'uri', url: 'https://example.com/' },
+        },
+      ]);
+      expect(document.hasPendingChanges).toBe(true);
+
+      const links = await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false });
+      expect(links).toHaveLength(2);
+      expect(links.find((link) => link.id === 'web-link')?.target).toEqual({
+        kind: 'uri',
+        url: 'https://example.com/',
+      });
+      const internal = links.find((link) => link.id === 'internal-link');
+      expect(internal?.target.kind).toBe('destination');
+      if (internal?.target.kind !== 'destination') throw new Error('Expected an internal link');
+      expect(document.resolveDest(internal.target.dest)?.pageNumber).toBe(1);
+      expect(await document.pages[1]!.loadAnnotations()).toHaveLength(1);
+
+      await document.materialize();
+      expect(document.hasPendingChanges).toBe(false);
+      const persisted = await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false });
+      expect(persisted.map((link) => link.id).sort()).toEqual(['internal-link', 'web-link']);
+
+      document.pages[1]!.setLinks([]);
+      expect(document.hasPendingChanges).toBe(true);
+      expect(await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false })).toEqual([]);
+      expect(await document.pages[1]!.loadAnnotations()).toHaveLength(1);
+      await document.materialize();
+      expect(document.hasPendingChanges).toBe(false);
+      expect(await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false })).toEqual([]);
+    } finally {
+      await document.dispose();
+    }
+  });
+
   it('writes imported source pages while reporting placement page numbers from the host document', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
     const host = await engine.createFromImages([pixel]);
@@ -169,6 +221,99 @@ describe('page-scoped annotation API', () => {
 });
 
 describe('collaborative outline export', () => {
+  it('keeps logical page destinations through proxies and distinguishes explicit duplicates', async () => {
+    const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel, pixel]);
+    try {
+      const first = document.pages[0]!;
+      const duplicate = first.duplicate();
+      expect(duplicate.id).not.toBe(first.id);
+      expect(duplicate.hasSameSource(first)).toBe(true);
+
+      const followsFirst = first.dest({ by: 'id', command: 'fit', params: [] });
+      const followsDuplicate = duplicate.dest({ by: 'id', command: 'fit', params: [] });
+      const fixedPosition = first.dest({ by: 'pageNumber', command: 'fit', params: [] });
+      document.setPages([document.pages[1]!, duplicate, first]);
+
+      expect(document.resolveDest(followsFirst)?.pageNumber).toBe(3);
+      expect(document.resolveDest(followsDuplicate)?.pageNumber).toBe(2);
+      expect(document.resolveDest(fixedPosition)?.pageNumber).toBe(1);
+      document.setOutline([{
+        title: 'Duplicate target',
+        dest: followsDuplicate,
+        children: [],
+      }]);
+      expect(document.hasPendingChanges).toBe(true);
+      expect(document.resolveDest(followsFirst)?.pageNumber).toBe(3);
+      expect(document.resolveDest(followsDuplicate)?.pageNumber).toBe(2);
+      const outline = await document.loadOutline();
+      expect(document.resolveDest(outline[0]!.dest!)?.pageNumber).toBe(2);
+    } finally {
+      await document.dispose();
+    }
+  });
+
+  it('replaces, clears, saves, and reloads the document outline', async () => {
+    const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
+    const document = await engine.createFromImages([pixel, pixel]);
+    const events: PdfDocumentEventMap['outlineChanged'][] = [];
+    const unsubscribe = document.addEventListener('outlineChanged', (event) => events.push(event));
+    try {
+      const target = document.pages[1]!.dest({ by: 'id', command: 'xyz', params: [10, 250, null] });
+      const before = await document.getCatalogObject();
+      expect(before.object?.kind).toBe('dictionary');
+      if (!before.object || before.object.kind !== 'dictionary') throw new Error('Expected a catalog');
+      expect(before.object.entries.Outlines).toBeUndefined();
+
+      document.setOutline([{
+        title: 'Document A',
+        dest: target,
+        children: [{
+          title: 'First section',
+          dest: document.pages[0]!.dest({ by: 'pageNumber', command: 'fit', params: [] }),
+          children: [],
+        }],
+      }]);
+      expect(document.hasPendingChanges).toBe(true);
+      expect(events).toHaveLength(1);
+      const loaded = await document.loadOutline();
+      expect(loaded[0]?.title).toBe('Document A');
+      expect(document.resolveDest(loaded[0]!.dest!)?.pageNumber).toBe(2);
+
+      const copy = await document.createMaterializedCopy();
+      expect(document.hasPendingChanges).toBe(true);
+      expect(copy.hasPendingChanges).toBe(false);
+      expect((await copy.loadOutline())[0]?.title).toBe('Document A');
+      await copy.dispose();
+
+      await document.materialize();
+      expect(document.hasPendingChanges).toBe(false);
+      const catalog = await document.getCatalogObject();
+      expect(catalog.object?.kind).toBe('dictionary');
+      if (!catalog.object || catalog.object.kind !== 'dictionary') throw new Error('Expected a catalog');
+      expect(catalog.object.entries.Outlines?.kind).toBe('reference');
+
+      const reopened = await engine.openData(await document.encodePdf());
+      try {
+        const persisted = await reopened.loadOutline();
+        expect(persisted[0]?.children[0]?.title).toBe('First section');
+        expect(reopened.resolveDest(persisted[0]!.children[0]!.dest!)?.pageNumber).toBe(1);
+      } finally {
+        await reopened.dispose();
+      }
+
+      document.setOutline([]);
+      expect(document.hasPendingChanges).toBe(true);
+      expect(await document.loadOutline()).toEqual([]);
+      expect(events).toHaveLength(2);
+      await document.materialize();
+      expect(document.hasPendingChanges).toBe(false);
+    } finally {
+      unsubscribe();
+      await document.dispose();
+    }
+  });
+
   it('writes nested bookmarks with destinations in the final page order', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
     const document = await engine.createFromImages([pixel, pixel]);
@@ -187,9 +332,9 @@ describe('collaborative outline export', () => {
       const outline = await reopened.loadOutline();
       expect(outline).toHaveLength(1);
       expect(outline[0]?.title).toBe('Document A');
-      expect(outline[0]?.dest?.pageNumber).toBe(2);
+      expect(reopened.resolveDest(outline[0]!.dest!)).toMatchObject({ pageNumber: 2 });
       expect(outline[0]?.children[0]?.title).toBe('First section');
-      expect(outline[0]?.children[0]?.dest?.pageNumber).toBe(1);
+      expect(reopened.resolveDest(outline[0]!.children[0]!.dest!)).toMatchObject({ pageNumber: 1 });
     } finally {
       await reopened.dispose();
     }
@@ -219,10 +364,10 @@ describe('collaborative AcroForm export', () => {
   it('registers imported widgets under source-scoped field names and rewrites calculations', async () => {
     const first = await openFixture('form-a.pdf');
     const second = await openFixture('form-b.pdf');
-    const merged = await first.createCopy();
+    const merged = await first.createMaterializedCopy();
     try {
       merged.setPages([merged.pages[0]!, second.pages[0]!]);
-      await merged.assemblePages();
+      await merged.materialize();
       const placements = [
         { placementId: 'a', source: { documentId: 'document-a', pageIndex: 0 }, rotation: 0 as const },
         { placementId: 'b', source: { documentId: 'document-b', pageIndex: 0 }, rotation: 0 as const },

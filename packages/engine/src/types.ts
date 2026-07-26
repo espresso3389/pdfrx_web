@@ -88,18 +88,24 @@ export class PdfPermissions {
   }
 }
 
-/**
- * A navigation destination inside a document (e.g. the target of an outline
- * entry or a link).
- *
- * This is the decoded form of an explicit destination defined by
- * ISO 32000-2:2020, 12.3.2.2, Table 149 ("Destination syntax").
- */
-export interface PdfDest {
+/** Opaque identity of a logical page placement within an open document. */
+export type PdfPageId = string & { readonly __pdfPageId: unique symbol };
+
+/** Destination that follows a logical page when the page arrangement changes. */
+export interface PdfDestById {
+  readonly by: 'id';
+  readonly pageId: PdfPageId;
+  /** Lower-cased explicit-destination type such as `xyz`, `fit`, or `fitr`. */
+  readonly command: string;
+  /** Operands following the destination type; `null` retains the current value. */
+  readonly params: readonly (number | null)[];
+}
+
+/** Destination that keeps pointing at a fixed 1-based position. */
+export interface PdfDestByPageNumber {
+  readonly by: 'pageNumber';
   /**
-   * 1-based page number the destination points to. ISO 32000 identifies the
-   * page by page object or zero-based page index; the engine normalizes it to a
-   * 1-based page number.
+   * 1-based position to resolve when the destination is followed or encoded.
    */
   readonly pageNumber: number;
   /**
@@ -117,6 +123,27 @@ export interface PdfDest {
    * PDF `null` operand, meaning that the corresponding current value is
    * retained.
    */
+  readonly params: readonly (number | null)[];
+}
+
+/**
+ * A navigation destination inside a document. ID destinations follow a logical
+ * page through rearrangement; page-number destinations keep pointing at a
+ * fixed position.
+ */
+export type PdfDest = PdfDestById | PdfDestByPageNumber;
+
+/** A destination resolved against the document's current page arrangement. */
+export interface PdfResolvedDest {
+  readonly pageNumber: number;
+  readonly command: string;
+  readonly params: readonly (number | null)[];
+}
+
+/** Options accepted by `PdfPage.dest()`. */
+export interface PdfDestOptions {
+  readonly by: 'id' | 'pageNumber';
+  readonly command: string;
   readonly params: readonly (number | null)[];
 }
 
@@ -169,15 +196,33 @@ export interface PdfAnnotation {
  * Table 176. Their destinations use 12.3.2; URI actions use 12.6.4.8.
  * See {@link PdfPage.loadLinks}.
  */
+export type PdfLinkTarget =
+  | { readonly kind: 'uri'; readonly url: string }
+  | { readonly kind: 'destination'; readonly dest: PdfDest };
+
 export interface PdfLink {
+  /** PDF annotation or transient URL-like text detected from page contents. */
+  readonly kind: 'annotation' | 'detected';
+  /** Annotation `/NM` identity; `null` for detected links. */
+  readonly id: string | null;
   /** Areas of the link in PDF page coordinates. */
   readonly rects: readonly PdfRect[];
-  /** Target URL for a web link, or `null` if the link points to an in-document {@link dest}. */
-  readonly url: string | null;
-  /** In-document destination, or `null` if the link is a {@link url}. */
-  readonly dest: PdfDest | null;
+  /** URI or in-document destination followed by this link. */
+  readonly target: PdfLinkTarget;
   /** Annotation metadata for the link, if any. */
   readonly annotation: PdfAnnotation | null;
+}
+
+/** Complete writable shape accepted by `PdfPage.setLinks()`. */
+export interface PdfLinkSpec {
+  /** Link annotation rectangle in page coordinates. */
+  readonly rect: PdfRect;
+  /** URI or in-document destination followed by this link. */
+  readonly target: PdfLinkTarget;
+  /** Optional stable annotation `/NM`; one is generated when omitted. */
+  readonly id?: string;
+  /** Optional annotation metadata. */
+  readonly annotation?: PdfAnnotation | null;
 }
 
 /**
@@ -929,9 +974,13 @@ export interface PdfDocumentEventMap {
   loadComplete: Record<string, never>;
   /** Page objects were replaced (progressive load / reload). */
   pageStatusChanged: { pageNumbers: number[] };
+  /** The document outline was replaced through `PdfDocument.setOutline()`. */
+  outlineChanged: Record<string, never>;
+  /** Link annotations were replaced on the listed arranged pages. */
+  linksChanged: { pageNumbers: number[] };
   /**
    * The *arrangement* of pages changed — order, rotation, or count — via
-   * `PdfDocument.setPages` or `PdfDocument.assemblePages`. Always accompanied by
+   * `PdfDocument.setPages` or `PdfDocument.materialize`. Always accompanied by
    * `pageStatusChanged`; listen to this one to invalidate things keyed by page
    * position, which a plain progressive-load update does not disturb.
    */

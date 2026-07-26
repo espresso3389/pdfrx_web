@@ -14,7 +14,7 @@ export interface PdfEditHistory {
 /**
  * Accesses the viewer's single chronological annotation/form/page-edit history.
  * Call the returned `clearHistory` before intentionally materializing the live
- * page arrangement with `PdfDocument.assemblePages()` or `encodePdf()`.
+ * pending document edits with `PdfDocument.materialize()` or `encodePdf()`.
  */
 export function useEditHistory(): PdfEditHistory {
   const viewer = usePdfrxViewer();

@@ -441,7 +441,7 @@ const bytes = await encodeCollaborativePdf(
 ```
 
 The export starts from
-[`createCopy({ mode: 'compact' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createcopy),
+[`createMaterializedCopy({ catalog: 'rebuild' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#creatematerializedcopy),
 so unreachable appearance objects accumulated by older clients are omitted.
 For both single- and mixed-source arrangements, the export composition pass:
 

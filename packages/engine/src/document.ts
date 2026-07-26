@@ -49,6 +49,7 @@ import {
   type PdfRestoreAnnotationsOptions,
   type PdfAnnotationSubtype,
   type PdfDest,
+  type PdfDestOptions,
   type PdfDocumentEventMap,
   type PdfDocumentEventName,
   type PdfDownloadProgressCallback,
@@ -59,18 +60,26 @@ import {
   type PdfFormMutationOptions,
   type PdfHighlightObject,
   type PdfLink,
+  type PdfLinkSpec,
   type PdfLoadAnnotationsOptions,
   type PdfLoadHighlightsOptions,
   type PdfOutlineNode,
   type PdfPageRawText,
   type PdfPageArrangementEntry,
   type PdfPageMutationOptions,
+  type PdfPageId,
   type PdfPageRotation,
   type PdfTextOrientation,
   type PdfPasswordProvider,
   PdfPermissions,
   type PdfRect,
+  type PdfResolvedDest,
 } from './types.js';
+
+let nextPdfPageIdentity = 1;
+const createPdfPageId = (): PdfPageId => `pdf-page-${nextPdfPageIdentity++}` as PdfPageId;
+let nextPdfLinkIdentity = 1;
+const createPdfLinkId = (): string => `pdfrx-link-${Date.now().toString(36)}-${nextPdfLinkIdentity++}`;
 
 /** Converts the richer read model into the complete writable/persistable shape. */
 export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnnotationSpec {
@@ -174,17 +183,17 @@ export interface PdfEncodeOptions {
   readonly removeSecurity?: boolean;
 }
 
-/** How {@link PdfDocument.createCopy} constructs an independent document. */
-export type PdfCopyMode = 'clone' | 'compact';
+/** How {@link PdfDocument.createMaterializedCopy} treats the document catalog. */
+export type PdfMaterializedCopyCatalog = 'preserve' | 'rebuild';
 
-/** Options for {@link PdfDocument.createCopy}. */
-export interface PdfCopyOptions {
+/** Options for {@link PdfDocument.createMaterializedCopy}. */
+export interface PdfMaterializedCopyOptions {
   /**
-   * `clone` preserves the selected base document's catalog; `compact` rebuilds
-   * the arranged pages and their reachable page-level objects in a fresh
-   * document. Defaults to `clone`.
+   * `preserve` retains the selected base document's catalog; `rebuild` creates
+   * a fresh catalog from the arranged pages and their reachable page-level
+   * objects. Defaults to `preserve`.
    */
-  readonly mode?: PdfCopyMode;
+  readonly catalog?: PdfMaterializedCopyCatalog;
 }
 
 /**
@@ -830,6 +839,10 @@ export class PdfDocument {
   /** Number of pages in the underlying PDF, which {@link setPages} can make differ from `_pages.length`. */
   private nativePageCount: number;
   private arrangementDirty = false;
+  /** `undefined` means "read the physical PDF outline"; an array is a staged replacement. */
+  private pendingOutline: readonly PdfOutlineNode[] | undefined;
+  /** Staged Link-annotation replacements keyed by logical page identity. */
+  private readonly pendingLinks = new Map<PdfPageId, readonly PdfLinkSpec[]>();
   /** Documents whose pages appear in this one's arrangement (see {@link setPages}). */
   private borrowedFrom = new Set<PdfDocument>();
   /** Documents whose arrangement includes pages of this one; warned about on {@link dispose}. */
@@ -874,27 +887,23 @@ export class PdfDocument {
     return this._pages;
   }
 
-  /**
-   * Whether {@link pages} has been rearranged by {@link setPages} / {@link setPage}
-   * without the PDF having been rebuilt yet. {@link encodePdf} materializes the
-   * arrangement, clearing this.
-   */
-  get isPageArrangementModified(): boolean {
-    return this.arrangementDirty;
+  /** Whether page, outline, or link edits are waiting to be {@link materialize | materialized}. */
+  get hasPendingChanges(): boolean {
+    return this.arrangementDirty || this.pendingOutline !== undefined || this.pendingLinks.size > 0;
   }
 
   /**
    * Replaces the page arrangement — the one way to reorder, rotate, remove,
    * duplicate, and import pages, and the cheap, synchronous counterpart to
-   * {@link assemblePages}.
+   * {@link materialize}.
    *
    * Nothing is sent to the worker and the PDF is not rebuilt: the pages are
    * proxies (including those returned by {@link PdfPage.rotatedTo}) over pages
    * that stay loaded, so reordering and rotating are immediate and free, and
    * undo is just setting the previous array back. Page numbers are assigned
    * automatically from the array order. This is what GUI page editing wants;
-   * call {@link encodePdf} (or {@link assemblePages}) when the arrangement
-   * finally has to become a real PDF.
+   * call {@link encodePdf} (or {@link materialize}) when pending edits
+   * finally have to become a real PDF.
    *
    * Pages may come from other documents — those must stay open for as long as
    * they are referenced. Page numbers are reassigned to match the new order, so
@@ -978,8 +987,16 @@ export class PdfDocument {
   }
 
   /**
-   * Position in {@link pages} (1-based) of the physical page at `sourcePageIndex`,
-   * or `null` if the current arrangement does not contain it.
+   * Maps a zero-based physical page index in this document's native PDF to its
+   * current 1-based position in {@link pages}, or returns `null` when that
+   * physical page is not present.
+   *
+   * "Source" here means the page owned by this document before the lightweight
+   * arrangement in {@link pages} is applied. It is the same distinction exposed
+   * by {@link PdfPage.sourceDocument} and the internal
+   * `PdfPage.sourcePageIndex`: PDFium reports outlines, links, and form
+   * notifications against the native PDF page tree, while {@link setPages}
+   * creates a separate in-memory order of placement proxies.
    *
    * This is how destinations from the PDF itself — outline entries and internal
    * links, which PDFium reports as physical page indices — are translated into
@@ -989,16 +1006,29 @@ export class PdfDocument {
    * resolve to one position (the first wins), and a page removed from the
    * arrangement has no position at all, so destinations into it become `null`.
    */
-  pageNumberOfSourceIndex(sourcePageIndex: number): number | null {
+  pageNumberOfSourceIndex(physicalPageIndex: number): number | null {
     if (!this.arrangementDirty) {
       // pages[i] is the physical page i, so the mapping is the identity.
-      return sourcePageIndex >= 0 && sourcePageIndex < this._pages.length ? sourcePageIndex + 1 : null;
+      return physicalPageIndex >= 0 && physicalPageIndex < this._pages.length ? physicalPageIndex + 1 : null;
     }
     for (let i = 0; i < this._pages.length; i++) {
       const page = this._pages[i]!;
-      if (page.sourceDocument.docHandle === this.docHandle && page.sourcePageIndex === sourcePageIndex) return i + 1;
+      if (page.sourceDocument.docHandle === this.docHandle && page.sourcePageIndex === physicalPageIndex) return i + 1;
     }
     return null;
+  }
+
+  /**
+   * Resolves a destination against the current arrangement. When an ID occurs
+   * more than once, one matching placement is selected; callers that need to
+   * distinguish repeated pages should use {@link PdfPage.duplicate}.
+   */
+  resolveDest(dest: PdfDest): PdfResolvedDest | null {
+    const pageNumber = dest.by === 'pageNumber'
+      ? dest.pageNumber
+      : (this._pages.find((page) => page.id === dest.pageId)?.pageNumber ?? null);
+    if (pageNumber === null || !this._pages[pageNumber - 1]) return null;
+    return { pageNumber, command: dest.command, params: [...dest.params] };
   }
 
   /**
@@ -1047,6 +1077,22 @@ export class PdfDocument {
         console.error(`Error in ${event} listener:`, e);
       }
     }
+  }
+
+  /** @internal */
+  notifyLinksChanged(pageNumbers: number[]): void {
+    this.emit('linksChanged', { pageNumbers });
+  }
+
+  /** @internal */
+  pendingLinksFor(pageId: PdfPageId): readonly PdfLinkSpec[] | undefined {
+    return this.pendingLinks.get(pageId);
+  }
+
+  /** @internal */
+  stageLinks(pageId: PdfPageId, links: readonly PdfLinkSpec[], pageNumber: number): void {
+    this.pendingLinks.set(pageId, cloneLinkSpecs(links));
+    this.notifyLinksChanged([pageNumber]);
   }
 
   /**
@@ -1124,7 +1170,7 @@ export class PdfDocument {
       const names = [...this.borrowers].map((d) => d.sourceName).join(', ');
       console.warn(
         `pdfrx: disposing ${this.sourceName} while its pages are still placed in ${names} by setPages; ` +
-          `those pages will no longer render. Call encodePdf()/assemblePages() on the borrowing ` +
+          `those pages will no longer render. Call encodePdf()/materialize() on the borrowing ` +
           `document first to copy them in.`,
       );
     }
@@ -1157,8 +1203,92 @@ export class PdfDocument {
 
   /** Loads the document outline (bookmarks) as a tree of {@link PdfOutlineNode}. */
   async loadOutline(): Promise<PdfOutlineNode[]> {
+    if (this.pendingOutline !== undefined) return cloneOutline(this.pendingOutline);
     const result = await this.sendCommand('loadOutline', { docHandle: this.docHandle });
     return result.outline.map((node) => this.outlineNodeFromWorker(node));
+  }
+
+  /**
+   * Stages an immutable replacement for the document outline. No worker or PDF
+   * object mutation occurs until {@link materialize} (also called by
+   * {@link encodePdf} and {@link createMaterializedCopy}).
+   */
+  setOutline(outline: readonly PdfOutlineNode[]): void {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    validateOutlineTree(outline);
+    this.pendingOutline = cloneOutline(outline);
+    this.emit('outlineChanged', {});
+  }
+
+  /** Writes one already-validated outline replacement into the physical PDF. */
+  private async writeOutlineNow(outline: readonly PdfOutlineNode[]): Promise<void> {
+    const pageReferences = await loadRawPageReferences(this);
+    const flat: {
+      node: PdfOutlineNode;
+      parent: number | null;
+      previous: number | null;
+      next: number | null;
+      children: number[];
+    }[] = [];
+    const visit = (siblings: readonly PdfOutlineNode[], parent: number | null): number[] => {
+      const indices = siblings.map((node) => {
+        const index = flat.length;
+        flat.push({ node, parent, previous: null, next: null, children: [] });
+        return index;
+      });
+      for (let i = 0; i < siblings.length; i++) {
+        const node = siblings[i]!;
+        const index = indices[i]!;
+        flat[index]!.previous = indices[i - 1] ?? null;
+        flat[index]!.next = indices[i + 1] ?? null;
+        flat[index]!.children = visit(node.children, index);
+      }
+      return indices;
+    };
+    const top = visit(outline, null);
+
+    await this.editRawObjects((editor) => {
+      const catalog = editor.catalog();
+      if (flat.length === 0) {
+        editor.removeDictionaryValue(catalog, 'Outlines');
+        return;
+      }
+      const root = editor.createDictionary();
+      const items = flat.map(() => editor.createDictionary());
+      editor.setDictionaryValue(catalog, 'Outlines', root.reference);
+      editor.setDictionaryValue(catalog, 'PageMode', rawName('UseOutlines'));
+      editor.setDictionaryValue(root, 'Type', rawName('Outlines'));
+      editor.setDictionaryValue(root, 'First', items[top[0]!]!.reference);
+      editor.setDictionaryValue(root, 'Last', items[top.at(-1)!]!.reference);
+      editor.setDictionaryValue(root, 'Count', rawInteger(flat.length));
+      for (let index = 0; index < flat.length; index++) {
+        const entry = flat[index]!;
+        const target = items[index]!;
+        editor.setDictionaryValue(target, 'Title', rawText(entry.node.title));
+        editor.setDictionaryValue(target, 'Parent', entry.parent === null ? root.reference : items[entry.parent]!.reference);
+        if (entry.previous !== null) editor.setDictionaryValue(target, 'Prev', items[entry.previous]!.reference);
+        if (entry.next !== null) editor.setDictionaryValue(target, 'Next', items[entry.next]!.reference);
+        if (entry.children.length > 0) {
+          editor.setDictionaryValue(target, 'First', items[entry.children[0]!]!.reference);
+          editor.setDictionaryValue(target, 'Last', items[entry.children.at(-1)!]!.reference);
+          editor.setDictionaryValue(target, 'Count', rawInteger(outlineDescendantCount(index, flat)));
+        }
+        if (entry.node.dest) {
+          const resolved = this.resolveDest(entry.node.dest);
+          if (!resolved) throw new Error(`Outline destination for "${entry.node.title}" does not resolve`);
+          const pageReference = pageReferences[resolved.pageNumber - 1];
+          if (pageReference === undefined) throw new Error(`Outline destination page ${resolved.pageNumber} is missing`);
+          editor.setDictionaryValue(target, 'Dest', {
+            kind: 'array',
+            items: [
+              rawReference(pageReference),
+              rawName(pdfDestinationName(resolved.command)),
+              ...resolved.params.map((value) => value === null ? { kind: 'null' as const } : rawNumber(value)),
+            ],
+          });
+        }
+      }
+    }, { atomic: true });
   }
 
   /**
@@ -1262,12 +1392,15 @@ export class PdfDocument {
    * @internal
    */
   private async refreshAllPages(before: readonly PdfPageArrangementEntry[]): Promise<void> {
+    const identities = this._pages.map((page) => page.id);
     const result = await this.sendCommand('reloadPages', {
       docHandle: this.docHandle,
       currentPagesCount: this.nativePageCount,
     });
-    const pages = result.pages.map((p) => new PdfPage(this, p));
-    pages.sort((a, b) => a.pageNumber - b.pageNumber);
+    const pages = result.pages
+      .slice()
+      .sort((a, b) => a.pageIndex - b.pageIndex)
+      .map((p, index) => new PdfPage(this, p, identities[index]));
     this._pages = pages;
     this.nativePageCount = pages.length;
     // The PDF now *is* the arrangement: no proxies are outstanding, and any
@@ -1297,7 +1430,7 @@ export class PdfDocument {
    * is unmodified. After the rewrite the pages are reloaded and
    * `pageStatusChanged` fires.
    */
-  async assemblePages(): Promise<void> {
+  private async materializePageArrangement(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     if (!this.arrangementDirty) return;
     const before = this.describePageArrangement(this._pages);
@@ -1330,9 +1463,42 @@ export class PdfDocument {
   }
 
   /**
+   * Writes every pending page, outline, and Link-annotation edit into the
+   * physical PDF. {@link encodePdf} and {@link createMaterializedCopy} call this
+   * automatically.
+   */
+  async materialize(): Promise<void> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    if (!this.hasPendingChanges) return;
+    const wasModified = this.arrangementDirty;
+    await this.materializePageArrangement();
+
+    // PDFium's in-place page shuffle can leave raw page-tree references in
+    // their pre-shuffle order. Re-cloning the now-materialized arrangement
+    // normalizes that tree before document-level structures refer to pages.
+    if (wasModified && (this.pendingOutline !== undefined || this.pendingLinks.size > 0)) {
+      const normalized = await this.createArrangementCopy(this._pages);
+      await this.adoptTransactionalCopy(normalized);
+    }
+
+    const outline = this.pendingOutline;
+    if (outline !== undefined) {
+      await this.writeOutlineNow(outline);
+      if (this.pendingOutline === outline) this.pendingOutline = undefined;
+    }
+
+    for (const [pageId, links] of [...this.pendingLinks]) {
+      const page = this._pages.find((candidate) => candidate.id === pageId);
+      if (!page) throw new Error(`Link page ${pageId} is no longer present in the document`);
+      await page.writeLinksNow(links);
+      if (this.pendingLinks.get(pageId) === links) this.pendingLinks.delete(pageId);
+    }
+  }
+
+  /**
    * Serializes the document back to PDF bytes, reflecting any page manipulation
    * done with {@link setPages} / {@link setPage}; a pending arrangement is
-   * written back with {@link assemblePages} first.
+   * written back with {@link materialize} first.
    */
   async encodePdf(options: PdfEncodeOptions = {}): Promise<Uint8Array> {
     const mode = options.mode ?? 'in-place';
@@ -1340,7 +1506,9 @@ export class PdfDocument {
       if (mode === 'compact' && options.incremental) {
         throw new Error('incremental encoding is not supported in compact mode');
       }
-      const copy = await this.createCopy({ mode: mode === 'copy' ? 'clone' : 'compact' });
+      const copy = await this.createMaterializedCopy({
+        catalog: mode === 'copy' ? 'preserve' : 'rebuild',
+      });
       try {
         return await copy.encodePdf({
           mode: 'in-place',
@@ -1351,7 +1519,7 @@ export class PdfDocument {
         await copy.dispose();
       }
     }
-    await this.assemblePages();
+    await this.materialize();
     const result = await this.sendCommand('encodePdf', {
       docHandle: this.docHandle,
       incremental: options.incremental ?? false,
@@ -1364,6 +1532,13 @@ export class PdfDocument {
    * Reads the document catalog as a structured value.
    * Indirect references remain references, so cyclic PDF graphs are never expanded.
    * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
+   *
+   * This reads the physical PDF object graph in the worker, not a pending
+   * in-memory arrangement made with {@link setPages} or {@link setPage}. When
+   * {@link hasPendingChanges} is `true`, call {@link materialize}
+   * first (or {@link encodePdf}, which calls it) before interpreting page-tree
+   * dictionaries, page references, outlines, annotations, or other
+   * page-dependent catalog data.
    */
   async getCatalogObject(
     options: { includeRawStreamData?: boolean } = {},
@@ -1378,6 +1553,12 @@ export class PdfDocument {
    * Reads one indirect PDF object as a structured value.
    * Indirect references remain references, so cyclic PDF graphs are never expanded.
    * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
+   *
+   * Object numbers and references belong to the physical PDF object graph in
+   * the worker. A pending {@link setPages} / {@link setPage} arrangement exists
+   * only in {@link pages} and can disagree with that graph. Call
+   * {@link materialize} first (or {@link encodePdf}, which calls it) before
+   * reading page-dependent objects or retaining object numbers for later edits.
    */
   async getRawObject(
     objectNumber: number,
@@ -1395,7 +1576,6 @@ export class PdfDocument {
     operations: PdfRawPatchOperation[],
     options: { createDictionaries?: string[] } = {},
   ): Promise<Record<string, number>> {
-    await this.assemblePages();
     const result = await this.sendCommand('rawApplyPatch', {
       docHandle: this.docHandle,
       ...(options.createDictionaries ? { createDictionaries: options.createDictionaries } : {}),
@@ -1406,6 +1586,15 @@ export class PdfDocument {
 
   /**
    * Builds and applies a batch of convenient raw PDF-object edits.
+   *
+   * Raw targets and object numbers address the physical PDF object graph, not
+   * pending edits created by {@link setPages}, {@link setPage},
+   * {@link setOutline}, or {@link PdfPage.setLinks}. Raw editing does not
+   * materialize those edits automatically. Call {@link materialize} explicitly
+   * before inspecting raw objects and constructing a related edit batch;
+   * otherwise the batch can target the old page tree, outline, annotations, or
+   * object numbers. Calling {@link encodePdf} first is also sufficient because
+   * it calls {@link materialize}.
    *
    * The callback only records operations. If it throws or rejects, the worker is
    * never called and the document is unchanged. By default, the completed batch
@@ -1467,7 +1656,7 @@ export class PdfDocument {
       return;
     }
 
-    const copy = await this.createCopy();
+    const copy = await this.createArrangementCopy(this._pages);
     try {
       await copy.applyRawPatchInternal(editor.operations, { createDictionaries: editor.createDictionaries });
       await this.adoptTransactionalCopy(copy);
@@ -1504,7 +1693,8 @@ export class PdfDocument {
     this.docHandle = copy.docHandle;
     this.formHandle = copy.formHandle;
     this.formInfo = copy.formInfo;
-    this._pages = replacementPages.map((page) => new PdfPage(this, page));
+    const identities = this._pages.map((page) => page.id);
+    this._pages = replacementPages.map((page, index) => new PdfPage(this, page, identities[index]));
     this.nativePageCount = this._pages.length;
     this.arrangementDirty = false;
     for (const lender of this.borrowedFrom) lender.borrowers.delete(this);
@@ -1524,22 +1714,41 @@ export class PdfDocument {
   }
 
   /**
-   * Creates an independent document materializing the current virtual page
-   * arrangement. The caller owns the returned document and must dispose it.
+   * Creates an independent, fully materialized document from the current
+   * logical state. The caller owns the returned document and must dispose it.
    *
-   * `clone` chooses the sole imported source as its base when possible,
-   * preserving that source's catalog. `compact` rebuilds the arranged pages in
-   * a new empty PDF and omits objects not reachable from those pages, whether
-   * they originated in the source PDF or from subsequent edits. It does not
-   * automatically copy document-level outlines, metadata, name trees,
-   * signatures, or AcroForm configuration.
+   * Pending page, outline, and Link edits are applied to the returned document,
+   * whose {@link hasPendingChanges} is therefore `false`. This document is not
+   * materialized or otherwise modified; its pending state remains unchanged.
+   *
+   * `catalog: "preserve"` chooses the sole imported source as its base when
+   * possible and preserves that source's catalog. `catalog: "rebuild"` imports
+   * the arranged pages into a new empty PDF and omits objects not reachable
+   * from those pages, whether they originated in the source PDF or from
+   * subsequent edits. Rebuilding does not automatically copy document-level
+   * outlines, metadata, name trees, signatures, or AcroForm configuration.
    */
-  async createCopy(options: PdfCopyOptions = {}): Promise<PdfDocument> {
+  async createMaterializedCopy(
+    options: PdfMaterializedCopyOptions = {},
+  ): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    if ((options.mode ?? 'clone') === 'compact') return this.createCompactArrangementCopy();
-    const sourceDocuments = new Set(this._pages.map((page) => page.sourceDocument));
-    const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.document : this;
-    return baseDocument.createArrangementCopy(this._pages);
+    let copy: PdfDocument;
+    if ((options.catalog ?? 'preserve') === 'rebuild') {
+      copy = await this.createCompactArrangementCopy();
+    } else {
+      const sourceDocuments = new Set(this._pages.map((page) => page.sourceDocument));
+      const baseDocument = sourceDocuments.size === 1 ? this._pages[0]!.sourceDocument : this;
+      copy = await baseDocument.createArrangementCopy(this._pages);
+    }
+    try {
+      if (this.pendingOutline !== undefined) copy.pendingOutline = cloneOutline(this.pendingOutline);
+      for (const [pageId, links] of this.pendingLinks) copy.pendingLinks.set(pageId, cloneLinkSpecs(links));
+      await copy.materialize();
+      return copy;
+    } catch (error) {
+      await copy.dispose();
+      throw error;
+    }
   }
 
   /** Imports the current arranged pages into a new empty PDF. */
@@ -1552,7 +1761,7 @@ export class PdfDocument {
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (compact copy)`, null);
     try {
       copy.setPages(this._pages);
-      await copy.assemblePages();
+      await copy.materializePageArrangement();
       return copy;
     } catch (error) {
       await copy.dispose();
@@ -1569,16 +1778,18 @@ export class PdfDocument {
     }
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (copy)`, null);
     try {
-      const pages = pagesToEncode.map((page) => {
+      const pages = pagesToEncode.map((page, index) => {
         if (page.sourceDocument.docHandle !== this.docHandle) return page;
         const copiedSource = copy.pages[page.sourcePageIndex];
         if (!copiedSource) {
           throw new Error(`Source page ${page.sourcePageIndex + 1} is missing from the document copy`);
         }
-        return copiedSource.rotatedTo(page.rotation);
+        return copiedSource
+          .rotatedTo(page.rotation)
+          .placedIn(copy, index + 1, page.id);
       });
       copy.setPages(pages);
-      await copy.assemblePages();
+      await copy.materializePageArrangement();
       return copy;
     } catch (error) {
       await copy.dispose();
@@ -2236,6 +2447,7 @@ export interface PdfPageProxySpec {
   readonly document: PdfDocument;
   readonly pageNumber: number;
   readonly rotation: PdfPageRotation;
+  readonly id?: PdfPageId;
 }
 
 /**
@@ -2255,12 +2467,14 @@ export class PdfPage {
     /** The document holding the physical page this one draws. */
     readonly sourceDocument: PdfDocument,
     src: WorkerPageInfo | PdfPageProxySpec,
+    id: PdfPageId = createPdfPageId(),
   ) {
     if ('basePage' in src) {
       // Proxies are never nested: wrapping a proxy re-wraps its base instead, so
       // `basePage` is always a real page and no unwrap-the-chain walk is needed.
       const base = src.basePage.sourcePage;
       this.document = src.document;
+      this.id = src.id ?? src.basePage.id;
       this.basePage = base;
       this.pageNumber = src.pageNumber;
       this.rotation = src.rotation;
@@ -2275,6 +2489,7 @@ export class PdfPage {
       this.height = swapWH ? base.width : base.height;
     } else {
       this.document = sourceDocument;
+      this.id = id;
       this.basePage = null;
       this.pageNumber = src.pageIndex + 1;
       this.rotation = pdfPageRotationFromIndex(src.rotation);
@@ -2295,6 +2510,11 @@ export class PdfPage {
    * the physical PDF page and its annotations and form widgets.
    */
   readonly document: PdfDocument;
+  /**
+   * Opaque logical-page identity. Placement and rotation proxies retain it;
+   * {@link duplicate} creates a distinct identity without copying PDF data.
+   */
+  readonly id: PdfPageId;
   /** 1-based page number — the position in {@link PdfDocument.pages}, not in the PDF. */
   readonly pageNumber: number;
   /** Page width in points (1/72 inch), at this page's `rotation`. */
@@ -2365,10 +2585,35 @@ export class PdfPage {
     return `${this.sourceKey}:${this.rotation}`;
   }
 
+  /**
+   * Returns a lightweight proxy over the same physical page with a new logical
+   * identity. No PDF data is copied or materialized.
+   */
+  duplicate(): PdfPage {
+    return new PdfPage(this.sourceDocument, {
+      basePage: this,
+      document: this.document,
+      pageNumber: this.pageNumber,
+      rotation: this.rotation,
+      id: createPdfPageId(),
+    });
+  }
+
+  /**
+   * Creates an immutable destination for this logical page or its current
+   * 1-based position.
+   */
+  dest(options: PdfDestOptions): PdfDest {
+    const common = { command: options.command, params: [...options.params] };
+    return options.by === 'id'
+      ? { by: 'id', pageId: this.id, ...common }
+      : { by: 'pageNumber', pageNumber: this.pageNumber, ...common };
+  }
+
   /** Returns a placement proxy owned by `document`. @internal */
-  placedIn(document: PdfDocument, pageNumber: number): PdfPage {
-    if (document === this.document && pageNumber === this.pageNumber) return this;
-    return new PdfPage(this.sourceDocument, { basePage: this, document, pageNumber, rotation: this.rotation });
+  placedIn(document: PdfDocument, pageNumber: number, id: PdfPageId = this.id): PdfPage {
+    if (document === this.document && pageNumber === this.pageNumber && id === this.id) return this;
+    return new PdfPage(this.sourceDocument, { basePage: this, document, pageNumber, rotation: this.rotation, id });
   }
 
   /**
@@ -2379,7 +2624,7 @@ export class PdfPage {
    * {@link PdfDocument.setPage} to replace one placement, or include it in the
    * array passed to {@link PdfDocument.setPages}. Those methods update the
    * in-memory arrangement synchronously; {@link PdfDocument.encodePdf} or
-   * {@link PdfDocument.assemblePages} later writes the arrangement into the
+   * {@link PdfDocument.materialize} later writes the arrangement into the
    * physical PDF.
    *
    * `rotation` is clockwise and absolute: `90` means the page is displayed at
@@ -2408,7 +2653,7 @@ export class PdfPage {
    *
    * This does not modify the document by itself. Apply the returned proxy with
    * {@link PdfDocument.setPage} or {@link PdfDocument.setPages}; use
-   * {@link PdfDocument.encodePdf} or {@link PdfDocument.assemblePages} only when
+   * {@link PdfDocument.encodePdf} or {@link PdfDocument.materialize} only when
    * the in-memory arrangement must be written into the physical PDF.
    *
    * @example Rotate the current first-page placement by 90 degrees
@@ -2476,18 +2721,19 @@ export class PdfPage {
    * @internal
    */
   rebasedOn(base: PdfPage): PdfPage {
-    if (this.basePage === null) return base;
+    if (this.basePage === null) return new PdfPage(base.sourceDocument, base.toWorkerInfo(), this.id);
     return new PdfPage(base.sourceDocument, {
       basePage: base,
       document: this.document,
       pageNumber: this.pageNumber,
       rotation: this.rotation,
+      id: this.id,
     });
   }
 
   /**
    * Reserved for internal use only. This page as a source slot for
-   * {@link PdfDocument.assemblePages}.
+   * {@link PdfDocument.materialize}.
    * @internal
    */
   toAssembleSource(): PdfAssembleSource {
@@ -2588,6 +2834,17 @@ export class PdfPage {
    * page is not yet loaded.
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
+    const loaded = await this.loadLinksFromWorker(options);
+    const pending = this.document.pendingLinksFor(this.id);
+    if (pending === undefined) return loaded;
+    const staged = pending.map((link) => pdfLinkFromSpec(link));
+    return options.enableAutoLinkDetection === false
+      ? staged
+      : [...staged, ...loaded.filter((link) => link.kind === 'detected')];
+  }
+
+  /** Loads only the physical PDF's links, bypassing staged replacements. */
+  private async loadLinksFromWorker(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
     if (this.sourceDocument.isDisposed || !this.isLoaded) return [];
     const result = await this.sourceDocument.sendCommand('loadLinks', {
       docHandle: this.sourceDocument.docHandle,
@@ -2595,13 +2852,17 @@ export class PdfPage {
       enableAutoLinkDetection: options.enableAutoLinkDetection ?? true,
     });
     return result.links.map((link) => ({
+      kind: link.kind ?? 'annotation',
+      id: link.id ?? null,
       rects: link.rects.map((r) => this.rectFromWorker(r)),
-      url: link.url ?? null,
-      // Resolved against the document the page physically lives in. For a page
-      // imported into another document, an internal link therefore names a
-      // position in its *source* document — the PDF has no destination for the
-      // host, so there is nothing better to report.
-      dest: pdfDestFromWorker(link.dest, this.sourceDocument),
+      target: link.dest
+        ? {
+            kind: 'destination' as const,
+            // Resolved against the document the page physically lives in. For
+            // an imported page, the PDF target still belongs to that source.
+            dest: pdfDestFromWorker(link.dest, this.sourceDocument)!,
+          }
+        : { kind: 'uri' as const, url: link.url ?? '' },
       annotation: link.annotation
         ? {
             title: link.annotation.title ?? null,
@@ -2612,6 +2873,101 @@ export class PdfPage {
           }
         : null,
     }));
+  }
+
+  /**
+   * Stages a replacement for the editable Link annotations on this logical
+   * page. Other annotation subtypes and unsupported Link actions are preserved
+   * when {@link PdfDocument.materialize} writes the pending change.
+   *
+   * URL-like text returned with `kind: "detected"` is not a PDF object; create
+   * a {@link PdfLinkSpec} to persist it as a Link annotation.
+   */
+  setLinks(links: readonly PdfLinkSpec[]): void {
+    if (this.document.isDisposed || !this.isLoaded) return;
+    validateLinkSpecs(links);
+    this.document.stageLinks(this.id, links, this.pageNumber);
+  }
+
+  /** Writes staged Link annotations to the physical page represented by this page. @internal */
+  async writeLinksNow(links: readonly PdfLinkSpec[]): Promise<void> {
+    for (const link of links) {
+      if (!(link.rect.left < link.rect.right) || !(link.rect.bottom < link.rect.top)) {
+        throw new RangeError('Link rectangle must have positive width and height');
+      }
+      if (link.target.kind === 'uri' && link.target.url.length === 0) {
+        throw new Error('Link URI must not be empty');
+      }
+      if (link.target.kind === 'destination') validateDestination(link.target.dest);
+    }
+
+    const document = this.document;
+    const currentPage = this;
+    const pageReferences = await loadRawPageReferences(document);
+    const pageReference = pageReferences[currentPage.sourcePageIndex];
+    if (pageReference === undefined) throw new Error(`PDF page ${currentPage.sourcePageIndex + 1} is missing`);
+    const pageObject = await readRawDictionary(document, pageReference);
+    const annotationItems = await readRawArrayEntry(document, pageObject.entries.Annots);
+    const supportedIds = new Set(
+      (await currentPage.loadLinksFromWorker({ enableAutoLinkDetection: false }))
+        .filter((link) => link.kind === 'annotation' && link.id !== null)
+        .map((link) => link.id!),
+    );
+    const preserved: PdfRawPatchValue[] = [];
+    for (let index = 0; index < annotationItems.length; index++) {
+      const item = annotationItems[index]!;
+      const annotation = await resolveRawDictionary(document, item);
+      const isLink = annotation?.entries.Subtype?.kind === 'name'
+        && annotation.entries.Subtype.value === 'Link';
+      const id = annotation ? decodeRawText(annotation.entries.NM) ?? `@${index}` : null;
+      if (!isLink || id === null || !supportedIds.has(id)) preserved.push(item);
+    }
+
+    const destinationPageReferences = pageReferences;
+    await document.editRawObjects((editor) => {
+      const created = links.map((link) => {
+        const raw = currentPage.rectToWorker(link.rect);
+        const target = editor.createDictionary({
+          Type: rawName('Annot'),
+          Subtype: rawName('Link'),
+          Rect: {
+            kind: 'array',
+            items: [rawNumber(raw[0]), rawNumber(raw[3]), rawNumber(raw[2]), rawNumber(raw[1])],
+          },
+          NM: rawText(link.id ?? createPdfLinkId()),
+        });
+        const metadata = link.annotation;
+        if (metadata?.title) editor.setDictionaryValue(target, 'T', rawText(metadata.title));
+        if (metadata?.content) editor.setDictionaryValue(target, 'Contents', rawText(metadata.content));
+        if (metadata?.subject) editor.setDictionaryValue(target, 'Subj', rawText(metadata.subject));
+        if (metadata?.modificationDate) editor.setDictionaryValue(target, 'M', rawText(metadata.modificationDate));
+        if (metadata?.creationDate) editor.setDictionaryValue(target, 'CreationDate', rawText(metadata.creationDate));
+        if (link.target.kind === 'uri') {
+          editor.setDictionaryValue(target, 'A', {
+            kind: 'dictionary',
+            entries: { S: rawName('URI'), URI: rawByteString(link.target.url) },
+          });
+        } else {
+          const resolved = document.resolveDest(link.target.dest);
+          if (!resolved) throw new Error('Link destination does not resolve');
+          const destinationReference = destinationPageReferences[resolved.pageNumber - 1];
+          if (destinationReference === undefined) throw new Error(`Link destination page ${resolved.pageNumber} is missing`);
+          editor.setDictionaryValue(target, 'Dest', {
+            kind: 'array',
+            items: [
+              rawReference(destinationReference),
+              rawName(pdfDestinationName(resolved.command)),
+              ...resolved.params.map((value) => value === null ? { kind: 'null' as const } : rawNumber(value)),
+            ],
+          });
+        }
+        return target;
+      });
+      editor.setDictionaryValue(editor.object(pageReference), 'Annots', {
+        kind: 'array',
+        items: [...preserved, ...created.map((item) => item.reference)],
+      });
+    }, { atomic: true });
   }
 
   /**
@@ -3028,17 +3384,206 @@ function textOrientationFromWorker(
 
 /**
  * Converts a wire destination (0-based *physical* page index) to a public
- * {@link PdfDest}, whose `pageNumber` is a position in `doc.pages`. Returns
- * `null` if the destination is absent or its page is not in the arrangement
- * (e.g. it was removed by {@link PdfDocument.setPages}).
+ * ID-based {@link PdfDest} for the corresponding logical page placement.
+ * Returns `null` if the destination is absent or its physical page is not in
+ * the arrangement (e.g. it was removed by {@link PdfDocument.setPages}).
  */
 function pdfDestFromWorker(dest: WorkerDest | null | undefined, doc: PdfDocument): PdfDest | null {
   if (!dest) return null;
   const pageNumber = doc.pageNumberOfSourceIndex(dest.pageIndex);
   if (pageNumber === null) return null;
-  return {
-    pageNumber,
-    command: dest.command,
-    params: dest.params,
+  return doc.pages[pageNumber - 1]!.dest({ by: 'id', command: dest.command, params: dest.params });
+}
+
+type RawPdfDictionary = Extract<PdfRawObject, { kind: 'dictionary' }>;
+
+const rawName = (value: string): PdfRawObject => ({ kind: 'name', value });
+const rawInteger = (value: number): PdfRawObject => ({ kind: 'integer', value });
+const rawNumber = (value: number): PdfRawObject => ({ kind: 'number', value });
+const rawReference = (objectNumber: number): PdfRawObject => ({
+  kind: 'reference',
+  objectNumber,
+  generationNumber: 0,
+});
+const rawText = (value: string): PdfRawObject => {
+  const bytes = new Uint8Array(2 + value.length * 2);
+  bytes[0] = 0xfe;
+  bytes[1] = 0xff;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    bytes[2 + index * 2] = code >> 8;
+    bytes[3 + index * 2] = code & 0xff;
+  }
+  return { kind: 'string', value: bytes };
+};
+const rawByteString = (value: string): PdfRawObject => ({
+  kind: 'string',
+  value: new TextEncoder().encode(value),
+});
+
+function decodeRawText(value: PdfRawObject | undefined): string | null {
+  if (!value || (value.kind !== 'string' && value.kind !== 'name')) return null;
+  if (value.kind === 'name') return value.value;
+  const bytes = value.value;
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    let result = '';
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      result += String.fromCharCode((bytes[index]! << 8) | bytes[index + 1]!);
+    }
+    return result;
+  }
+  return new TextDecoder('windows-1252').decode(bytes);
+}
+
+function validateDestination(dest: PdfDest | null): void {
+  if (!dest) return;
+  if (dest.by === 'pageNumber' && (!Number.isInteger(dest.pageNumber) || dest.pageNumber < 1)) {
+    throw new RangeError('Destination pageNumber must be a positive integer');
+  }
+  const command = dest.command.toLowerCase();
+  if (!['xyz', 'fit', 'fith', 'fitv', 'fitr', 'fitb', 'fitbh', 'fitbv'].includes(command)) {
+    throw new Error(`Unsupported PDF destination command: ${dest.command}`);
+  }
+  if (dest.params.some((value) => value !== null && !Number.isFinite(value))) {
+    throw new RangeError('Destination parameters must be finite numbers or null');
+  }
+}
+
+function validateOutlineTree(outline: readonly PdfOutlineNode[]): void {
+  const active = new Set<PdfOutlineNode>();
+  const visit = (nodes: readonly PdfOutlineNode[]): void => {
+    for (const node of nodes) {
+      if (active.has(node)) throw new Error('Outline must be an acyclic tree');
+      validateDestination(node.dest);
+      active.add(node);
+      visit(node.children);
+      active.delete(node);
+    }
   };
+  visit(outline);
+}
+
+function cloneOutline(outline: readonly PdfOutlineNode[]): PdfOutlineNode[] {
+  return outline.map((node) => ({
+    title: node.title,
+    dest: node.dest
+      ? { ...node.dest, params: [...node.dest.params] }
+      : null,
+    children: cloneOutline(node.children),
+  }));
+}
+
+function validateLinkSpecs(links: readonly PdfLinkSpec[]): void {
+  for (const link of links) {
+    if (!(link.rect.left < link.rect.right) || !(link.rect.bottom < link.rect.top)) {
+      throw new RangeError('Link rectangle must have positive width and height');
+    }
+    if (link.target.kind === 'uri' && link.target.url.length === 0) {
+      throw new Error('Link URI must not be empty');
+    }
+    if (link.target.kind === 'destination') validateDestination(link.target.dest);
+  }
+}
+
+function cloneLinkSpecs(links: readonly PdfLinkSpec[]): PdfLinkSpec[] {
+  return links.map((link) => ({
+    id: link.id ?? createPdfLinkId(),
+    rect: { ...link.rect },
+    target: link.target.kind === 'uri'
+      ? { kind: 'uri', url: link.target.url }
+      : {
+          kind: 'destination',
+          dest: { ...link.target.dest, params: [...link.target.dest.params] },
+        },
+    annotation: link.annotation ? { ...link.annotation } : null,
+  }));
+}
+
+function pdfLinkFromSpec(link: PdfLinkSpec): PdfLink {
+  return {
+    kind: 'annotation',
+    id: link.id ?? null,
+    rects: [{ ...link.rect }],
+    target: link.target.kind === 'uri'
+      ? { kind: 'uri', url: link.target.url }
+      : {
+          kind: 'destination',
+          dest: { ...link.target.dest, params: [...link.target.dest.params] },
+        },
+    annotation: link.annotation
+      ? { ...link.annotation }
+      : null,
+  };
+}
+
+function pdfDestinationName(command: string): string {
+  const names: Record<string, string> = {
+    xyz: 'XYZ', fit: 'Fit', fitb: 'FitB', fith: 'FitH', fitbh: 'FitBH',
+    fitv: 'FitV', fitbv: 'FitBV', fitr: 'FitR',
+  };
+  return names[command.toLowerCase()]!;
+}
+
+function outlineDescendantCount(
+  parent: number,
+  flat: readonly { children: readonly number[] }[],
+): number {
+  return flat[parent]!.children.reduce(
+    (count, child) => count + 1 + outlineDescendantCount(child, flat),
+    0,
+  );
+}
+
+async function loadRawPageReferences(document: PdfDocument): Promise<number[]> {
+  const catalog = await document.getCatalogObject();
+  if (!catalog.object || catalog.object.kind !== 'dictionary') {
+    throw new Error('PDF catalog is not a dictionary');
+  }
+  const pages = catalog.object.entries.Pages;
+  if (!pages || pages.kind !== 'reference') throw new Error('PDF catalog has no indirect /Pages tree');
+  const references: number[] = [];
+  const visit = async (objectNumber: number): Promise<void> => {
+    const result = await document.getRawObject(objectNumber);
+    if (!result.object || result.object.kind !== 'dictionary') {
+      throw new Error(`PDF page-tree object ${objectNumber} is not a dictionary`);
+    }
+    const node: RawPdfDictionary = result.object;
+    if (node.entries.Type?.kind === 'name' && node.entries.Type.value === 'Page') {
+      references.push(objectNumber);
+      return;
+    }
+    const kids = node.entries.Kids;
+    if (!kids || kids.kind !== 'array') return;
+    for (const kid of kids.items) if (kid.kind === 'reference') await visit(kid.objectNumber);
+  };
+  await visit(pages.objectNumber);
+  return references;
+}
+
+async function readRawDictionary(document: PdfDocument, objectNumber: number): Promise<RawPdfDictionary> {
+  const result = await document.getRawObject(objectNumber);
+  if (!result.object || result.object.kind !== 'dictionary') {
+    throw new Error(`PDF object ${objectNumber} is not a dictionary`);
+  }
+  return result.object;
+}
+
+async function resolveRawDictionary(
+  document: PdfDocument,
+  value: PdfRawObject,
+): Promise<RawPdfDictionary | null> {
+  if (value.kind === 'dictionary') return value;
+  if (value.kind !== 'reference') return null;
+  return readRawDictionary(document, value.objectNumber);
+}
+
+async function readRawArrayEntry(
+  document: PdfDocument,
+  value: PdfRawObject | undefined,
+): Promise<PdfRawObject[]> {
+  if (!value) return [];
+  if (value.kind === 'array') return value.items;
+  if (value.kind !== 'reference') return [];
+  const result = await document.getRawObject(value.objectNumber);
+  return result.object?.kind === 'array' ? result.object.items : [];
 }

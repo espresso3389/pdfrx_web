@@ -29,6 +29,7 @@ import {
   type PdfOpenDataOptions,
   type PdfOpenUrlOptions,
   type PdfOutlineNode,
+  type PdfResolvedDest,
   type PdfrxEngineOptions,
 } from '@pdfrx/engine';
 import { googleFontsResolver, type FontResolver } from './font-fallback.js';
@@ -225,7 +226,7 @@ export interface PdfrxViewerOptions {
    * Called when the user taps/clicks a link. When provided, it **replaces** the
    * built-in behavior (open external URLs with `window.open`, navigate internal
    * destinations with {@link PdfrxViewer.goToDest}). Use
-   * {@link PdfLink.url} / {@link PdfLink.dest} to decide, and call
+   * {@link PdfLink.target} to decide, and call
    * {@link PdfrxViewer.goToDest} / `window.open` yourself to keep parts of the
    * default. Omit it to keep the built-in behavior.
    */
@@ -2492,16 +2493,18 @@ export class PdfrxViewer {
    */
   goToDest(dest: PdfDest | null, duration?: number): void {
     if (!dest) return;
-    const t = this.calcTransformForDest(dest);
+    const resolved = this.doc?.resolveDest(dest) ?? null;
+    if (!resolved) return;
+    const t = this.calcTransformForDest(resolved);
     if (t) {
       if (t.zoom !== this.transform.zoom) this.zoomModeValue = this.clampZoom(t.zoom);
       this.navigateTo(t, duration ?? this.defaultAnimationDuration);
     }
-    else this.goToPage(dest.pageNumber, duration);
+    else this.goToPage(resolved.pageNumber, duration);
   }
 
   /** @internal Computes the transform for a destination command (xyz, fit variants, fitR). */
-  private calcTransformForDest(dest: PdfDest): ViewTransform | null {
+  private calcTransformForDest(dest: PdfResolvedDest): ViewTransform | null {
     if (!this.layout) return null;
     const page = this.pageGeoms[dest.pageNumber - 1];
     const pageRect = this.layout.pageLayouts[dest.pageNumber - 1];
@@ -2594,6 +2597,12 @@ export class PdfrxViewer {
   /** Document outline (bookmarks). */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     return (await this.doc?.loadOutline()) ?? [];
+  }
+
+  /** Replaces the document outline with the supplied immutable tree. */
+  setOutline(outline: readonly PdfOutlineNode[]): void {
+    if (!this.doc) return;
+    this.doc.setOutline(outline);
   }
 
   /** Render a page thumbnail at the given CSS width. */
@@ -2711,7 +2720,7 @@ export class PdfrxViewer {
     const doc = this.doc;
     if (!doc) return;
     const transform = { ...this.transform };
-    const replacement = await doc.createCopy();
+    const replacement = await doc.createMaterializedCopy();
     this.currentSource = null;
     await this.setDocument(replacement);
     this.setTransform(transform);
@@ -2963,6 +2972,10 @@ export class PdfrxViewer {
     doc.addEventListener('missingFonts', ({ queries }) => this.onMissingFonts(queries));
     doc.addEventListener('pageStatusChanged', () => this.onPageStatusChanged());
     doc.addEventListener('pagesRearranged', (event) => this.onPagesRearranged(event));
+    doc.addEventListener('outlineChanged', () => this.notifyRefreshed({ scope: 'document', pageNumbers: [] }));
+    doc.addEventListener('linksChanged', ({ pageNumbers }) => {
+      void this.refreshPages({ pageNumbers, content: ['links'] });
+    });
     this.syncFormDocumentListeners();
     doc.addEventListener('annotationsChanged', (event) => {
       this.onAnnotationsChanged();
@@ -2992,7 +3005,7 @@ export class PdfrxViewer {
   }
 
   /**
-   * The page arrangement changed (`PdfDocument.setPages` / `assemblePages`).
+   * The page arrangement changed (`PdfDocument.setPages` / `materialize`).
    * Anything keyed by page position is dropped; rendered page bitmaps are not,
    * because {@link PageRenderCache} keys them by content — which is what makes
    * reordering and rotating in a GUI instant.
@@ -3388,10 +3401,10 @@ export class PdfrxViewer {
       }
       return;
     }
-    if (link.url) {
-      window.open(link.url, '_blank', 'noopener,noreferrer');
-    } else if (link.dest) {
-      this.goToDest(link.dest);
+    if (link.target.kind === 'uri') {
+      window.open(link.target.url, '_blank', 'noopener,noreferrer');
+    } else {
+      this.goToDest(link.target.dest);
     }
   }
 

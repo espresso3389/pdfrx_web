@@ -64,7 +64,8 @@ built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
 - **Anything else** (vanilla JS, Vue, Svelte, Angular, a custom element) — use
   **[`@pdfrx/viewer`](packages/viewer)** directly. It renders the PDF onto a
   `<canvas>` and exposes the primitives
-  ([`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline),
+  ([`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) /
+  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setoutline),
   [`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
   [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher)),
   but the surrounding UI —
@@ -153,7 +154,8 @@ await viewer.print();
 Remember that the thumbnail strip, outline tree and search box are yours to
 build here (this is what `@pdfrx/react` packages up for React) — the viewer
 gives you the primitives:
-[`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline),
+[`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) /
+[`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setoutline),
 [`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
 [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher).
 

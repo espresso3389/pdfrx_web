@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed `PdfDocument.createCopy()` to `createMaterializedCopy()` and replaced
+  its `clone` / `compact` mode with a `preserve` / `rebuild` catalog policy,
+  making explicit that the returned document is fully materialized while the
+  source document and its pending edits remain unchanged.
+
 ## [0.18.0] - 2026-07-26
 
 ### Added

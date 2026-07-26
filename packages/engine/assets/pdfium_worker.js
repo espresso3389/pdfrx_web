@@ -2131,6 +2131,8 @@ function _loadWebLinks(params) {
       rects.push(Array.from(new Float64Array(Pdfium.memory.buffer, rectBuffer, 4)));
     }
     links.push({
+      kind: 'detected',
+      id: null,
       rects: rects,
       url: _getLinkUrl(linkPage, i),
     });
@@ -2168,6 +2170,10 @@ function _loadAnnotLinks(params) {
   const links = [];
   for (let i = 0; i < count; i++) {
     const annot = Pdfium.wasmExports.FPDFPage_GetAnnot(pageHandle, i);
+    if (Pdfium.wasmExports.FPDFAnnot_GetSubtype(annot) !== 2) {
+      Pdfium.wasmExports.FPDFPage_CloseAnnot(annot);
+      continue;
+    }
     Pdfium.wasmExports.FPDFAnnot_GetRect(annot, rectF);
     const [l, t, r, b] = new Float32Array(Pdfium.memory.buffer, rectF, 4);
     const rect = [l, t > b ? t : b, r, t > b ? b : t];
@@ -2177,14 +2183,18 @@ function _loadAnnotLinks(params) {
     const dest = _processAnnotDest(annot, docHandle);
     if (dest) {
       links.push({
+        kind: 'annotation',
+        id: _getAnnotField('NM', annot) || `@${i}`,
         rects: [rect],
         dest: _pdfDestFromDest(dest, docHandle),
         annotation: annotation,
       });
     } else {
       const url = _processAnnotLink(annot, docHandle);
-      if (url || annotation) {
+      if (url) {
         links.push({
+          kind: 'annotation',
+          id: _getAnnotField('NM', annot) || `@${i}`,
           rects: [rect],
           url: url,
           annotation: annotation,

@@ -212,6 +212,10 @@ export interface WorkerAnnotation {
 /** A link on the wire (link annotation or auto-detected URL). Basis for `PdfLink`. */
 /** @internal */
 export interface WorkerLink {
+  /** Stable `/NM` value or page-local `@<annotation-index>` fallback. */
+  id?: string | null;
+  /** Whether this is a PDF Link annotation or detected page text. */
+  kind?: 'annotation' | 'detected';
   /** Clickable areas in PDF page coordinates, not yet adjusted by the bounding box. */
   rects: WorkerRect[];
   url?: string | null;

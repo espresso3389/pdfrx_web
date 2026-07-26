@@ -110,7 +110,16 @@ Each symbol links to its entry in the
 - [`openUrl`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#openurl) (HTTP range access supported via [`preferRangeAccess`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#preferrangeaccess)), [`openData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#opendata), [`createNew`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createnew), [`createFromImages`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfromimages) (one page per image — JPEG decoded natively, other formats via the runtime's decoder) — all with password retry via [`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider)
 - [`PdfPage.render`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#render) — partial-region rendering for tiled/zoomed views (`x`, `y`, `width`, `height` vs `fullWidth`, `fullHeight`)
 - Cancellable rendering: renders are queued client-side (one in the worker at a time) instead of being posted all at once, so work that is no longer wanted can be dropped before it starts. Pass a [`PdfPageRenderCancellationToken`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPageRenderCancellationToken.html) from [`createCancellationToken()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#createcancellationtoken) and [`cancel()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPageRenderCancellationToken.html#cancel) it; `render` then resolves to `null`
-- [`PdfPage.loadText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadtext) / [`loadLinks`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadlinks), [`PdfDocument.loadOutline`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadoutline)
+- [`PdfPage.loadText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadtext) /
+  [`loadLinks`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadlinks).
+  Replace persisted Link annotations with
+  [`setLinks()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#setlinks);
+  auto-detected URL text is explicitly marked as non-persisted. Link targets use
+  [`PdfLinkTarget`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfLinkTarget.html).
+- [`PdfDocument.loadOutline`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadoutline) /
+  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline)
+  read and atomically replace the bookmark tree as ordinary immutable JavaScript
+  objects.
 - Page-scoped annotation API:
   [`page.loadAnnotations()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadannotations) /
   [`loadHighlights({ includeText: true })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadhighlights)
@@ -158,14 +167,23 @@ Each symbol links to its entry in the
 - Progressive page loading: [`openUrl(url, { useProgressiveLoading: true })`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#useprogressiveloading) + [`doc.loadPagesProgressively()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadpagesprogressively)
 - Font management: [`addFontData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#addfontdata) / [`reloadFonts`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#reloadfonts) / [`clearAllFontData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#clearallfontdata) (registered fonts persist in IndexedDB). A [`missingFonts`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#missingfonts) event carries [`PdfFontQuery`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfFontQuery.html) entries; interpret their numeric `charset` / `pitchFamily` with the [`PdfFontCharset`](https://espresso3389.github.io/pdfrx_web/variables/_pdfrx_engine.PdfFontCharset.html) ids + [`pdfFontCharsetName`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.pdfFontCharsetName.html), and the [`isFixedPitch`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isFixedPitch.html) / [`isRomanFamily`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isRomanFamily.html) / [`isScriptFamily`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_engine.isScriptFamily.html) helpers
 - Non-destructive page editing: [`setPages`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) / [`setPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage) with proxy pages from [`PdfPage.rotatedCW90()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#rotatedcw90) — synchronous, no worker round-trip, no PDF rebuild, so GUI reorder/rotate is instant and undo is just restoring the previous array. Page numbers are assigned automatically from the [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) array order; [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) materializes the arrangement.
+- Every [`PdfPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html)
+  has a logical identity retained by placement/rotation proxies and page
+  materialization. Build a following or fixed-position
+  [`PdfDest`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfDest.html)
+  with [`page.dest()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#dest).
+  Repeating the same page in an arrangement repeats its identity and resolves
+  to one matching placement; use
+  [`page.duplicate()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#duplicate)
+  for a zero-copy proxy with a distinct identity.
 - Page manipulation — reorder, rotate, remove, duplicate, and import
   (cross-document) — is all
   [`setPages`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) /
   [`setPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage)
-  over proxy pages; [`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages) writes the arrangement back into the PDF ([`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) calls it for you)
+  over proxy pages; [`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize) writes all pending page, outline, and Link-annotation edits into the PDF ([`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) calls it for you)
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — materialize the arrangement into the live document and serialize it
 - [`doc.encodePdf({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) selects `in-place` (default), `copy`, or `compact`. `copy` assembles through a temporary catalog-preserving clone; `compact` rebuilds the arranged pages in a fresh PDF and omits objects that are not reachable from those pages, regardless of whether they were already present in the source PDF or resulted from later edits
-- [`doc.createCopy({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createcopy) returns an owned `clone` (default) or `compact` document. Compact copies retain page resources, annotations, and widgets, while outlines, metadata, name trees, signatures, and AcroForm configuration require application-level reconstruction
+- [`doc.createMaterializedCopy({ catalog })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#creatematerializedcopy) returns an independent, fully materialized document while leaving the original and its pending state unchanged. `preserve` (default) retains the selected base catalog; `rebuild` creates a fresh catalog from the arranged pages, retaining their resources, annotations, and widgets while document-level outlines, metadata, name trees, signatures, and AcroForm configuration require application-level reconstruction
 - `encodePdf({ mode: 'copy' })` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
 - Raster Stamp moves/resizes can pass [`preserveAppearance: true`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationMutationOptions.html#preserveappearance) to `updateAnnotation()` so PDFium updates the annotation rectangle without registering the same image stream again
 - Raw PDF-object inspection and editing:
@@ -186,9 +204,24 @@ Each symbol links to its entry in the
   dictionary, array, and decoded-stream helpers over the custom `FPDFRaw_*`
   PDFium backend. Newly-created indirect dictionaries can be referenced within
   the same batch without manually assigning object numbers.
+- Raw-object APIs inspect the physical PDF held by the worker. In contrast,
+  [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages)
+  and
+  [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage)
+  initially change only the lightweight in-memory `pages` arrangement. While
+  [`hasPendingChanges`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#haspendingchanges)
+  is true, call
+  [`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize)
+  before interpreting page-tree dictionaries, page references, or object
+  numbers returned by `getCatalogObject()` / `getRawObject()`.
+  [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
+  is also sufficient because it materializes first.
 - [`editRawObjects()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#editrawobjects)
   first builds the complete batch without touching the
-  document, so an exception in the callback applies nothing. The default commit
+  document, so an exception in the callback applies nothing. Raw editing never
+  materializes pending page, outline, or Link edits automatically; explicitly
+  call `materialize()` before inspecting or targeting affected raw objects.
+  The default commit
   avoids copying the PDF and is fast, but a PDFium error during application may
   leave earlier operations applied. Pass `{ atomic: true }` for complete
   all-or-nothing behavior; this applies the batch to an independent PDF copy

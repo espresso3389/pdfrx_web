@@ -319,25 +319,25 @@ and
 are asynchronous because an entry may contain annotation
 or form writes; await them before starting another programmatic edit.
 
-### Saving, page assembly and history
+### Saving, materialization and history
 
 Undo/Redo page entries retain the
 [`PdfPage`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPage.html)
 proxies from before and after each
 operation.
-[`PdfDocument.assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
-replaces the PDF's physical page tree
+[`PdfDocument.materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize)
+writes pending document edits and replaces the PDF's physical page tree
 and reloads its pages, so those saved proxies can no longer be used to restore
 the earlier arrangement reliably.
 [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
 calls
-[`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
+[`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize)
 automatically and has the same consequence. Calling either while retaining the
 history can therefore leave Undo/Redo inconsistent with the live document.
 
 The built-in download buttons avoid this by using
 [`PdfDocument.encodePdf({ mode: 'copy' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf).
-Assembly happens on a temporary document, while
+Materialization happens on a temporary document, while
 the live document and its history remain intact. While encoding, their download
 icon changes to a busy indicator and the button exposes `aria-busy="true"`.
 Custom editor save UI should normally do the same:
@@ -370,7 +370,7 @@ can use
 to rebuild only its reachable page-level objects; applications must reconstruct
 required outlines, metadata, name trees, signatures, or AcroForm catalog
 configuration. Alternatively, a memory-constrained application can make
-assembly an explicit, irreversible history boundary: clear the history first,
+materialization an explicit, irreversible history boundary: clear the history first,
 then encode the live document.
 
 ```tsx
@@ -382,7 +382,7 @@ const data = await viewer.document!.encodePdf(); // Assembles the live document.
 ```
 
 Clearing first is important. Do not call
-[`assemblePages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#assemblepages)
+[`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize)
 or
 [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
 and then leave older Undo/Redo entries available.

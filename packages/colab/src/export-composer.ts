@@ -32,12 +32,12 @@ export async function encodeCollaborativePdf(
   for (const documentId of documentIds) {
     const sourceDocument = sources.document(documentId);
     const outline = await sourceDocument.loadOutline();
-    mapped.push(...outline.map((node) => mapOutlineNode(node, documentId, placements)));
+    mapped.push(...outline.map((node) => mapOutlineNode(node, documentId, sourceDocument, placements)));
   }
   const { mergeAcroForms, writeOutline } = await import('./outline-writer.js');
   // Importing the arranged pages into a fresh document also drops unreachable
   // image appearance objects accumulated by older collaboration clients.
-  const copy = await rootDocument.createCopy({ mode: 'compact' });
+  const copy = await rootDocument.createMaterializedCopy({ catalog: 'rebuild' });
   try {
     if (mapped.length > 0) await writeOutline(copy, mapped);
     await mergeAcroForms(
@@ -54,23 +54,27 @@ export async function encodeCollaborativePdf(
 function mapOutlineNode(
   node: PdfOutlineNode,
   documentId: string,
+  sourceDocument: PdfDocument,
   placements: readonly PagePlacement[],
 ): MappedOutlineNode {
   return {
     title: node.title,
-    dest: mapDestination(node.dest, documentId, placements),
-    children: node.children.map((child) => mapOutlineNode(child, documentId, placements)),
+    dest: mapDestination(node.dest, documentId, sourceDocument, placements),
+    children: node.children.map((child) => mapOutlineNode(child, documentId, sourceDocument, placements)),
   };
 }
 
 function mapDestination(
   dest: PdfDest | null,
   documentId: string,
+  sourceDocument: PdfDocument,
   placements: readonly PagePlacement[],
 ): MappedOutlineNode['dest'] {
   if (!dest) return null;
+  const resolved = sourceDocument.resolveDest(dest);
+  if (!resolved) return null;
   const pageIndex = placements.findIndex(
-    (page) => page.source.documentId === documentId && page.source.pageIndex === dest.pageNumber - 1,
+    (page) => page.source.documentId === documentId && page.source.pageIndex === resolved.pageNumber - 1,
   );
-  return pageIndex < 0 ? null : { pageIndex, command: dest.command, params: dest.params };
+  return pageIndex < 0 ? null : { pageIndex, command: resolved.command, params: resolved.params };
 }

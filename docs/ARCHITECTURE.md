@@ -22,13 +22,14 @@ result shapes (document open/close, progressive loading, page rendering with
 partial regions, text with per-character rects, links, outline, font management,
 `assemble`/`encodePdf`, and the AcroForm commands — see *Form filling* below).
 `assemble` is surfaced on
-`PdfDocument` as `assemblePages()`, which writes back the arrangement built with
-`setPages` / `setPage` — the only page-editing API — and `encodePdf()` reflects
+`PdfDocument` as `materialize()`, which writes every pending page, outline, and
+Link-annotation edit into the physical PDF; `encodePdf()` reflects
 those edits. `encodePdf({ mode: 'copy' })` normally clones the root document, but when its
 virtual arrangement contains pages from exactly one imported document it clones
 that source instead; PDFium page import does not copy document-level AcroForm,
-outline, metadata, or name-tree dictionaries. `createCopy({ mode: 'compact' })`
-deliberately rebuilds the arranged pages in a new empty document instead. It
+outline, metadata, or name-tree dictionaries.
+`createMaterializedCopy({ catalog: 'rebuild' })` deliberately rebuilds the
+arranged pages in a new empty document instead. It
 omits objects not reachable from those pages, whether they were already present
 in the source PDF or resulted from subsequent edits, but applications must
 reconstruct any required document-level catalog structures. Notable client
@@ -51,6 +52,29 @@ behaviors:
   `reloadDocument()` to copy and reparse the PDF into a fresh native document.
   React subscribes to these explicit refreshes and invalidates its outline,
   form, annotation, search, and thumbnail state as well.
+
+- `setPages()` / `setPage()`, `setOutline()`, and `setLinks()` first update only
+  client-side pending state. The worker's catalog, page tree, annotations, and
+  indirect object numbers remain physical-PDF state until `materialize()` (also
+  called by `encodePdf()`). `createMaterializedCopy()` applies the same logical
+  state only to its returned independent document and leaves the source's
+  pending state unchanged. Raw inspection and editing never materialize
+  automatically, so callers must explicitly materialize before interpreting or
+  targeting affected raw objects.
+
+- Each `PdfPage` has a logical identity distinct from its physical
+  `sourceDocument`/`sourcePageIndex`. Placement and rotation proxies, and the
+  real pages reloaded after `materialize()`, retain that identity.
+  `PdfPage.duplicate()` forks only this identity and copies no PDF data.
+  ID-based `PdfDest` values therefore follow rearrangement; page-number-based
+  destinations deliberately retain a fixed position. Repeating one identity in
+  `setPages()` is allowed and resolves to one matching placement.
+
+- Outline and Link-annotation edits are staged as immutable high-level values.
+  `setOutline()` replaces the logical outline tree and `setLinks()` replaces
+  supported links on one logical page. `materialize()` writes those values to
+  raw PDF objects, preserving non-Link annotations and unsupported Link
+  actions. Auto-detected URL text is never treated as a persisted annotation.
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
   the engine resolves relative document URLs against `document.baseURI` before
@@ -359,7 +383,7 @@ excluded through its page-only `materialize` origin.
 Page-arrangement changes use the same synchronization boundary. `setPages()` /
 `setPage()` accept an origin plus optional transaction and actor IDs, and
 `pagesRearranged` carries before/after arrangement descriptors. A
-`'materialize'` origin distinguishes `assemblePages()` replacing proxies with
+`'materialize'` origin distinguishes `materialize()` replacing proxies with
 native pages from a semantic user edit. `PdfrxViewer` additionally accepts
 `recordHistory: false` for remote/restore application, while React consumers can
 subscribe to the exact events with `usePdfPageChanges()`.

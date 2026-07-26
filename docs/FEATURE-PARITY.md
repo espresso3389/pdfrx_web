@@ -46,7 +46,7 @@ Upstream API names are given so you can find the reference implementation.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.setPages(pages)` / `setPage(n, page)` express every edit — reorder, rotate (`page.rotatedCW90()`), remove, duplicate, and import from another document — synchronously over proxy pages. `assemblePages()` writes the arrangement back into the PDF (pages reload, `pageStatusChanged` fires); `encodePdf()` calls it first. `encodePdf({ mode: 'copy' })` preserves a sole imported source's catalog, while `compact` rebuilds the arranged pages and omits page-level objects that are no longer reachable; mixed-source AcroForm/outline catalog merging remains an application export policy. |
+| Page manipulation: reorder / rotate / duplicate / import pages, `encodePdf` reflecting edits | ✅ | `PdfDocument.setPages(pages)` / `setPage(n, page)` express every edit — reorder, rotate (`page.rotatedCW90()`), remove, duplicate, and import from another document — synchronously over proxy pages. `materialize()` writes all pending page, outline, and Link-annotation edits into the PDF (pages reload and `pageStatusChanged` fires); `encodePdf()` calls it first. `encodePdf({ mode: 'copy' })` preserves a sole imported source's catalog, while `compact` rebuilds the arranged pages and omits page-level objects that are no longer reachable; mixed-source AcroForm/outline catalog merging remains an application export policy. |
 | Custom random-access source | ❌ | Upstream `PdfDocument.openCustom({read, fileSize, …})` — supply bytes on demand via a read callback. pdfrx_web opens only via `openUrl` / `openData`. |
 | Render cancellation | ✅ | `PdfPage.createCancellationToken()` creates a `PdfPageRenderCancellationToken`; pass it as `render({ cancellationToken })`. Cancelling drops a queued render before it starts and makes `render` resolve to `null`. |
 | Permission helpers | ✅ | `PdfPermissions` now exposes `allowsCopying`, `allowsDocumentAssembly`, `allowsPrinting`, and `allowsModifyAnnotations`, using the same bit masks as upstream pdfrx so a document evaluates identically in both. |
@@ -108,7 +108,7 @@ mostly *configuration knobs and callbacks* that `PdfViewerParams` exposes:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Link tap handler | ✅ | `PdfrxViewerOptions.onLinkTap(link)` replaces the built-in open behavior; use `PdfLink.url` / `PdfLink.dest` and call `goToDest` / `window.open` yourself to keep parts of the default. |
+| Link tap handler | ✅ | `PdfrxViewerOptions.onLinkTap(link)` replaces the built-in open behavior; inspect `PdfLink.target` and call `goToDest` / `window.open` yourself to keep parts of the default. |
 | Link styling / custom painter | ◐ | pdfrx_web paints a fixed hover highlight. Upstream exposes `linkColor`, `customPainter`, `linkWidgetBuilder`. Auto-link detection is implemented in both. |
 
 ---
