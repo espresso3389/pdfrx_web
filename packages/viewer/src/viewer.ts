@@ -2599,7 +2599,7 @@ export class PdfrxViewer {
     return (await this.doc?.loadOutline()) ?? [];
   }
 
-  /** Replaces the document outline with the supplied immutable tree. */
+  /** Stages the supplied immutable tree as the document's logical outline. */
   setOutline(outline: readonly PdfOutlineNode[]): void {
     if (!this.doc) return;
     this.doc.setOutline(outline);

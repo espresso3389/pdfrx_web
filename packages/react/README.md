@@ -367,9 +367,11 @@ The temporary native document and its encoded buffers increase peak memory
 usage during the save. A PDF that may contain unreachable page-level objects
 can use
 [`encodePdf({ mode: 'compact' })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
-to rebuild only its reachable page-level objects; applications must reconstruct
-required outlines, metadata, name trees, signatures, or AcroForm catalog
-configuration. Alternatively, a memory-constrained application can make
+to rebuild only its reachable page-level objects. Pending logical page,
+outline, and Link edits are written to the temporary document, but existing
+physical document-level outlines, metadata, name trees, signatures, and
+AcroForm configuration are not inherited and require application-level
+reconstruction when needed. Alternatively, a memory-constrained application can make
 materialization an explicit, irreversible history boundary: clear the history first,
 then encode the live document.
 
@@ -378,7 +380,7 @@ const { clearHistory } = useEditHistory();
 
 await viewer.flushAnnotationTextEdit();
 clearHistory();                 // The current state becomes the new baseline.
-const data = await viewer.document!.encodePdf(); // Assembles the live document.
+const data = await viewer.document!.encodePdf(); // Materializes the live document.
 ```
 
 Clearing first is important. Do not call

@@ -1201,7 +1201,11 @@ export class PdfDocument {
     return other instanceof PdfDocument && other.docHandle === this.docHandle;
   }
 
-  /** Loads the document outline (bookmarks) as a tree of {@link PdfOutlineNode}. */
+  /**
+   * Loads the logical document outline as a tree of {@link PdfOutlineNode}.
+   * Returns the staged replacement when present; otherwise reads the physical
+   * PDF outline from the worker.
+   */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     if (this.pendingOutline !== undefined) return cloneOutline(this.pendingOutline);
     const result = await this.sendCommand('loadOutline', { docHandle: this.docHandle });
@@ -1210,8 +1214,9 @@ export class PdfDocument {
 
   /**
    * Stages an immutable replacement for the document outline. No worker or PDF
-   * object mutation occurs until {@link materialize} (also called by
-   * {@link encodePdf} and {@link createMaterializedCopy}).
+   * object mutation occurs until {@link materialize} or in-place
+   * {@link encodePdf}. {@link createMaterializedCopy} applies the staged
+   * outline only to the returned document and leaves this document pending.
    */
   setOutline(outline: readonly PdfOutlineNode[]): void {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1464,8 +1469,9 @@ export class PdfDocument {
 
   /**
    * Writes every pending page, outline, and Link-annotation edit into the
-   * physical PDF. {@link encodePdf} and {@link createMaterializedCopy} call this
-   * automatically.
+   * physical PDF. In-place {@link encodePdf} calls this automatically.
+   * {@link createMaterializedCopy} instead materializes only its returned
+   * independent document.
    */
   async materialize(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1496,9 +1502,10 @@ export class PdfDocument {
   }
 
   /**
-   * Serializes the document back to PDF bytes, reflecting any page manipulation
-   * done with {@link setPages} / {@link setPage}; a pending arrangement is
-   * written back with {@link materialize} first.
+   * Serializes the current logical state to PDF bytes, including pending page,
+   * outline, and Link-annotation edits. In-place encoding writes them into this
+   * document with {@link materialize} first; copy and compact encoding
+   * materialize only a temporary document.
    */
   async encodePdf(options: PdfEncodeOptions = {}): Promise<Uint8Array> {
     const mode = options.mode ?? 'in-place';
@@ -1533,12 +1540,12 @@ export class PdfDocument {
    * Indirect references remain references, so cyclic PDF graphs are never expanded.
    * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
    *
-   * This reads the physical PDF object graph in the worker, not a pending
-   * in-memory arrangement made with {@link setPages} or {@link setPage}. When
-   * {@link hasPendingChanges} is `true`, call {@link materialize}
-   * first (or {@link encodePdf}, which calls it) before interpreting page-tree
-   * dictionaries, page references, outlines, annotations, or other
-   * page-dependent catalog data.
+   * This reads the physical PDF object graph in the worker, not pending logical
+   * state created by {@link setPages}, {@link setPage}, {@link setOutline}, or
+   * {@link PdfPage.setLinks}. When {@link hasPendingChanges} is `true`, call
+   * {@link materialize} first (or use in-place {@link encodePdf}) before
+   * interpreting affected page-tree dictionaries, page references, outlines,
+   * annotations, or other catalog data.
    */
   async getCatalogObject(
     options: { includeRawStreamData?: boolean } = {},
@@ -1555,10 +1562,11 @@ export class PdfDocument {
    * Stream data is decoded; set `includeRawStreamData` to also receive its encoded bytes.
    *
    * Object numbers and references belong to the physical PDF object graph in
-   * the worker. A pending {@link setPages} / {@link setPage} arrangement exists
-   * only in {@link pages} and can disagree with that graph. Call
-   * {@link materialize} first (or {@link encodePdf}, which calls it) before
-   * reading page-dependent objects or retaining object numbers for later edits.
+   * the worker. Pending edits from {@link setPages}, {@link setPage},
+   * {@link setOutline}, or {@link PdfPage.setLinks} exist only in logical state
+   * and can disagree with that graph. Call {@link materialize} first (or use
+   * in-place {@link encodePdf}) before reading affected objects or retaining
+   * object numbers for later edits.
    */
   async getRawObject(
     objectNumber: number,
@@ -1718,15 +1726,18 @@ export class PdfDocument {
    * logical state. The caller owns the returned document and must dispose it.
    *
    * Pending page, outline, and Link edits are applied to the returned document,
-   * whose {@link hasPendingChanges} is therefore `false`. This document is not
-   * materialized or otherwise modified; its pending state remains unchanged.
+   * whose {@link hasPendingChanges} is therefore `false`. The source document
+   * on which this method is called is not materialized or otherwise modified;
+   * its pending state remains unchanged.
    *
    * `catalog: "preserve"` chooses the sole imported source as its base when
    * possible and preserves that source's catalog. `catalog: "rebuild"` imports
    * the arranged pages into a new empty PDF and omits objects not reachable
    * from those pages, whether they originated in the source PDF or from
-   * subsequent edits. Rebuilding does not automatically copy document-level
-   * outlines, metadata, name trees, signatures, or AcroForm configuration.
+   * subsequent edits. Rebuilding does not inherit existing physical
+   * document-level outlines, metadata, name trees, signatures, or AcroForm
+   * configuration. Pending logical page, outline, and Link edits are still
+   * applied to the returned document.
    */
   async createMaterializedCopy(
     options: PdfMaterializedCopyOptions = {},
@@ -2830,8 +2841,10 @@ export class PdfPage {
   /**
    * Loads link annotations on the page and, when
    * `enableAutoLinkDetection` is true (the default), URL-like text detected in
-   * the page content. Returns an empty array if the document is disposed or the
-   * page is not yet loaded.
+   * the page content. A staged {@link setLinks} replacement is returned instead
+   * of the physical Link annotations while retaining any transient detected
+   * URLs. Returns an empty array if the document is disposed or the page is not
+   * yet loaded.
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
     const loaded = await this.loadLinksFromWorker(options);

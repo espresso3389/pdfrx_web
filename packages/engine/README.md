@@ -114,12 +114,14 @@ Each symbol links to its entry in the
   [`loadLinks`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadlinks).
   Replace persisted Link annotations with
   [`setLinks()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#setlinks);
-  auto-detected URL text is explicitly marked as non-persisted. Link targets use
+  the replacement is staged until `materialize()` or `encodePdf()`.
+  Auto-detected URL text is explicitly marked as non-persisted. Link targets use
   [`PdfLinkTarget`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfLinkTarget.html).
 - [`PdfDocument.loadOutline`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadoutline) /
   [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline)
-  read and atomically replace the bookmark tree as ordinary immutable JavaScript
-  objects.
+  read and synchronously replace the logical bookmark tree as ordinary
+  immutable JavaScript objects. The physical PDF is updated later by
+  `materialize()` or `encodePdf()`.
 - Page-scoped annotation API:
   [`page.loadAnnotations()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadannotations) /
   [`loadHighlights({ includeText: true })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadhighlights)
@@ -182,8 +184,8 @@ Each symbol links to its entry in the
   [`setPage`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage)
   over proxy pages; [`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize) writes all pending page, outline, and Link-annotation edits into the PDF ([`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) calls it for you)
 - [`doc.encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) — materialize the arrangement into the live document and serialize it
-- [`doc.encodePdf({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) selects `in-place` (default), `copy`, or `compact`. `copy` assembles through a temporary catalog-preserving clone; `compact` rebuilds the arranged pages in a fresh PDF and omits objects that are not reachable from those pages, regardless of whether they were already present in the source PDF or resulted from later edits
-- [`doc.createMaterializedCopy({ catalog })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#creatematerializedcopy) returns an independent, fully materialized document while leaving the original and its pending state unchanged. `preserve` (default) retains the selected base catalog; `rebuild` creates a fresh catalog from the arranged pages, retaining their resources, annotations, and widgets while document-level outlines, metadata, name trees, signatures, and AcroForm configuration require application-level reconstruction
+- [`doc.encodePdf({ mode })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf) selects `in-place` (default), `copy`, or `compact`. `copy` materializes through a temporary catalog-preserving clone; `compact` rebuilds the arranged pages in a fresh PDF and omits objects that are not reachable from those pages, regardless of whether they were already present in the source PDF or resulted from later edits
+- [`doc.createMaterializedCopy({ catalog })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#creatematerializedcopy) returns an independent, fully materialized document while leaving the original and its pending state unchanged. `preserve` (default) retains the selected base catalog; `rebuild` creates a fresh catalog from the arranged pages, retaining their resources, annotations, and widgets but not automatically inheriting existing physical document-level outlines, metadata, name trees, signatures, or AcroForm configuration. Pending logical page, outline, and Link edits are still written to the returned document
 - `encodePdf({ mode: 'copy' })` chooses the sole imported source as its copy base when every arranged page comes from that source, preserving that source's document-level AcroForm, outline, metadata, and name trees. For a mixed-source arrangement it preserves the root document's catalog; merging document-level structures from every source is an application-level export-composition concern because PDFium page import copies pages, not catalogs.
 - Raster Stamp moves/resizes can pass [`preserveAppearance: true`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfAnnotationMutationOptions.html#preserveappearance) to `updateAnnotation()` so PDFium updates the annotation rectangle without registering the same image stream again
 - Raw PDF-object inspection and editing:
@@ -206,14 +208,16 @@ Each symbol links to its entry in the
   the same batch without manually assigning object numbers.
 - Raw-object APIs inspect the physical PDF held by the worker. In contrast,
   [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages)
-  and
-  [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage)
-  initially change only the lightweight in-memory `pages` arrangement. While
+  / [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage),
+  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline),
+  and [`setLinks()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#setlinks)
+  initially change only logical in-memory state. While
   [`hasPendingChanges`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#haspendingchanges)
   is true, call
   [`materialize()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#materialize)
-  before interpreting page-tree dictionaries, page references, or object
-  numbers returned by `getCatalogObject()` / `getRawObject()`.
+  before interpreting or targeting affected page-tree, outline, annotation, or
+  other raw objects and object numbers returned by `getCatalogObject()` /
+  `getRawObject()`.
   [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)
   is also sufficient because it materializes first.
 - [`editRawObjects()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#editrawobjects)

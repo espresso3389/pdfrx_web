@@ -974,9 +974,9 @@ export interface PdfDocumentEventMap {
   loadComplete: Record<string, never>;
   /** Page objects were replaced (progressive load / reload). */
   pageStatusChanged: { pageNumbers: number[] };
-  /** The document outline was replaced through `PdfDocument.setOutline()`. */
+  /** The logical document outline was replaced through `PdfDocument.setOutline()`. */
   outlineChanged: Record<string, never>;
-  /** Link annotations were replaced on the listed arranged pages. */
+  /** Logical Link-annotation replacements were staged on the listed arranged pages. */
   linksChanged: { pageNumbers: number[] };
   /**
    * The *arrangement* of pages changed — order, rotation, or count — via

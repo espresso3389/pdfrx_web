@@ -14,8 +14,9 @@ export interface PdfOutlineState {
 /**
  * The document's outline (bookmarks), reloaded whenever the document changes.
  *
- * `viewer.loadOutline()` round-trips to the worker on every call and caches
- * nothing, so this hook holds the result for you. Activate a node with
+ * `viewer.loadOutline()` does not cache its result: it reads the worker's
+ * physical outline, or returns the document's staged logical outline when one
+ * is pending. This hook holds the result for you. Activate a node with
  * `usePdfNavigation().goToDest(node.dest)`.
  *
  * @example

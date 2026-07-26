@@ -32,8 +32,9 @@ outline, metadata, or name-tree dictionaries.
 arranged pages in a new empty document instead. It
 omits objects not reachable from those pages, whether they were already present
 in the source PDF or resulted from subsequent edits, but applications must
-reconstruct any required document-level catalog structures. Notable client
-behaviors:
+reconstruct any required existing document-level catalog structures. Pending
+logical page, outline, and Link edits are nevertheless applied to the returned
+materialized document. Notable client behaviors:
 
 - The custom PDFium build uses
   [espresso3389/pdfium-binaries](https://github.com/espresso3389/pdfium-binaries/)
