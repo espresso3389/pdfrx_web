@@ -9,12 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-27
+
+### Added
+
+- Added editable document outlines and page Link annotations through
+  `PdfDocument.setOutline()` and `PdfPage.setLinks()`, with immutable logical
+  reads before the changes are written to the physical PDF.
+- Added opaque logical `PdfPage.id` values, zero-copy `PdfPage.duplicate()`,
+  `PdfPage.dest()`, and ID- or page-number-based immutable `PdfDest` values so
+  destinations can either follow a page or remain fixed to a position.
+- Added `PdfDocument.hasPendingChanges` and a single
+  `PdfDocument.materialize()` boundary for pending page, outline, and Link
+  edits.
+
 ### Changed
 
 - Renamed `PdfDocument.createCopy()` to `createMaterializedCopy()` and replaced
   its `clone` / `compact` mode with a `preserve` / `rebuild` catalog policy,
   making explicit that the returned document is fully materialized while the
   source document and its pending edits remain unchanged.
+- Changed `setPages()`, `setPage()`, `setOutline()`, and `setLinks()` to update
+  logical state first; `materialize()` and `encodePdf()` reconcile that state
+  with the worker's physical PDF object graph.
+- Expanded the engine's public API and worker-protocol documentation, including
+  the distinction between logical page placements and physical source pages
+  used by destinations and raw-object APIs.
+
+### Removed
+
+- Removed `PdfDocument.assemblePages()` in favor of the unified
+  `PdfDocument.materialize()` API.
 
 ## [0.18.0] - 2026-07-26
 
@@ -556,7 +581,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.3...v0.17.0
 [0.16.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.2...v0.16.3
