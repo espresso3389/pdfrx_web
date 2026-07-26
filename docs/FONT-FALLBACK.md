@@ -20,13 +20,17 @@ its `fonts.gstatic.com` hash).
    a font, it emits a `missingFonts` event carrying one `PdfFontQuery` per
    unresolved font. A query ([`PdfFontQuery`]) describes the requested face by
    name plus the Windows font attributes PDFium exposes: `weight`, `isItalic`,
-   `charset` (Windows charset id), and `pitchFamily` (fixed-pitch and Roman/serif
-   flags).
+   `charset` (Windows charset id), and `pitchFamily` (pitch flags plus a family
+   value such as Roman, Swiss, or Modern).
 
-2. **Resolution.** The viewer feeds each query to a [`FontResolver`]. The default
-   is [`googleFontsResolver`]. It returns a [`FontResolution`] — the substitute
-   file's URL, the family name the file declares, and its expected byte length —
-   or `null` to leave the font unresolved (e.g. Symbol fonts).
+2. **Resolution.** The viewer normalizes the requested family name (removing
+   subset, style, and CMap suffixes) and classifies it as serif, sans-serif, or
+   monospace. Known CJK and Latin family names take precedence over PDFium's
+   often incomplete `pitchFamily` hint. The viewer then feeds each query to a
+   [`FontResolver`]. The default is [`googleFontsResolver`]. It returns a
+   [`FontResolution`] — the substitute file's URL, the family name the file
+   declares, and its expected byte length — or `null` to leave the font
+   unresolved (e.g. Symbol fonts).
 
 3. **Download.** The viewer fetches the TTF from
    `https://fonts.gstatic.com/s/a/<hash>.ttf`, which serves
@@ -69,9 +73,20 @@ italic or the face name contains `italic`/`oblique`.
 ### 2. Everything else → a Noto family by charset
 
 When no metric-compatible match applies, the resolver picks a Noto family from
-the query's `charset`. Whether the **serif** or **sans** variant is used depends
-on the query's Roman/serif hint (`pitchFamily` Roman flag, or a `serif`/`sans`
-hint in the face name):
+the query's `charset`. Whether the **serif** or **sans** variant is used is
+determined in this order:
+
+1. A normalized known-family table and established CJK naming conventions.
+2. Explicit family terms in the name (`sans`, `serif`, `mono`, and so on).
+3. PDFium's `pitchFamily` family nibble.
+4. Sans-serif when the family remains unknown.
+
+The built-in CJK classification covers common platform and PDF families,
+including Song/Ming/Mincho/Batang as serif and Hei/Gothic/Dotum/Gulim as
+sans-serif. It also includes aliases such as STSong, SimSun, Microsoft YaHei,
+PingFang, MingLiU, MS Mincho/Gothic, Yu Mincho/Gothic, Hiragino, Meiryo,
+Batang, Malgun Gothic, and the Source Han/Noto CJK families. This table only
+classifies style; `charset` still selects SC, TC, JP, or KR glyph coverage.
 
 | Charset (Windows id) | Sans variant | Serif variant |
 |---|---|---|
@@ -88,9 +103,12 @@ hint in the face name):
 
 Notes:
 
-- For Latin and the Greek/Vietnamese/Cyrillic/Eastern-European group, an
-  explicit `sans` hint in the face name forces Noto Sans even when the Roman
-  flag is set.
+- A recognized family name overrides a contradictory `pitchFamily` value.
+  This is intentional: generated PDFs frequently provide a generic or
+  incorrect LOGFONT family hint.
+- The high nibble of `pitchFamily` is a mutually exclusive LOGFONT family
+  value, not a set of independent flags. In particular, Modern (`0x30`) is
+  monospace and is not Roman merely because both values contain bit `0x10`.
 - The large Noto CJK OTC collections are intentionally **not** used: they are
   only hosted on GitHub raw, which has no CORS. The per-language `Noto Sans/Serif
   SC/TC/JP/KR` subsets on `fonts.gstatic.com` are used instead.

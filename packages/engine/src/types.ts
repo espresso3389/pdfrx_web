@@ -459,10 +459,9 @@ export interface PdfFontQuery {
   readonly charset: number;
   /**
    * PDFium pitch-and-family byte of the requested font (the LOGFONT
-   * `lfPitchAndFamily` value). This is a **bitfield**, not an enum — test it
-   * with {@link isFixedPitch} / {@link isRomanFamily} / {@link isScriptFamily}
-   * (or the {@link PdfFontPitchFamily} masks). See {@link PdfFontPitchFamily}
-   * for the bit meanings.
+   * `lfPitchAndFamily` value). The low two bits are pitch flags, while the high
+   * nibble is one mutually exclusive family value. Use the helpers below
+   * rather than treating all values as independent flags.
    */
   readonly pitchFamily: number;
 }
@@ -513,28 +512,36 @@ const pdfFontCharsetNames = new Map<number, string>(
 export const pdfFontCharsetName = (charset: number): string | undefined => pdfFontCharsetNames.get(charset);
 
 /**
- * Bit masks for the {@link PdfFontQuery.pitchFamily} bitfield (from the PDFium
- * LOGFONT `lfPitchAndFamily` byte), mirroring pdfrx's `pitchFamily` flags. A
- * value can combine several of these, so test with a bitwise AND (or the
- * {@link isFixedPitch} / {@link isRomanFamily} / {@link isScriptFamily} helpers).
+ * Values used by the PDFium LOGFONT-compatible `lfPitchAndFamily` byte. Pitch
+ * occupies the low two bits; family occupies the high nibble and must be
+ * compared after applying {@link PdfFontPitchFamily.familyMask}.
  */
 export const PdfFontPitchFamily = {
   /** Fixed-pitch (monospace) font. */
   fixed: 1,
-  /** Roman (serif) font family. */
+  familyMask: 0xf0,
+  dontCare: 0x00,
+  /** Proportional serif font family. */
   roman: 16,
+  /** Proportional sans-serif font family. */
+  swiss: 32,
+  /** Monospace font family. */
+  modern: 48,
   /** Script (handwriting-style) font family. */
   script: 64,
+  decorative: 80,
 } as const;
 
 /** Whether a {@link PdfFontQuery.pitchFamily} value has the fixed-pitch (monospace) bit set. */
 export const isFixedPitch = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.fixed) !== 0;
 
-/** Whether a {@link PdfFontQuery.pitchFamily} value has the Roman (serif) family bit set. */
-export const isRomanFamily = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.roman) !== 0;
+/** Whether a {@link PdfFontQuery.pitchFamily} value names the Roman (serif) family. */
+export const isRomanFamily = (pitchFamily: number): boolean =>
+  (pitchFamily & PdfFontPitchFamily.familyMask) === PdfFontPitchFamily.roman;
 
-/** Whether a {@link PdfFontQuery.pitchFamily} value has the Script family bit set. */
-export const isScriptFamily = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.script) !== 0;
+/** Whether a {@link PdfFontQuery.pitchFamily} value names the Script family. */
+export const isScriptFamily = (pitchFamily: number): boolean =>
+  (pitchFamily & PdfFontPitchFamily.familyMask) === PdfFontPitchFamily.script;
 
 /**
  * A point in bounding-box-relative PDF page coordinates (points, y-up) — the

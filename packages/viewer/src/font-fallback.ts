@@ -14,6 +14,7 @@
  */
 
 import type { PdfFontQuery } from '@pdfrx/engine';
+import { classifyFontFamily } from './font-family.js';
 import {
   arimo,
   arimoItalic,
@@ -60,9 +61,6 @@ const enum Charset {
   thai = 222,
   easternEuropean = 238,
 }
-
-const isFixed = (q: PdfFontQuery): boolean => (q.pitchFamily & 1) !== 0;
-const isRoman = (q: PdfFontQuery): boolean => (q.pitchFamily & 16) !== 0;
 
 /**
  * The outcome of resolving one missing-font query: which substitute file to
@@ -149,13 +147,14 @@ function getPdfFaceName(faceName: string): string {
 function getStandardFontTable(query: PdfFontQuery): WeightTable | null {
   const face = query.face.toLowerCase();
   const italic = isItalicQuery(query, face);
-  if (containsAny(face, ['courier', 'mono', 'consolas', 'menlo', 'monaco']) || isFixed(query)) {
+  const family = classifyFontFamily(query);
+  if (family === 'mono') {
     return italic ? cousineItalic : cousine;
   }
-  if (containsAny(face, ['arial', 'helvetica', 'sans', 'verdana', 'tahoma'])) {
+  if (family === 'sans') {
     return italic ? arimoItalic : arimo;
   }
-  if (containsAny(face, ['times', 'serif', 'georgia', 'garamond', 'minion'])) {
+  if (family === 'serif') {
     return italic ? tinosItalic : tinos;
   }
   return null;
@@ -165,8 +164,7 @@ function getStandardFontTable(query: PdfFontQuery): WeightTable | null {
 function getLatinCoverageFontTable(query: PdfFontQuery): WeightTable {
   const face = query.face.toLowerCase();
   const italic = isItalicQuery(query, face);
-  const hasSansHint = containsAny(face, ['sans']);
-  return isRoman(query) || (!hasSansHint && containsAny(face, ['serif']))
+  return classifyFontFamily(query) === 'serif'
     ? italic
       ? notoSerifItalic
       : notoSerif
@@ -205,7 +203,7 @@ function resolveNotoFont(query: PdfFontQuery): GoogleFontsFile | null {
   };
 
   let table: WeightTable | null;
-  const roman = isRoman(query);
+  const serif = classifyFontFamily(query) === 'serif';
   switch (query.charset) {
     case Charset.symbol:
       table = null;
@@ -218,7 +216,7 @@ function resolveNotoFont(query: PdfFontQuery): GoogleFontsFile | null {
     case Charset.vietnamese:
     case Charset.cyrillic:
     case Charset.easternEuropean:
-      table = roman
+      table = serif
         ? query.isItalic
           ? notoSerifItalic
           : notoSerif
@@ -227,7 +225,7 @@ function resolveNotoFont(query: PdfFontQuery): GoogleFontsFile | null {
           : notoSans;
       break;
     default:
-      table = (roman ? serifTables : sansTables)[query.charset] ?? null;
+      table = (serif ? serifTables : sansTables)[query.charset] ?? null;
       break;
   }
   if (!table) return null;
