@@ -10,6 +10,8 @@
  * An axis-aligned rectangle in PDF page coordinates (points, y-up), where
  * `top >= bottom` and `right >= left`.
  *
+ * PDF rectangle arrays are specified by ISO 32000-2:2020, 7.9.5.
+ *
  * See {@link PdfRect} (the companion namespace-like value) for helpers that
  * operate on these rects.
  */
@@ -33,7 +35,10 @@ export const PdfRect = {
     x >= r.left && x <= r.right && y >= r.bottom && y <= r.top,
 } as const;
 
-/** Page rotation in clockwise 90-degree steps. */
+/**
+ * Page rotation in clockwise 90-degree steps, corresponding to the page
+ * dictionary's `/Rotate` entry in ISO 32000-2:2020, 7.7.3.3, Table 31.
+ */
 export type PdfPageRotation = 0 | 90 | 180 | 270;
 
 /**
@@ -50,7 +55,7 @@ export const pdfPageRotationToIndex = (rotation: PdfPageRotation): number => rot
  * Encryption/permission information of a document. Present only for encrypted
  * documents; see {@link PdfDocument.permissions}.
  *
- * The permission flags follow PDF 32000-1:2008, Table 22. The `allows*` helpers
+ * The permission flags follow ISO 32000-1:2008, Table 22. The `allows*` helpers
  * mirror the pdfrx semantics exactly, including the same bit masks, so a
  * document evaluates identically here and in upstream pdfrx.
  */
@@ -86,40 +91,82 @@ export class PdfPermissions {
 /**
  * A navigation destination inside a document (e.g. the target of an outline
  * entry or a link).
+ *
+ * This is the decoded form of an explicit destination defined by
+ * ISO 32000-2:2020, 12.3.2.2, Table 149 ("Destination syntax").
  */
 export interface PdfDest {
-  /** 1-based page number the destination points to. */
+  /**
+   * 1-based page number the destination points to. ISO 32000 identifies the
+   * page by page object or zero-based page index; the engine normalizes it to a
+   * 1-based page number.
+   */
   readonly pageNumber: number;
-  /** e.g. 'xyz', 'fit', 'fitb', ... (lower-cased PDF destination command) */
+  /**
+   * Lower-cased explicit-destination type: `xyz`, `fit`, `fith`, `fitv`,
+   * `fitr`, `fitb`, `fitbh`, or `fitbv`.
+   *
+   * The corresponding PDF names and their semantics are specified by
+   * ISO 32000-2:2020, 12.3.2.2, Table 149.
+   */
   readonly command: string;
-  /** Command parameters (e.g. zoom/position); `null` entries mean "unchanged". */
+  /**
+   * Operands following the destination type, in the order prescribed by
+   * ISO 32000-2:2020, 12.3.2.2, Table 149. Depending on {@link command}, these
+   * are `left`, `top`, `right`, `bottom`, and/or `zoom`; `null` represents a
+   * PDF `null` operand, meaning that the corresponding current value is
+   * retained.
+   */
   readonly params: readonly (number | null)[];
 }
 
-/** A node of the document outline (a.k.a. bookmarks). */
+/**
+ * A node of the document outline (a.k.a. bookmarks), corresponding to an
+ * outline item dictionary in ISO 32000-2:2020, 12.3.3, Table 151.
+ */
 export interface PdfOutlineNode {
-  /** Human-readable label of the outline entry. */
+  /** Human-readable label from the outline item's `Title` entry. */
   readonly title: string;
-  /** Destination jumped to when the entry is activated, or `null` if it has none. */
+  /**
+   * Destination from the outline item's `Dest` entry or Go-To action, or
+   * `null` if it has none. See ISO 32000-2:2020, 12.3.3, Table 151 and
+   * 12.6.4.2, Table 202.
+   */
   readonly dest: PdfDest | null;
-  /** Nested child entries. */
+  /** Nested outline items linked through the `First`/`Last` hierarchy. */
   readonly children: readonly PdfOutlineNode[];
 }
 
-/** Metadata of a link annotation. */
+/**
+ * Markup metadata shared with link annotations. The represented PDF entries
+ * are specified by ISO 32000-2:2020, 12.5.2, Table 166 and 12.5.6.2,
+ * Table 172.
+ */
 export interface PdfAnnotation {
+  /** Markup annotation title from `/T`, or `null`; Table 172. */
   readonly title: string | null;
+  /** Annotation contents from `/Contents`, or `null`; Table 166. */
   readonly content: string | null;
+  /** Markup annotation subject from `/Subj`, or `null`; Table 172. */
   readonly subject: string | null;
-  /** Raw PDF date string (e.g. `D:20240131120000+09'00'`), if any. */
+  /**
+   * Raw `/M` PDF date string (e.g. `D:20240131120000+09'00'`), if any.
+   * See ISO 32000-2:2020, 7.9.4 and Table 166.
+   */
   readonly modificationDate: string | null;
-  /** Raw PDF date string, if any. */
+  /**
+   * Raw `/CreationDate` PDF date string, if any. See ISO 32000-2:2020,
+   * 7.9.4 and Table 172.
+   */
   readonly creationDate: string | null;
 }
 
 /**
  * A link on a page, either an explicit link annotation or (when auto-detection
  * is enabled) a URL found in the page text.
+ *
+ * Explicit link annotations are defined by ISO 32000-2:2020, 12.5.6.5,
+ * Table 176. Their destinations use 12.3.2; URI actions use 12.6.4.8.
  * See {@link PdfPage.loadLinks}.
  */
 export interface PdfLink {
@@ -135,6 +182,8 @@ export interface PdfLink {
 
 /**
  * Kind of an AcroForm field, mapped from PDFium's `FPDF_FORMFIELD_*` codes.
+ * The corresponding PDF field types are specified by ISO 32000-2:2020,
+ * 12.7.5 ("Field types").
  */
 export type PdfFormFieldType =
   | 'unknown'
@@ -179,7 +228,11 @@ export const pdfFormFieldTypeFromCode = (code: number): PdfFormFieldType => {
   }
 };
 
-/** Decoded `FPDF_FORMFLAG_*` bits of a form field. */
+/**
+ * Decoded common AcroForm field flags from `/Ff`. See ISO 32000-2:2020,
+ * 12.7.4.1, Tables 226 ("Entries common to all field dictionaries") and 227
+ * ("Field flags common to all field types").
+ */
 export interface PdfFormFieldFlags {
   /** The field cannot be edited by the user. */
   readonly readOnly: boolean;
@@ -196,7 +249,10 @@ export const decodeFormFieldFlags = (flags: number): PdfFormFieldFlags => ({
   noExport: (flags & 4) !== 0,
 });
 
-/** One selectable option of a combo box or list box. */
+/**
+ * One selectable option of a combo box or list box. Choice-field option arrays
+ * are specified by ISO 32000-2:2020, 12.7.5.4, Table 234.
+ */
 export interface PdfFormFieldOption {
   readonly label: string;
   readonly selected: boolean;
@@ -208,6 +264,10 @@ export interface PdfFormFieldOption {
  * are merged into one field with several {@link rects}. Obtain them via
  * {@link PdfPage.loadFormFields} / {@link PdfDocument.loadFormFields}, read
  * values here, and change them with {@link PdfDocument.setFormFieldValue}.
+ *
+ * Field dictionaries and fully-qualified field names are specified by
+ * ISO 32000-2:2020, 12.7.4, especially Tables 226 and 227. Type-specific
+ * entries are specified by 12.7.5.
  */
 export interface PdfFormField {
   /** Fully-qualified field name (`/T`); may be empty for unnamed fields. */
@@ -418,7 +478,11 @@ export type PdfAnnotationGeometry =
   | { kind: 'polygon'; vertices: PdfAnnotationPoint[] }
   | { kind: 'polyline'; vertices: PdfAnnotationPoint[] };
 
-/** PDF annotation subtype (`/Subtype`), lowercased; `unknown` for unmapped types. */
+/**
+ * PDF annotation subtype (`/Subtype`), lowercased; `unknown` for unmapped
+ * types. Standard annotation types are listed by ISO 32000-2:2020, 12.5.6,
+ * Table 171.
+ */
 export type PdfAnnotationSubtype =
   | 'text'
   | 'freeText'
@@ -455,7 +519,7 @@ const pdfAnnotationSubtypeNames: ReadonlySet<string> = new Set<PdfAnnotationSubt
 ]);
 
 /**
- * Maps a wire subtype string (lowercased `/Subtype`) to a
+ * Maps a worker subtype string (lowercased `/Subtype`) to a
  * {@link PdfAnnotationSubtype}, falling back to `unknown` for anything not
  * surfaced (widgets, links, popups, and rarer types).
  */
@@ -464,7 +528,8 @@ export const pdfAnnotationSubtypeFromName = (name: string): PdfAnnotationSubtype
 
 /**
  * Bit masks for {@link PdfAnnotationObject.flags} (`/F`), matching PDFium's
- * `FPDF_ANNOT_FLAG_*`.
+ * `FPDF_ANNOT_FLAG_*`. Their meanings and bit positions are specified by
+ * ISO 32000-2:2020, 12.5.3, Table 167 ("Annotation flags").
  */
 export const PdfAnnotationFlag = {
   invisible: 1,
@@ -483,6 +548,10 @@ export const PdfAnnotationFlag = {
  * A content annotation on a page (not a widget/link/popup), as read by
  * {@link PdfPage.loadAnnotations} / {@link PdfDocument.loadAnnotations}. Rects and
  * geometry are in bounding-box-relative page coordinates (y-up).
+ *
+ * Standard annotation dictionary entries are specified by ISO 32000-2:2020,
+ * 12.5.2, Table 166; markup entries by 12.5.6.2, Table 172; and
+ * subtype-specific geometry by the applicable subclause of 12.5.6.
  */
 export interface PdfAnnotationObject {
   /**
@@ -491,10 +560,11 @@ export interface PdfAnnotationObject {
    *
    * `/NM` is the PDF annotation dictionary's "annotation name": a PDF-standard
    * string intended to distinguish an annotation from other annotations on the
-   * same page. It is an internal identity, not the visible annotation contents
-   * or its page number. The engine stores generated and caller-supplied ids in
-   * `/NM`, so they survive `PdfDocument.encodePdf()` and can correlate update,
-   * remove, snapshot, persistence, and synchronization operations.
+   * same page (ISO 32000-2:2020, 12.5.2, Table 166). It is an internal identity,
+   * not the visible annotation contents or its page number. The engine stores
+   * generated and caller-supplied ids in `/NM`, so they survive
+   * `PdfDocument.encodePdf()` and can correlate update, remove, snapshot,
+   * persistence, and synchronization operations.
    *
    * For an existing annotation without `/NM`, the engine returns a page-local
    * `@<index>` fallback. That fallback is positional rather than stable: after
@@ -608,6 +678,9 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  * viewer realizes line/arrow), `markup` quads (highlight/underline/squiggly/
  * strikeout), and rect-defined `square`/`circle`. `freeText`/`text` use `rect` +
  * `contents`. Coordinates are bounding-box-relative page coordinates (y-up).
+ *
+ * The corresponding PDF annotation dictionaries are defined by
+ * ISO 32000-2:2020, 12.5.2 and the subtype-specific parts of 12.5.6.
  */
 export interface PdfAnnotationSpec {
   /**

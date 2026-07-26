@@ -8,7 +8,7 @@ import {
   type PdfWorkerUrls,
 } from './worker-host.js';
 
-/** Options for constructing a {@link WorkerCommunicator}. */
+/** Low-level worker options used by {@link PdfrxEngineOptions}. */
 export interface WorkerCommunicatorOptions {
   /**
    * Base URL of the directory that contains `pdfium_worker.js` and `pdfium.wasm`,
@@ -91,7 +91,7 @@ export class WorkerCommunicator {
           worker.terminate();
           throw new Error('WorkerCommunicator is disposed');
         }
-        worker.onmessage = (event) => this.onMessage(event.data);
+        worker.onmessage = (event) => this.onMessage(event.data as WorkerMessage);
         worker.onerror = (event) => {
           const error = new Error(`worker error: ${event.message ?? 'unknown'}`);
           for (const pending of this.pending.values()) {
@@ -158,7 +158,7 @@ export class WorkerCommunicator {
   /**
    * Sends a typed command to the worker and resolves with its typed result.
    *
-   * Every command except `init` waits for {@link ready} first. Pass `transfer`
+   * Every command except `init` waits for `ready` first. Pass `transfer`
    * to hand ownership of `ArrayBuffer`s (e.g. document/JPEG/font bytes) to the
    * worker without copying.
    *

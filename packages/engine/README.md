@@ -173,15 +173,15 @@ Each symbol links to its entry in the
   reads the catalog,
   [`getRawObject(objectNumber)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#getrawobject)
   returns a
-  [`WireRawPdfObject`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.WireRawPdfObject.html)
+  [`PdfRawObject`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfRawObject.html)
   without recursively expanding references, and
   [`editRawObjects(editor => { ... })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#editrawobjects)
   provides a
   [`PdfRawObjectEditor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfRawObjectEditor.html)
   over typed
-  [`WireRawPdfTarget`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.WireRawPdfTarget.html)
+  [`PdfRawTarget`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfRawTarget.html)
   locations and
-  [`WireRawPdfPatchValue`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.WireRawPdfPatchValue.html)
+  [`PdfRawPatchValue`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfRawPatchValue.html)
   values. Its methods provide
   dictionary, array, and decoded-stream helpers over the custom `FPDFRaw_*`
   PDFium backend. Newly-created indirect dictionaries can be referenced within

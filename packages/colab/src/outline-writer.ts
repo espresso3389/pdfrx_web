@@ -3,29 +3,29 @@ import {
   type PdfDocument,
   type PdfRawCreatedObject,
   type PdfRawObjectEditor,
-  type WireRawPdfObject,
-  type WireRawPdfPatchOperation,
-  type WireRawPdfPatchValue,
-  type WireRawPdfTarget,
+  type PdfRawObject,
+  type PdfRawPatchOperation,
+  type PdfRawPatchValue,
+  type PdfRawTarget,
 } from '@pdfrx/engine';
 import type { PagePlacement } from '@pdfrx/viewer-core';
 import type { MappedOutlineNode } from './export-composer.js';
 
-type RawDictionary = Extract<WireRawPdfObject, { kind: 'dictionary' }>;
+type RawDictionary = Extract<PdfRawObject, { kind: 'dictionary' }>;
 
-const name = (value: string): WireRawPdfObject => ({ kind: 'name', value });
-const nullObject = (): WireRawPdfObject => ({ kind: 'null' });
-const integer = (value: number): WireRawPdfObject => ({ kind: 'integer', value });
-const number = (value: number): WireRawPdfObject => ({ kind: 'number', value });
-const reference = (objectNumber: number): WireRawPdfObject => ({
+const name = (value: string): PdfRawObject => ({ kind: 'name', value });
+const nullObject = (): PdfRawObject => ({ kind: 'null' });
+const integer = (value: number): PdfRawObject => ({ kind: 'integer', value });
+const number = (value: number): PdfRawObject => ({ kind: 'number', value });
+const reference = (objectNumber: number): PdfRawObject => ({
   kind: 'reference',
   objectNumber,
   generationNumber: 0,
 });
-const localReference = (id: string): WireRawPdfPatchValue => ({ kind: 'localReference', id });
-const array = (items: WireRawPdfObject[]): WireRawPdfObject => ({ kind: 'array', items });
-const dictionary = (entries: Record<string, WireRawPdfObject>): WireRawPdfObject => ({ kind: 'dictionary', entries });
-const string = (value: string): WireRawPdfObject => ({ kind: 'string', value: encodePdfText(value) });
+const localReference = (id: string): PdfRawPatchValue => ({ kind: 'localReference', id });
+const array = (items: PdfRawObject[]): PdfRawObject => ({ kind: 'array', items });
+const dictionary = (entries: Record<string, PdfRawObject>): PdfRawObject => ({ kind: 'dictionary', entries });
+const string = (value: string): PdfRawObject => ({ kind: 'string', value: encodePdfText(value) });
 
 /** Replaces the document's outline catalog with mapped bookmark nodes. */
 export async function writeOutline(document: PdfDocument, nodes: readonly MappedOutlineNode[]): Promise<void> {
@@ -49,7 +49,7 @@ export async function writeOutline(document: PdfDocument, nodes: readonly Mapped
   };
   visit(nodes, 'outline-root');
 
-  const operations: WireRawPdfPatchOperation[] = [
+  const operations: PdfRawPatchOperation[] = [
     { op: 'dictionarySet', target: { root: true }, key: 'Outlines', value: localReference('outline-root') },
     { op: 'dictionarySet', target: { root: true }, key: 'PageMode', value: name('UseOutlines') },
     { op: 'dictionarySet', target: localTarget('outline-root'), key: 'Type', value: name('Outlines') },
@@ -112,7 +112,7 @@ export async function mergeAcroForms(
   const fields: number[] = [];
   const fieldRefs = new Map<string, number>();
   const calculatedFields = new Map<string, string[]>();
-  const operations: WireRawPdfPatchOperation[] = [];
+  const operations: PdfRawPatchOperation[] = [];
 
   for (let pageIndex = 0; pageIndex < pageRefs.length; pageIndex++) {
     const placement = placements[pageIndex];
@@ -154,7 +154,7 @@ export async function mergeAcroForms(
   const catalog = await readRoot(document);
   const existingAcroForm = catalog.entries.AcroForm;
   const createIds: string[] = [];
-  let acroTarget: WireRawPdfTarget;
+  let acroTarget: PdfRawTarget;
   if (existingAcroForm?.kind === 'reference') {
     acroTarget = { objectNumber: existingAcroForm.objectNumber };
   } else if (existingAcroForm?.kind === 'dictionary') {
@@ -241,7 +241,7 @@ async function rebuildImportedFieldParents(
   const groups = new Map<string, {
     id: string;
     name: string;
-    entries: Record<string, WireRawPdfObject>;
+    entries: Record<string, PdfRawObject>;
     widgets: number[];
   }>();
   const widgetParents: { widget: number; groupId: string }[] = [];
@@ -280,7 +280,7 @@ async function rebuildImportedFieldParents(
   }
   if (groups.size === 0) return;
   const createIds = [...groups.values()].map((group) => group.id);
-  const operations: WireRawPdfPatchOperation[] = [];
+  const operations: PdfRawPatchOperation[] = [];
   for (const group of groups.values()) {
     for (const [key, value] of Object.entries(group.entries)) {
       operations.push({ op: 'dictionarySet', target: localTarget(group.id), key, value });
@@ -324,7 +324,7 @@ async function pageWidgetReferences(document: PdfDocument, pageRef: number): Pro
 async function sourceFieldDescriptor(
   document: PdfDocument,
   widgetRef: number,
-): Promise<{ name: string; entries: Record<string, WireRawPdfObject> }> {
+): Promise<{ name: string; entries: Record<string, PdfRawObject> }> {
   const chain: RawDictionary[] = [];
   let ref: number | null = widgetRef;
   const visited = new Set<number>();
@@ -336,7 +336,7 @@ async function sourceFieldDescriptor(
     ref = parent?.kind === 'reference' ? parent.objectNumber : null;
   }
   const names = chain.map((field) => decodePdfString(field.entries.T)).filter((item): item is string => Boolean(item));
-  const entries: Record<string, WireRawPdfObject> = {};
+  const entries: Record<string, PdfRawObject> = {};
   for (const field of chain) {
     for (const [key, value] of Object.entries(field.entries)) {
       if (FIELD_KEYS.has(key)) entries[key] = await cloneRawValue(document, value);
@@ -347,9 +347,9 @@ async function sourceFieldDescriptor(
 
 async function cloneRawValue(
   document: PdfDocument,
-  value: WireRawPdfObject,
+  value: PdfRawObject,
   visited = new Set<number>(),
-): Promise<WireRawPdfObject> {
+): Promise<PdfRawObject> {
   if (value.kind === 'reference') {
     if (visited.has(value.objectNumber)) return { kind: 'null' };
     const nextVisited = new Set(visited).add(value.objectNumber);
@@ -370,14 +370,14 @@ async function cloneRawValue(
   return value;
 }
 
-function localTarget(id: string): WireRawPdfTarget {
+function localTarget(id: string): PdfRawTarget {
   return { localId: id };
 }
 
 async function applyPatchWithLocals(
   document: PdfDocument,
   createIds: string[],
-  operations: WireRawPdfPatchOperation[],
+  operations: PdfRawPatchOperation[],
 ): Promise<void> {
   await document.editRawObjects((editor) => {
     const created = new Map<string, PdfRawCreatedObject>();
@@ -403,10 +403,10 @@ async function applyPatchWithLocals(
 
 function resolveEditorTarget(
   editor: PdfRawObjectEditor,
-  target: WireRawPdfTarget,
+  target: PdfRawTarget,
   created: ReadonlyMap<string, PdfRawCreatedObject>,
-): WireRawPdfTarget {
-  let result: WireRawPdfTarget;
+): PdfRawTarget {
+  let result: PdfRawTarget;
   if (target.root) {
     result = editor.catalog();
   } else if (target.localId) {
@@ -422,9 +422,9 @@ function resolveEditorTarget(
 }
 
 function resolveEditorValue(
-  value: WireRawPdfPatchValue,
+  value: PdfRawPatchValue,
   created: ReadonlyMap<string, PdfRawCreatedObject>,
-): WireRawPdfPatchValue {
+): PdfRawPatchValue {
   if (value.kind === 'localReference') {
     const local = created.get(value.id);
     if (!local) throw new Error(`Unknown local raw PDF reference: ${value.id}`);
@@ -498,7 +498,7 @@ async function collectAndRewriteCalculations(
   documentId: string,
   fieldRefs: Map<string, number>,
   calculatedFields: Map<string, string[]>,
-  operations: WireRawPdfPatchOperation[],
+  operations: PdfRawPatchOperation[],
 ): Promise<void> {
   const field = await readDictionary(document, ref);
   const partialName = decodePdfString(field.entries.T);
@@ -535,7 +535,7 @@ async function collectAndRewriteCalculations(
 
 async function resolveDictionaryEntry(
   document: PdfDocument,
-  value: WireRawPdfObject | undefined,
+  value: PdfRawObject | undefined,
 ): Promise<RawDictionary | null> {
   if (!value) return null;
   if (value.kind === 'dictionary') return value;
@@ -572,7 +572,7 @@ async function qualifiedFieldName(document: PdfDocument, initialRef: number): Pr
   return parts.length > 0 ? parts.join('.') : null;
 }
 
-function decodePdfString(value: WireRawPdfObject | undefined): string | null {
+function decodePdfString(value: PdfRawObject | undefined): string | null {
   if (!value || (value.kind !== 'string' && value.kind !== 'name')) return null;
   if (value.kind === 'name') return value.value;
   const bytes = value.value;

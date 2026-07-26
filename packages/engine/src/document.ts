@@ -1,30 +1,30 @@
 import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
 import { evaluateCalc, parseCalcAction, type FormCalcSpec } from './form-calc.js';
 import {
-  imageSourcesToWirePages,
+  imageSourcesToWorkerPages,
   type PdfCreateFromImagesOptions,
   type PdfImageSource,
 } from './image-source.js';
 import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
-  isWireError,
+  isWorkerError,
   PdfErrorCode,
-  type WireAnnotationGeometry,
-  type WireAnnotationObject,
-  type WireAnnotationSpec,
-  type WireColor,
-  type WireDest,
-  type WireDocument,
-  type WireFontQueries,
-  type WireFormField,
-  type WireRawPdfObject,
-  type WireRawPdfPatchOperation,
-  type WireRawPdfPatchValue,
-  type WireRawPdfTarget,
-  type WireFormNotification,
-  type WireOutlineNode,
-  type WirePageInfo,
-  type WireRect,
+  type WorkerAnnotationGeometry,
+  type WorkerAnnotationObject,
+  type WorkerAnnotationSpec,
+  type WorkerColor,
+  type WorkerDest,
+  type WorkerDocument,
+  type WorkerFontQueries,
+  type WorkerFormField,
+  type PdfRawObject,
+  type PdfRawPatchOperation,
+  type PdfRawPatchValue,
+  type PdfRawTarget,
+  type WorkerFormNotification,
+  type WorkerOutlineNode,
+  type WorkerPageInfo,
+  type WorkerRect,
 } from './protocol.js';
 import {
   annotationRenderingModeToIndex,
@@ -116,7 +116,7 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
   };
 }
 
-/** Options for constructing a {@link PdfrxEngine} (currently the same as {@link WorkerCommunicatorOptions}). */
+/** Options for constructing a {@link PdfrxEngine}. */
 export interface PdfrxEngineOptions extends WorkerCommunicatorOptions {}
 
 /** Common options for the document-opening methods of {@link PdfrxEngine}. */
@@ -204,13 +204,13 @@ export interface PdfCopyOptions {
  */
 export interface PdfRawObjectEditor {
   /** Returns a target for the document catalog (`/Root`) dictionary. */
-  catalog(): WireRawPdfTarget;
+  catalog(): PdfRawTarget;
   /**
    * Returns a target for an existing indirect object.
    * @param objectNumber Positive PDF object number, as returned by
    *   {@link PdfDocument.getRawObject} or an indirect `reference` value.
    */
-  object(objectNumber: number): WireRawPdfTarget;
+  object(objectNumber: number): PdfRawTarget;
   /**
    * Returns a target for a nested container below `target`.
    *
@@ -223,7 +223,7 @@ export interface PdfRawObjectEditor {
    * const firstKid = editor.at(editor.object(pagesObjectNumber), 'Kids', 0);
    * ```
    */
-  at(target: WireRawPdfTarget, ...path: (string | number)[]): WireRawPdfTarget;
+  at(target: PdfRawTarget, ...path: (string | number)[]): PdfRawTarget;
   /**
    * Reserves a new indirect dictionary in this batch.
    *
@@ -231,22 +231,22 @@ export interface PdfRawObjectEditor {
    * {@link PdfRawCreatedObject.reference} property when storing an indirect
    * reference to it in another dictionary or array.
    */
-  createDictionary(entries?: Record<string, WireRawPdfPatchValue>): PdfRawCreatedObject;
+  createDictionary(entries?: Record<string, PdfRawPatchValue>): PdfRawCreatedObject;
   /** Sets or replaces one dictionary entry; `key` omits the leading `/`. */
-  setDictionaryValue(target: WireRawPdfTarget, key: string, value: WireRawPdfPatchValue): void;
+  setDictionaryValue(target: PdfRawTarget, key: string, value: PdfRawPatchValue): void;
   /** Removes one dictionary entry; `key` omits the leading `/`. */
-  removeDictionaryValue(target: WireRawPdfTarget, key: string): void;
+  removeDictionaryValue(target: PdfRawTarget, key: string): void;
   /** Appends a value to the target array. */
-  appendArrayValue(target: WireRawPdfTarget, value: WireRawPdfPatchValue): void;
+  appendArrayValue(target: PdfRawTarget, value: PdfRawPatchValue): void;
   /** Replaces the value at a zero-based array index. */
-  setArrayValue(target: WireRawPdfTarget, index: number, value: WireRawPdfPatchValue): void;
+  setArrayValue(target: PdfRawTarget, index: number, value: PdfRawPatchValue): void;
   /** Removes the value at a zero-based array index. */
-  removeArrayValue(target: WireRawPdfTarget, index: number): void;
+  removeArrayValue(target: PdfRawTarget, index: number): void;
   /**
    * Replaces a stream's decoded bytes. PDFium updates the stream representation
    * when the document is encoded.
    */
-  setStreamData(target: WireRawPdfTarget, data: Uint8Array): void;
+  setStreamData(target: PdfRawTarget, data: Uint8Array): void;
 }
 
 /**
@@ -258,11 +258,11 @@ export interface PdfRawObjectEditor {
  * catalog, dictionary, or array. The final numeric PDF object number is assigned
  * inside the worker and intentionally hidden from the callback.
  */
-export interface PdfRawCreatedObject extends WireRawPdfTarget {
+export interface PdfRawCreatedObject extends PdfRawTarget {
   /** Batch-local identity used internally; it is not a PDF object number. */
   readonly localId: string;
   /** Patch value that stores an indirect reference to this newly-created dictionary. */
-  readonly reference: WireRawPdfPatchValue;
+  readonly reference: PdfRawPatchValue;
 }
 
 /** Options controlling how {@link PdfDocument.editRawObjects} commits its batch. */
@@ -284,26 +284,26 @@ export interface PdfRawObjectEditOptions {
 }
 
 class RawPdfObjectEditor implements PdfRawObjectEditor {
-  readonly operations: WireRawPdfPatchOperation[] = [];
+  readonly operations: PdfRawPatchOperation[] = [];
   readonly createDictionaries: string[] = [];
   private nextLocalId = 1;
 
-  catalog(): WireRawPdfTarget {
+  catalog(): PdfRawTarget {
     return { root: true };
   }
 
-  object(objectNumber: number): WireRawPdfTarget {
+  object(objectNumber: number): PdfRawTarget {
     if (!Number.isInteger(objectNumber) || objectNumber <= 0) {
       throw new RangeError('Raw PDF object numbers must be positive integers');
     }
     return { objectNumber };
   }
 
-  at(target: WireRawPdfTarget, ...path: (string | number)[]): WireRawPdfTarget {
+  at(target: PdfRawTarget, ...path: (string | number)[]): PdfRawTarget {
     return { ...target, path: [...(target.path ?? []), ...path] };
   }
 
-  createDictionary(entries: Record<string, WireRawPdfPatchValue> = {}): PdfRawCreatedObject {
+  createDictionary(entries: Record<string, PdfRawPatchValue> = {}): PdfRawCreatedObject {
     const localId = `object${this.nextLocalId++}`;
     this.createDictionaries.push(localId);
     const target: PdfRawCreatedObject = {
@@ -314,31 +314,31 @@ class RawPdfObjectEditor implements PdfRawObjectEditor {
     return target;
   }
 
-  setDictionaryValue(target: WireRawPdfTarget, key: string, value: WireRawPdfPatchValue): void {
+  setDictionaryValue(target: PdfRawTarget, key: string, value: PdfRawPatchValue): void {
     this.operations.push({ op: 'dictionarySet', target: this.copyTarget(target), key, value });
   }
 
-  removeDictionaryValue(target: WireRawPdfTarget, key: string): void {
+  removeDictionaryValue(target: PdfRawTarget, key: string): void {
     this.operations.push({ op: 'dictionaryRemove', target: this.copyTarget(target), key });
   }
 
-  appendArrayValue(target: WireRawPdfTarget, value: WireRawPdfPatchValue): void {
+  appendArrayValue(target: PdfRawTarget, value: PdfRawPatchValue): void {
     this.operations.push({ op: 'arrayAppend', target: this.copyTarget(target), value });
   }
 
-  setArrayValue(target: WireRawPdfTarget, index: number, value: WireRawPdfPatchValue): void {
+  setArrayValue(target: PdfRawTarget, index: number, value: PdfRawPatchValue): void {
     this.operations.push({ op: 'arraySet', target: this.copyTarget(target), index, value });
   }
 
-  removeArrayValue(target: WireRawPdfTarget, index: number): void {
+  removeArrayValue(target: PdfRawTarget, index: number): void {
     this.operations.push({ op: 'arrayRemove', target: this.copyTarget(target), index });
   }
 
-  setStreamData(target: WireRawPdfTarget, data: Uint8Array): void {
+  setStreamData(target: PdfRawTarget, data: Uint8Array): void {
     this.operations.push({ op: 'streamSetData', target: this.copyTarget(target), data });
   }
 
-  private copyTarget(target: WireRawPdfTarget): WireRawPdfTarget {
+  private copyTarget(target: PdfRawTarget): PdfRawTarget {
     return { ...target, ...(target.path ? { path: [...target.path] } : {}) };
   }
 }
@@ -385,8 +385,8 @@ export interface PdfPageRenderOptions {
  * bundled WASM assets; on Node, Bun or Deno, with nothing at all, since the
  * assets ship inside this package — then open documents with {@link openUrl},
  * {@link openData}, {@link createNew}, or {@link createFromImages}. A single
- * engine owns one worker ({@link WorkerCommunicator}) shared by all documents it
- * opens; call {@link dispose} to tear it down.
+ * engine owns one worker shared by all documents it opens; call {@link dispose}
+ * to tear it down.
  *
  * @example
  * ```ts
@@ -477,7 +477,7 @@ export class PdfrxEngine {
               [buffer],
             )
           : await this.comm.sendCommand('retryDocumentFromData', { dataHandle, password: password ?? '' });
-        if (isWireError(result)) {
+        if (isWorkerError(result)) {
           if (result.errorCode === PdfErrorCode.password && result.dataHandle !== undefined) {
             dataHandle = result.dataHandle;
             continue;
@@ -546,7 +546,7 @@ export class PdfrxEngine {
   async createNew(sourceName = 'new'): Promise<PdfDocument> {
     await this.init();
     const result = await this.comm.sendCommand('createNewDocument', {});
-    if (isWireError(result)) {
+    if (isWorkerError(result)) {
       throw new Error(`Failed to create new document: ${result.errorCodeStr} (${result.errorCode})`);
     }
     return new PdfDocument(this.comm, result, sourceName, null);
@@ -579,9 +579,9 @@ export class PdfrxEngine {
   ): Promise<PdfDocument> {
     if (images.length === 0) throw new Error('createFromImages requires at least one image');
     await this.init();
-    const { pages, transfer } = await imageSourcesToWirePages(images, options);
+    const { pages, transfer } = await imageSourcesToWorkerPages(images, options);
     const result = await this.comm.sendCommand('createDocumentFromImages', { pages }, transfer);
-    if (isWireError(result)) {
+    if (isWorkerError(result)) {
       throw new Error(`Failed to create document from images: ${result.errorCodeStr} (${result.errorCode})`);
     }
     return new PdfDocument(this.comm, result, options.sourceName ?? 'images', null);
@@ -620,7 +620,7 @@ export class PdfrxEngine {
    * @internal
    */
   private async openByFunc(
-    open: (password: string | null) => Promise<WireDocument | import('./protocol.js').WireError>,
+    open: (password: string | null) => Promise<WorkerDocument | import('./protocol.js').WorkerError>,
     options: PdfOpenOptions,
     sourceName: string,
     onDispose: (() => void) | null,
@@ -636,7 +636,7 @@ export class PdfrxEngine {
       }
 
       const result = await open(password);
-      if (isWireError(result)) {
+      if (isWorkerError(result)) {
         if (result.errorCode === PdfErrorCode.password) continue;
         throw new Error(`Failed to open document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
       }
@@ -722,7 +722,7 @@ export class PdfDocument {
   /** @internal */
   constructor(
     comm: WorkerCommunicator,
-    wire: WireDocument,
+    wire: WorkerDocument,
     /** Identifier of the document's source (e.g. `uri%...` or `data%...`); used in error messages. */
     readonly sourceName: string,
     onDispose: (() => void) | null,
@@ -747,7 +747,7 @@ export class PdfDocument {
    */
   private ensureFormNotify(): void {
     if (this.formNotifyCallbackId !== null || !this.formHandle || this._isDisposed) return;
-    const callbackId = this.comm.registerCallback((notification: WireFormNotification) =>
+    const callbackId = this.comm.registerCallback((notification: WorkerFormNotification) =>
       this.handleFormNotification(notification),
     );
     this.formNotifyCallbackId = callbackId;
@@ -759,7 +759,7 @@ export class PdfDocument {
    * Dispatches a form notification relayed from the worker's form-fill callbacks.
    * @internal
    */
-  private handleFormNotification(notification: WireFormNotification): void {
+  private handleFormNotification(notification: WorkerFormNotification): void {
     if (this._isDisposed) return;
     if (notification.kind === 'change') {
       if (this.formApiMutationDepth === 0) void this.captureInteractiveFormChange();
@@ -770,7 +770,7 @@ export class PdfDocument {
     if (pageNumber === null) return;
     const page = this._pages[pageNumber - 1];
     if (!page) return;
-    const rect = page.wireRectToPdf(notification.rect);
+    const rect = page.WorkerRectToPdf(notification.rect);
     for (const listener of this.formInvalidateListeners) {
       try {
         listener(pageNumber, rect);
@@ -1068,7 +1068,7 @@ export class PdfDocument {
    * {@link addEventListener} instead.
    * @internal
    */
-  updateMissingFonts(missingFonts: WireFontQueries | undefined): void {
+  updateMissingFonts(missingFonts: WorkerFontQueries | undefined): void {
     if (!missingFonts) return;
     const entries = Object.values(missingFonts);
     if (entries.length === 0) return;
@@ -1158,7 +1158,7 @@ export class PdfDocument {
   /** Loads the document outline (bookmarks) as a tree of {@link PdfOutlineNode}. */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     const result = await this.sendCommand('loadOutline', { docHandle: this.docHandle });
-    return result.outline.map((node) => this.outlineNodeFromWire(node));
+    return result.outline.map((node) => this.outlineNodeFromWorker(node));
   }
 
   /**
@@ -1166,11 +1166,11 @@ export class PdfDocument {
    * mapping physical page indices onto the current arrangement.
    * @internal
    */
-  private outlineNodeFromWire(node: WireOutlineNode): PdfOutlineNode {
+  private outlineNodeFromWorker(node: WorkerOutlineNode): PdfOutlineNode {
     return {
       title: node.title,
-      dest: pdfDestFromWire(node.dest, this),
-      children: node.children.map((child) => this.outlineNodeFromWire(child)),
+      dest: pdfDestFromWorker(node.dest, this),
+      children: node.children.map((child) => this.outlineNodeFromWorker(child)),
     };
   }
 
@@ -1367,7 +1367,7 @@ export class PdfDocument {
    */
   async getCatalogObject(
     options: { includeRawStreamData?: boolean } = {},
-  ): Promise<{ object: WireRawPdfObject | null; objectNumber: number; generationNumber: number }> {
+  ): Promise<{ object: PdfRawObject | null; objectNumber: number; generationNumber: number }> {
     return this.sendCommand('rawGetObject', {
       docHandle: this.docHandle,
       ...(options.includeRawStreamData ? { includeRawStreamData: true } : {}),
@@ -1382,7 +1382,7 @@ export class PdfDocument {
   async getRawObject(
     objectNumber: number,
     options: { includeRawStreamData?: boolean } = {},
-  ): Promise<{ object: WireRawPdfObject | null; objectNumber: number; generationNumber: number }> {
+  ): Promise<{ object: PdfRawObject | null; objectNumber: number; generationNumber: number }> {
     return this.sendCommand('rawGetObject', {
       docHandle: this.docHandle,
       objectNumber,
@@ -1392,7 +1392,7 @@ export class PdfDocument {
 
   /** Sends an editor's compiled operation batch to the worker. */
   private async applyRawPatchInternal(
-    operations: WireRawPdfPatchOperation[],
+    operations: PdfRawPatchOperation[],
     options: { createDictionaries?: string[] } = {},
   ): Promise<Record<string, number>> {
     await this.assemblePages();
@@ -1479,7 +1479,7 @@ export class PdfDocument {
 
   /** Replaces this instance's native document only after a prepared copy is complete. */
   private async adoptTransactionalCopy(copy: PdfDocument): Promise<void> {
-    const replacementPages = copy.pages.map((page) => page.toWireInfo());
+    const replacementPages = copy.pages.map((page) => page.toWorkerInfo());
     const oldHandles = {
       docHandle: this.docHandle,
       formHandle: this.formHandle,
@@ -1546,7 +1546,7 @@ export class PdfDocument {
   private async createCompactArrangementCopy(): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     const result = await this.sendCommand('createNewDocument', {});
-    if (isWireError(result)) {
+    if (isWorkerError(result)) {
       throw new Error(`Failed to create compact copy: ${result.errorCodeStr} (${result.errorCode})`);
     }
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (compact copy)`, null);
@@ -1564,7 +1564,7 @@ export class PdfDocument {
   private async createArrangementCopy(pagesToEncode: readonly PdfPage[]): Promise<PdfDocument> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
     const result = await this.sendCommand('cloneDocument', { docHandle: this.docHandle });
-    if (isWireError(result)) {
+    if (isWorkerError(result)) {
       throw new Error(`Failed to clone document ${this.sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
     }
     const copy = new PdfDocument(this.comm, result, `${this.sourceName} (copy)`, null);
@@ -1780,7 +1780,7 @@ export class PdfDocument {
     const result = await page.sourceDocument.sendCommand('addAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
-      spec: page.annotationSpecToWire(effectiveSpec),
+      spec: page.annotationSpecToWorker(effectiveSpec),
     });
     const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
     page.sourceDocument.emitAnnotationSourceChange(
@@ -1809,7 +1809,7 @@ export class PdfDocument {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
-      spec: page.annotationSpecToWire(effectiveSpec),
+      spec: page.annotationSpecToWorker(effectiveSpec),
       ...(options.preserveAppearance ? { preserveAppearance: true } : {}),
     });
     const storedSpec = { ...structuredClone(effectiveSpec), id: result.id, revision: result.revision };
@@ -1895,7 +1895,7 @@ export class PdfDocument {
         pageIndex: page.sourcePageIndex,
         ...(existingIds.has(item.id) ? { id: item.id } : {}),
         ...(existingIds.has(item.id) && options.preserveAppearance ? { preserveAppearance: true } : {}),
-        spec: page.annotationSpecToWire(spec),
+        spec: page.annotationSpecToWorker(spec),
       } as never);
       changes.push({ type: existingIds.has(item.id) ? 'update' : 'add', id: result.id, pageNumber: item.pageNumber, spec });
     }
@@ -1933,7 +1933,7 @@ export class PdfDocument {
         pageIndex: page.sourcePageIndex,
         ...(command === 'updateAnnotation' ? { id: change.id } : {}),
         ...(command === 'updateAnnotation' && options.preserveAppearance ? { preserveAppearance: true } : {}),
-        spec: page.annotationSpecToWire(spec),
+        spec: page.annotationSpecToWorker(spec),
       } as never);
       applied.push({ ...change, id: result.id, spec });
       historyChanges.push({ id: result.id, pageNumber: change.pageNumber, before, after: spec });
@@ -2217,7 +2217,7 @@ export class PdfDocument {
    * Builds {@link PdfPermissions} from wire fields, or `null` for unencrypted docs.
    * @internal
    */
-  private static parsePermissions(wire: WireDocument): PdfPermissions | null {
+  private static parsePermissions(wire: WorkerDocument): PdfPermissions | null {
     if (wire.permissions >= 0 && wire.securityHandlerRevision >= 0) {
       return new PdfPermissions(wire.permissions, wire.securityHandlerRevision);
     }
@@ -2254,7 +2254,7 @@ export class PdfPage {
   constructor(
     /** The document holding the physical page this one draws. */
     readonly sourceDocument: PdfDocument,
-    src: WirePageInfo | PdfPageProxySpec,
+    src: WorkerPageInfo | PdfPageProxySpec,
   ) {
     if ('basePage' in src) {
       // Proxies are never nested: wrapping a proxy re-wraps its base instead, so
@@ -2318,7 +2318,7 @@ export class PdfPage {
 
   /** Recreates the worker page metadata when a transactional document copy is adopted. */
   /** @internal */
-  toWireInfo(): WirePageInfo {
+  toWorkerInfo(): WorkerPageInfo {
     return {
       pageIndex: this.sourcePageIndex,
       width: this.width,
@@ -2577,7 +2577,7 @@ export class PdfPage {
     this.sourceDocument.updateMissingFonts(result.missingFonts);
     return {
       fullText: result.fullText,
-      charRects: result.charRects.map((r) => this.rectFromWire(r)),
+      charRects: result.charRects.map((r) => this.rectFromWorker(r)),
     };
   }
 
@@ -2595,13 +2595,13 @@ export class PdfPage {
       enableAutoLinkDetection: options.enableAutoLinkDetection ?? true,
     });
     return result.links.map((link) => ({
-      rects: link.rects.map((r) => this.rectFromWire(r)),
+      rects: link.rects.map((r) => this.rectFromWorker(r)),
       url: link.url ?? null,
       // Resolved against the document the page physically lives in. For a page
       // imported into another document, an internal link therefore names a
       // position in its *source* document — the PDF has no destination for the
       // host, so there is nothing better to report.
-      dest: pdfDestFromWire(link.dest, this.sourceDocument),
+      dest: pdfDestFromWorker(link.dest, this.sourceDocument),
       annotation: link.annotation
         ? {
             title: link.annotation.title ?? null,
@@ -2627,7 +2627,7 @@ export class PdfPage {
       formHandle: this.sourceDocument.formHandle,
       pageIndex: this.sourcePageIndex,
     });
-    return groupWireFormFields(result.fields, this);
+    return groupWorkerFormFields(result.fields, this);
   }
 
   /**
@@ -2642,7 +2642,7 @@ export class PdfPage {
       docHandle: this.sourceDocument.docHandle,
       pageIndex: this.sourcePageIndex,
     });
-    const annotations = result.annotations.map((a) => this.annotationFromWire(a));
+    const annotations = result.annotations.map((a) => this.annotationFromWorker(a));
     if (options.subtype === undefined) return annotations;
     const subtypes = new Set(Array.isArray(options.subtype) ? options.subtype : [options.subtype]);
     return annotations.filter((annotation) => subtypes.has(annotation.subtype));
@@ -2732,22 +2732,22 @@ export class PdfPage {
   }
 
   /** @internal Converts a wire annotation (raw coords) to the public model (bbox-relative). */
-  private annotationFromWire(a: WireAnnotationObject): PdfAnnotationObject {
+  private annotationFromWorker(a: WorkerAnnotationObject): PdfAnnotationObject {
     return {
       id: a.id,
       pageNumber: this.pageNumber,
       subtype: pdfAnnotationSubtypeFromName(a.subtype),
-      rect: this.rectFromWire(a.rect),
-      color: colorFromWire(a.color),
-      interiorColor: colorFromWire(a.interiorColor),
+      rect: this.rectFromWorker(a.rect),
+      color: colorFromWorker(a.color),
+      interiorColor: colorFromWorker(a.interiorColor),
       borderWidth: a.borderWidth,
       flags: a.flags,
       contents: a.contents,
       author: a.author,
       actorId: a.actorId,
       revision: a.revision,
-      textOrientation: textOrientationFromWire(a.textOrientation),
-      textColor: colorFromWire(a.textColor),
+      textOrientation: textOrientationFromWorker(a.textOrientation),
+      textColor: colorFromWorker(a.textColor),
       fontSize: a.fontSize,
       textAlign: a.textAlign,
       textVerticalAlign: a.textVerticalAlign,
@@ -2757,39 +2757,39 @@ export class PdfPage {
       appearanceImage: a.appearanceImage,
       appearancePaths: a.appearancePaths.map((path) => ({
         ...path,
-        fillColor: colorFromWire(path.fillColor),
-        strokeColor: colorFromWire(path.strokeColor),
+        fillColor: colorFromWorker(path.fillColor),
+        strokeColor: colorFromWorker(path.strokeColor),
         segments: path.segments.map(([type, x, y, close]) => ({
           // FPDF_PATHSEGMENT_* values: LINETO=0, BEZIERTO=1, MOVETO=2.
           type: type === 2 ? 'move' as const : type === 1 ? 'bezier' as const : 'line' as const,
-          point: this.pointFromWire(x, y),
+          point: this.pointFromWorker(x, y),
           close: !!close,
         })),
       })),
       appearanceTextStyles: a.appearanceTextStyles.map((style) => ({
-        origin: this.pointFromWire(style.x, style.y),
+        origin: this.pointFromWorker(style.x, style.y),
         fontSize: style.fontSize,
-        fillColor: colorFromWire(style.fillColor),
+        fillColor: colorFromWorker(style.fillColor),
       })),
       subject: a.subject,
       modificationDate: a.modificationDate,
       creationDate: a.creationDate,
-      geometry: this.annotationGeometryFromWire(a.geometry),
+      geometry: this.annotationGeometryFromWorker(a.geometry),
     };
   }
 
   /** @internal */
-  private annotationGeometryFromWire(g: WireAnnotationGeometry): PdfAnnotationGeometry {
+  private annotationGeometryFromWorker(g: WorkerAnnotationGeometry): PdfAnnotationGeometry {
     switch (g.kind) {
       case 'ink':
         return { kind: 'ink', strokes: g.strokes.map((s) => this.pointsFromFlat(s)) };
       case 'markup':
-        return { kind: 'markup', quads: g.quads.map((q) => this.quadFromWire(q)) };
+        return { kind: 'markup', quads: g.quads.map((q) => this.quadFromWorker(q)) };
       case 'line':
         return {
           kind: 'line',
-          start: this.pointFromWire(g.line[0], g.line[1]),
-          end: this.pointFromWire(g.line[2], g.line[3]),
+          start: this.pointFromWorker(g.line[0], g.line[1]),
+          end: this.pointFromWorker(g.line[2], g.line[3]),
         };
       case 'polygon':
         return { kind: 'polygon', vertices: this.pointsFromFlat(g.vertices) };
@@ -2804,14 +2804,14 @@ export class PdfPage {
    * @internal Converts an annotation spec (bbox-relative page coords) to the wire
    * form (raw page coords) the worker's create/replace commands expect.
    */
-  annotationSpecToWire(spec: PdfAnnotationSpec): WireAnnotationSpec {
+  annotationSpecToWorker(spec: PdfAnnotationSpec): WorkerAnnotationSpec {
     return {
       id: spec.id,
       subtype: spec.subtype,
-      rect: spec.rect ? this.rectToWire(spec.rect) : undefined,
-      color: spec.color === undefined ? undefined : spec.color === null ? null : colorToWire(spec.color),
+      rect: spec.rect ? this.rectToWorker(spec.rect) : undefined,
+      color: spec.color === undefined ? undefined : spec.color === null ? null : colorToWorker(spec.color),
       interiorColor:
-        spec.interiorColor === undefined ? undefined : spec.interiorColor === null ? null : colorToWire(spec.interiorColor),
+        spec.interiorColor === undefined ? undefined : spec.interiorColor === null ? null : colorToWorker(spec.interiorColor),
       borderWidth: spec.borderWidth,
       flags: spec.flags,
       contents: spec.contents,
@@ -2820,7 +2820,7 @@ export class PdfPage {
       revision: spec.revision,
       textOrientation: spec.textOrientation,
       textColor:
-        spec.textColor === undefined ? undefined : spec.textColor === null ? null : colorToWire(spec.textColor),
+        spec.textColor === undefined ? undefined : spec.textColor === null ? null : colorToWorker(spec.textColor),
       fontSize: spec.fontSize,
       textAlign: spec.textAlign,
       textVerticalAlign: spec.textVerticalAlign,
@@ -2830,8 +2830,8 @@ export class PdfPage {
       appearanceImage: spec.appearanceImage,
       appearancePaths: spec.appearancePaths?.map((path) => ({
         ...path,
-        fillColor: path.fillColor === null ? null : colorToWire(path.fillColor),
-        strokeColor: path.strokeColor === null ? null : colorToWire(path.strokeColor),
+        fillColor: path.fillColor === null ? null : colorToWorker(path.fillColor),
+        strokeColor: path.strokeColor === null ? null : colorToWorker(path.strokeColor),
         segments: path.segments.map((segment) => [
           segment.type === 'move' ? 2 : segment.type === 'bezier' ? 1 : 0,
           segment.point.x,
@@ -2839,17 +2839,17 @@ export class PdfPage {
           segment.close ? 1 : 0,
         ]),
       })),
-      geometry: spec.geometry ? this.annotationGeometryToWire(spec.geometry) : undefined,
+      geometry: spec.geometry ? this.annotationGeometryToWorker(spec.geometry) : undefined,
     };
   }
 
   /** @internal */
-  private annotationGeometryToWire(g: PdfAnnotationGeometry): WireAnnotationGeometry {
+  private annotationGeometryToWorker(g: PdfAnnotationGeometry): WorkerAnnotationGeometry {
     switch (g.kind) {
       case 'ink':
         return { kind: 'ink', strokes: g.strokes.map((s) => this.flatFromPoints(s)) };
       case 'markup':
-        return { kind: 'markup', quads: g.quads.map((q) => this.quadToWire(q)) };
+        return { kind: 'markup', quads: g.quads.map((q) => this.quadToWorker(q)) };
       case 'line': {
         const [sx, sy] = this.toRawPagePoint(g.start.x, g.start.y);
         const [ex, ey] = this.toRawPagePoint(g.end.x, g.end.y);
@@ -2865,24 +2865,24 @@ export class PdfPage {
   }
 
   /** @internal */
-  private pointFromWire(x: number, y: number): PdfAnnotationPoint {
+  private pointFromWorker(x: number, y: number): PdfAnnotationPoint {
     return { x: x - this.bbLeft, y: y - this.bbBottom };
   }
 
   /** @internal */
   private pointsFromFlat(flat: number[]): PdfAnnotationPoint[] {
     const pts: PdfAnnotationPoint[] = [];
-    for (let i = 0; i + 1 < flat.length; i += 2) pts.push(this.pointFromWire(flat[i]!, flat[i + 1]!));
+    for (let i = 0; i + 1 < flat.length; i += 2) pts.push(this.pointFromWorker(flat[i]!, flat[i + 1]!));
     return pts;
   }
 
   /** @internal */
-  private quadFromWire(q: number[]): PdfAnnotationQuad {
+  private quadFromWorker(q: number[]): PdfAnnotationQuad {
     return {
-      topLeft: this.pointFromWire(q[0]!, q[1]!),
-      topRight: this.pointFromWire(q[2]!, q[3]!),
-      bottomLeft: this.pointFromWire(q[4]!, q[5]!),
-      bottomRight: this.pointFromWire(q[6]!, q[7]!),
+      topLeft: this.pointFromWorker(q[0]!, q[1]!),
+      topRight: this.pointFromWorker(q[2]!, q[3]!),
+      bottomLeft: this.pointFromWorker(q[4]!, q[5]!),
+      bottomRight: this.pointFromWorker(q[6]!, q[7]!),
     };
   }
 
@@ -2897,7 +2897,7 @@ export class PdfPage {
   }
 
   /** @internal */
-  private quadToWire(q: PdfAnnotationQuad): number[] {
+  private quadToWorker(q: PdfAnnotationQuad): number[] {
     return [
       ...this.toRawPagePoint(q.topLeft.x, q.topLeft.y),
       ...this.toRawPagePoint(q.topRight.x, q.topRight.y),
@@ -2907,7 +2907,7 @@ export class PdfPage {
   }
 
   /** @internal Converts a bbox-relative {@link PdfRect} to a raw wire rect. */
-  private rectToWire(r: PdfRect): WireRect {
+  private rectToWorker(r: PdfRect): WorkerRect {
     return [r.left + this.bbLeft, r.top + this.bbBottom, r.right + this.bbLeft, r.bottom + this.bbBottom];
   }
 
@@ -2916,7 +2916,7 @@ export class PdfPage {
    * the page's bounding-box origin ({@link bbLeft} / {@link bbBottom}).
    * @internal
    */
-  private rectFromWire(r: WireRect): PdfRect {
+  private rectFromWorker(r: WorkerRect): PdfRect {
     return {
       left: r[0] - this.bbLeft,
       top: r[1] - this.bbBottom,
@@ -2930,8 +2930,8 @@ export class PdfPage {
    * {@link PdfRect}; used by the form invalidate relay.
    * @internal
    */
-  wireRectToPdf(r: WireRect): PdfRect {
-    return this.rectFromWire(r);
+  WorkerRectToPdf(r: WorkerRect): PdfRect {
+    return this.rectFromWorker(r);
   }
 
   /**
@@ -2946,12 +2946,12 @@ export class PdfPage {
 }
 
 /** @internal */
-function colorFromWire(c: WireColor | null): PdfAnnotationColor | null {
+function colorFromWorker(c: WorkerColor | null): PdfAnnotationColor | null {
   return c ? { r: c[0], g: c[1], b: c[2], a: c[3] } : null;
 }
 
 /** @internal */
-function colorToWire(c: PdfAnnotationColor): WireColor {
+function colorToWorker(c: PdfAnnotationColor): WorkerColor {
   return [c.r, c.g, c.b, c.a];
 }
 
@@ -2961,10 +2961,10 @@ function colorToWire(c: PdfAnnotationColor): WireColor {
  * converting rects to the page's bounding-box-relative coordinates.
  * @internal
  */
-function groupWireFormFields(wireFields: WireFormField[], page: PdfPage): PdfFormField[] {
-  const byName = new Map<string, WireFormField[]>();
+function groupWorkerFormFields(WorkerFields: WorkerFormField[], page: PdfPage): PdfFormField[] {
+  const byName = new Map<string, WorkerFormField[]>();
   const order: string[] = [];
-  wireFields.forEach((field, index) => {
+  WorkerFields.forEach((field, index) => {
     // Unnamed fields are never merged: give each its own bucket.
     const key = field.name ? `n:${field.name}` : `i:${index}`;
     let group = byName.get(key);
@@ -2982,17 +2982,17 @@ function groupWireFormFields(wireFields: WireFormField[], page: PdfPage): PdfFor
  * Builds one {@link PdfFormField} from a group of same-named wire widgets.
  * @internal
  */
-function buildFormField(group: WireFormField[], page: PdfPage): PdfFormField {
+function buildFormField(group: WorkerFormField[], page: PdfPage): PdfFormField {
   const first = group[0]!;
   const type = pdfFormFieldTypeFromCode(first.fieldType);
-  const rects = group.map((w) => page.wireRectToPdf(w.rect));
+  const rects = group.map((w) => page.WorkerRectToPdf(w.rect));
   const flags = decodeFormFieldFlags(first.flags);
   const base: PdfFormField = {
     name: first.name,
     type,
     pageNumber: page.pageNumber,
     rects,
-    textOrientations: group.map((widget) => textOrientationFromWire(widget.textOrientation)),
+    textOrientations: group.map((widget) => textOrientationFromWorker(widget.textOrientation)),
     value: first.value,
     alternateName: first.alternateName || null,
     flags,
@@ -3019,7 +3019,7 @@ function buildFormField(group: WireFormField[], page: PdfPage): PdfFormField {
 }
 
 /** Normalizes optional persisted text-orientation metadata from older PDFs. */
-function textOrientationFromWire(
+function textOrientationFromWorker(
   value: { rotation: number; behavior: 'page' | 'upright' } | undefined,
 ): PdfTextOrientation {
   const rotation = value?.rotation === 90 || value?.rotation === 180 || value?.rotation === 270 ? value.rotation : 0;
@@ -3032,7 +3032,7 @@ function textOrientationFromWire(
  * `null` if the destination is absent or its page is not in the arrangement
  * (e.g. it was removed by {@link PdfDocument.setPages}).
  */
-function pdfDestFromWire(dest: WireDest | null | undefined, doc: PdfDocument): PdfDest | null {
+function pdfDestFromWorker(dest: WorkerDest | null | undefined, doc: PdfDocument): PdfDest | null {
   if (!dest) return null;
   const pageNumber = doc.pageNumberOfSourceIndex(dest.pageIndex);
   if (pageNumber === null) return null;

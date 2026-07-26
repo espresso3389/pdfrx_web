@@ -1,4 +1,4 @@
-import type { WireImagePage, WirePixelFormat } from './protocol.js';
+import type { WorkerImagePage, PdfPixelFormat } from './protocol.js';
 
 const IMAGE_DECODE_TIMEOUT_MS = 5_000;
 
@@ -15,7 +15,7 @@ export interface PdfRawImage {
   /** Pixel height of the bitmap. */
   height: number;
   /** Byte order of {@link pixels}. Default `'rgba8888'` (what a canvas produces). */
-  format?: WirePixelFormat;
+  format?: PdfPixelFormat;
 }
 
 /**
@@ -212,7 +212,7 @@ function isRawImage(source: PdfImageSource): source is PdfRawImage {
   );
 }
 
-function rawImageToPage(image: PdfRawImage, options: PdfCreateFromImagesOptions): WireImagePage {
+function rawImageToPage(image: PdfRawImage, options: PdfCreateFromImagesOptions): WorkerImagePage {
   if (!(image.width > 0) || !(image.height > 0)) {
     throw new Error('PdfRawImage requires positive width and height');
   }
@@ -247,8 +247,8 @@ function inferMimeTypeFromBlobName(source: Blob): string | undefined {
   return undefined;
 }
 
-/** Converts one {@link PdfImageSource} into a {@link WireImagePage}. */
-async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImagesOptions): Promise<WireImagePage> {
+/** Converts one {@link PdfImageSource} into a {@link WorkerImagePage}. */
+async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImagesOptions): Promise<WorkerImagePage> {
   if (isRawImage(source)) return rawImageToPage(source, options);
 
   const { bytes, mimeType } = await encodedSourceBytes(source);
@@ -293,11 +293,11 @@ async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImages
  * `ArrayBuffer`s to transfer to the worker. Decoding (when needed) happens here,
  * on the calling thread.
  */
-export async function imageSourcesToWirePages(
+export async function imageSourcesToWorkerPages(
   images: PdfImageSource[],
   options: PdfCreateFromImagesOptions,
-): Promise<{ pages: WireImagePage[]; transfer: ArrayBuffer[] }> {
-  const pages: WireImagePage[] = [];
+): Promise<{ pages: WorkerImagePage[]; transfer: ArrayBuffer[] }> {
+  const pages: WorkerImagePage[] = [];
   const transfer: ArrayBuffer[] = [];
   for (const source of images) {
     const page = await sourceToPage(source, options);

@@ -17,11 +17,8 @@
  * {@link PdfDocument}, their pages by {@link PdfPage}, and rendered bitmaps by
  * {@link PdfImage}.
  *
- * Lower-level building blocks — {@link WorkerCommunicator} and the wire types in
- * {@link WorkerCommandMap} — are also exported for advanced use.
  */
 
-export { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicator.js';
 export type { PdfWorkerLike, PdfWorkerUrls } from './worker-host.js';
 export {
   PdfDocument,
@@ -61,37 +58,10 @@ export {
 } from './form-calc.js';
 export * from './types.js';
 export type {
-  WorkerCommand,
-  WorkerCommandMap,
-  WorkerMessage,
-  WireAnnotation,
-  WireAnnotationObject,
-  WireAnnotationGeometry,
-  WireAnnotationSpec,
-  WireColor,
-  WireDest,
-  WireDocument,
-  WireError,
-  WireFontQueries,
-  WireFontQuery,
-  WireFormField,
-  WireFormFieldOption,
-  WireFormNotification,
-  WireImagePage,
-  WireLink,
-  WireOutlineNode,
-  WirePageInfo,
-  WirePixelFormat,
-  WireRect,
-  WireRawPdfObject,
-  WireRawPdfPatchOperation,
-  WireRawPdfPatchValue,
-  WireRawPdfTarget,
+  PdfRawObject,
+  PdfRawPatchOperation,
+  PdfRawPatchValue,
+  PdfRawTarget,
+  PdfPixelFormat,
 } from './protocol.js';
-export { isWireError, PdfErrorCode } from './protocol.js';
-export type {
-  WireRawPdfObject as PdfRawObject,
-  WireRawPdfPatchOperation as PdfRawPatchOperation,
-  WireRawPdfPatchValue as PdfRawPatchValue,
-  WireRawPdfTarget as PdfRawTarget,
-} from './protocol.js';
+export { PdfErrorCode } from './protocol.js';

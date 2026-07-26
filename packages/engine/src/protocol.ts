@@ -1,10 +1,11 @@
 /**
- * Wire-level types of the `pdfium_worker.js` postMessage protocol — the
+ * Worker-level types of the `pdfium_worker.js` postMessage protocol — the
  * contract between {@link WorkerCommunicator} and the rendering worker.
  */
 
 /** Rectangle on the wire: `[left, top, right, bottom]` in PDF page coordinates (y-up). */
-export type WireRect = [number, number, number, number];
+/** @internal */
+export type WorkerRect = [number, number, number, number];
 
 /** Error codes reported by the worker when opening or reading a document. */
 export const enum PdfErrorCode {
@@ -20,7 +21,8 @@ export const enum PdfErrorCode {
 }
 
 /** Error-shaped result returned by document open commands. */
-export interface WireError {
+/** @internal */
+export interface WorkerError {
   /** Numeric {@link PdfErrorCode}. */
   errorCode: number;
   /** Symbolic name of {@link errorCode} (e.g. `"password"`), if the worker provided one. */
@@ -31,13 +33,15 @@ export interface WireError {
   dataHandle?: number;
 }
 
-/** Type guard: true if `result` is a {@link WireError} rather than a success payload. */
-export function isWireError(result: unknown): result is WireError {
-  return typeof result === 'object' && result !== null && typeof (result as WireError).errorCode === 'number';
+/** Type guard: true if `result` is a {@link WorkerError} rather than a success payload. */
+/** @internal */
+export function isWorkerError(result: unknown): result is WorkerError {
+  return typeof result === 'object' && result !== null && typeof (result as WorkerError).errorCode === 'number';
 }
 
 /** Font query reported by the worker when the engine hits a missing font. */
-export interface WireFontQuery {
+/** @internal */
+export interface WorkerFontQuery {
   face: string;
   weight: number;
   italic: boolean;
@@ -46,10 +50,12 @@ export interface WireFontQuery {
 }
 
 /** Map of missing-font queries keyed by an opaque font-identity string (deduplicates repeats). */
-export type WireFontQueries = Record<string, WireFontQuery>;
+/** @internal */
+export type WorkerFontQueries = Record<string, WorkerFontQuery>;
 
 /** Per-page metadata as reported by the worker. Basis for {@link PdfPage}. */
-export interface WirePageInfo {
+/** @internal */
+export interface WorkerPageInfo {
   /** 0-based page index (converted to 1-based `pageNumber` on the client). */
   pageIndex: number;
   /** Page width in points (1/72 inch). */
@@ -67,23 +73,25 @@ export interface WirePageInfo {
 }
 
 /** Document-level handles and metadata returned by the open/create commands. */
-export interface WireDocument {
+/** @internal */
+export interface WorkerDocument {
   /** Opaque handle to the native document (kept on the worker side). */
   docHandle: number;
   /** Raw permission flags, or negative if the document is not encrypted. */
   permissions: number;
   /** Security-handler revision, or negative if the document is not encrypted. */
   securityHandlerRevision: number;
-  pages: WirePageInfo[];
+  pages: WorkerPageInfo[];
   /** Opaque handle to the form-fill environment. */
   formHandle: number;
   /** Opaque pointer bookkept alongside {@link formHandle}; passed back on close. */
   formInfo: number;
-  missingFonts?: WireFontQueries;
+  missingFonts?: WorkerFontQueries;
 }
 
 /** A navigation destination on the wire (0-based page index). Basis for `PdfDest`. */
-export interface WireDest {
+/** @internal */
+export interface WorkerDest {
   /** 0-based page index (converted to 1-based `pageNumber` on the client). */
   pageIndex: number;
   command: string;
@@ -91,14 +99,18 @@ export interface WireDest {
 }
 
 /** An outline (bookmark) node on the wire. Basis for `PdfOutlineNode`. */
-export interface WireOutlineNode {
+/** @internal */
+export interface WorkerOutlineNode {
   title: string;
-  dest: WireDest | null;
-  children: WireOutlineNode[];
+  dest: WorkerDest | null;
+  children: WorkerOutlineNode[];
 }
 
 /**
  * A non-recursive, structured-clone representation of one PDF object.
+ *
+ * The represented PDF object kinds are defined by ISO 32000-2:2020, 7.3
+ * ("Objects"); streams by 7.3.8; and indirect references by 7.3.10.
  *
  * Indirect references stay `{ kind: 'reference', ... }` instead of expanding
  * their target, so cyclic object graphs are safe to inspect. PDF strings are
@@ -106,7 +118,7 @@ export interface WireOutlineNode {
  * dictionary keys omit the leading `/`, and stream `data` contains decoded
  * bytes. `rawData` is present only when explicitly requested.
  */
-export type WireRawPdfObject =
+export type PdfRawObject =
   | { kind: 'null' }
   | { kind: 'boolean'; value: boolean }
   | { kind: 'integer'; value: number }
@@ -114,11 +126,11 @@ export type WireRawPdfObject =
   | { kind: 'string'; value: Uint8Array }
   | { kind: 'name'; value: string }
   | { kind: 'reference'; objectNumber: number; generationNumber: number }
-  | { kind: 'array'; items: WireRawPdfObject[] }
-  | { kind: 'dictionary'; entries: Record<string, WireRawPdfObject> }
+  | { kind: 'array'; items: PdfRawObject[] }
+  | { kind: 'dictionary'; entries: Record<string, PdfRawObject> }
   | {
       kind: 'stream';
-      entries: Record<string, WireRawPdfObject>;
+      entries: Record<string, PdfRawObject>;
       data: Uint8Array;
       rawData?: Uint8Array;
     };
@@ -139,7 +151,7 @@ export type WireRawPdfObject =
  * from `PdfRawObjectEditor.catalog()`, `object()`, `at()`, or
  * `createDictionary()` rather than constructing this wire shape directly.
  */
-export interface WireRawPdfTarget {
+export interface PdfRawTarget {
   /** Selects the document catalog. Mutually exclusive with `objectNumber` and `localId`. */
   root?: true;
   /** Selects an existing indirect object by its positive PDF object number. */
@@ -153,19 +165,19 @@ export interface WireRawPdfTarget {
 /**
  * Value accepted by a raw PDF edit operation.
  *
- * It has the same recursive shapes as {@link WireRawPdfObject}, plus
+ * It has the same recursive shapes as {@link PdfRawObject}, plus
  * `localReference`, which points at an indirect dictionary created in the same
  * batch. With {@link PdfRawObjectEditor}, use
  * `PdfRawCreatedObject.reference` instead of constructing a local reference.
  */
-export type WireRawPdfPatchValue =
-  | Exclude<WireRawPdfObject, { kind: 'array' | 'dictionary' | 'stream' }>
+export type PdfRawPatchValue =
+  | Exclude<PdfRawObject, { kind: 'array' | 'dictionary' | 'stream' }>
   | { kind: 'localReference'; id: string }
-  | { kind: 'array'; items: WireRawPdfPatchValue[] }
-  | { kind: 'dictionary'; entries: Record<string, WireRawPdfPatchValue> }
+  | { kind: 'array'; items: PdfRawPatchValue[] }
+  | { kind: 'dictionary'; entries: Record<string, PdfRawPatchValue> }
   | {
       kind: 'stream';
-      entries: Record<string, WireRawPdfPatchValue>;
+      entries: Record<string, PdfRawPatchValue>;
       data: Uint8Array;
       rawData?: Uint8Array;
     };
@@ -173,20 +185,21 @@ export type WireRawPdfPatchValue =
 /**
  * Low-level worker-protocol operation compiled by `PdfRawObjectEditor`.
  *
- * Normal application code uses the editor's dictionary/array/stream methods;
- * this union remains public because {@link WorkerCommandMap} exposes the typed
- * worker protocol.
+ * Normal application code uses the editor's dictionary/array/stream methods.
+ * This union is useful to integrations that compile or inspect raw edit batches
+ * before applying them.
  */
-export type WireRawPdfPatchOperation =
-  | { op: 'dictionarySet'; target: WireRawPdfTarget; key: string; value: WireRawPdfPatchValue }
-  | { op: 'dictionaryRemove'; target: WireRawPdfTarget; key: string }
-  | { op: 'arrayAppend'; target: WireRawPdfTarget; value: WireRawPdfPatchValue }
-  | { op: 'arraySet'; target: WireRawPdfTarget; index: number; value: WireRawPdfPatchValue }
-  | { op: 'arrayRemove'; target: WireRawPdfTarget; index: number }
-  | { op: 'streamSetData'; target: WireRawPdfTarget; data: Uint8Array };
+export type PdfRawPatchOperation =
+  | { op: 'dictionarySet'; target: PdfRawTarget; key: string; value: PdfRawPatchValue }
+  | { op: 'dictionaryRemove'; target: PdfRawTarget; key: string }
+  | { op: 'arrayAppend'; target: PdfRawTarget; value: PdfRawPatchValue }
+  | { op: 'arraySet'; target: PdfRawTarget; index: number; value: PdfRawPatchValue }
+  | { op: 'arrayRemove'; target: PdfRawTarget; index: number }
+  | { op: 'streamSetData'; target: PdfRawTarget; data: Uint8Array };
 
 /** Annotation metadata on the wire. Basis for `PdfAnnotation`. */
-export interface WireAnnotation {
+/** @internal */
+export interface WorkerAnnotation {
   title?: string | null;
   content?: string | null;
   subject?: string | null;
@@ -197,22 +210,25 @@ export interface WireAnnotation {
 }
 
 /** A link on the wire (link annotation or auto-detected URL). Basis for `PdfLink`. */
-export interface WireLink {
+/** @internal */
+export interface WorkerLink {
   /** Clickable areas in PDF page coordinates, not yet adjusted by the bounding box. */
-  rects: WireRect[];
+  rects: WorkerRect[];
   url?: string | null;
-  dest?: WireDest | null;
-  annotation?: WireAnnotation | null;
+  dest?: WorkerDest | null;
+  annotation?: WorkerAnnotation | null;
 }
 
 /** One option of a choice (combo/list) form field on the wire. */
-export interface WireFormFieldOption {
+/** @internal */
+export interface WorkerFormFieldOption {
   label: string;
   selected: boolean;
 }
 
 /** A form field widget on the wire (one per widget annotation). Basis for `PdfFormField`. */
-export interface WireFormField {
+/** @internal */
+export interface WorkerFormField {
   /** Fully-qualified field name (`/T` chain); empty when unnamed. */
   name: string;
   /** Raw `FPDF_FORMFIELD_*` type code. */
@@ -220,7 +236,7 @@ export interface WireFormField {
   /** Raw `FPDF_FORMFLAG_*` bit flags. */
   flags: number;
   /** Widget rectangle in raw page coordinates (not yet bounding-box adjusted). */
-  rect: WireRect;
+  rect: WorkerRect;
   /** Persisted text orientation for this widget. */
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   /** Current field value (`/V`). */
@@ -232,18 +248,20 @@ export interface WireFormField {
   /** Checkbox/radio only: this widget's export ("on") value. */
   exportValue?: string;
   /** Combo/list only: the selectable options. */
-  options?: WireFormFieldOption[];
+  options?: WorkerFormFieldOption[];
 }
 
 /** An RGBA color (0-255 per channel) on the wire. */
-export type WireColor = [number, number, number, number];
+/** @internal */
+export type WorkerColor = [number, number, number, number];
 
 /**
  * Subtype-specific geometry of an annotation on the wire, in **raw page
  * coordinates** (y-up, not yet bounding-box adjusted). Point lists are flat
  * `[x0, y0, x1, y1, ...]`; quads follow PDFium's `FS_QUADPOINTSF` ordering.
  */
-export type WireAnnotationGeometry =
+/** @internal */
+export type WorkerAnnotationGeometry =
   | { kind: 'none' }
   | { kind: 'ink'; strokes: number[][] }
   | { kind: 'markup'; quads: number[][] }
@@ -252,7 +270,8 @@ export type WireAnnotationGeometry =
   | { kind: 'polyline'; vertices: number[] };
 
 /** A content annotation on the wire (one per non-widget/link/popup annotation). */
-export interface WireAnnotationObject {
+/** @internal */
+export interface WorkerAnnotationObject {
   /** Stable id from the `/NM` key, or `@<index>` for annotations that lack one. */
   id: string;
   /** Lowercased subtype name (`ink`, `highlight`, `square`, …); `unknown` if unmapped. */
@@ -260,11 +279,11 @@ export interface WireAnnotationObject {
   /** Page-local annotation index at read time (not stable across removals). */
   index: number;
   /** Bounding rectangle in raw page coordinates. */
-  rect: WireRect;
+  rect: WorkerRect;
   /** Stroke/primary color, or null when unset. */
-  color: WireColor | null;
+  color: WorkerColor | null;
   /** Interior (fill) color, or null when unset. */
-  interiorColor: WireColor | null;
+  interiorColor: WorkerColor | null;
   /** Border width in points. */
   borderWidth: number;
   /** Raw `FPDF_ANNOT_FLAG_*` bits. */
@@ -276,7 +295,7 @@ export interface WireAnnotationObject {
   actorId: string | null;
   revision: number;
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
-  textColor: WireColor | null;
+  textColor: WorkerColor | null;
   fontSize: number | null;
   textAlign: 'left' | 'center' | 'right';
   textVerticalAlign: 'top' | 'middle' | 'bottom';
@@ -291,8 +310,8 @@ export interface WireAnnotationObject {
   appearanceImage: { width: number; height: number; pixels: Uint8Array } | null;
   appearancePaths: {
     segments: [number, number, number, number][];
-    fillColor: WireColor | null;
-    strokeColor: WireColor | null;
+    fillColor: WorkerColor | null;
+    strokeColor: WorkerColor | null;
     strokeWidth: number;
     fillMode: number;
     stroke: boolean;
@@ -303,13 +322,13 @@ export interface WireAnnotationObject {
     x: number;
     y: number;
     fontSize: number;
-    fillColor: WireColor | null;
+    fillColor: WorkerColor | null;
   }[];
   /** `/Subj` subject. */
   subject: string | null;
   modificationDate: string | null;
   creationDate: string | null;
-  geometry: WireAnnotationGeometry;
+  geometry: WorkerAnnotationGeometry;
 }
 
 /**
@@ -317,14 +336,15 @@ export interface WireAnnotationObject {
  * Only ink / markup / rect-defined square & circle / freeText / text geometries
  * are honored by the worker (see `_applyAnnotSpec`); other fields apply to all.
  */
-export interface WireAnnotationSpec {
+/** @internal */
+export interface WorkerAnnotationSpec {
   /** Creatable subtype: `ink`, `highlight`, `underline`, `squiggly`, `strikeout`, `square`, `circle`, `freeText`, `text`. */
   subtype: string;
   /** Preserve a specific `/NM` id (used by replace); a fresh id is generated otherwise. */
   id?: string;
-  rect?: WireRect;
-  color?: WireColor | null;
-  interiorColor?: WireColor | null;
+  rect?: WorkerRect;
+  color?: WorkerColor | null;
+  interiorColor?: WorkerColor | null;
   borderWidth?: number;
   flags?: number;
   contents?: string | null;
@@ -333,7 +353,7 @@ export interface WireAnnotationSpec {
   revision?: number;
   textOrientation?: { rotation: number; behavior: 'page' | 'upright' };
   /** FreeText glyph color. */
-  textColor?: WireColor | null;
+  textColor?: WorkerColor | null;
   /** FreeText font size in points. */
   fontSize?: number;
   textAlign?: 'left' | 'center' | 'right';
@@ -354,19 +374,19 @@ export interface WireAnnotationSpec {
   /** Normalized SVG-style vector paths for a stamp appearance. */
   appearancePaths?: {
     segments: [number, number, number, number][];
-    fillColor: WireColor | null;
-    strokeColor: WireColor | null;
+    fillColor: WorkerColor | null;
+    strokeColor: WorkerColor | null;
     strokeWidth: number;
     fillMode: number;
     stroke: boolean;
     lineCap: number;
     lineJoin: number;
   }[];
-  geometry?: WireAnnotationGeometry;
+  geometry?: WorkerAnnotationGeometry;
 }
 
 /** Byte order of raw pixel data handed to the worker. */
-export type WirePixelFormat = 'rgba8888' | 'bgra8888';
+export type PdfPixelFormat = 'rgba8888' | 'bgra8888';
 
 /**
  * One page of a document built by {@link WorkerCommandMap.createDocumentFromImages}.
@@ -376,7 +396,8 @@ export type WirePixelFormat = 'rgba8888' | 'bgra8888';
  * runtime); a `pixels` page carries already-decoded pixels for formats PDFium
  * cannot read on its own. All `ArrayBuffer`s are transferred to the worker.
  */
-export type WireImagePage =
+/** @internal */
+export type WorkerImagePage =
   | { kind: 'jpeg'; data: ArrayBuffer; width: number; height: number }
   | {
       kind: 'pixels';
@@ -385,7 +406,7 @@ export type WireImagePage =
       pixelWidth: number;
       /** Pixel height of the bitmap. */
       pixelHeight: number;
-      format: WirePixelFormat;
+      format: PdfPixelFormat;
       width: number;
       height: number;
     };
@@ -394,6 +415,7 @@ export type WireImagePage =
  * Parameter/result shapes for every worker command, keyed by command name.
  * Used by {@link WorkerCommunicator.sendCommand} to type each round-trip.
  */
+/** @internal */
 export interface WorkerCommandMap {
   /** Loads and initializes `pdfium.wasm`. Must complete before any other command runs. */
   init: {
@@ -416,7 +438,7 @@ export interface WorkerCommandMap {
       headers?: Record<string, string>;
       withCredentials?: boolean;
     };
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
   /** Opens a document from in-memory bytes (the `ArrayBuffer` is transferred to the worker). */
   loadDocumentFromData: {
@@ -427,7 +449,7 @@ export interface WorkerCommandMap {
       /** Optional virtual file name used when the data is large enough to be spooled. */
       url?: string;
     };
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
   /** Retries a password-protected in-memory open; the worker already owns the bytes. */
   retryDocumentFromData: {
@@ -435,7 +457,7 @@ export interface WorkerCommandMap {
       dataHandle: number;
       password: string;
     };
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
   /** Releases bytes retained after an abandoned password-protected in-memory open. */
   cancelDocumentFromData: {
@@ -447,15 +469,15 @@ export interface WorkerCommandMap {
   /** Creates a new empty document. */
   createNewDocument: {
     params: Record<string, never>;
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
-  /** Creates a document whose pages each display one image (one page per {@link WireImagePage}). */
+  /** Creates a document whose pages each display one image (one page per {@link WorkerImagePage}). */
   createDocumentFromImages: {
     params: {
       /** One entry per page, in order. */
-      pages: WireImagePage[];
+      pages: WorkerImagePage[];
     };
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
   /** Loads the next chunk of pages during progressive loading, budgeted by `loadUnitDuration`. */
   loadPagesProgressively: {
@@ -465,8 +487,8 @@ export interface WorkerCommandMap {
       loadUnitDuration: number;
     };
     result: {
-      pages: WirePageInfo[];
-      missingFonts?: WireFontQueries;
+      pages: WorkerPageInfo[];
+      missingFonts?: WorkerFontQueries;
     };
   };
   /** Re-reads page metadata (e.g. after the document was modified). */
@@ -478,8 +500,8 @@ export interface WorkerCommandMap {
       currentPagesCount: number;
     };
     result: {
-      pages: WirePageInfo[];
-      missingFonts?: WireFontQueries;
+      pages: WorkerPageInfo[];
+      missingFonts?: WorkerFontQueries;
     };
   };
   /** Closes a document and releases its handles (including the form environment). */
@@ -494,7 +516,7 @@ export interface WorkerCommandMap {
   /** Loads the document outline (bookmarks) tree. */
   loadOutline: {
     params: { docHandle: number };
-    result: { outline: WireOutlineNode[] };
+    result: { outline: WorkerOutlineNode[] };
   };
   /** Loads a single page and returns its native page handle. */
   loadPage: {
@@ -535,7 +557,7 @@ export interface WorkerCommandMap {
       imageData: ArrayBuffer;
       width: number;
       height: number;
-      missingFonts?: WireFontQueries;
+      missingFonts?: WorkerFontQueries;
     };
   };
   /** Extracts the page's full text plus one bounding rect per UTF-16 code unit. */
@@ -543,8 +565,8 @@ export interface WorkerCommandMap {
     params: { docHandle: number; pageIndex: number };
     result: {
       fullText: string;
-      charRects: WireRect[];
-      missingFonts?: WireFontQueries;
+      charRects: WorkerRect[];
+      missingFonts?: WorkerFontQueries;
     };
   };
   /** Loads link annotations, optionally including auto-detected URL-like text. */
@@ -554,7 +576,7 @@ export interface WorkerCommandMap {
       pageIndex: number;
       enableAutoLinkDetection?: boolean;
     };
-    result: { links: WireLink[] };
+    result: { links: WorkerLink[] };
   };
   /** Re-applies registered font data and refreshes affected caches. */
   reloadFonts: {
@@ -601,26 +623,26 @@ export interface WorkerCommandMap {
   /** Reads the catalog or one indirect PDF object without expanding references. */
   rawGetObject: {
     params: { docHandle: number; objectNumber?: number; includeRawStreamData?: boolean };
-    result: { object: WireRawPdfObject | null; objectNumber: number; generationNumber: number };
+    result: { object: PdfRawObject | null; objectNumber: number; generationNumber: number };
   };
   /** Adds indirect dictionaries and applies raw dictionary/array/stream mutations as one worker command. */
   rawApplyPatch: {
     params: {
       docHandle: number;
       createDictionaries?: string[];
-      operations: WireRawPdfPatchOperation[];
+      operations: PdfRawPatchOperation[];
     };
     result: { created: Record<string, number> };
   };
   /** Creates an independent native copy of a document without changing it. */
   cloneDocument: {
     params: { docHandle: number };
-    result: WireDocument | WireError;
+    result: WorkerDocument | WorkerError;
   };
   /** Enumerates the AcroForm widget fields on one page. */
   loadFormFields: {
     params: { docHandle: number; formHandle: number; pageIndex: number };
-    result: { fields: WireFormField[] };
+    result: { fields: WorkerFormField[] };
   };
   /** Reads every named field's calculate-action (`/AA/C`) JavaScript source. */
   loadFormCalculations: {
@@ -699,14 +721,14 @@ export interface WorkerCommandMap {
   /** Enumerates the content annotations (skipping widgets/links/popups) on one page. */
   loadAnnotations: {
     params: { docHandle: number; pageIndex: number };
-    result: { annotations: WireAnnotationObject[] };
+    result: { annotations: WorkerAnnotationObject[] };
   };
   /**
    * Creates an annotation from `spec`, generates its appearance stream so it
    * persists through `encodePdf`, and returns its `/NM` id.
    */
   addAnnotation: {
-    params: { docHandle: number; pageIndex: number; spec: WireAnnotationSpec };
+    params: { docHandle: number; pageIndex: number; spec: WorkerAnnotationSpec };
     result: { id: string; revision: number };
   };
   /** Replaces the annotation identified by `id` with a fresh one built from `spec` (same id). */
@@ -715,7 +737,7 @@ export interface WorkerCommandMap {
       docHandle: number;
       pageIndex: number;
       id: string;
-      spec: WireAnnotationSpec;
+      spec: WorkerAnnotationSpec;
       preserveAppearance?: boolean;
     };
     result: { id: string; revision: number };
@@ -732,11 +754,13 @@ export interface WorkerCommandMap {
  * `registerFormNotify`). `invalidate` carries a dirty rectangle in PDF page
  * coordinates; `change` signals that some field value changed.
  */
-export type WireFormNotification =
-  | { kind: 'invalidate'; pageIndex: number; rect: WireRect }
+/** @internal */
+export type WorkerFormNotification =
+  | { kind: 'invalidate'; pageIndex: number; rect: WorkerRect }
   | { kind: 'change' };
 
 /** Union of all worker command names (the keys of {@link WorkerCommandMap}). */
+/** @internal */
 export type WorkerCommand = keyof WorkerCommandMap;
 
 /**
@@ -746,6 +770,7 @@ export type WorkerCommand = keyof WorkerCommandMap;
  * `callback`); the `id`-tagged variants are the reply to a specific command
  * request. Handled by {@link WorkerCommunicator}.
  */
+/** @internal */
 export type WorkerMessage =
   | { type: 'ready' }
   | { type: 'error'; error: string }

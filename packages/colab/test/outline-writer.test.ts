@@ -4,7 +4,7 @@ import {
   type PdfAnnotationSpec,
   type PdfDocument,
   type PdfDocumentEventMap,
-  type WireRawPdfObject,
+  type PdfRawObject,
 } from '@pdfrx/engine';
 import { afterAll, describe, expect, it } from 'vitest';
 import { mergeAcroForms, writeOutline } from '../src/outline-writer.js';
@@ -311,14 +311,14 @@ async function calculationOrderSize(document: PdfDocument): Promise<number> {
 
 async function resolveObject(
   document: PdfDocument,
-  value: WireRawPdfObject | undefined,
-): Promise<WireRawPdfObject | null> {
+  value: PdfRawObject | undefined,
+): Promise<PdfRawObject | null> {
   if (!value) return null;
   if (value.kind !== 'reference') return value;
   return (await document.getRawObject(value.objectNumber)).object;
 }
 
-async function firstPageDictionary(document: PdfDocument): Promise<Extract<WireRawPdfObject, { kind: 'dictionary' }>> {
+async function firstPageDictionary(document: PdfDocument): Promise<Extract<PdfRawObject, { kind: 'dictionary' }>> {
   const root = (await document.getCatalogObject()).object;
   if (!root || root.kind !== 'dictionary') throw new Error('Expected a catalog dictionary');
   const pages = await resolveObject(document, root.entries.Pages);

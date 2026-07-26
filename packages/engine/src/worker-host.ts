@@ -1,5 +1,3 @@
-import type { WorkerMessage } from './protocol.js';
-
 /** Where the engine's assets live, as passed to a worker factory. */
 export interface PdfWorkerUrls {
   /** Absolute URL of `pdfium_worker.js`, a classic worker script. */
@@ -18,7 +16,7 @@ export interface PdfWorkerUrls {
 export interface PdfWorkerLike {
   postMessage(message: unknown, transfer: Transferable[]): void;
   terminate(): void;
-  onmessage: ((event: { data: WorkerMessage }) => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
   onerror: ((event: { message?: string }) => void) | null;
 }
 
@@ -180,7 +178,7 @@ async function createNodeWorker(urls: PdfWorkerUrls): Promise<PdfWorkerLike> {
     postMessage: (message, transfer) => impl.postMessage(message, transfer),
     terminate: () => void impl.terminate(),
   };
-  impl.on('message', (data: WorkerMessage) => worker.onmessage?.({ data }));
+  impl.on('message', (data: unknown) => worker.onmessage?.({ data }));
   impl.on('error', (error: Error) => worker.onerror?.({ message: error.message }));
   return worker;
 }
