@@ -909,6 +909,11 @@ export class PdfDocument {
    * they are referenced. Page numbers are reassigned to match the new order, so
    * callers can pass pages in any arrangement.
    *
+   * Reusing the same {@link PdfPage} in more than one slot also reuses its
+   * logical identity, making ID-based destinations unable to distinguish those
+   * placements. Use {@link PdfPage.duplicate} when each occurrence must have
+   * its own destination identity; see that method for examples and details.
+   *
    * Fires `pageStatusChanged` for every slot.
    *
    * @example
@@ -950,6 +955,10 @@ export class PdfDocument {
    * Replaces a single slot (1-based), keeping every other page in place — the
    * common case for GUI editing (`doc.setPage(3, doc.pages[2]!.rotatedCW90())`).
    * Like {@link setPages}, this touches no PDF data.
+   *
+   * Setting a page that is already present elsewhere reuses its logical
+   * identity, so ID-based destinations cannot distinguish the two placements.
+   * Use {@link PdfPage.duplicate}; see that method for examples and details.
    */
   setPage(pageNumber: number, page: PdfPage, options: PdfPageMutationOptions = {}): void {
     if (pageNumber < 1 || pageNumber > this._pages.length) {
@@ -2598,7 +2607,49 @@ export class PdfPage {
 
   /**
    * Returns a lightweight proxy over the same physical page with a new logical
-   * identity. No PDF data is copied or materialized.
+   * identity. No PDF data is copied or materialized, so this operation is
+   * effectively free. The returned page still renders the same physical page;
+   * only placement identity is separated.
+   *
+   * This matters when one {@link PdfPage} is placed more than once. Reusing the
+   * same object also reuses its opaque {@link id}, so an ID-based {@link dest}
+   * can identify the page but not a particular occurrence:
+   *
+   * ```ts
+   * const [page, ...rest] = document.pages;
+   * document.setPages([page!, ...rest, page!]);
+   *
+   * const ambiguous = page!.dest({
+   *   by: 'id',
+   *   command: 'fit',
+   *   params: [],
+   * });
+   * // Both placements have the same ID. Following `ambiguous` selects one
+   * // matching placement; callers must not rely on which one is selected.
+   * ```
+   *
+   * Call `duplicate()` before arranging the second occurrence when destinations
+   * must distinguish them:
+   *
+   * ```ts
+   * const [page, ...rest] = document.pages;
+   * const secondPlacement = page!.duplicate();
+   * document.setPages([page!, ...rest, secondPlacement]);
+   *
+   * const firstDest = page!.dest({
+   *   by: 'id',
+   *   command: 'fit',
+   *   params: [],
+   * });
+   * const secondDest = secondPlacement.dest({
+   *   by: 'id',
+   *   command: 'fit',
+   *   params: [],
+   * });
+   * ```
+   *
+   * The two destinations now follow separate placements, while both pages
+   * continue to use the same underlying PDF page data.
    */
   duplicate(): PdfPage {
     return new PdfPage(this.sourceDocument, {
@@ -2613,6 +2664,10 @@ export class PdfPage {
   /**
    * Creates an immutable destination for this logical page or its current
    * 1-based position.
+   *
+   * An ID-based destination is ambiguous when the same page identity occurs in
+   * multiple arrangement slots. Use {@link duplicate} when destinations must
+   * distinguish repeated placements; see that method for examples and details.
    */
   dest(options: PdfDestOptions): PdfDest {
     const common = { command: options.command, params: [...options.params] };
