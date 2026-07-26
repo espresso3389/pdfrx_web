@@ -91,7 +91,26 @@ export class PdfPermissions {
 /** Opaque identity of a logical page placement within an open document. */
 export type PdfPageId = string & { readonly __pdfPageId: unique symbol };
 
-/** Destination that follows a logical page when the page arrangement changes. */
+/**
+ * Destination that follows a logical page when the page arrangement changes.
+ *
+ * The `pageId` is the opaque identity of a {@link PdfPage} placement, not a PDF
+ * object number or page index. Normally, do not construct this object or handle
+ * the ID directly; use {@link PdfPage.dest} on the target page:
+ *
+ * ```ts
+ * const dest = document.pages[4]!.dest({
+ *   by: 'id',
+ *   command: 'fit',
+ *   params: [],
+ * });
+ * ```
+ *
+ * The resulting destination follows that logical page through reordering.
+ * When the same identity appears more than once, one matching placement is
+ * selected; use {@link PdfPage.duplicate} when placements need distinct
+ * identities.
+ */
 export interface PdfDestById {
   readonly by: 'id';
   readonly pageId: PdfPageId;
@@ -101,7 +120,23 @@ export interface PdfDestById {
   readonly params: readonly (number | null)[];
 }
 
-/** Destination that keeps pointing at a fixed 1-based position. */
+/**
+ * Destination that keeps pointing at a fixed 1-based position.
+ *
+ * The simplest way to create one is {@link PdfPage.dest} on the page currently
+ * occupying the desired position:
+ *
+ * ```ts
+ * const dest = document.pages[4]!.dest({
+ *   by: 'pageNumber',
+ *   command: 'fit',
+ *   params: [],
+ * });
+ * ```
+ *
+ * The resulting destination keeps page number 5 even if another logical page
+ * later occupies that position.
+ */
 export interface PdfDestByPageNumber {
   readonly by: 'pageNumber';
   /**
@@ -130,6 +165,22 @@ export interface PdfDestByPageNumber {
  * A navigation destination inside a document. ID destinations follow a logical
  * page through rearrangement; page-number destinations keep pointing at a
  * fixed position.
+ *
+ * Use {@link PdfPage.dest} to create either form without handling opaque page
+ * IDs or 1-based page numbers directly:
+ *
+ * ```ts
+ * const followsPage = document.pages[4]!.dest({
+ *   by: 'id',
+ *   command: 'fit',
+ *   params: [],
+ * });
+ * const keepsPosition = document.pages[4]!.dest({
+ *   by: 'pageNumber',
+ *   command: 'fit',
+ *   params: [],
+ * });
+ * ```
  */
 export type PdfDest = PdfDestById | PdfDestByPageNumber;
 
