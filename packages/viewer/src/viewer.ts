@@ -99,6 +99,11 @@ function effectiveTextRotation(orientation: PdfTextOrientation, page: PageGeomet
   return composeTextRotation(orientation.rotation, orientation.behavior, (page.rotation * 90) as 0 | 90 | 180 | 270);
 }
 
+/** Map the shared CSS-style highlight blend option to its Canvas equivalent. */
+const canvasTextHighlightBlendMode = (
+  blendMode: PdfrxViewerOptions['textHighlightBlendMode'],
+): GlobalCompositeOperation => (blendMode === 'normal' ? 'source-over' : 'multiply');
+
 /** Construction options for {@link PdfrxViewer}. */
 export interface PdfrxViewerOptions {
   /** Fine-grained editing policy. All capabilities default to enabled. */
@@ -147,6 +152,14 @@ export interface PdfrxViewerOptions {
   backgroundColor?: string;
   /** Selection highlight fill style. Default: 'rgba(33, 150, 243, 0.35)'. */
   selectionColor?: string;
+  /**
+   * Compositing mode used for text selection, search matches, highlight
+   * annotations, and hovered links. Defaults to `'multiply'`, which tints light
+   * page backgrounds while keeping dark text dark. Use `'normal'` to restore
+   * conventional alpha overlay painting, for example on predominantly dark
+   * pages.
+   */
+  textHighlightBlendMode?: 'multiply' | 'normal';
   /** Selection handle color (touch). Default: '#2196f3'. */
   handleColor?: string;
   /** Fill style for search-match highlights. Default: 'rgba(255, 235, 59, 0.5)'. */
@@ -1664,10 +1677,21 @@ export class PdfrxViewer {
     this.formOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2;';
     container.appendChild(this.formOverlayRoot);
 
-    // Annotation overlay layer: per-page SVG that paints the document's
-    // annotations (ink, shapes, markup, notes) and hosts interactive editing.
-    // Click-through unless a drawing tool is active or a shape opts in, so
-    // viewer gestures still reach the canvas.
+    // Highlight annotations need their own stacking context directly above the
+    // canvas. Keeping this root separate lets `mix-blend-mode:multiply` blend
+    // against the rendered PDF instead of an otherwise transparent annotation
+    // stacking context. It is visual-only; hit targets remain in the regular
+    // annotation root.
+    this.annotationHighlightOverlayRoot = document.createElement('div');
+    this.annotationHighlightOverlayRoot.style.cssText =
+      `position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;` +
+      `mix-blend-mode:${options.textHighlightBlendMode ?? 'multiply'};`;
+    container.appendChild(this.annotationHighlightOverlayRoot);
+
+    // Regular annotation overlay layer: per-page SVG that paints non-highlight
+    // annotations and hosts all interactive editing, including transparent hit
+    // targets for highlights. Appended after the highlight root so editing UI,
+    // selection guides, and handles stay above every highlight.
     this.annotationOverlayRoot = document.createElement('div');
     this.annotationOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;';
     container.appendChild(this.annotationOverlayRoot);
@@ -1716,6 +1740,7 @@ export class PdfrxViewer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly overlayRoot: HTMLDivElement;
   private readonly formOverlayRoot: HTMLDivElement;
+  private readonly annotationHighlightOverlayRoot: HTMLDivElement;
   private readonly annotationOverlayRoot: HTMLDivElement;
   private readonly viewerOverlayRoot: HTMLDivElement;
   /** Per-page overlay containers, built lazily when a page first becomes visible. */
@@ -2910,6 +2935,7 @@ export class PdfrxViewer {
     if (this.ownsEngine) this.#engine.dispose();
     this.overlayRoot.remove();
     this.formOverlayRoot.remove();
+    this.annotationHighlightOverlayRoot.remove();
     this.annotationOverlayRoot.remove();
     this.viewerOverlayRoot.remove();
     this.canvas.remove();
@@ -4821,10 +4847,13 @@ export class PdfrxViewer {
 
     // Hovered link highlight
     if (this.hoveredLink) {
+      ctx.save();
+      ctx.globalCompositeOperation = canvasTextHighlightBlendMode(this.options.textHighlightBlendMode);
       ctx.fillStyle = 'rgba(0, 100, 255, 0.15)';
       for (const r of this.hoveredLink.rects) {
         ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
       }
+      ctx.restore();
     }
 
     // Selection handles (view-space, fixed pixel size)
@@ -5374,7 +5403,7 @@ export class PdfrxViewer {
         if (annotations) {
           overlay = this.buildAnnotationPageOverlay(pageNumber, annotations, this.pageGeoms[i]!, pageRect);
           this.annotationOverlays.set(pageNumber, overlay);
-          this.annotationOverlayRoot.appendChild(overlay.highlightContainer);
+          this.annotationHighlightOverlayRoot.appendChild(overlay.highlightContainer);
           this.annotationOverlayRoot.appendChild(overlay.container);
           this.dirtyAnnotationOverlayPages.delete(pageNumber);
         }
@@ -5452,7 +5481,7 @@ export class PdfrxViewer {
       `width:${pageSize.width}px;height:${pageSize.height}px;`;
     const highlightContainer = document.createElement('div');
     highlightContainer.className = 'pdfrx-annotation-highlight-page';
-    highlightContainer.style.cssText = container.style.cssText + 'mix-blend-mode:multiply;';
+    highlightContainer.style.cssText = container.style.cssText;
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('width', `${pageSize.width}`);
     svg.setAttribute('height', `${pageSize.height}`);
@@ -5902,6 +5931,7 @@ export class PdfrxViewer {
 
   /** Removes all annotation overlays. */
   private clearAnnotationOverlays(): void {
+    this.annotationHighlightOverlayRoot.replaceChildren();
     this.annotationOverlayRoot.replaceChildren();
     this.annotationOverlays.clear();
     this.dirtyAnnotationOverlayPages.clear();
@@ -8411,6 +8441,8 @@ export class PdfrxViewer {
 
     // Search match highlights (below the selection highlight)
     if (this.searcher?.hasMatches) {
+      ctx.save();
+      ctx.globalCompositeOperation = canvasTextHighlightBlendMode(this.options.textHighlightBlendMode);
       const currentMatch = this.searcher.currentMatch;
       for (let i = 0; i < this.layout.pageLayouts.length; i++) {
         const pageRect = this.layout.pageLayouts[i]!;
@@ -8428,9 +8460,12 @@ export class PdfrxViewer {
           ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
         }
       }
+      ctx.restore();
     }
 
     if (this.selA && this.selB) {
+      ctx.save();
+      ctx.globalCompositeOperation = canvasTextHighlightBlendMode(this.options.textHighlightBlendMode);
       ctx.fillStyle = this.options.selectionColor ?? 'rgba(33, 150, 243, 0.35)';
       const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
       for (const range of ranges) {
@@ -8446,6 +8481,7 @@ export class PdfrxViewer {
           ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
         }
       }
+      ctx.restore();
     }
   }
 
