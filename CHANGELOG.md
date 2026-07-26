@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-27
+
+### Changed
+
+- Clarified that `PdfPage.dest()` is the simplest way to construct
+  `PdfDest`, `PdfDestById`, and `PdfDestByPageNumber` values, including what
+  the opaque logical page ID represents.
+- Documented how reusing the same `PdfPage` in `setPage()` / `setPages()` makes
+  ID-based destinations ambiguous, and how the zero-copy
+  `PdfPage.duplicate()` API gives repeated placements distinct identities.
+
 ## [0.19.0] - 2026-07-27
 
 ### Added
@@ -581,7 +592,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.16.3...v0.17.0
