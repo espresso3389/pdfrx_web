@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-28
+
+### Changed
+
+- Changed mixed annotation selections to show the union of applicable property
+  controls. Each control derives its value from, and applies edits only to,
+  annotations that support that property.
+- Disabled browser printing on iOS/iPadOS, where WebKit can replace the
+  rasterized PDF preview with a snapshot of the complete viewer UI. The
+  standard React print button is omitted there, and `usePdfPrint()` now exposes
+  `isSupported`; saving/downloading the PDF remains available.
+
+### Fixed
+
+- Kept raster image annotations visible after a drag commits and the annotation
+  overlay reloads, while preserving their PDF appearance streams.
+- Fixed annotation-mode touch behavior so empty-space swipes pan the document,
+  touches starting on annotations move the object, and iOS pinch gestures do
+  not escape into browser page zoom.
+- Extended iOS page-zoom prevention to React toolbar popups rendered through
+  portals, link dialogs, sidebars, scrims, and context menus.
+- Kept transparent annotation guide borders synchronized with live drag
+  previews.
+- Kept the image-insertion button active until insertion completes, returned
+  link insertion to object-selection mode on completion, and cleared link mode
+  when insertion is cancelled.
+- Removed ineffective opacity controls from pen, line, and arrow selections.
+
 ## [0.22.0] - 2026-07-28
 
 ### Added
@@ -729,7 +757,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...v0.20.0
