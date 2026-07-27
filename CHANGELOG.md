@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-28
+
+### Added
+
+- Added `PdfDocument.prepareFreeTextAppearance()` and the standalone
+  `prepareFreeTextAppearance()` API for grapheme-aware FreeText preparation,
+  language-sensitive CJK font runs, text measurement and wrapping, and
+  rasterized emoji image runs.
+- Added replaceable text-measurement, font-resolution, emoji-rendering,
+  emoji-asset-source, and asset-cache services for browser, server, offline,
+  and application-specific integrations.
+- Added automatic browser-native emoji rendering with a lazily downloaded,
+  revision-pinned Noto Emoji PNG fallback. Noto assets are not bundled; browser
+  downloads use memory plus IndexedDB caching and server defaults use
+  process-local memory caching.
+- Added a text, language, and emoji appearance guide covering language
+  selection, Linux native-font setup, self-hosted assets, persistent caches,
+  custom renderers, and licensing considerations.
+
+### Changed
+
+- Moved the viewer's committed FreeText appearance preparation onto the shared
+  engine pipeline while retaining Canvas measurement and the existing
+  downloadable-font resolver in the browser integration.
+- Expanded `PdfAnnotationSpec` and FreeText appearance API references with
+  rationale, complete authoring examples, language-source guidance, runtime
+  behavior, and direct links to the detailed guide.
+- Documented logical page proxies, cheap page rearrangement, cross-document
+  page composition, and materialization as first-class architecture rather
+  than only worker-protocol details.
+- Documented partial React localization overrides and clarified how React
+  locale settings contribute to FreeText language selection.
+- Reorganized package documentation around concise READMEs, detailed topic
+  guides, and direct generated API-reference links.
+- Kept links from generated TypeDoc API pages to topic guides on GitHub's
+  rendered Markdown view instead of copying raw Markdown into the docs site.
+
 ## [0.21.0] - 2026-07-27
 
 ### Added
@@ -692,7 +729,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...v0.19.1
