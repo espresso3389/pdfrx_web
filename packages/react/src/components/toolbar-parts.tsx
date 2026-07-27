@@ -158,9 +158,10 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
 
 /** A print button that disables itself while pages are being rasterized. */
 export function PdfPrintButton({ className, style }: PdfControlProps): ReactNode {
-  const { print, isPrinting } = usePdfPrint();
+  const { print, isPrinting, isSupported } = usePdfPrint();
   const { pageCount } = usePdfDocument();
   const strings = usePdfrxStrings();
+  if (!isSupported) return null;
   return (
     <button
       className={joinClass('pdfrx-button', className)}

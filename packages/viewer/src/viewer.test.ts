@@ -10,6 +10,7 @@ import {
   forwardArmedEditorKeyToViewer,
   pointToSegmentDistance,
   preserveAnnotationSelectionOnEmptySpace,
+  isPdfPrintingSupported,
   resizeBoxByHandle,
   segmentIntersectsRect,
   translateSpec,
@@ -115,6 +116,26 @@ describe('annotationSupportsStyleProperty', () => {
     expect(annotationSupportsStyleProperty(line, 'opacity')).toBe(false);
     expect(annotationSupportsStyleProperty(ink, 'opacity')).toBe(false);
     expect(annotationSupportsStyleProperty(line, 'strokeWidth')).toBe(true);
+  });
+});
+
+describe('isPdfPrintingSupported', () => {
+  it('rejects iPhone/iPad and desktop-mode iPadOS without affecting desktop Safari', () => {
+    expect(isPdfPrintingSupported({
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+    })).toBe(false);
+    expect(isPdfPrintingSupported({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+    })).toBe(false);
+    expect(isPdfPrintingSupported({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+    })).toBe(true);
   });
 });
 

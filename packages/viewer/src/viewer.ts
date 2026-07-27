@@ -1726,6 +1726,18 @@ export function annotationSupportsStyleProperty(
   }
 }
 
+/** Whether browser printing is supported by pdfrx in this environment. */
+export function isPdfPrintingSupported(
+  environment: Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints'> | undefined =
+    typeof navigator === 'undefined' ? undefined : navigator,
+): boolean {
+  if (!environment) return true;
+  const ios =
+    /iPad|iPhone|iPod/.test(environment.userAgent) ||
+    (environment.platform === 'MacIntel' && environment.maxTouchPoints > 1);
+  return !ios;
+}
+
 /**
  * Canvas-based PDF viewer: renders pages to a `<canvas>` and drives panning,
  * zoom, text selection, links, search, and printing.
@@ -2900,9 +2912,15 @@ export class PdfrxViewer {
 
   /**
    * Render all pages at the given DPI and open the browser print dialog.
+   *
+   * @throws On iOS/iPadOS, where WebKit cannot reliably isolate the rendered
+   * PDF pages from the surrounding viewer UI in print preview.
    */
   async print(options: { dpi?: number } = {}): Promise<void> {
     if (!this.doc) return;
+    if (!isPdfPrintingSupported()) {
+      throw new Error('Printing is not supported on iOS or iPadOS');
+    }
     const dpi = options.dpi ?? 150;
     const sources: string[] = [];
     const work = document.createElement('canvas');

@@ -6,6 +6,8 @@ const state = vi.hoisted(() => ({
   currentPageNumber: 2 as number | null,
   pageCount: 8,
   goToPage: vi.fn(),
+  print: vi.fn(),
+  printSupported: true,
 }));
 
 vi.mock('./hooks/use-pdf-navigation.js', () => ({
@@ -15,15 +17,22 @@ vi.mock('./hooks/use-pdf-navigation.js', () => ({
     goToPage: state.goToPage,
   }),
 }));
-vi.mock('./hooks/use-pdf-document.js', () => ({ usePdfDocument: vi.fn() }));
-vi.mock('./hooks/use-pdf-print.js', () => ({ usePdfPrint: vi.fn() }));
+vi.mock('./hooks/use-pdf-document.js', () => ({ usePdfDocument: () => ({ pageCount: state.pageCount }) }));
+vi.mock('./hooks/use-pdf-print.js', () => ({
+  usePdfPrint: () => ({
+    print: state.print,
+    isPrinting: false,
+    isSupported: state.printSupported,
+    error: null,
+  }),
+}));
 vi.mock('./hooks/use-pdf-zoom.js', () => ({ usePdfZoom: vi.fn() }));
 vi.mock('./strings.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./strings.js')>();
   return { ...original, usePdfrxStrings: () => original.defaultPdfrxStrings };
 });
 
-const { PdfPageIndicator } = await import('./components/toolbar-parts.js');
+const { PdfPageIndicator, PdfPrintButton } = await import('./components/toolbar-parts.js');
 
 afterEach(() => {
   cleanup();
@@ -31,6 +40,15 @@ afterEach(() => {
   state.goToPage.mockReset();
   state.currentPageNumber = 2;
   state.pageCount = 8;
+  state.printSupported = true;
+});
+
+describe('PdfPrintButton', () => {
+  it('is omitted when printing is unsupported by the platform', () => {
+    state.printSupported = false;
+    render(<PdfPrintButton />);
+    expect(screen.queryByRole('button', { name: defaultPdfrxStrings.print })).toBeNull();
+  });
 });
 
 describe('PdfPageIndicator', () => {

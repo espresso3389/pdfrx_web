@@ -51,6 +51,10 @@ Copy `pdfium_worker.js` and `pdfium.wasm` from
 `node_modules/@pdfrx/engine/assets/` into the public `/pdfium/` directory.
 Remote PDF URLs must allow browser CORS access.
 
+Browser printing is supported on desktop platforms. On iOS/iPadOS the standard
+print button is omitted because WebKit cannot reliably isolate PDF pages from
+the surrounding viewer UI; use the save/download action instead.
+
 ## Choose an integration level
 
 - [`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html):

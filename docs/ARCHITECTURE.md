@@ -238,7 +238,9 @@ shell adds:
 - a page bitmap cache with capped base renders plus high-zoom sharp patches
   rendered for the visible region;
 - edge auto-scroll during selection drags, fling inertia, links overlay, context
-  menu, keyboard navigation, text search, printing via a hidden iframe;
+  menu, keyboard navigation, text search, and desktop printing via a hidden
+  iframe. Printing is disabled on iOS/iPadOS because WebKit cannot reliably
+  keep the iframe pages as the native preview source;
 - missing-font fallback: `missingFonts` events resolve through the Google Fonts
   resolver, then the document is reopened with the view state preserved — the
   engine caches substituted fonts per document, so a mapper refresh alone is not

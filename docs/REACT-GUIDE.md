@@ -119,6 +119,14 @@ Individually available:
 and
 [`PdfSaveButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSaveButton.html).
 
+Printing is intentionally unavailable on iOS and iPadOS because WebKit can
+replace a correct PDF-page preview with a screenshot of the complete viewer UI.
+The standard [`PdfPrintButton`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfPrintButton.html)
+is therefore omitted on those platforms. Custom toolbars should check
+[`usePdfPrint().isSupported`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPrint.html#issupported)
+before exposing their print action. Saving or downloading the edited PDF
+remains supported and is the recommended iOS/iPadOS alternative.
+
 ### 3. Headless hooks
 
 No components beyond the surface, no stylesheet — the UI is entirely yours.
@@ -143,7 +151,7 @@ function Toolbar() {
 | [`usePdfSearch()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSearch.html) | Query, matches, current index, next/previous |
 | [`usePdfSelection()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSelection.html) | Selected range, resolved text and rects, copy |
 | [`usePdfPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfPageThumbnail.html) | One page rendered to a canvas, through a shared cache |
-| [`usePdfPrint()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfPrint.html) | [`print()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPrint.html#print) plus an `isPrinting` flag |
+| [`usePdfPrint()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfPrint.html) | [`print()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPrint.html#print), `isPrinting`, and [`isSupported`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfPrint.html#issupported); printing is unsupported on iOS/iPadOS |
 | [`useAnnotations()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useAnnotations.html) | Annotation data and direct add/update/remove operations |
 | [`useEditHistory()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useEditHistory.html) | Shared annotation/form/page-edit `undo`, `redo`, availability and `clearHistory` |
 

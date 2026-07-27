@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { usePdfrxStore } from '../context.js';
 
 /** Print state and action returned by {@link usePdfPrint}. */
@@ -7,8 +7,18 @@ export interface PdfPrint {
   print: (options?: { dpi?: number }) => Promise<void>;
   /** Whether pages are still being rendered for printing. */
   isPrinting: boolean;
+  /** False on iOS/iPadOS, where WebKit cannot reliably isolate PDF pages from viewer UI. */
+  isSupported: boolean;
   /** The error from the last print attempt, or `null`. */
   error: unknown;
+}
+
+function isPrintingSupported(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  const ios =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return !ios;
 }
 
 /**
@@ -16,6 +26,8 @@ export interface PdfPrint {
  *
  * Every page is rasterized before the dialog opens, so a long document takes a
  * noticeable moment; there is no progress reporting and no cancellation.
+ * Printing is disabled on iOS/iPadOS; inspect {@link PdfPrint.isSupported}
+ * before presenting a custom print control.
  *
  * @example
  * ```tsx
@@ -26,7 +38,9 @@ export interface PdfPrint {
 export function usePdfPrint(): PdfPrint {
   const store = usePdfrxStore();
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isSupported, setIsSupported] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  useEffect(() => setIsSupported(isPrintingSupported()), []);
 
   const print = useCallback(
     async (options?: { dpi?: number }) => {
@@ -46,5 +60,5 @@ export function usePdfPrint(): PdfPrint {
     [store],
   );
 
-  return { print, isPrinting, error };
+  return { print, isPrinting, isSupported, error };
 }
