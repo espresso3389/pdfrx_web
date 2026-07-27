@@ -535,6 +535,49 @@ test('a selected fill-only rectangle shows a dashed bounding box', async ({ page
   await expect(guide).toHaveAttribute('stroke-dasharray', /\d/);
 });
 
+test('selection client bounds follow the selected annotation region', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 176, bottom: 80 },
+    color: rgba(30, 136, 229),
+    borderWidth: 4,
+  };
+  await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    await api.setupDuplicateGesture(annotation);
+  }, spec);
+  const read = () =>
+    page.evaluate(() => {
+      const api = (
+        window as unknown as {
+          annotationVisualTest: {
+            readSelectionClientRect(): {
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+            } | null;
+          };
+        }
+      ).annotationVisualTest;
+      return api.readSelectionClientRect();
+    });
+
+  const anchorBounds = await page.locator('.pdfrx-anchors').boundingBox();
+  const selectedRect = await read();
+  expect(selectedRect).not.toBeNull();
+  expect(Math.abs(selectedRect!.left - anchorBounds!.x)).toBeLessThan(1.1);
+  expect(Math.abs(selectedRect!.top - anchorBounds!.y)).toBeLessThan(1.1);
+  expect(Math.abs(selectedRect!.width - anchorBounds!.width)).toBeLessThan(2.1);
+  expect(Math.abs(selectedRect!.height - anchorBounds!.height)).toBeLessThan(2.1);
+});
+
 test('highlight uses a page-level Multiply layer that can blend with the PDF canvas', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
@@ -609,6 +652,39 @@ test('wheel scrolling and browser-safe zoom work while the annotation SVG captur
   await page.mouse.wheel(0, -80);
   await page.keyboard.up('Control');
   await expect.poll(async () => (await transform()).zoom).toBeGreaterThan(beforeZoom.zoom);
+});
+
+test('an empty-area touch long press opens the viewer context menu', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const canvas = page.locator('canvas');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  const point = { x: bounds!.x + 12, y: bounds!.y + 12 };
+
+  await canvas.dispatchEvent('pointerdown', {
+    bubbles: true,
+    button: 0,
+    buttons: 1,
+    clientX: point.x,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 71,
+    pointerType: 'touch',
+  });
+  await page.waitForTimeout(650);
+  await canvas.dispatchEvent('pointerup', {
+    bubbles: true,
+    button: 0,
+    buttons: 0,
+    clientX: point.x,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 71,
+    pointerType: 'touch',
+  });
+
+  await expect(page.getByRole('button', { name: 'Select All' })).toBeVisible();
 });
 
 test('the box tool switches automatically between rectangle and FreeText', async ({ page }) => {
@@ -779,7 +855,7 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
   expect(handleBox).not.toBeNull();
   await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 80, handleBox!.y + handleBox!.height / 2, {
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 160, handleBox!.y + handleBox!.height / 2, {
     steps: 4,
   });
   // Assert before pointerup: the live SVG preview must already use the wider box.

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a selection-following annotation property popup to the React toolbar
+  for one or multiple selected annotation regions.
+- Added `PdfrxViewer.getSelectedAnnotationClientRect()` for positioning
+  selection UI.
+
+### Changed
+
+- Moved annotation stroke, fill, opacity, thickness, and text-property controls
+  out of the main React annotation toolbar and into the floating selection
+  popup.
+- Fixed touch highlight palettes so Android Chrome keeps the palette open on
+  the first tap and applies the first tapped color before focus changes dismiss
+  it.
+- Made empty-area touch long presses open the viewer context menu directly and
+  disabled the native iOS canvas callout.
+
 ## [0.20.0] - 2026-07-27
 
 ### Added

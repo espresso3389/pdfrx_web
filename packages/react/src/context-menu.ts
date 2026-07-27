@@ -103,13 +103,27 @@ export function buildDefaultContextMenu(
           swatch.style.backgroundColor = color;
           swatch.title = color;
           swatch.setAttribute('aria-label', `${strings.highlight} ${color}`);
-          swatch.addEventListener('click', () => {
+          let handledByTouchPointer = false;
+          const applyHighlight = (): void => {
             // Capture and start processing the viewer selection before the
             // menu is removed. Removing the clicked submenu first can let the
             // browser's focus/default-action processing invalidate selection
             // state in real browsers even though a synthetic click still works.
             void viewer.highlightSelection(color, TEXT_HIGHLIGHT_OPACITY);
             context.close();
+          };
+          swatch.addEventListener('pointerdown', (event) => {
+            if (event.pointerType !== 'touch') return;
+            // Android Chrome may move focus away from the submenu and remove it
+            // before the synthesized click arrives. Apply while the original
+            // touch target and the viewer selection are still intact.
+            event.preventDefault();
+            handledByTouchPointer = true;
+            applyHighlight();
+          });
+          swatch.addEventListener('click', () => {
+            if (handledByTouchPointer) return;
+            applyHighlight();
           });
           palette.appendChild(swatch);
         }
@@ -157,10 +171,10 @@ export function buildDefaultContextMenu(
       });
       item.addEventListener('click', (event) => {
         event.stopPropagation();
-        // Touch has no hover, so tapping the item toggles the palette. Mouse and
-        // keyboard clicks keep the already-hovered/focused palette open.
-        if (context.pointerType === 'touch' && host.querySelector('.pdfrx-highlight-palette')) closePalette();
-        else openPalette();
+        // Touch has no hover. Android Chrome sends focusin before click for a
+        // tap, so focusin may already have opened the palette by this point.
+        // Keeping openPalette() idempotent avoids immediately closing it again.
+        openPalette();
       });
     }
     menu.appendChild(host);

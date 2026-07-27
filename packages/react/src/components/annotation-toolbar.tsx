@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { addCenteredImageAnnotation } from '../annotation-image.js';
 import { usePdfrxViewer } from '../hooks/use-pdfrx-viewer.js';
 import { usePdfrxStore } from '../context.js';
@@ -338,6 +339,12 @@ export function PdfAnnotationToolbar({
   const [opacity, setOpacity] = useState(initialDefaults.opacity);
   const [width, setWidth] = useState(initialDefaults.width);
   const [hasSelection, setHasSelection] = useState(false);
+  const [selectionPopupPosition, setSelectionPopupPosition] = useState<{
+    left: number;
+    top: number;
+    above: boolean;
+  } | null>(null);
+  const [selectionPopupTheme, setSelectionPopupTheme] = useState<CSSProperties>({});
   const [mixed, setMixed] = useState<Readonly<Record<MixedAttribute, boolean>>>(NO_MIXED_ATTRIBUTES);
   const [customColors, setCustomColors] = useState<string[]>(initialPreferences.customColors);
   const [preferencesRevision, setPreferencesRevision] = useState(0);
@@ -346,6 +353,7 @@ export function PdfAnnotationToolbar({
   const defaultsRef = useRef<AnnotationToolbarDefaults>(initialDefaults);
   /** Which attribute popup is open, if any. */
   const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'textAlign' | 'opacity' | 'width' | null>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteHostRef = useRef<HTMLSpanElement>(null);
   const sliderGestureRef = useRef<{ key: string; sequence: number } | null>(null);
   const sliderSequenceRef = useRef(0);
@@ -357,6 +365,47 @@ export function PdfAnnotationToolbar({
   const normalizedCustomColor = normalizeHexColor(customColorInput);
   const markPreferencesChanged = (): void => {
     setPreferencesRevision((revision) => revision + 1);
+  };
+  const updateSelectionPopupPosition = (): void => {
+    const rect = viewer?.getSelectedAnnotationClientRect();
+    if (!rect) {
+      setSelectionPopupPosition(null);
+      return;
+    }
+    const gap = 10;
+    const popupWidth = Math.min(
+      paletteHostRef.current?.getBoundingClientRect().width ?? 300,
+      window.innerWidth - 16,
+    );
+    const popupHeight = paletteHostRef.current?.getBoundingClientRect().height ?? 38;
+    const halfWidth = popupWidth / 2;
+    const above =
+      rect.bottom + popupHeight + gap > window.innerHeight
+      && rect.top > popupHeight + gap;
+    setSelectionPopupPosition({
+      left: Math.max(halfWidth + 8, Math.min(window.innerWidth - halfWidth - 8, rect.left + rect.width / 2)),
+      top: above ? rect.top - gap : rect.bottom + gap,
+      above,
+    });
+    if (toolbarRef.current) {
+      const computed = getComputedStyle(toolbarRef.current);
+      const theme = Object.fromEntries(
+        [
+          '--pdfrx-accent',
+          '--pdfrx-accent-contrast',
+          '--pdfrx-fg',
+          '--pdfrx-fg-muted',
+          '--pdfrx-bg',
+          '--pdfrx-bg-subtle',
+          '--pdfrx-border',
+          '--pdfrx-hover',
+          '--pdfrx-danger',
+          '--pdfrx-radius',
+          '--pdfrx-font',
+        ].map((name) => [name, computed.getPropertyValue(name)]),
+      );
+      setSelectionPopupTheme(theme as CSSProperties);
+    }
   };
 
   const beginSliderGesture = (key: string): void => {
@@ -436,6 +485,7 @@ export function PdfAnnotationToolbar({
     const syncSelectionStyle = (): void => {
       const annotations = viewer.getSelectedAnnotations();
       setHasSelection(viewer.getSelectedAnnotationIds().length > 0);
+      requestAnimationFrame(updateSelectionPopupPosition);
       if (annotations.length === 0) {
         const defaults = defaultsRef.current;
         setColor(defaults.color);
@@ -485,7 +535,16 @@ export function PdfAnnotationToolbar({
       });
     };
     syncSelectionStyle();
-    return viewer.addAnnotationSelectionChangeListener(syncSelectionStyle);
+    const unsubscribeSelection = viewer.addAnnotationSelectionChangeListener(syncSelectionStyle);
+    const unsubscribeTransform = viewer.addTransformChangeListener(updateSelectionPopupPosition);
+    const unsubscribePreview = viewer.addAnnotationPreviewChangeListener(updateSelectionPopupPosition);
+    window.addEventListener('resize', updateSelectionPopupPosition);
+    return () => {
+      unsubscribeSelection();
+      unsubscribeTransform();
+      unsubscribePreview();
+      window.removeEventListener('resize', updateSelectionPopupPosition);
+    };
   }, [viewer]);
 
   // Dismiss an open palette on outside pointerdown or Escape.
@@ -650,9 +709,8 @@ export function PdfAnnotationToolbar({
     else if (customPicker === 'fill') viewer?.previewStyleToSelection({ fillColor: normalized });
     else viewer?.previewStyleToSelection({ textColor: normalized });
   };
-
   return (
-    <div className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
+    <div ref={toolbarRef} className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
       <InteractionModeButton
         active={effectiveObjectSelectionMode}
         onClick={() => applyInteractionMode(true)}
@@ -703,8 +761,20 @@ export function PdfAnnotationToolbar({
           }
         }}
       />
-      <span className="pdfrx-toolbar-separator" aria-hidden />
-      <span className="pdfrx-annot-colors" ref={paletteHostRef}>
+      {hasSelection && selectionPopupPosition && createPortal(
+        <div
+          className={[
+            'pdfrx-toolbar',
+            'pdfrx-annot-selection-popup',
+            selectionPopupPosition.above ? 'pdfrx-annot-selection-popup-above' : '',
+          ].filter(Boolean).join(' ')}
+          style={{
+            ...selectionPopupTheme,
+            left: selectionPopupPosition.left,
+            top: selectionPopupPosition.top,
+          }}
+        >
+          <span className="pdfrx-annot-colors" ref={paletteHostRef}>
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -1056,7 +1126,10 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
-      </span>
+          </span>
+        </div>,
+        document.body,
+      )}
       <span className="pdfrx-toolbar-separator" aria-hidden />
       <button
         type="button"

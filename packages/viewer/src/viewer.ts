@@ -1730,7 +1730,8 @@ export class PdfrxViewer {
       container.style.position = 'relative';
     }
     this.canvas = document.createElement('canvas');
-    this.canvas.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;outline:none;';
+    this.canvas.style.cssText =
+      'display:block;width:100%;height:100%;touch-action:none;outline:none;-webkit-touch-callout:none;';
     this.canvas.tabIndex = 0;
     container.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
@@ -3940,12 +3941,12 @@ export class PdfrxViewer {
       if (this.mode.kind === 'pan' && !this.mode.moved) {
         this.emitTap('longPress', documentToView(this.transform, docPoint));
         const word = selectWordAt(docPoint, this.selectablePages());
+        this.mode = { kind: 'none' };
+        this.pendingMenuOnUp = true;
         if (word) {
           this.selA = word.selA;
           this.selB = word.selB;
           this.showHandles = true;
-          this.mode = { kind: 'none' };
-          this.pendingMenuOnUp = true;
           this.updateAnchors();
         }
       }
@@ -4107,6 +4108,7 @@ export class PdfrxViewer {
     if (this.pendingMenuOnUp && e.pointerType === 'touch') {
       this.pendingMenuOnUp = false;
       if (this.selA && this.selB) this.showContextMenuNearSelection();
+      else this.showContextMenu(this.localPoint(e));
     }
     this.reconcileInteraction();
   };
@@ -6346,6 +6348,30 @@ export class PdfrxViewer {
     return [...this.selectedAnnotationIds]
       .map((id) => this.annotationSnapshots.get(id)?.annotation ?? this.locateAnnotation(id)?.annotation)
       .filter((annotation): annotation is PdfAnnotationObject => annotation !== undefined);
+  }
+
+  /**
+   * Client-viewport bounds of the current annotation-object selection,
+   * including its visible anchor handles.
+   */
+  getSelectedAnnotationClientRect(): DOMRectReadOnly | null {
+    if (this.selectedAnnotationIds.size === 0) return null;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const overlay of this.annotationOverlays.values()) {
+      if (!this.selectedAnnotationsOn(overlay).length) continue;
+      const rect = overlay.anchorLayer.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      left = Math.min(left, rect.left);
+      top = Math.min(top, rect.top);
+      right = Math.max(right, rect.right);
+      bottom = Math.max(bottom, rect.bottom);
+    }
+    return Number.isFinite(left)
+      ? new DOMRectReadOnly(left, top, right - left, bottom - top)
+      : null;
   }
 
   /** Subscribes to annotation-object selection changes. */

@@ -808,7 +808,24 @@
 .pdfrx-annot-colors {
   display: inline-flex;
   align-items: center;
+  gap: 2px;
   flex: 0 0 auto;
+}
+
+.pdfrx-toolbar.pdfrx-annot-selection-popup {
+  position: fixed;
+  z-index: 2147483646;
+  min-height: 38px;
+  max-width: calc(100vw - 16px);
+  padding: 3px 5px;
+  transform: translateX(-50%);
+  border: 1px solid var(--pdfrx-border);
+  border-radius: calc(var(--pdfrx-radius) + 2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+.pdfrx-toolbar.pdfrx-annot-selection-popup-above {
+  transform: translate(-50%, -100%);
 }
 
 /* Anchors a color button and its popup palette. */
@@ -1159,7 +1176,8 @@
 /* Give annotation controls finger-sized targets without enlarging the desktop
    toolbar. The bar already wraps, so this remains usable on narrow screens. */
 @media (pointer: coarse) {
-  .pdfrx-annot-toolbar .pdfrx-button {
+  .pdfrx-annot-toolbar .pdfrx-button,
+  .pdfrx-annot-selection-popup > .pdfrx-annot-colors > .pdfrx-annot-colorbtn > .pdfrx-button {
     width: 40px;
     height: 40px;
   }

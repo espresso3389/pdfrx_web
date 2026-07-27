@@ -234,6 +234,11 @@ annotation on the current page.
 screen pixel, or ten screen pixels while Shift is held, with page bounds and
 page rotation respected.
 
+When one or more annotation objects are selected, their stroke, fill, opacity,
+thickness, and text controls appear in a floating property toolbar below the
+selection, or above it when the lower side has insufficient room. The toolbar
+follows movement, resize, zoom, and scrolling.
+
 ## Editing history and document mutations
 
 The built-in annotation editor, form controls, and the page controls enabled by

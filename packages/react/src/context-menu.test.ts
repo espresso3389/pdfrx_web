@@ -56,6 +56,58 @@ describe('buildDefaultContextMenu', () => {
     expect(calls).toEqual(['highlight', 'close']);
   });
 
+  it('keeps the palette open when an Android-style touch tap focuses before clicking', () => {
+    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
+    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
+      viewPoint: { x: 0, y: 0 },
+      hasSelection: true,
+      isCopyAllowed: true,
+      pointerType: 'touch',
+      close: vi.fn(),
+    });
+    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
+    const trigger = host.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
+
+    trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(host.querySelector('.pdfrx-highlight-palette')).not.toBeNull();
+    trigger.click();
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelectorAll('.pdfrx-highlight-swatch')).toHaveLength(TEXT_HIGHLIGHT_COLORS.length);
+  });
+
+  it('applies a touch-selected color before Android removes the focused palette', () => {
+    const highlightSelection = vi.fn(() => Promise.resolve());
+    const viewer = {
+      canHighlightSelection: () => true,
+      highlightSelection,
+    } as unknown as PdfrxViewer;
+    const close = vi.fn();
+    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
+      viewPoint: { x: 0, y: 0 },
+      hasSelection: true,
+      isCopyAllowed: true,
+      pointerType: 'touch',
+      close,
+    });
+    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
+    const trigger = host.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
+    trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    const swatch = host.querySelector<HTMLButtonElement>('.pdfrx-highlight-swatch')!;
+
+    swatch.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      pointerType: 'touch',
+    }));
+    trigger.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    swatch.click();
+
+    expect(highlightSelection).toHaveBeenCalledOnce();
+    expect(highlightSelection).toHaveBeenCalledWith(TEXT_HIGHLIGHT_COLORS[0], TEXT_HIGHLIGHT_OPACITY);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('disables the palette when text cannot be highlighted', () => {
     const viewer = { canHighlightSelection: () => false } as unknown as PdfrxViewer;
     const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {

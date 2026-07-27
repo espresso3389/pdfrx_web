@@ -292,6 +292,12 @@ Edits write back
 through the engine and the `annotationsChanged` event rebuilds the affected
 page's SVG.
 
+The React annotation toolbar keeps creation tools in the fixed application
+toolbar and portals selected-object properties into a floating toolbar anchored
+to `getSelectedAnnotationClientRect()`. It follows selection previews and view
+transforms, chooses the space below or above the union bounds, and keeps nested
+property panels above the viewer.
+
 **Text highlight** is not a drawing tool — it is proper text markup. The user
 selects text and picks *Highlight* from the right-click context
 menu; `PdfrxViewer.highlightSelection(color?)` turns the selection into per-line

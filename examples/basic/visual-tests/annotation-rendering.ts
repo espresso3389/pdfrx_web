@@ -478,6 +478,13 @@ async function inspectCurrentFreeTextRoundTrip(): Promise<{
   }
 }
 
+function readSelectionClientRect(): { left: number; top: number; width: number; height: number } | null {
+  const rect = viewer.getSelectedAnnotationClientRect();
+  return rect
+    ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    : null;
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -500,6 +507,7 @@ declare global {
       flushAnnotationTextEdit: typeof flushAnnotationTextEdit;
       runFreeTextRoundTrip: typeof runFreeTextRoundTrip;
       inspectCurrentFreeTextRoundTrip: typeof inspectCurrentFreeTextRoundTrip;
+      readSelectionClientRect: typeof readSelectionClientRect;
     };
   }
 }
@@ -524,4 +532,5 @@ window.annotationVisualTest = {
   flushAnnotationTextEdit,
   runFreeTextRoundTrip,
   inspectCurrentFreeTextRoundTrip,
+  readSelectionClientRect,
 };
