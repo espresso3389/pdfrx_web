@@ -263,6 +263,7 @@ async function setupDuplicateGesture(spec: PdfAnnotationSpec): Promise<string> {
   const id = await doc.pages[0]!.addAnnotation(spec);
   await waitForShape(id);
   viewer.setAnnotationTool(null);
+  viewer.setAnnotationMode(true);
   viewer.setSelectedAnnotation(id);
   return id;
 }
@@ -286,6 +287,7 @@ async function setupSelectAllTest(specs: PdfAnnotationSpec[]): Promise<void> {
   await clearAnnotations();
   for (const spec of specs) await doc.pages[0]!.addAnnotation(spec);
   viewer.setAnnotationTool(null);
+  viewer.setAnnotationMode(true);
   viewer.setSelectedAnnotations([]);
 }
 
@@ -297,6 +299,7 @@ async function setupSnapGesture(specs: PdfAnnotationSpec[]): Promise<string[]> {
   for (const spec of specs) ids.push(await doc.pages[0]!.addAnnotation(spec));
   for (const id of ids) await waitForShape(id);
   viewer.setAnnotationTool(null);
+  viewer.setAnnotationMode(true);
   viewer.setSelectedAnnotation(ids[0] ?? null);
   return ids;
 }
@@ -321,6 +324,7 @@ function setTextStyle(textColor: string, fontSize: number): void {
 
 function setObjectSelectMode(): void {
   viewer.setAnnotationTool(null);
+  viewer.setAnnotationMode(true);
 }
 
 async function readTextStyleRoundTrip(): Promise<{ textColor: unknown; fontSize: number | null } | null> {

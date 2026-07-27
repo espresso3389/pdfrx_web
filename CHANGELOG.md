@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-27
+
+### Added
+
+- Added CJK-aware fallback-family classification that combines PDF charset,
+  pitch/family metadata, and requested family names, including public
+  `isRomanFamily` and `isScriptFamily` helpers.
+- Added editable PDF Link annotations to the ordinary annotation CRUD,
+  selection, movement, resize, synchronization, and export paths, including
+  `linkTarget` on annotation objects and specs.
+- Added `PdfrxViewerOptions.autoLinkDetection` and the corresponding React
+  option so transient URL detection can be disabled independently of
+  persisted Link annotations.
+- Added explicit object-selection and text-selection controls to the React
+  annotation toolbar, with `Alt`/`Option` temporarily inverting the effective
+  mode and the displayed toggle.
+
+### Changed
+
+- Merged adjacent text-selection rectangles by visual line and rendered
+  selection highlights with Multiply blending, reducing seams and preserving
+  legibility over page content.
+- Split normal viewing/text selection from annotation-object interaction.
+  Opening the React annotation toolbar now enters object mode, closing it
+  returns to text-selection mode, and object mode uses primary-button drags
+  for movement, anchors, and marquee selection.
+- Made persisted Link annotations ordinary editable annotation objects while
+  keeping auto-detected URLs transient and active only in viewing mode.
+- Changed empty-space clicks to clear both text and object selections, except
+  that `Ctrl`/`Cmd` preserves object selection in object mode.
+- Portaled the text-selection context menu to the document foreground so page
+  and annotation layers cannot clip or cover it.
+- Changed rectangle text editing so typing or IME composition on a single
+  selected rectangle starts inline editing, double-click works across a
+  selected rectangle's bounds, and committing re-arms first-character input.
+- Removed the native textarea resize grip from annotation text editing.
+
+### Removed
+
+- Removed the selected-rectangle **Add text** banner and its localization/API
+  surface.
+
+### Fixed
+
+- Fixed text-selection popup actions in annotation-object mode.
+- Fixed outside-click text commits when the textarea has scrollbars and
+  prevented the commit click from also replacing the current selection.
+- Fixed first-character IME composition, repeated keyboard editing after a
+  commit, rectangle double-click editing, and rectangle anchor resizing while
+  the hidden IME-ready editor is armed.
+
 ## [0.19.1] - 2026-07-27
 
 ### Changed
@@ -592,7 +643,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.17.0...v0.18.0

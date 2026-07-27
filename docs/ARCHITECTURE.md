@@ -286,7 +286,9 @@ dashed bounding rectangle to show that box (a rectangle already is its box).
 Straight lines and arrows (authored as 2-point / multi-stroke ink, distinguished
 by `inkStrokeKind`) and polygons keep per-endpoint/per-vertex handles (`annotationAnchors` — each anchor's `reshape`
 returns the full edited spec). Dragging the body moves the whole annotation and
-Delete removes it; empty areas fall through to the canvas for pan/text-select. Edits write back
+Delete removes it. Object mode uses primary-button empty-space drags for
+marquee selection; text-selection mode lets the same input reach page text.
+Edits write back
 through the engine and the `annotationsChanged` event rebuilds the affected
 page's SVG.
 
@@ -307,9 +309,10 @@ Holding Ctrl/Cmd preserves the pre-drag selection and adds intersections, and
 modifier-click toggles one object. Pen strokes, lines, and arrows bypass
 bounding-box hits: selection uses the closest finite stroke segment within 6
 screen pixels for mouse/pen or 10 pixels for touch, plus half the stroke width.
-Unfilled rectangles and ellipses are likewise selectable only on or near their
-outlines; their hollow interiors remain available for text selection. Marquee
-selection applies the same shape-aware rules. The selection is a `Set<id>`. A
+Unfilled rectangles and ellipses are initially selectable only on or near
+their outlines; after selection their complete bounds accept move,
+double-click, and other object interaction. Marquee selection applies the same
+shape-aware rules. The selection is a `Set<id>`. A
 single selection shows the
 annotation's own handles; a multi-selection shows one group bounding box whose
 eight handles scale every member together (`scaleAnnotationSpec` maps each
@@ -333,11 +336,14 @@ annotation mode temporarily exposes text selection and link activation.
 **Rectangle text editing.** Square and FreeText remain distinct PDF annotation
 subtypes but are one GUI object. Double-clicking either opens the same inline
 editor; non-blank content writes a FreeText spec and clearing it writes a square
-spec. Selecting an empty square also places a localized, clickable *Add text*
-banner at its center. Rectangle placement itself only creates and selects an
-empty square. For a FreeText object, the text area and its background accept the
-editing double-click. Filled rectangles retain full-interior hit testing;
-unfilled empty rectangles require their outline or the banner. Both forms
+spec. Rectangle placement itself only creates and selects an empty square. A
+single selected rectangle or FreeText object pre-focuses an invisible native
+textarea; direct keyboard or IME composition input reveals the editor without
+losing the first composition character. After an outside click commits the
+text, the invisible editor is armed again while the object remains selected.
+For a FreeText object, the text area and its background accept the editing
+double-click. A selected rectangle accepts double-click across its complete
+bounds. Both forms
 preserve stroke/fill/opacity/thickness plus independent text color, font size,
 and horizontal/vertical placement. `textAlign` stores left/center/right;
 `textVerticalAlign` stores top/middle/bottom. The viewer uses the same
@@ -345,9 +351,9 @@ line-height, descent allowance, padding, and clipping model for its SVG overlay
 and the PDF appearance stream so middle/bottom alignment remains visually
 consistent. The input border follows the annotation stroke unless that stroke
 is disabled; its foreground and background follow the annotation text and
-interior colors. The textarea is focused synchronously within the activating
-pointer or click handler because iOS only opens its software keyboard while
-that user activation is still live.
+interior colors. The textarea has no browser resize grip. It is focused
+synchronously within the activating pointer or click handler because iOS only
+opens its software keyboard while that user activation is still live.
 
 **Toolbar style state and color preview.** The React toolbar derives common
 values from the current selection and marks differing multi-selection values as

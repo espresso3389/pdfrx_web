@@ -199,12 +199,15 @@ automatically start typing, while
 double-clicking either a rectangle or FreeText annotation opens localized inline
 editing. Adding non-blank text
 converts the rectangle to FreeText; clearing all text converts it back to a
-plain square. A selected empty rectangle shows a localized **Add text** banner;
-clicking it opens the editor. Text-bearing FreeText accepts a double-click
-across its text/background area. Filled rectangles retain full-interior hit
-testing, while unfilled rectangles otherwise use their outline. The inline
+plain square. A single selected rectangle also accepts direct keyboard or IME
+input; the native editor is armed before the first character, re-armed after an
+outside-click commit, and can also be opened by double-clicking the selected
+object. Text-bearing FreeText accepts a double-click across its text/background
+area. Unselected hollow rectangles use their outline for hit testing; once
+selected, their complete bounds accept object interaction. The inline
 editor follows the annotation stroke, text color, font size, horizontal and
 vertical alignment, wrapping, and clipping while it is resized.
+The browser textarea resize grip is disabled.
 Its text uses the annotation's current text color. The editing background uses
 the fill color at full opacity, or white when no fill is set.
 
@@ -220,7 +223,8 @@ Objects that leave the marquee are removed from the selection; holding
 The same modifier toggles objects on click. Pen strokes, straight lines, and
 arrows are clickable only near their actual segments (with a slightly wider
 touch target); unfilled rectangles and ellipses are clickable only on or near
-their outlines. A marquee uses the same shape-aware intersections rather than
+their outlines until selected, after which their complete bounds accept object
+interaction. A marquee uses the same shape-aware intersections rather than
 plain bounding rectangles. Annotation creation, body drags, and anchor drags
 snap to nearby coordinates on other annotations and display alignment guides
 (freehand ink creation remains unsnapped). `Ctrl`/`Cmd`+`A` selects all text
@@ -399,7 +403,7 @@ and then leave older Undo/Redo entries available.
    `node_modules/@pdfrx/engine/assets/`, or use the CDN:
 
    ```tsx
-   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.19.1/assets/" />
+   <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.20.0/assets/" />
    ```
 
 2. **CORS for remote PDFs**, since the document is fetched like any other

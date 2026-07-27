@@ -430,7 +430,7 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   await expect(shape).toHaveCount(1);
   const box = await shape.boundingBox();
   if (!box) throw new Error('Source annotation is not visible');
-  // The centred Add text banner owns the middle of a selected empty rectangle.
+  // Stay clear of resize anchors while starting the duplicate drag.
   const start = { x: box.x + box.width / 4, y: box.y + 5 };
   await page.keyboard.down('Shift');
   await page.keyboard.down('Control');
@@ -565,7 +565,7 @@ test('highlight uses a page-level Multiply layer that can blend with the PDF can
   }, spec);
   const blendLayer = page.locator('.pdfrx-annotation-highlight-page');
   await expect(blendLayer).toHaveCount(1);
-  await expect(blendLayer).toHaveCSS('mix-blend-mode', 'multiply');
+  await expect(blendLayer.locator('..')).toHaveCSS('mix-blend-mode', 'multiply');
   const visual = page.locator(`g[data-annot-visual-id="${id}"]`);
   await expect(visual).toHaveCount(1);
   await expect(visual.locator('polygon')).not.toHaveAttribute('fill-opacity');
@@ -639,13 +639,13 @@ test('the box tool switches automatically between rectangle and FreeText', async
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
-  await expect(editor).toHaveCount(0);
   await expect.poll(async () => (await read())[0]?.subtype).toBe('square');
   expect(await read()).toEqual([{ subtype: 'square', contents: null, borderWidth: 5 }]);
 
-  const box = page.locator('g[data-annot-id]');
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
+  await expect(editor).toHaveCSS('opacity', '0');
+  await page.keyboard.press('T');
+  await expect(editor).toHaveCSS('opacity', '1');
   await expect(editor).toHaveAttribute('placeholder', 'Localized text');
   expect(
     await editor.evaluate((element) => {
@@ -680,9 +680,10 @@ test('the box tool switches automatically between rectangle and FreeText', async
   await page.mouse.down();
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
-  await expect(editor).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
+  await expect(editor).toHaveCSS('opacity', '0');
+  await page.keyboard.press('T');
+  await expect(editor).toHaveCSS('opacity', '1');
   expect(
     await editor.evaluate((element) => {
       const style = getComputedStyle(element);
@@ -711,9 +712,10 @@ test('box text color and size are rendered and survive PDF round-trip', async ({
   await page.mouse.move(240, 230, { steps: 3 });
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
-  await expect(editor).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   await expect(editor).toHaveCount(1);
+  await expect(editor).toHaveCSS('opacity', '0');
+  await page.keyboard.press('S');
+  await expect(editor).toHaveCSS('opacity', '1');
   await expect(editor).toHaveCSS('color', 'rgb(67, 160, 71)');
   await expect(editor).toHaveCSS('font-size', '24px');
   await editor.fill('Styled text');
@@ -749,8 +751,9 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
   await page.mouse.move(150, 220, { steps: 3 });
   await page.mouse.up();
   const editor = page.locator('.pdfrx-annotation-text-editor textarea');
-  await expect(editor).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
+  await expect(editor).toHaveCount(1);
+  await page.keyboard.press('T');
+  await expect(editor).toHaveCSS('opacity', '1');
   await editor.fill('Text that wraps across several lines while the box changes width');
   await editor.press('Control+Enter');
   const lines = page.locator('g[data-annot-id] text tspan');
@@ -766,16 +769,17 @@ test('box text reflows while its resize handle is being dragged', async ({ page 
   const boxBounds = await box.boundingBox();
   if (!boxBounds) throw new Error('FreeText box is not visible');
   await page.mouse.click(boxBounds.x + boxBounds.width / 4, boxBounds.y + 2);
+  await expect(editor).toHaveCSS('opacity', '0');
   const handles = page.locator('.pdfrx-anchors circle');
   await expect(handles).toHaveCount(8);
   const initialLineCount = await lines.count();
   expect(initialLineCount).toBeGreaterThan(1);
-  const rightHandle = handles.nth(3);
+  const rightHandle = handles.nth(4);
   const handleBox = await rightHandle.boundingBox();
   expect(handleBox).not.toBeNull();
   await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 220, handleBox!.y + handleBox!.height / 2, {
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 80, handleBox!.y + handleBox!.height / 2, {
     steps: 4,
   });
   // Assert before pointerup: the live SVG preview must already use the wider box.
@@ -877,9 +881,10 @@ test('note and box text use inline editors instead of browser prompts', async ({
   await page.mouse.down();
   await page.mouse.move(200, 230, { steps: 3 });
   await page.mouse.up();
-  await page.getByRole('button', { name: 'Add text', exact: true }).click();
   const freeTextEditor = page.locator('.pdfrx-annotation-text-editor textarea');
   await expect(freeTextEditor).toHaveCount(1);
+  await page.keyboard.press('T');
+  await expect(freeTextEditor).toHaveCSS('opacity', '1');
   await expect(freeTextEditor).toBeFocused();
   const multilineText =
     'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji.';

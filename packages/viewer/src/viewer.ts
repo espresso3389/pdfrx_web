@@ -7565,10 +7565,11 @@ export class PdfrxViewer {
         }
         resizeObserver.disconnect();
         foreign.remove();
-        // An annotation update received while this editor was open may have
-        // left the page overlay dirty. Let the next paint replace it now that
-        // doing so cannot interrupt text entry.
-        this.invalidate();
+        // A visible editor may have deferred presentation work while it was
+        // open. An untouched armed editor must not schedule a paint here:
+        // pointerdown may already be dragging one of the current SVG anchors,
+        // and rebuilding that layer would detach the live drag target.
+        if (activated) this.invalidate();
         resolve(value);
       };
       this.annotationTextEditorFinish = finish;
