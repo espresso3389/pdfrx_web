@@ -5,122 +5,58 @@
 [![API docs](https://img.shields.io/badge/API-docs-blue)](https://espresso3389.github.io/pdfrx_web/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A canvas-based PDF viewer component for the browser, written in TypeScript.
-It renders pages, text selection, links, and search highlights onto a single
-`<canvas>`, and ships as a framework-agnostic custom element or a plain class.
+A TypeScript PDF toolkit for the browser: a PDFium/WASM engine, a
+framework-agnostic canvas viewer, ready-made React UI, and collaborative
+editing support.
 
-<sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
+**[React demo](https://espresso3389.github.io/pdfrx_web/demo-react/)** ·
+**[Vanilla demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
+**[API reference](https://espresso3389.github.io/pdfrx_web/)** ·
+**[Documentation](https://github.com/espresso3389/pdfrx_web/blob/master/docs/README.md)**
 
-**Features**
+## Choose a package
 
-- Sharp, high-quality rendering with re-rendering on zoom
-- Pan by primary-button background or touch drag, wheel / pinch zoom with
-  inertia; primary-button object/anchor drags edit annotations and
-  secondary-button drag marquee-selects them
-- Canvas-painted text selection: mouse drag, double-click word selection,
-  touch long-press with draggable handles and a magnifier lens
-- Text search with highlights, outline (bookmarks), page thumbnails
-- Links (external URLs and internal destinations), including Link annotations
-  created directly from selected text; context menu and clipboard
-- Printing
-- Automatic missing-font fallback via Google Fonts (Arimo/Tinos/Cousine for
-  standard fonts, Noto families for CJK and other scripts) — see
-  [docs/FONT-FALLBACK.md](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
-- Password-protected documents
-- Interactive AcroForm filling with JS-free standard calculations
-- SVG annotation editing: ink, shapes, markup, notes/free text, centered image
-  insertion, live move/resize, snapping guides, multi-selection, and undo/redo;
-  effectively invisible objects receive editing-only guide borders
-- Non-destructive page reorder, rotate, remove, and cross-document insertion
-- Non-destructive PDF download through a temporary encoded copy
+| Package | Use it for |
+|---|---|
+| [`@pdfrx/react`](packages/react) | A ready-made React viewer, composable UI, or headless hooks. |
+| [`@pdfrx/viewer`](packages/viewer) | A framework-agnostic canvas viewer or custom element. |
+| [`@pdfrx/engine`](packages/engine) | Rendering, extraction, editing, and encoding without viewer UI. |
+| [`@pdfrx/colab`](packages/colab) | Multi-user page, annotation, and form synchronization. |
+| [`@pdfrx/viewer-core`](packages/viewer-core) | DOM-free geometry, layout, text, and selection logic. |
 
-## Try the demo
+Higher-level packages install their lower-level dependencies automatically.
+Most React applications should start with `@pdfrx/react`.
 
-**[Live demo →](https://espresso3389.github.io/pdfrx_web/demo-react/)** — the
-React viewer, runs entirely in your browser.
-
-It has a search bar, thumbnails/outline sidebar, print/download buttons, form
-filling, annotation tools, page editing, and opening local files (button or drag
-& drop) — and switches between the three
-layers `@pdfrx/react` offers (all-in-one component, composed parts, headless
-hooks). To run it locally:
+## React quick start
 
 ```sh
-git clone https://github.com/espresso3389/pdfrx_web.git
-cd pdfrx_web
-npm install
-npm run build
-npm run dev:react   # open http://localhost:5173
+npm install @pdfrx/react react react-dom
 ```
-
-There is also a **[framework-agnostic demo →](https://espresso3389.github.io/pdfrx_web/demo/)**
-built on `@pdfrx/viewer` alone (plain TypeScript, no React); run it with
-`npm run dev`.
-
-## Which package?
-
-- **React app?** Use **[`@pdfrx/react`](packages/react)** — a ready-made viewer
-  component plus the thumbnails, outline and search UI as components and hooks.
-  It is built on `@pdfrx/viewer`, so you get everything below without wiring it
-  up yourself.
-- **Anything else** (vanilla JS, Vue, Svelte, Angular, a custom element) — use
-  **[`@pdfrx/viewer`](packages/viewer)** directly. It renders the PDF onto a
-  `<canvas>` and exposes the primitives
-  ([`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) /
-  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setoutline),
-  [`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
-  [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher)),
-  but the surrounding UI —
-  the thumbnail strip, the outline tree, the search box — is yours to build.
-  That extra UI is exactly what `@pdfrx/react` packages up for React.
-- **PDF engine without a viewer UI?** Use
-  **[`@pdfrx/engine`](packages/engine)** directly. It wraps PDFium/WASM behind a
-  typed, asynchronous, worker-backed API for page rendering, text and link
-  extraction, outlines, forms, annotations, page assembly, and PDF encoding.
-  PDF processing stays off the calling thread, making the package useful as a
-  standalone PDF engine rather than only as an implementation detail of the
-  viewer packages.
-
-## Installation
-
-```sh
-npm install @pdfrx/react     # React apps
-npm install @pdfrx/viewer    # framework-agnostic viewer UI
-npm install @pdfrx/engine    # asynchronous PDF engine, no viewer UI
-```
-
-The higher-level packages pull in their lower-level dependencies automatically;
-`@pdfrx/engine` includes the WASM engine assets.
-
-## Usage
-
-### React
-
-The whole viewer — toolbar, thumbnails/outline sidebar, search, print — in one
-component:
 
 ```tsx
 import { PdfrxViewerApp } from '@pdfrx/react';
 import '@pdfrx/react/styles.css';
 
-<PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} />;
+export function App() {
+  return (
+    <PdfrxViewerApp
+      src="/manual.pdf"
+      wasmModulesUrl="/pdfium/"
+      style={{ height: '100dvh' }}
+    />
+  );
+}
 ```
 
-Or compose the parts yourself
-([`PdfrxProvider`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxProvider.html) +
-[`PdfToolbar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfToolbar.html) +
-[`PdfSidebar`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfSidebar.html) +
-[`PdfViewerSurface`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerSurface.html)),
-or go headless with hooks like
-[`usePdfSearch()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfSearch.html)
-and
-[`usePdfOutline()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfOutline.html)
-and write every pixel of the UI. See the
-[`@pdfrx/react` README](packages/react) for all three layers.
+Copy `pdfium_worker.js` and `pdfium.wasm` from
+`node_modules/@pdfrx/engine/assets/` into your public `/pdfium/` directory.
+See the [`@pdfrx/react` README](packages/react) for composition and API links.
 
-### Framework-agnostic
+## Framework-agnostic quick start
 
-Without React, the easiest way is the `<pdfrx-viewer>` custom element:
+```sh
+npm install @pdfrx/viewer
+```
 
 ```html
 <script type="module">
@@ -128,96 +64,52 @@ Without React, the easiest way is the `<pdfrx-viewer>` custom element:
   definePdfrxViewerElement();
 </script>
 
-<!-- size it with CSS; wasm-modules-url points at the engine's WASM assets -->
 <pdfrx-viewer
-  src="/documents/manual.pdf"
+  src="/manual.pdf"
   wasm-modules-url="/pdfium/"
-  style="width: 100%; height: 100vh"
+  style="width: 100%; height: 100dvh"
 ></pdfrx-viewer>
 ```
 
-Or drive the viewer programmatically:
+See the [`@pdfrx/viewer` README](packages/viewer) for the class-based API.
+Remote PDF URLs must allow browser CORS access.
 
-```ts
-import { PdfrxViewer } from '@pdfrx/viewer';
+## Features
 
-const viewer = new PdfrxViewer(document.getElementById('container')!, {
-  engineOptions: { wasmModulesUrl: '/pdfium/' },
-});
-await viewer.openUrl('/documents/manual.pdf');
+- Sharp single-canvas rendering that re-renders at the active zoom, backed by a
+  PDFium WASM worker with cancellable and partial-region rendering
+- Desktop- and touch-friendly text selection, search, links, outline,
+  thumbnails, animated navigation, and custom page layouts
+- Interactive AcroForms plus annotation editing for ink, shapes, markup,
+  notes, FreeText, images, snapping, and multi-selection
+- One Undo/Redo history across annotations, forms, page insertion, deletion,
+  reorder, duplication, and rotation
+- Non-destructive PDF export that can preserve the live document and its edit
+  history while encoding a temporary copy
+- Ready-made responsive React UI, composable components, headless hooks,
+  localization, theming, and framework-agnostic APIs
+- Optional revision-checked collaboration with transient previews,
+  authoritative late-join snapshots, and mixed-source PDF composition
+- Browser, Node.js, Bun, and Deno support at the engine layer
 
-viewer.goToPage(3);
-const searcher = viewer.createTextSearcher();
-searcher.startTextSearch('keyword');
-console.log(viewer.selectedText);
-await viewer.print();
-```
-
-Remember that the thumbnail strip, outline tree and search box are yours to
-build here (this is what `@pdfrx/react` packages up for React) — the viewer
-gives you the primitives:
-[`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) /
-[`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setoutline),
-[`renderPageThumbnail()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail),
-[`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher).
-
-### What your app must provide
-
-Both entry points need two things:
-
-1. **The engine's WASM assets.** Point [`wasmModulesUrl`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxEngineOptions.html#wasmmodulesurl) at a directory
-   containing `pdfium_worker.js` and `pdfium.wasm`. Either copy them from
-   `node_modules/@pdfrx/engine/assets/` to a static path on your server, or
-   simply use the jsDelivr CDN (any origin works):
-
-   ```ts
-   engineOptions: { wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.21.0/assets/' }
-   ```
-
-2. **CORS for remote PDFs.** [`openUrl`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) fetches the document, so PDFs on
-   other origins need CORS headers (same as any `fetch`).
-
-Documents opened from a `File`/`ArrayBuffer` use [`viewer.openData(data)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata).
-Password-protected files are supported by passing a
-[`passwordProvider`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenUrlOptions.html#passwordprovider):
-[`openUrl(url, { passwordProvider: () => prompt('Password?') })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl).
-
-## Packages
-
-| Package | npm | Description |
-|---|---|---|
-| [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks: [`<PdfrxViewerApp>`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html), composable parts, and headless hooks. |
-| [`@pdfrx/colab`](packages/colab) | [npm](https://www.npmjs.com/package/@pdfrx/colab) | Collaborative React viewer, browser relay client, session protocols, virtual-page adapter, and mixed-source export composition. |
-| [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | The viewer component ([`<pdfrx-viewer>`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewerElement.html) / [`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)). |
-| [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | Platform-independent core logic: geometry, layout, viewport math, text flow analysis, selection. No DOM. |
-| [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Typed WASM-worker client: rendering, text/links/outline, forms, annotations, fonts, page arrangement, and encoding. |
-
-Full **[API reference](https://espresso3389.github.io/pdfrx_web/)** is
-generated with TypeDoc and published to GitHub Pages.
-
-See [docs/ARCHITECTURE.md](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
-for the package layering, the
-worker protocol contract, and coordinate conventions.
+Detailed behavior belongs in the
+[topic guides](https://github.com/espresso3389/pdfrx_web/blob/master/docs/README.md)
+and
+[API reference](https://espresso3389.github.io/pdfrx_web/).
 
 ## Development
 
 ```sh
 npm install
-npm run build     # tsc for all packages and the collaboration app
-npm test          # viewer-core + react + colab + relay tests (vitest)
-npm run dev       # vanilla example app (Vite)
-npm run dev:react # React example app (Vite)
-npm run dev:colab # collaboration app + Node.js relay
+npm run build
+npm test
+npm run dev:react
 ```
 
-The WASM engine assets (`packages/engine/assets/pdfium_worker.js`,
-`pdfium.wasm`) and the Google Fonts weight tables
-(`packages/viewer/src/font-tables.ts`) are vendored, so a plain clone builds and
-runs standalone — no submodule, no postinstall.
+Other examples use `npm run dev` and `npm run dev:colab`. See
+[AGENTS.md](https://github.com/espresso3389/pdfrx_web/blob/master/AGENTS.md) for
+repository workflows and release requirements.
 
 ## License
 
-MIT — see [LICENSE](https://github.com/espresso3389/pdfrx_web/blob/master/LICENSE).
-The Google Fonts files downloaded by the font
-fallback are licensed under the SIL OFL 1.1 / Apache 2.0 by their respective
-owners.
+MIT — see [LICENSE](LICENSE).

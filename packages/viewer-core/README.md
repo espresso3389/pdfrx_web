@@ -26,6 +26,10 @@ npm install @pdfrx/viewer-core
 | `text` / `text-formatter` | Structured page text: reading-order analysis, line splitting, word/space/newline fragments, text direction (LTR/RTL/vertical), search |
 | `selection` | Nearest-character hit testing, A/B selection anchors (same-page and cross-page), word selection, per-page range expansion for highlighting |
 
+These primitives are DOM-free and JSON-serializable. They support vertical,
+horizontal, and custom viewer shells without coupling layout, coordinates, text
+analysis, or selection behavior to canvas rendering or a UI framework.
+
 ## Example
 
 ```ts
@@ -54,19 +58,13 @@ bottom-left, y-up; document space is y-down. See the
 [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
 for details.
 
-## The pdfrx_web family
+## Next steps
 
-| Package | Role |
-|---|---|
-| [`@pdfrx/colab`](https://www.npmjs.com/package/@pdfrx/colab) | Collaborative React viewer, protocols, client, source adapter, and export composition. |
-| [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks over `@pdfrx/viewer`. |
-| [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
-| **`@pdfrx/viewer-core`** (this package) | DOM-free geometry / layout / selection logic. |
-| [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker. |
-
-Full [API reference](https://espresso3389.github.io/pdfrx_web/) ·
-[repository](https://github.com/espresso3389/pdfrx_web) ·
+See the complete
+[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer-core.html)
+for exported geometry, layout, text, and selection symbols. The
 [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
+define coordinate conventions and package boundaries.
 
 ## License
 

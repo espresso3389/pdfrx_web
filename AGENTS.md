@@ -86,6 +86,32 @@ use.
 
 ### README and API-reference links
 
+README files are entry points, not comprehensive manuals. A reader should be
+able to identify the package, choose it, install it, and complete a minimal
+working setup without reading an architectural narrative first.
+
+- Keep the root README focused on repository/package selection and the shortest
+  useful React and framework-agnostic examples.
+- Keep a package README focused on purpose, a concise list of differentiating
+  capabilities, installation, one minimal example, essential runtime
+  prerequisites, and links to the package guide and API reference. The feature
+  list should give readers enough information to decide whether the package
+  fits their use case; do not reduce it to generic labels that apply to every
+  PDF viewer.
+- Move architecture, protocols, lifecycle details, exhaustive behavior,
+  advanced customization, operational guidance, and long API inventories to a
+  topic document under `docs/` or to TypeDoc. Link that material from a short
+  "Next steps" section instead of reproducing it in the README.
+- Prefer one authoritative explanation. When detail already exists in a guide,
+  protocol specification, architecture document, or API reference, summarize it
+  in at most a few sentences in the README and link to the source.
+- Describe features as scannable outcomes. Keep implementation mechanics,
+  exhaustive subtype lists, edge-case behavior, and option-by-option discussion
+  in the detailed guide or API reference.
+- Order README sections for first use: overview, install, minimal usage,
+  prerequisites, next steps. Do not place architecture or other background
+  reading before the first working example.
+
 Package READMEs should link public classes, interfaces, types, functions, and
 components to their specific TypeDoc pages wherever those APIs are introduced
 in prose or API tables. A module-level API-reference link is useful, but it is

@@ -1,130 +1,67 @@
 # @pdfrx/viewer
 
-A canvas-based PDF viewer component for the browser. It renders pages, text
-selection, links, and search highlights onto a single `<canvas>`, and ships as
-a framework-agnostic custom element or a plain class.
-
-<sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
+A framework-agnostic, canvas-based PDF viewer for the browser. It provides the
+[`PdfrxViewer`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html)
+class and the `<pdfrx-viewer>` custom element, with navigation, zoom, text
+selection, links, search, forms, annotations, and page editing.
 
 **[Live demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
-**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html)**
+**[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html)** ·
+**[Detailed guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/VIEWER-GUIDE.md)**
 
-- Sharp, high-quality rendering with re-rendering on zoom
-- Pan/select text by primary-button drag in normal mode; in annotation mode the
-  same button edits objects/anchors or marquee-selects empty space
-- Canvas-painted text selection: mouse drag, double-click word selection,
-  touch long-press with draggable handles and a magnifier lens
-- Text search with highlights, outline (bookmarks), page thumbnails
-- Links (external URLs and internal destinations), context menu, clipboard
-- Printing
-- Automatic missing-font fallback via Google Fonts
-- Password-protected documents
-- Interactive AcroForm filling through accessible native HTML controls
-- SVG annotation editing: ink, shapes, notes/free text, text markup,
-  live marquee multi-selection, duplication, snapping guides, and undo/redo
-- Built-in loading spinner/progress bar with observable loading state
+## Highlights
 
-## Installation
+- A single canvas renders sharp pages and re-renders them as zoom changes.
+- Mouse and touch text selection include word selection, long-press handles,
+  and a magnifier; search matches and PDF links are interactive.
+- Annotation editing supports ink, shapes, markup, notes, FreeText, image
+  stamps, snapping, multi-selection, and shared Undo/Redo.
+- Interactive AcroForm controls stay synchronized with the underlying PDF.
+- Page insertion, deletion, reordering, duplication, and rotation remain
+  history-aware and can be encoded back to PDF.
+- Vertical, horizontal, and custom page layouts share navigation, animated fit
+  modes, zoom, and coordinate conversion APIs.
+- Page-following and viewport-fixed DOM overlays support custom application UI
+  without replacing canvas rendering.
+
+## Install
 
 ```sh
 npm install @pdfrx/viewer
 ```
 
-## Usage
-
-As a custom element:
-
-```html
-<script type="module">
-  import { definePdfrxViewerElement } from '@pdfrx/viewer';
-  definePdfrxViewerElement();
-</script>
-
-<pdfrx-viewer
-  src="/documents/manual.pdf"
-wasm-modules-url="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.21.0/assets/"
-  style="width: 100%; height: 100vh"
-></pdfrx-viewer>
-```
-
-Or programmatically:
+## Minimal usage
 
 ```ts
 import { PdfrxViewer } from '@pdfrx/viewer';
 
-const viewer = new PdfrxViewer(document.getElementById('container')!, {
-  engineOptions: {
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.21.0/assets/',
-  },
+const viewer = new PdfrxViewer(document.querySelector('#viewer')!, {
+  engineOptions: { wasmModulesUrl: '/pdfium/' },
 });
-await viewer.openUrl('/documents/manual.pdf');
 
-viewer.goToPage(3);
-const searcher = viewer.createTextSearcher();
-searcher.startTextSearch('keyword');
-console.log(viewer.selectedText);
-await viewer.print();
+await viewer.openUrl('/manual.pdf');
 ```
 
-[`wasmModulesUrl`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxEngineOptions.html#wasmmodulesurl) must point at a directory containing `pdfium_worker.js` and
-`pdfium.wasm`. Use the jsDelivr URL above, or self-host by copying them from
-`node_modules/@pdfrx/engine/assets/`. Remote PDFs are fetched with `fetch`,
-so cross-origin documents need CORS headers.
+```css
+#viewer {
+  width: 100%;
+  height: 100vh;
+}
+```
 
-## API highlights
+Serve `pdfium_worker.js` and `pdfium.wasm` from
+`node_modules/@pdfrx/engine/assets/` at the configured `wasmModulesUrl`. Remote
+PDF URLs must allow browser CORS access.
 
-Each symbol links directly to its entry in the
-[API reference](https://espresso3389.github.io/pdfrx_web/).
+## Next steps
 
-- [`openUrl(url, options?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl) / [`openData(data, options?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata) — options include `passwordProvider` for protected documents
-- [`goToPage(n)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#gotopage) (current zoom mode is preserved) / [`goToDest(dest)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#gotodest) / [`currentPageNumber`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currentpagenumber)
-- [`setZoomMode(mode)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setzoommode-1) switches the persistent [`ZoomMode`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_viewer.ZoomMode.html) between an explicit factor, page fit, and width fit; read it through [`zoomMode`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoommodezoommode). [`fitToPage(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittopage) / [`fitToWidth(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittowidth) select responsive fit modes, while [`fitToHeight(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittoheight) and [`setZoom(z, viewCenter?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setzoom) select an explicit [`zoom`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoom).
-- [`options.layoutDirection`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#layoutdirection) (`'vertical'` / `'horizontal'`) with runtime [`setLayoutDirection(dir)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setlayoutdirection), or a fully custom [`options.layoutPages`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#layoutpages) hook for facing/grid arrangements (build on the exported [`layoutPagesVertical`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_viewer.layoutPagesVertical.html) / [`layoutPagesHorizontal`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_viewer.layoutPagesHorizontal.html))
-- Navigation and zoom animate: pass a `duration` (ms) to `goToPage` / `goToDest` / `fitTo*` / `setZoom`, or set a default with [`options.animationDuration`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#animationduration). [`zoomUp()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomup) / [`zoomDown()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomdown) snap to zoom stops, and [`zoomToggle(point?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomtoggle) — plus touch double-tap ([`doubleTapToZoom`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#doubletaptozoom)) — toggle between fit and a zoomed-in level
-- [`coverScale`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#coverscale) / [`fitPageScale(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fitpagescale) — the two fit scales; the minimum zoom is their smaller value (or set [`minZoom`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#minzoom)). See [`initialFit`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#initialfit) for the on-load fit mode
-- [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher) — progressive search with match highlighting; recolor the highlights with [`options.matchTextColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#matchtextcolor) / [`activeMatchTextColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#activematchtextcolor)
-- [`selectedText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectedtext) / [`selectAll()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectall) / [`copySelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#copyselection) / [`clearSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#clearselection) — get notified of selection changes with [`addSelectionChangeListener(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addselectionchangelistener) (or pull the current [`selection`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selection)). The change payload carries only the cheap selection **state** (endpoints via [`range`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#range)); resolve text and per-page rectangles on demand with [`getSelectedTextRanges()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#getselectedtextranges) / [`getSelectedText()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#getselectedtext). Set or restore a range programmatically with [`setTextSelection(range)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#settextselection) (round-trips the `range` above) and [`selectWordAtPoint(viewPoint)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectwordatpoint)
-- [`addLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addlinktoselection-1) asks the configured annotation-link handler for one target, then turns each selected visual text line into a Link annotation as one undo step. [`canAddLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#canaddlinktoselection-1) reports whether both a text selection and link-target UI are available
-- [`options.onLinkTap`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#onlinktap) — intercept link activation (replaces the built-in `window.open` / `goToDest`)
-- [`options.autoLinkDetection`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#autolinkdetection) — make URL-like page text clickable when it is not backed by a PDF Link annotation (on by default). Set it to `false` to expose only persisted links; changing it reloads link state without reopening the document
-- [`options.contextMenuBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#contextmenubuilder) — replace the built-in right-click / long-press menu (Copy / Highlight / Add link / Select All, in English). Return your own menu element (the viewer positions and dismisses it); this is the hook for localizing or customizing it. `@pdfrx/react` uses it to render a themed, localized menu
-- [`addPageChangeListener(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addpagechangelistener) — notified (deduplicated) when the current page changes; [`viewToDocumentPoint(p)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#viewtodocumentpoint) / [`documentToViewPoint(p)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#documenttoviewpoint) convert between view and document space, and [`getPageHitTestResult(viewPoint)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#getpagehittestresult) maps a screen point to a page and a [PDF-page point](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfPageHitTestResult.html)
-- [`setPages(pages)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpages) / [`setPage(pageNumber, page)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpage) — history-aware page insertion, deletion, reorder and rotation. Direct local [`PdfDocument.setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages) / [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage) calls and direct `PdfPage` annotation CRUD are also captured from engine mutation events by an attached viewer
-- [`options.interactiveForms`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveforms) — native HTML controls over AcroForm widgets (on by default), synchronized with the owning source document's [`setFormFieldValue()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalue). A single-source encode preserves the form; mixed-source catalog merging is an application export policy rather than a viewer operation
-- FreeText and form controls compose explicit text orientation with page rotation, allowing text to follow the page or remain upright without rewriting annotation coordinates
-- [`options.interactiveAnnotations`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#interactiveannotations) — SVG annotation display/editing (on by default). [`setAnnotationMode(true)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setannotationmode) switches from normal viewing/text selection to object interaction; `setAnnotationMode(false)` switches back. Holding `Alt`/`Option` temporarily swaps the effective mode. In annotation mode, primary-click selects an object, primary drag moves it, and primary drag from empty space marquee-selects. Drawing tools temporarily replace the empty-space gesture. Link annotations and other objects whose visible channels are all at or below 5% opacity receive a faint editing-only border so they remain discoverable; the guide is not part of the PDF appearance or export. Configure style with [`setAnnotationStyle()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setannotationstyle), and use [`undo()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#undo) / [`redo()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#redo) for shared edit history
-- [`getSelectedAnnotationClientRect()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#getselectedannotationclientrect) returns the viewport bounds of the selected objects and handles for floating UI
-- Rectangle and FreeText annotations are one editing concept in the GUI: double-click either to edit text, or type directly while a single object is selected. The viewer pre-focuses an invisible native editor so the first IME composition character is preserved, and re-arms it after an outside-click commit. Non-empty text stores the result as FreeText; clearing it stores a square. Unselected hollow rectangles use their outline for hit testing; selected rectangles accept interaction across their complete bounds. FreeText wrapping and clipping follow resize and movement previews in real time. The inline textarea has no browser resize grip, uses the annotation's current text and fill colors, renders its fill fully opaque (or white when no fill is set), and is focused synchronously so the software keyboard opens on iOS. While it is open, annotation overlay refreshes preserve the active editor and continue rendering updates to other annotations on the page. Customize editor placeholders through [`options.annotationEditorPlaceholders`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#annotationeditorplaceholders)
-- [`isLoading`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#isloading) / [`loadingProgress`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadingprogress) / [`addLoadingChangeListener(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addloadingchangelistener) — observe document opening; `options.loadingIndicator` controls the built-in spinner/progress bar
-- [`loadOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#loadoutline) /
-  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setoutline) /
-  [`renderPageThumbnail(n, width)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#renderpagethumbnail)
-- [`print({ dpi? })`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#print)
-- [`options.fontResolver`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#fontresolver) — missing-font fallback (defaults to Google Fonts; pass `null` to disable)
-- Page decoration: [`pageDropShadow`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagedropshadow) (soft shadow by default; `null` disables) and [`pageBorder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageborder) (off by default) draw a screen-space shadow/border around each page. For anything custom, [`pagePaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagepaintcallbacks) and [`pageBackgroundPaintCallbacks`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pagebackgroundpaintcallbacks) are `(ctx, pageRect, page)` painters that run in document coordinates on top of / behind each page
-- [`pageOverlaysBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#pageoverlaysbuilder) / [`setPageOverlaysBuilder(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setpageoverlaysbuilder) — place **DOM elements** over each page that pan and zoom with it. Position elements in page-point coordinates; the layer is click-through unless an element sets `pointerEvents: 'auto'`. Call [`refreshOverlays()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#refreshoverlays) to rebuild
-- [`viewerOverlayBuilder`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#vieweroverlaybuilder) / [`setViewerOverlayBuilder(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setvieweroverlaybuilder) — a **viewport-fixed** DOM layer (does not pan/zoom) for scroll thumbs, floating toolbars, etc.
-- Interaction config & callbacks: primary-button background drag pans/selects
-  text in normal mode and marquee-selects annotation objects in annotation mode;
-  two-finger midpoint movement pans while finger
-  separation controls zoom. [`panEnabled`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#panenabled) and [`zoomEnabled`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#zoomenabled) independently enable those two parts; [`scrollByMouseWheel`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#scrollbymousewheel) / [`scrollByArrowKey`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#scrollbyarrowkey) / [`boundaryMargin`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#boundarymargin) / [`panAxis`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#panaxis) (lock single- or two-finger drag-panning to an axis), plus [`onInteractionStart`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#oninteractionstart) / [`onInteractionEnd`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#oninteractionend), [`onViewerReady`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#onviewerready) / [`onViewSizeChanged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#onviewsizechanged), and [`onGeneralTap`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#ongeneraltap) (tap / double-tap / long-press / secondary-tap)
-
-See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
-app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).
-
-## The pdfrx_web family
-
-| Package | Role |
-|---|---|
-| [`@pdfrx/colab`](https://www.npmjs.com/package/@pdfrx/colab) | Collaborative React viewer, protocols, client, source adapter, and export composition. |
-| [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) | React components and hooks over `@pdfrx/viewer`. |
-| **`@pdfrx/viewer`** (this package) | Framework-agnostic `<canvas>` viewer + `<pdfrx-viewer>` element. |
-| [`@pdfrx/viewer-core`](https://www.npmjs.com/package/@pdfrx/viewer-core) | DOM-free geometry / layout / selection logic. |
-| [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) | Typed client for the WASM rendering worker. |
-
-Building a React app? [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
-wraps this package with a ready-made toolbar, thumbnails/outline sidebar and
-search UI.
+- The [viewer guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/VIEWER-GUIDE.md)
+  covers the custom element, layout, interaction, editing, overlays, events,
+  and other viewer options.
+- See [`PdfrxViewerOptions`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html)
+  and the complete [API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html).
+- Building React UI? Use
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react).
 
 ## License
 
