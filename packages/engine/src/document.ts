@@ -922,15 +922,63 @@ export class PdfDocument {
   }
 
   /**
-   * Prepares wrapped, mixed-script text and emoji image runs for a FreeText
-   * annotation. The supplied spec is updated in place and can then be passed to
-   * {@link PdfPage.addAnnotation} or {@link PdfPage.updateAnnotation}.
-   *
-   * The default services work in browsers and server runtimes: browser-native
-   * emoji is preferred, with a lazily downloaded, version-pinned Noto Emoji PNG
-   * fallback. Pass custom services for private assets, offline operation, or a
-   * different text/emoji renderer.
-   */
+     * Turns the Unicode `contents` of a FreeText spec into a stable PDF
+     * appearance. Call this after constructing the spec and before passing that
+     * same object to {@link PdfPage.addAnnotation} or
+     * {@link PdfPage.updateAnnotation}.
+     *
+     * This step is necessary because a PDF cannot simply inherit browser text
+     * rendering. Han characters can require different glyphs for Japanese,
+     * Simplified Chinese, Traditional Chinese, and Korean, while modern color
+     * emoji must be rasterized and embedded as image runs. The method also
+     * measures the resolved fonts and wraps the text to the annotation rectangle.
+     *
+     * The supplied spec is mutated in place: `fontFace`, `appearanceLines`, and
+     * `appearanceRuns` are replaced.
+     *
+     * `language` is optional. Kana and Hangul identify Japanese and Korean
+     * without a hint, and a browser automatically contributes
+     * `navigator.languages` / `navigator.language`. Pass an explicit BCP-47
+     * value when Han-only text is ambiguous, when the document language should
+     * override the browser locale, or when running on a server. Server
+     * integrations commonly use document metadata, the signed-in user's
+     * locale, or a parsed `Accept-Language` preference.
+     *
+     * @example
+     * ```ts
+     * const spec: PdfAnnotationSpec = {
+     *   subtype: 'freeText',
+     *   rect: { left: 40, bottom: 700, right: 260, top: 750 },
+     *   // Han-only text is ambiguous without a language or browser locale.
+     *   contents: '契約内容 😀',
+     *   fontSize: 14,
+     * };
+     *
+     * await document.prepareFreeTextAppearance(spec, { language: 'ja' });
+     * await document.pages[0]!.addAnnotation(spec);
+     * ```
+     *
+     * In a browser whose locale represents the intended reader, the explicit
+     * option can be omitted:
+     *
+     * @example Use the browser language automatically
+     * ```ts
+     * await document.prepareFreeTextAppearance(spec);
+     * ```
+     *
+     * The default services work in browsers and server runtimes: browser-native
+     * emoji is preferred, with a lazily downloaded, version-pinned Noto Emoji PNG
+     * fallback. `@pdfrx/viewer` also supplies its browser font resolver and exact
+     * Canvas measurement. Direct engine integrations can pass `services` for
+     * private or offline fonts/assets, persistent server caches, or a different
+     * text/emoji renderer.
+     *
+     * If `subtype` is not `freeText`, or `rect`/`contents` is absent, the method
+     * returns without changing the spec.
+     *
+     * For runtime behavior and complete customization examples, read the
+     * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
+     */
   async prepareFreeTextAppearance(
     spec: PdfAnnotationSpec,
     options: PdfFreeTextAppearanceOptions = {},

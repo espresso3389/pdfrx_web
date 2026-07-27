@@ -28,7 +28,7 @@ Finally, the available fonts and rendering facilities depend on the runtime:
 language-aware script selection, mixed-font runs, measurement, wrapping, and
 emoji image runs. In a normal viewer or React integration, pdfrx also connects
 browser measurement, downloadable font fallback, native emoji fonts, and a
-cached Noto Emoji fallback. Applications with different runtime constraints
+cached [Noto Color Emoji](https://fonts.google.com/noto/specimen/Noto+Color+Emoji) fallback. Applications with different runtime constraints
 can replace only the font, measurement, emoji, or cache providers.
 
 This guide describes newly authored FreeText appearances. Text already stored
@@ -74,6 +74,41 @@ The viewer calls this engine API for every FreeText edit. Its
 `freeTextLanguage` option supplies the language hint; React forwards `locale`
 when no more specific hint was configured.
 
+### Where the language hint comes from
+
+`language` is optional and does not require language detection for every
+string. pdfrx resolves CJK language in this order:
+
+1. Kana or Hangul in the text identifies Japanese or Korean and also influences
+   adjacent Han characters.
+2. An explicit `language` option is checked in order.
+3. In a browser, `navigator.languages` and then `navigator.language` are used
+   automatically.
+4. Ambiguous Han text with no applicable hint falls back to Simplified Chinese.
+
+Use an explicit value when the document language differs from the current
+browser, when a user selects an authoring language, or when processing on a
+server. Suitable server-side sources include PDF/application metadata, the
+authenticated user's locale, a job parameter, or a parsed HTTP
+`Accept-Language` preference. Do not infer the language from the server
+machine's OS locale: it usually describes the deployment, not the document
+author.
+
+```ts
+// Browser: navigator.languages is consulted automatically.
+await document.prepareFreeTextAppearance(browserSpec);
+
+// Server: pass the locale associated with the document or request.
+await document.prepareFreeTextAppearance(serverSpec, {
+  language: user.locale, // for example, 'ja-JP'
+});
+
+// A preference list is accepted when the application already has one.
+await document.prepareFreeTextAppearance(serverSpec, {
+  language: ['zh-Hant-TW', 'ja-JP', 'en'],
+});
+```
+
 ## Emoji fallback
 
 Emoji are rasterized into RGBA image runs rather than written as PDF font
@@ -84,7 +119,7 @@ The default renderer uses this order:
 
 1. In a browser, use an explicitly available `Segoe UI Emoji`,
    `Apple Color Emoji`, or `Noto Color Emoji` family.
-2. Otherwise, lazily download the matching 128-pixel Noto Emoji PNG.
+2. Otherwise, lazily download the matching 128-pixel Noto Color Emoji PNG.
 3. Decode the PNG in `@pdfrx/engine` and store the result in the annotation's
    normal appearance.
 
@@ -126,7 +161,7 @@ to use the downloadable PNG path.
 
 ## Hosting Noto assets yourself
 
-Download the `png/128` directory from the same Noto Emoji revision used by
+Download the `png/128` directory from the same Noto Color Emoji revision used by
 pdfrx, serve it from your application or private CDN, and create a source with
 that base URL:
 
@@ -225,7 +260,7 @@ remains text-only and the resulting glyph depends on PDFium's available font.
 
 ## Licensing and operational behavior
 
-Noto Emoji is licensed under the SIL Open Font License 1.1. pdfrx does not
+Noto Color Emoji is licensed under the [SIL Open Font License 1.1](https://openfontlicense.org/open-font-license-official-text/). pdfrx does not
 redistribute its font, PNG, or SVG files; the default source downloads selected
 files at runtime. Applications using the default or a mirror should include
 Noto's license notice as required by their distribution and deployment model.
@@ -233,4 +268,4 @@ Noto's license notice as required by their distribution and deployment model.
 Automatic network access is limited to preparing a FreeText annotation that
 actually contains an emoji and only when no supported native browser emoji
 family is available. Opening or rendering an existing PDF does not download
-Noto emoji assets through this mechanism.
+Noto Color Emoji assets through this mechanism.

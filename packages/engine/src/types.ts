@@ -776,14 +776,49 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  *
  * FreeText requires language-aware font selection, measurement and wrapping;
  * emoji are rendered as image runs because PDF text appearances cannot
- * reliably represent modern color emoji. Call
- * {@link PdfDocument.prepareFreeTextAppearance} before adding or updating
- * authored FreeText unless the appearance fields are supplied directly.
+ * reliably represent modern color emoji. The normal authored-FreeText flow is
+ * therefore:
+ *
+ * 1. Create a spec with `subtype`, `rect`, and `contents`.
+ * 2. Call {@link PdfDocument.prepareFreeTextAppearance}.
+ * 3. Pass that same spec to {@link PdfPage.addAnnotation} or
+ *    {@link PdfPage.updateAnnotation}.
+ *
+ * `prepareFreeTextAppearance()` mutates the spec by filling `fontFace`,
+ * `appearanceLines`, and `appearanceRuns`. It recognizes mixed scripts,
+ * chooses language-specific CJK fonts when a resolver is available, wraps
+ * using the selected fonts, and replaces supported emoji with embedded image
+ * runs. Kana and Hangul normally identify Japanese and Korean themselves. For
+ * ambiguous Han-only text, the engine uses an explicit BCP-47 hint such as
+ * `ja`, `zh-Hant`, or `ko`, followed by the browser's locale when available.
+ * Server integrations should obtain the hint from document metadata, the
+ * signed-in user's locale, or a parsed `Accept-Language` preference.
+ *
+ * @example Add Japanese and emoji FreeText
+ * ```ts
+ * const spec: PdfAnnotationSpec = {
+ *   subtype: 'freeText',
+ *   rect: { left: 40, bottom: 700, right: 260, top: 750 },
+ *   // Han-only text needs a language hint when no suitable browser locale exists.
+ *   contents: '契約内容 😀',
+ *   fontSize: 14,
+ * };
+ *
+ * await document.prepareFreeTextAppearance(spec, { language: 'ja' });
+ * const annotationId = await document.pages[0]!.addAnnotation(spec);
+ * ```
+ *
+ * Most applications should let the preparation method create the appearance
+ * fields. Set them directly only when an integration already performs its own
+ * font resolution, measurement, line breaking, and emoji rasterization.
+ *
+ * For the reason language affects glyph shapes, the automatic browser/server
+ * behavior, Linux font setup, offline assets, caches, and custom providers,
+ * read the
+ * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
  *
  * The corresponding PDF annotation dictionaries are defined by
  * ISO 32000-2:2020, 12.5.2 and the subtype-specific parts of 12.5.6.
- *
- * @see [Text, language, and emoji appearance](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md)
  */
 export interface PdfAnnotationSpec {
   /**

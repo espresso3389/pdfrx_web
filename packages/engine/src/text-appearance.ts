@@ -46,7 +46,16 @@ export interface PdfTextAppearanceServices {
 
 /** Options for {@link prepareFreeTextAppearance}. */
 export interface PdfFreeTextAppearanceOptions {
-  /** BCP-47 language hint(s), used to disambiguate Han-only text. */
+  /**
+   * BCP-47 language hint(s), used mainly to disambiguate Han-only text.
+   *
+   * Kana and Hangul already identify Japanese and Korean, so a hint is
+   * normally unnecessary for them. In a browser, `navigator.languages` and
+   * `navigator.language` are consulted automatically after explicit hints.
+   * Server integrations should pass the document language, the signed-in
+   * user's locale, or a parsed `Accept-Language` preference. The first
+   * applicable `ja`, `ko`, or `zh` hint wins.
+   */
   language?: string | readonly string[];
   services?: PdfTextAppearanceServices;
   signal?: AbortSignal;
@@ -411,9 +420,44 @@ function resolveCjkKinds(kinds: FreeTextRunKind[], languages: readonly string[])
 }
 
 /**
- * Builds wrapped, mixed-script FreeText appearance runs in every supported
- * runtime. The supplied spec is updated in place for direct use with
- * `PdfPage.addAnnotation()` / `updateAnnotation()`.
+ * Builds a language-aware, wrapped FreeText appearance without requiring a
+ * {@link PdfDocument} instance.
+ *
+ * Most callers that already have an open document should use
+ * {@link PdfDocument.prepareFreeTextAppearance}. This standalone form is useful
+ * for preparing specs in an adapter or service layer. It performs the same
+ * operation and mutates `spec.fontFace`, `spec.appearanceLines`, and
+ * `spec.appearanceRuns`.
+ *
+ * `options.language` is a hint, not a required field. Kana and Hangul identify
+ * Japanese and Korean directly; in browsers, `navigator.languages` and
+ * `navigator.language` are used automatically. Pass an explicit language for
+ * ambiguous Han-only content, to override the browser preference, or in a
+ * server runtime where no browser locale exists. A server commonly gets it
+ * from document metadata, the authenticated user's locale, or a parsed
+ * `Accept-Language` preference.
+ *
+ * @example
+ * ```ts
+ * const spec: PdfAnnotationSpec = {
+ *   subtype: 'freeText',
+ *   rect: { left: 40, bottom: 700, right: 260, top: 750 },
+ *   contents: '繁體中文 👋',
+ * };
+ *
+ * // Explicit because this Han-only text is prepared outside a browser.
+ * await prepareFreeTextAppearance(spec, { language: 'zh-Hant' });
+ * await page.addAnnotation(spec);
+ * ```
+ *
+ * The defaults use deterministic approximate text measurement outside the
+ * browser, PDFium's default font when no `resolveFont` service is supplied,
+ * and native-browser or downloadable Noto PNG emoji rendering. Pass
+ * `options.services` when the runtime requires exact measurement, registered
+ * script fonts, offline emoji assets, or a custom renderer.
+ *
+ * For provider and deployment examples, read the
+ * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
  */
 export async function prepareFreeTextAppearance(
   spec: PdfAnnotationSpec,
