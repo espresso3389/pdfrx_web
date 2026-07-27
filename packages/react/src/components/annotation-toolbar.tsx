@@ -1073,6 +1073,7 @@ export function PdfAnnotationToolbar({
       {hasSelection && selectionPopupPosition && createPortal(
         <div
           ref={selectionPopupRef}
+          data-pdfrx-page-zoom-guard=""
           className={[
             'pdfrx-toolbar',
             'pdfrx-annot-selection-popup',
@@ -1512,7 +1513,11 @@ export function PdfAnnotationToolbar({
         document.body,
       )}
       {linkEditor && createPortal(
-        <div className="pdfrx-annot-link-dismiss-layer" onMouseDown={() => closeLinkEditor(null)}>
+        <div
+          className="pdfrx-annot-link-dismiss-layer"
+          data-pdfrx-page-zoom-guard=""
+          onMouseDown={() => closeLinkEditor(null)}
+        >
           <form
             className={[
               'pdfrx-annot-link-popover',

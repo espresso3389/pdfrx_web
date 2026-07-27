@@ -1804,6 +1804,12 @@ export class PdfrxViewer {
     // positioned overlay or at the viewport edge. Cancelling native touchmove
     // at the shared host keeps pan and pinch inside the viewer.
     this.container.addEventListener('touchmove', this.onNativeTouchMove, { passive: false, capture: true });
+    // WebKit additionally emits proprietary gesture events for native page
+    // magnification. Prevent those at their start as well: touchmove may arrive
+    // too late after Safari has already transferred the pinch to the viewport.
+    this.container.addEventListener('gesturestart', this.onNativeGesture, { passive: false, capture: true });
+    this.container.addEventListener('gesturechange', this.onNativeGesture, { passive: false, capture: true });
+    this.container.addEventListener('gestureend', this.onNativeGesture, { passive: false, capture: true });
     this.container.addEventListener('pointerdown', this.onSelectGesturePointerDown, { capture: true });
     this.container.addEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.addEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
@@ -3013,6 +3019,9 @@ export class PdfrxViewer {
     this.clearAnnotationOverlays();
     this.container.removeEventListener('wheel', this.onWheel, { capture: true });
     this.container.removeEventListener('touchmove', this.onNativeTouchMove, { capture: true });
+    this.container.removeEventListener('gesturestart', this.onNativeGesture, { capture: true });
+    this.container.removeEventListener('gesturechange', this.onNativeGesture, { capture: true });
+    this.container.removeEventListener('gestureend', this.onNativeGesture, { capture: true });
     this.container.removeEventListener('pointerdown', this.onSelectGesturePointerDown, { capture: true });
     this.container.removeEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.removeEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
@@ -4229,6 +4238,10 @@ export class PdfrxViewer {
     if (event.cancelable) event.preventDefault();
   };
 
+  private readonly onNativeGesture = (event: Event): void => {
+    if (event.cancelable) event.preventDefault();
+  };
+
   private readonly selectTouchPoints = new Map<number, {
     point: Offset;
     target: EventTarget;
@@ -4602,6 +4615,12 @@ export class PdfrxViewer {
       return;
     }
 
+    // A finger swipe on empty page space is the primary way to navigate on a
+    // touch-only device. Let it reach the canvas pan state machine; object
+    // marquee selection remains a mouse/pen interaction, while a touch that
+    // starts on an annotation is handled above as an object move.
+    if (event.pointerType === 'touch') return;
+
     // Empty-space left drag rubber-band-selects annotation objects.
     // A genuinely empty point clears text selection as well. Cmd/Ctrl keeps
     // the current object selection additive, but does not preserve text.
@@ -4921,7 +4940,7 @@ export class PdfrxViewer {
       'z-index:10;background:#fff;color:#111;border:1px solid #ccc;border-radius:6px;' +
       'box-shadow:0 2px 10px rgba(0,0,0,0.25);padding:4px;' +
       `font:${touch ? 15 : 13}px system-ui,sans-serif;min-width:${touch ? 160 : 130}px;` +
-      'display:flex;flex-direction:column;user-select:none;touch-action:manipulation;';
+      'display:flex;flex-direction:column;user-select:none;touch-action:none;';
     const addItem = (label: string, enabled: boolean, action: () => void): void => {
       const item = document.createElement('button');
       item.textContent = label;

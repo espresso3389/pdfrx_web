@@ -785,6 +785,157 @@ test('an empty-area touch long press opens the viewer context menu', async ({ pa
   await expect(page.getByRole('button', { name: 'Select All' })).toBeVisible();
 });
 
+test('an empty-area touch swipe pans while annotation selection mode is active', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(async () => {
+    await (
+      window as unknown as {
+        annotationVisualTest: { setupSelectAllTest(s: unknown[]): Promise<void> };
+      }
+    ).annotationVisualTest.setupSelectAllTest([]);
+  });
+  const canvas = page.locator('canvas');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  const point = { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
+  const transform = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          annotationVisualTest: { readViewTransform(): { xZoomed: number; yZoomed: number; zoom: number } };
+        }
+      ).annotationVisualTest.readViewTransform(),
+    );
+  const before = await transform();
+
+  await canvas.dispatchEvent('pointerdown', {
+    bubbles: true,
+    button: 0,
+    buttons: 1,
+    clientX: point.x,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 72,
+    pointerType: 'touch',
+  });
+  await canvas.dispatchEvent('pointermove', {
+    bubbles: true,
+    button: 0,
+    buttons: 1,
+    clientX: point.x,
+    clientY: point.y - 80,
+    isPrimary: true,
+    pointerId: 72,
+    pointerType: 'touch',
+  });
+  await canvas.dispatchEvent('pointerup', {
+    bubbles: true,
+    button: 0,
+    buttons: 0,
+    clientX: point.x,
+    clientY: point.y - 80,
+    isPrimary: true,
+    pointerId: 72,
+    pointerType: 'touch',
+  });
+
+  await expect.poll(async () => (await transform()).yZoomed).toBeLessThan(before.yZoomed);
+  await expect(page.locator('.pdfrx-anchors > rect')).toHaveCount(0);
+});
+
+test('a touch drag that starts on an annotation moves the object instead of panning', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 112, bottom: 144 },
+    color: rgba(30, 136, 229),
+    interiorColor: rgba(67, 160, 71),
+    borderWidth: 4,
+  };
+  const id = await page.evaluate(async (annotation) => {
+    return (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest.setupDuplicateGesture(annotation);
+  }, spec);
+  const shape = page.locator(`g[data-annot-id="${id}"]`);
+  const bounds = await shape.boundingBox();
+  expect(bounds).not.toBeNull();
+  const point = { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
+
+  await shape.dispatchEvent('pointerdown', {
+    bubbles: true,
+    button: 0,
+    buttons: 1,
+    clientX: point.x,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 73,
+    pointerType: 'touch',
+  });
+  await shape.dispatchEvent('pointermove', {
+    bubbles: true,
+    button: 0,
+    buttons: 1,
+    clientX: point.x + 48,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 73,
+    pointerType: 'touch',
+  });
+  await shape.dispatchEvent('pointerup', {
+    bubbles: true,
+    button: 0,
+    buttons: 0,
+    clientX: point.x + 48,
+    clientY: point.y,
+    isPrimary: true,
+    pointerId: 73,
+    pointerType: 'touch',
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        return (
+          window as unknown as {
+            annotationVisualTest: {
+              readDuplicateState(): Promise<{
+                rects: { left: number; top: number; right: number; bottom: number }[];
+              }>;
+            };
+          }
+        ).annotationVisualTest.readDuplicateState();
+      }).then((state) => state.rects[0]?.left),
+    )
+    .toBeCloseTo(96, 5);
+});
+
+test('native WebKit pinch gestures cannot escape the viewer into page zoom', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const prevented = await page.evaluate(() => {
+    const viewer = document.querySelector('#viewer');
+    if (!viewer) throw new Error('Viewer host is missing');
+    return ['gesturestart', 'gesturechange', 'gestureend'].map((type) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      return {
+        type,
+        dispatchResult: viewer.dispatchEvent(event),
+        defaultPrevented: event.defaultPrevented,
+      };
+    });
+  });
+  expect(prevented).toEqual([
+    { type: 'gesturestart', dispatchResult: false, defaultPrevented: true },
+    { type: 'gesturechange', dispatchResult: false, defaultPrevented: true },
+    { type: 'gestureend', dispatchResult: false, defaultPrevented: true },
+  ]);
+});
+
 test('clicking an empty page area leaves the viewer focused for keyboard shortcuts', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);

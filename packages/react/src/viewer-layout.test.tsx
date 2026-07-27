@@ -38,4 +38,66 @@ describe('PdfViewerLayout', () => {
     expect(container.querySelector('.pdfrx-scrim')).toBeNull();
     expect(container.querySelector('.pdfrx-app')?.getAttribute('data-sidebar-open')).toBe('false');
   });
+
+  it('keeps WebKit pinch gestures on toolbar and popup chrome from zooming the page', () => {
+    const { container } = render(
+      <PdfViewerLayout
+        toolbar={() => (
+          <div className="pdfrx-toolbar">
+            <button>toolbar</button>
+            <div role="dialog">popup</div>
+          </div>
+        )}
+        sidebar={() => null}
+      >
+        <main>document</main>
+      </PdfViewerLayout>,
+    );
+    const toolbar = screen.getByRole('button', { name: 'toolbar' });
+    const popup = screen.getByRole('dialog');
+    for (const target of [toolbar, popup]) {
+      for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        expect(target.dispatchEvent(event)).toBe(false);
+        expect(event.defaultPrevented).toBe(true);
+      }
+    }
+
+    const app = container.querySelector('.pdfrx-app');
+    expect(app).not.toBeNull();
+    const twoFingerStart = new Event('touchstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(twoFingerStart, 'touches', { value: [{}, {}] });
+    expect(app!.dispatchEvent(twoFingerStart)).toBe(false);
+    expect(twoFingerStart.defaultPrevented).toBe(true);
+
+    const twoFingerMove = new Event('touchmove', { bubbles: true, cancelable: true });
+    Object.defineProperty(twoFingerMove, 'touches', { value: [{}, {}] });
+    expect(document.dispatchEvent(twoFingerMove)).toBe(false);
+    expect(twoFingerMove.defaultPrevented).toBe(true);
+
+    const oneFingerMove = new Event('touchmove', { bubbles: true, cancelable: true });
+    Object.defineProperty(oneFingerMove, 'touches', { value: [{}] });
+    expect(app!.dispatchEvent(oneFingerMove)).toBe(true);
+    expect(oneFingerMove.defaultPrevented).toBe(false);
+    const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+    Object.defineProperty(touchEnd, 'touches', { value: [] });
+    app!.dispatchEvent(touchEnd);
+
+    const portaledPopup = document.createElement('div');
+    portaledPopup.dataset.pdfrxPageZoomGuard = '';
+    document.body.appendChild(portaledPopup);
+    const portalGesture = new Event('gesturestart', { bubbles: true, cancelable: true });
+    expect(portaledPopup.dispatchEvent(portalGesture)).toBe(false);
+    expect(portalGesture.defaultPrevented).toBe(true);
+    const portalGestureEnd = new Event('gestureend', { bubbles: true, cancelable: true });
+    portaledPopup.dispatchEvent(portalGestureEnd);
+    portaledPopup.remove();
+
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+    const outsideGesture = new Event('gesturestart', { bubbles: true, cancelable: true });
+    expect(outside.dispatchEvent(outsideGesture)).toBe(true);
+    expect(outsideGesture.defaultPrevented).toBe(false);
+    outside.remove();
+  });
 });
