@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-27
+
 ### Added
 
 - Added a selection-following annotation property popup to the React toolbar
   for one or multiple selected annotation regions.
 - Added `PdfrxViewer.getSelectedAnnotationClientRect()` for positioning
   selection UI.
+- Added editable Link annotation creation and target editing, including
+  selection, movement, resize, synchronization, export, and automatic-link
+  detection controls.
+- Added `PdfrxViewer.addLinkToSelection()` and the localized **Add link**
+  text-selection context-menu action.
 
 ### Changed
 
@@ -35,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added live hover previews for stroke, fill, no-fill, text colors, and
   horizontal/vertical text placement in the floating annotation property popup
   without writing history until the user selects a value.
+- Added explicit object/text interaction toggles and kept object-mode
+  `Ctrl`/`Cmd`+`A` scoped to annotation selection.
+- Kept effectively invisible annotation objects discoverable with editing-only
+  guide borders, while excluding those guides from selection-popup positioning.
+- Positioned selection property popups and their nested panels away from the
+  selected object according to its viewport half, with viewport clamping when
+  neither side has enough room.
+- Matched fixed annotation-toolbar buttons to the main toolbar's 30px size on
+  touch devices, removed redundant separators and empty popup spacing, and
+  collapsed unsupported mixed selections to the delete action.
+
+### Fixed
+
+- Fixed FreeText fallback-font export and bounded document font-data retention
+  so repeated editing does not grow memory indefinitely.
 
 ## [0.20.0] - 2026-07-27
 
@@ -670,7 +692,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.18.0...v0.19.0
