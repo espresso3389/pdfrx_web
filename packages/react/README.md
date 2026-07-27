@@ -235,9 +235,14 @@ screen pixel, or ten screen pixels while Shift is held, with page bounds and
 page rotation respected.
 
 When one or more annotation objects are selected, their stroke, fill, opacity,
-thickness, and text controls appear in a floating property toolbar below the
-selection, or above it when the lower side has insufficient room. The toolbar
-follows movement, resize, zoom, and scrolling.
+thickness, and text controls appear in a floating property toolbar. The toolbar
+prefers the side away from the object: below for objects centered in the upper
+viewport half and above for objects centered in the lower half. Nested property
+panels continue in the same direction when space permits; unavoidable overflow
+is shifted back inside the viewport. The toolbar follows movement, resize,
+zoom, and scrolling. If a mixed selection has no
+shared property controls, the popup collapses to the delete button without
+reserving space for an empty control group.
 
 ## Editing history and document mutations
 
@@ -451,9 +456,14 @@ your own components the active strings so they translate alongside the rest.
 
 ## Context menu
 
-The right-click / long-press menu (Copy / Select All / Highlight) is themed and
-localized out of the box. Highlight opens a color palette when text can be
-converted to a markup annotation. Pass `contextMenuBuilder` to customize it — it receives the
+The right-click / long-press menu (Copy / Select All / Highlight / Add link) is
+themed and localized out of the box. Highlight opens a color palette when text
+can be converted to a markup annotation. Add link opens the standard link-target
+editor and converts each selected visual line into a Link annotation. It uses
+[`PdfrxViewer.addLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addlinktoselection-1),
+gated by
+[`canAddLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#canaddlinktoselection-1).
+Pass `contextMenuBuilder` to customize it — it receives the
 event context plus `{ viewer, strings }`, so you can reuse the built-in
 [`buildDefaultContextMenu`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.buildDefaultContextMenu.html)
 and append your own items:
@@ -464,7 +474,7 @@ import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
 <PdfrxViewerApp
   src="/manual.pdf"
   contextMenuBuilder={(context, { viewer, strings }) => {
-    // Start from the default localized Copy / Select All / Highlight menu…
+    // Start from the default localized Copy / Select All / Highlight / Add link menu…
     const menu = buildDefaultContextMenu(viewer, strings, context);
 
     // …then add your own item (reuse the built-in classes for the styling).

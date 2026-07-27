@@ -278,7 +278,12 @@ drags to create annotations; `setAnnotationMode` toggles object manipulation
 versus text selection and link activation. Holding
 Alt/Option temporarily inverts the effective mode. A selected annotation shows draggable
 **anchor handles** — the sole selection indicator — sized to a constant 8px
-on-screen regardless of zoom. Freehand pen, rectangle, ellipse and other
+on-screen regardless of zoom. While object interaction is active, Link
+annotations and annotations whose stroke, fill, text, image, and appearance
+channels are all effectively invisible (at or below 5% opacity) receive a
+constant-screen-width guide border in a dedicated editing SVG group, separate
+from the selected-object anchor layer used to position floating UI. The guide
+never enters the annotation appearance or encoded PDF. Freehand pen, rectangle, ellipse and other
 rect/markup shapes expose the eight bounding-box handles (corners + edge
 midpoints) and drag = uniform **scale** of the whole shape; a handle may cross
 the opposite edge freely (no ordering is preserved). Pen and ellipse also draw a
@@ -295,15 +300,22 @@ page's SVG.
 The React annotation toolbar keeps creation tools in the fixed application
 toolbar and portals selected-object properties into a floating toolbar anchored
 to `getSelectedAnnotationClientRect()`. It follows selection previews and view
-transforms, chooses the space below or above the union bounds, and keeps nested
-property panels above the viewer.
+transforms, prefers below the union bounds in the upper viewport half and above
+them in the lower half, and keeps nested property panels expanding in that same
+away-from-object direction where possible. Both levels are clamped back into
+the viewport when neither side can fit, and remain above the viewer.
 
-**Text highlight** is not a drawing tool — it is proper text markup. The user
-selects text and picks *Highlight* from the right-click context
-menu; `PdfrxViewer.highlightSelection(color?)` turns the selection into per-line
+**Text-selection annotations** are not drawing tools. The user selects text and
+picks *Highlight* or *Add link* from the right-click context menu.
+`PdfrxViewer.highlightSelection(color?)` turns the selection into per-line
 quadpoints (`getSelectedRanges` + `enumerateFragmentBoundingRects`, the same
 geometry that paints the selection) and adds one `Highlight` markup annotation
 per page as a single undo group. `canHighlightSelection()` gates the menu item.
+`addLinkToSelection()` resolves one target through the installed
+`AnnotationLinkRequestHandler`, creates one rectangular Link annotation per
+selected visual line as a single undo group, clears the text selection, and
+selects the new Link objects. `canAddLinkToSelection()` additionally requires
+that link-target handler.
 
 **Object selection & multi-selection.** Annotation mode (or Alt/Option while
 viewing) makes a primary click select one object, a primary drag on an

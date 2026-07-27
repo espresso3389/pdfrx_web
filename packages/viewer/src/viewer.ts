@@ -738,6 +738,8 @@ interface AnnotationPageOverlay {
   /** Sibling page layer whose whole transformed surface blends with the PDF canvas. */
   highlightContainer: HTMLDivElement;
   highlightSvg: SVGSVGElement;
+  /** Editing-only bounds for annotations whose PDF appearance is effectively invisible. */
+  invisibleGuideLayer: SVGGElement;
   /** A `<g>` above the shapes holding the selected annotation's drag anchors. */
   anchorLayer: SVGGElement;
   /** Annotations currently painted, keyed by id (for hit-testing / reconcile). */
@@ -5732,6 +5734,7 @@ export class PdfrxViewer {
           overlay.highlightSvg.replaceChildren(...replacement.highlightSvg.children);
           overlay.pageGeom = replacement.pageGeom;
           overlay.pageSize = replacement.pageSize;
+          overlay.invisibleGuideLayer = replacement.invisibleGuideLayer;
           overlay.anchorLayer = replacement.anchorLayer;
           overlay.annotations = replacement.annotations;
           this.refreshAnnotationSelection(overlay);
@@ -5809,6 +5812,9 @@ export class PdfrxViewer {
             }
           }
         }
+        for (const guide of overlay.invisibleGuideLayer.children) {
+          guide.setAttribute('stroke-width', `${1 / t.zoom}`);
+        }
       } else {
         overlay.container.style.display = 'none';
         overlay.highlightContainer.style.display = 'none';
@@ -5883,7 +5889,12 @@ export class PdfrxViewer {
         byId.set(a.id, a);
       }
     }
-    // Anchor handles for the selected annotation sit above the shapes.
+    // Editing-only visibility guides are independent from selection geometry:
+    // getSelectedAnnotationClientRect() measures only anchorLayer.
+    const invisibleGuideLayer = document.createElementNS(SVG_NS, 'g');
+    invisibleGuideLayer.setAttribute('class', 'pdfrx-invisible-annotation-guides');
+    svg.appendChild(invisibleGuideLayer);
+    // Anchor handles for the selected annotation sit above shapes and guides.
     const anchorLayer = document.createElementNS(SVG_NS, 'g');
     anchorLayer.setAttribute('class', 'pdfrx-anchors');
     svg.appendChild(anchorLayer);
@@ -5897,6 +5908,7 @@ export class PdfrxViewer {
       svg,
       highlightContainer,
       highlightSvg,
+      invisibleGuideLayer,
       anchorLayer,
       annotations: byId,
     };
@@ -7181,6 +7193,7 @@ export class PdfrxViewer {
 
   /** Shows otherwise unfindable annotation bounds while object editing is active. */
   private renderInvisibleAnnotationGuides(overlay: AnnotationPageOverlay): void {
+    overlay.invisibleGuideLayer.replaceChildren();
     if (!this.isAnnotationSelectMode()) return;
     const zoom = this.transform.zoom;
     const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
@@ -7201,7 +7214,7 @@ export class PdfrxViewer {
       guide.setAttribute('stroke-width', `${1 / zoom}`);
       guide.dataset.pdfrxSolid = 'true';
       guide.style.pointerEvents = 'none';
-      overlay.anchorLayer.appendChild(guide);
+      overlay.invisibleGuideLayer.appendChild(guide);
     }
   }
 

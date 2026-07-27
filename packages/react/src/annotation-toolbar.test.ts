@@ -4,6 +4,7 @@ import {
   annotationPopupHistoryAction,
   annotationSelectionControls,
   annotationTextAlignmentPreviewStyle,
+  objectPopupPlacement,
   popupViewportShift,
 } from './components/annotation-toolbar.js';
 
@@ -110,6 +111,34 @@ describe('popupViewportShift', () => {
       { left: 20, top: 30, right: 120, bottom: 130 },
       { width: 320, height: 240 },
     )).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('objectPopupPlacement', () => {
+  const popup = { width: 100, height: 40 };
+  const viewport = { width: 400, height: 300 };
+
+  it('places upper-half objects below and lower-half objects above', () => {
+    expect(objectPopupPlacement(
+      { left: 100, right: 180, top: 40, bottom: 80, width: 80, height: 40 },
+      popup,
+      viewport,
+    )).toEqual({ left: 140, top: 90, above: false });
+    expect(objectPopupPlacement(
+      { left: 200, right: 280, top: 220, bottom: 260, width: 80, height: 40 },
+      popup,
+      viewport,
+    )).toEqual({ left: 240, top: 210, above: true });
+  });
+
+  it('keeps an unavoidable popup inside the viewport', () => {
+    const placement = objectPopupPlacement(
+      { left: -50, right: 450, top: 0, bottom: 300, width: 500, height: 300 },
+      { width: 380, height: 280 },
+      viewport,
+    );
+    expect(placement).toEqual({ left: 200, top: 288, above: true });
+    expect(placement.top - 280).toBeGreaterThanOrEqual(8);
   });
 });
 

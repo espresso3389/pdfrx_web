@@ -126,6 +126,41 @@ export function popupViewportShift(
   return { x, y };
 }
 
+/** @internal */
+export function objectPopupPlacement(
+  object: Pick<DOMRect, 'left' | 'top' | 'right' | 'bottom' | 'width' | 'height'>,
+  popup: { width: number; height: number },
+  viewport: { width: number; height: number },
+  gap = 10,
+  margin = 8,
+): { left: number; top: number; above: boolean } {
+  const objectCenterY = object.top + object.height / 2;
+  const preferAbove = objectCenterY >= viewport.height / 2;
+  const fitsAbove = object.top - gap - popup.height >= margin;
+  const fitsBelow = object.bottom + gap + popup.height <= viewport.height - margin;
+  let above = preferAbove;
+  if (above && !fitsAbove && fitsBelow) above = false;
+  else if (!above && !fitsBelow && fitsAbove) above = true;
+
+  const actualTop = Math.max(
+    margin,
+    Math.min(
+      above ? object.top - gap - popup.height : object.bottom + gap,
+      viewport.height - margin - popup.height,
+    ),
+  );
+  const halfWidth = popup.width / 2;
+  return {
+    left: Math.max(
+      halfWidth + margin,
+      Math.min(viewport.width - halfWidth - margin, object.left + object.width / 2),
+    ),
+    // The above CSS placement translates upward by the popup's own height.
+    top: above ? actualTop + popup.height : actualTop,
+    above,
+  };
+}
+
 type AnnotationColorPalette = 'stroke' | 'fill' | 'textColor';
 
 /** @internal */
@@ -504,15 +539,12 @@ export function PdfAnnotationToolbar({
       window.innerWidth - 16,
     );
     const popupHeight = selectionPopupRef.current?.getBoundingClientRect().height ?? 38;
-    const halfWidth = popupWidth / 2;
-    const above =
-      rect.bottom + popupHeight + gap > window.innerHeight
-      && rect.top > popupHeight + gap;
-    setSelectionPopupPosition({
-      left: Math.max(halfWidth + 8, Math.min(window.innerWidth - halfWidth - 8, rect.left + rect.width / 2)),
-      top: above ? rect.top - gap : rect.bottom + gap,
-      above,
-    });
+    setSelectionPopupPosition(objectPopupPlacement(
+      rect,
+      { width: popupWidth, height: popupHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+      gap,
+    ));
     if (toolbarRef.current) {
       const computed = getComputedStyle(toolbarRef.current);
       const theme = Object.fromEntries(
@@ -696,14 +728,19 @@ export function PdfAnnotationToolbar({
               ].map((name) => [name, computed.getPropertyValue(name)]),
             ) as CSSProperties
           : {};
-        const popupHeight = 112;
-        const above = anchor.bottom + popupHeight + 8 > window.innerHeight && anchor.top > popupHeight + 8;
+        const popupSize = { width: Math.min(320, window.innerWidth - 16), height: 112 };
+        const placement = objectPopupPlacement(
+          anchor,
+          popupSize,
+          { width: window.innerWidth, height: window.innerHeight },
+          8,
+        );
         setLinkEditor({
           value: current?.kind === 'uri' ? current.url : '',
           editing: current !== null,
-          left: Math.max(168, Math.min(window.innerWidth - 168, anchor.left + anchor.width / 2)),
-          top: above ? anchor.top - 8 : anchor.bottom + 8,
-          above,
+          left: placement.left,
+          top: placement.top,
+          above: placement.above,
           theme,
         });
       }),
@@ -745,17 +782,18 @@ export function PdfAnnotationToolbar({
     if (!trigger) return;
     const place = (): void => {
       panel.style.translate = '';
-      panel.dataset.pdfrxPlacement = 'below';
       const triggerRect = trigger.getBoundingClientRect();
-      let panelRect = panel.getBoundingClientRect();
       const margin = 4;
       const gap = 6;
       const spaceBelow = window.innerHeight - triggerRect.bottom - gap - margin;
       const spaceAbove = triggerRect.top - gap - margin;
-      if (panelRect.height > spaceBelow && spaceAbove > spaceBelow) {
-        panel.dataset.pdfrxPlacement = 'above';
-        panelRect = panel.getBoundingClientRect();
-      }
+      const panelHeight = panel.getBoundingClientRect().height;
+      const preferAbove = selectionPopupPosition?.above === true;
+      let above = preferAbove;
+      if (above && panelHeight > spaceAbove && panelHeight <= spaceBelow) above = false;
+      else if (!above && panelHeight > spaceBelow && panelHeight <= spaceAbove) above = true;
+      panel.dataset.pdfrxPlacement = above ? 'above' : 'below';
+      const panelRect = panel.getBoundingClientRect();
       const shift = popupViewportShift(
         panelRect,
         { width: window.innerWidth, height: window.innerHeight },
@@ -1514,18 +1552,15 @@ export function PdfAnnotationToolbar({
         document.body,
       )}
       {onClose && (
-        <>
-          <span className="pdfrx-toolbar-separator" aria-hidden />
-          <button
-            type="button"
-            className="pdfrx-button pdfrx-annot-close"
-            onClick={onClose}
-            title={strings.closeAnnotationToolbar}
-            aria-label={strings.closeAnnotationToolbar}
-          >
-            <IconClose />
-          </button>
-        </>
+        <button
+          type="button"
+          className="pdfrx-button pdfrx-annot-close"
+          onClick={onClose}
+          title={strings.closeAnnotationToolbar}
+          aria-label={strings.closeAnnotationToolbar}
+        >
+          <IconClose />
+        </button>
       )}
     </div>
   );

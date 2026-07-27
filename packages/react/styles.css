@@ -1245,10 +1245,9 @@
   margin-inline-start: auto;
 }
 
-/* Give annotation controls finger-sized targets without enlarging the desktop
-   toolbar. The bar already wraps, so this remains usable on narrow screens. */
+/* Give floating annotation property controls finger-sized touch targets. The
+   fixed annotation toolbar keeps the same 30px buttons as the main toolbar. */
 @media (pointer: coarse) {
-  .pdfrx-annot-toolbar .pdfrx-button,
   .pdfrx-annot-selection-popup > .pdfrx-annot-colors > .pdfrx-annot-colorbtn > .pdfrx-button {
     width: 40px;
     height: 40px;
