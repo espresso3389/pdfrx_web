@@ -135,6 +135,9 @@ export function PdfrxProvider({
     note: mergedStrings.annotationNotePlaceholder,
     ...options.annotationEditorPlaceholders,
   };
+  // The UI locale is the strongest available hint for Han-only FreeText.
+  // The viewer falls back to navigator.languages when this prop is omitted.
+  if (options.freeTextLanguage === undefined && locale !== undefined) options.freeTextLanguage = locale;
   if (wasmModulesUrl !== undefined && options.engineOptions === undefined) {
     options.engineOptions = { wasmModulesUrl };
   }

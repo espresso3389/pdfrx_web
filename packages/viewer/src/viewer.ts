@@ -236,6 +236,13 @@ export interface PdfrxViewerOptions {
    */
   fontResolver?: FontResolver | null;
   /**
+   * Preferred language for ambiguous CJK FreeText (notably Han-only text).
+   * Accepts BCP-47 tags in priority order. When omitted, the browser's
+   * `navigator.languages` is used. Explicit kana/Hangul still take precedence.
+   * The resolved font runs are persisted with the annotation.
+   */
+  freeTextLanguage?: string | readonly string[];
+  /**
    * Detect URL-like page text that is not backed by a PDF Link annotation and
    * make it clickable in viewing interactions. Detected links are transient:
    * they are not returned by annotation APIs and cannot be edited, persisted,
@@ -1603,15 +1610,18 @@ function renderFreeTextEmoji(text: string, fontSize: number): { width: number; h
   if (!measure) return undefined;
   measure.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
   const logicalWidth = Math.max(fontSize, Math.ceil(measure.measureText(text).width + 2));
-  const logicalHeight = Math.ceil(fontSize * 1.35);
+  const logicalHeight = Math.ceil(fontSize * 1.2);
   canvas.width = logicalWidth * scale;
   canvas.height = logicalHeight * scale;
   const context = canvas.getContext('2d');
   if (!context) return undefined;
   context.scale(scale, scale);
   context.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-  context.textBaseline = 'top';
-  context.fillText(text, 1, 0);
+  // PDF text objects place their alphabetic baseline one font-size below the
+  // line top. Use the same baseline for raster emoji so their visible glyphs
+  // align with adjacent text and remain inside the line/annotation clip.
+  context.textBaseline = 'alphabetic';
+  context.fillText(text, 1, fontSize);
   return {
     width: canvas.width,
     height: canvas.height,
@@ -7582,6 +7592,41 @@ export class PdfrxViewer {
     for (const line of lines) {
       const graphemes = graphemeSegmenter ? [...graphemeSegmenter.segment(line)].map((part) => part.segment) : [...line];
       const kinds = graphemes.map(freeTextRunKind);
+      // Han is shared by Japanese and Chinese. When a line contains kana, its
+      // Han characters must use the Japanese CJK font as well; classifying
+      // each ideograph in isolation otherwise selects Simplified Chinese.
+      if (kinds.includes(128)) {
+        for (let index = 0; index < kinds.length; index++) {
+          if (kinds[index] === 134) kinds[index] = 128;
+        }
+      } else if (kinds.includes(129)) {
+        for (let index = 0; index < kinds.length; index++) {
+          if (kinds[index] === 134) kinds[index] = 129;
+        }
+      } else {
+        const requested = this.options.freeTextLanguage;
+        const configured = requested === undefined ? [] : typeof requested === 'string' ? [requested] : requested;
+        const browser =
+          typeof navigator === 'undefined'
+            ? []
+            : navigator.languages?.length
+              ? navigator.languages
+              : navigator.language
+                ? [navigator.language]
+                : [];
+        const locale = [...configured, ...browser].find((tag) => /^(?:ja|ko|zh)(?:-|$)/i.test(tag));
+        const cjkCharset =
+          locale && /^ja(?:-|$)/i.test(locale)
+            ? 128
+            : locale && /^ko(?:-|$)/i.test(locale)
+              ? 129
+              : locale && /^zh(?:-(?:hant|tw|hk|mo))(?:-|$)/i.test(locale)
+                ? 136
+                : 134;
+        for (let index = 0; index < kinds.length; index++) {
+          if (kinds[index] === 134) kinds[index] = cjkCharset;
+        }
+      }
       // Common punctuation/whitespace belongs to the surrounding script. This
       // keeps Japanese 、。 in the CJK font instead of a glyph-less Latin font.
       for (let index = 0; index < kinds.length; index++) {

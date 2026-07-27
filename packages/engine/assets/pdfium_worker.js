@@ -647,17 +647,20 @@ const emEnv = {
   },
   emscripten_resize_heap: function (requestedSizeInBytes) {
     const maxHeapSizeInBytes = 2 * 1024 * 1024 * 1024; // 2GB
+    const pageSize = 65536;
+    const requestedPageCount = Math.ceil(requestedSizeInBytes / pageSize);
     if (requestedSizeInBytes > maxHeapSizeInBytes) {
       console.error(
-        `emscripten_resize_heap: Cannot enlarge memory, asked for ${requestedPageCount} bytes but limit is ${maxHeapSizeInBytes}`
+        `emscripten_resize_heap: Cannot enlarge memory, asked for ${requestedSizeInBytes} bytes but limit is ${maxHeapSizeInBytes}`
       );
       return false;
     }
 
-    const pageSize = 65536;
-    const oldPageCount = ((Pdfium.memory.buffer.byteLength + pageSize - 1) / pageSize) | 0;
-    const requestedPageCount = ((requestedSizeInBytes + pageSize - 1) / pageSize) | 0;
-    const newPageCount = Math.max(oldPageCount * 1.5, requestedPageCount) | 0;
+    const maxPageCount = maxHeapSizeInBytes / pageSize;
+    const oldPageCount = Math.ceil(Pdfium.memory.buffer.byteLength / pageSize);
+    // The geometric-growth target can exceed the memory's declared maximum
+    // even when the requested allocation itself still fits.
+    const newPageCount = Math.min(maxPageCount, Math.max(Math.ceil(oldPageCount * 1.5), requestedPageCount));
     try {
       Pdfium.memory.grow(newPageCount - oldPageCount);
       console.log(`emscripten_resize_heap: ${oldPageCount} => ${newPageCount}`);
@@ -1841,6 +1844,7 @@ function closeDocument(params) {
       Pdfium.wasmExports.FPDFDOC_ExitFormFillEnvironment(params.formHandle);
     } catch (e) {}
   }
+  _closeFreeTextFonts(params.docHandle);
   Pdfium.wasmExports.free(params.formInfo);
   Pdfium.wasmExports.FPDF_CloseDocument(params.docHandle);
   disposers[params.docHandle]();
@@ -4138,6 +4142,41 @@ function _applyAnnotSpec(annot, spec, docHandle) {
   }
 }
 
+/** @type {Map<number, Map<string, number>>} */
+const _freeTextFontsByDocument = new Map();
+
+function _loadFreeTextFont(docHandle, face) {
+  if (!face) return 0;
+  let fonts = _freeTextFontsByDocument.get(docHandle);
+  if (!fonts) {
+    fonts = new Map();
+    _freeTextFontsByDocument.set(docHandle, fonts);
+  }
+  if (fonts.has(face)) return fonts.get(face);
+
+  const cached = pdfFontMapper?.cachedFontsByFace[face];
+  if (!cached?.data) return 0;
+  const w = Pdfium.wasmExports;
+  const fontPtr = w.malloc(cached.data.byteLength);
+  if (!fontPtr) return 0;
+  let font = 0;
+  try {
+    new Uint8Array(Pdfium.memory.buffer, fontPtr, cached.data.byteLength).set(cached.data);
+    font = w.FPDFText_LoadFont(docHandle, fontPtr, cached.data.byteLength, 1, face.includes('symbols') ? 0 : 1);
+  } finally {
+    w.free(fontPtr);
+  }
+  if (font) fonts.set(face, font);
+  return font;
+}
+
+function _closeFreeTextFonts(docHandle) {
+  const fonts = _freeTextFontsByDocument.get(docHandle);
+  if (!fonts) return;
+  for (const font of fonts.values()) Pdfium.wasmExports.FPDFFont_Close(font);
+  _freeTextFontsByDocument.delete(docHandle);
+}
+
 /** Builds a FreeText appearance with independent fill, stroke, and embedded text. */
 function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
   const w = Pdfium.wasmExports;
@@ -4173,25 +4212,7 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
       if (!w.FPDFAnnot_AppendObject(annot, path)) w.FPDFPageObj_Destroy(path);
     }
   }
-  if (!spec.contents) return;
-  const fonts = new Map();
-  const loadFont = (face) => {
-    if (!face) return 0;
-    if (fonts.has(face)) return fonts.get(face);
-    let font = 0;
-    const cached = pdfFontMapper?.cachedFontsByFace[face];
-    if (!cached?.data) return 0;
-    const fontPtr = w.malloc(cached.data.byteLength);
-    try {
-      new Uint8Array(Pdfium.memory.buffer, fontPtr, cached.data.byteLength).set(cached.data);
-      font = w.FPDFText_LoadFont(docHandle, fontPtr, cached.data.byteLength, 1, face.includes('symbols') ? 0 : 1);
-    } finally {
-      w.free(fontPtr);
-    }
-    fonts.set(face, font);
-    return font;
-  };
-  try {
+  if (spec.contents) {
     const fontSize = Math.max(1, spec.fontSize ?? 12);
     const textColor = spec.textColor ?? [0, 0, 0, spec.color?.[3] ?? spec.interiorColor?.[3] ?? 255];
     const lineHeight = fontSize * 1.2;
@@ -4228,7 +4249,7 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
           );
           continue;
         }
-        const font = loadFont(run.fontFace);
+        const font = _loadFreeTextFont(docHandle, run.fontFace);
         let text = 0;
         if (font) {
           text = w.FPDFPageObj_CreateTextObj(docHandle, font, fontSize);
@@ -4268,8 +4289,6 @@ function _appendFreeTextAppearance(docHandle, pageHandle, annot, spec) {
         if (!w.FPDFAnnot_AppendObject(annot, text)) w.FPDFPageObj_Destroy(text);
       }
     }
-  } finally {
-    for (const font of fonts.values()) if (font) w.FPDFFont_Close(font);
   }
 }
 

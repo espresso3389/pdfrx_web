@@ -989,7 +989,7 @@ test('note and box text use inline editors instead of browser prompts', async ({
   await expect(freeTextEditor).toHaveCSS('opacity', '1');
   await expect(freeTextEditor).toBeFocused();
   const multilineText =
-    'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji.';
+    'これは複数行の日本語ですが、ちゃんと表示されているかどうか心配です。This is a long sentence, which also contains some 😒emoji.\n日本国憲法';
   await freeTextEditor.fill(multilineText);
   // Saving while the editor still owns focus must first commit its contents;
   // otherwise encodePdf can race ahead and persist an empty Text Box.
@@ -1030,6 +1030,8 @@ test('note and box text use inline editors instead of browser prompts', async ({
   expect(roundTrip.emojiPixels, 'embedded emoji image should retain colored pixels').toBeGreaterThan(10);
   expect(roundTrip.emojiPositionDelta, `emoji position ${JSON.stringify(roundTrip.emojiPosition)}`).toBeLessThanOrEqual(3);
   expect(roundTrip.fontFaces).toContain('PdfrxFreeText-128');
+  expect(roundTrip.fontFaces).not.toContain('PdfrxFreeText-134');
+  expect(roundTrip.runs.some((run) => /\p{Script=Han}/u.test(run.text) && run.fontFace === 'PdfrxFreeText-128')).toBe(true);
   expect(roundTrip.runs.some((run) => run.text.includes('、') && run.fontFace === 'PdfrxFreeText-128')).toBe(true);
   expect(roundTrip.runs.some((run) => run.text.includes('。') && run.fontFace === 'PdfrxFreeText-128')).toBe(true);
 

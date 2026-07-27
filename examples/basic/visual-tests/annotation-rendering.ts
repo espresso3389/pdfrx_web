@@ -16,6 +16,7 @@ const host = document.querySelector<HTMLElement>('#viewer')!;
 const viewer = new PdfrxViewer(host, {
   engineOptions: { baseUrl: `${location.origin}/`, wasmModulesUrl: 'pdfium/' },
   interactiveAnnotations: true,
+  freeTextLanguage: 'ja',
   annotationEditorPlaceholders: { text: 'Localized text', note: 'Localized note' },
   margin: 0,
   pageDropShadow: null,
@@ -469,7 +470,9 @@ async function inspectCurrentFreeTextRoundTrip(): Promise<{
       const emoji = line.find((run) => /\p{Extended_Pictographic}/u.test(run.text));
       if (!emoji) return;
       expectedX = current.rect.left + current.borderWidth + 3 + emoji.x;
-      expectedY = SIZE - current.rect.top + current.borderWidth + 3 + lineIndex * 14.4;
+      // Emoji are drawn on the same alphabetic baseline as text. Segoe UI
+      // Emoji's visible color pixels start slightly below the logical line top.
+      expectedY = SIZE - current.rect.top + current.borderWidth + 3 + lineIndex * 14.4 + 1;
     });
     const emojiPositionDelta = Math.max(Math.abs(emojiLeft - expectedX), Math.abs(emojiTop - expectedY));
     return { contents: annotation?.contents ?? null, darkInteriorPixels, emojiPixels, emojiPositionDelta, emojiPosition: { actualX: emojiLeft, actualY: emojiTop, expectedX, expectedY }, fontFaces, runs };
