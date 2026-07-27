@@ -21,6 +21,12 @@ export interface PdfDocumentState {
   error: unknown;
   /** Whether the document's permissions allow copying text. */
   isCopyAllowed: boolean;
+  /** Whether printing is allowed by the PDF permission flags. */
+  isPrintAllowed: boolean;
+  /** Whether page assembly/editing is allowed by the PDF permission flags. */
+  isDocumentAssemblyAllowed: boolean;
+  /** Whether annotation and form edits are allowed by the PDF permission flags. */
+  isAnnotationEditingAllowed: boolean;
   /** Opens a different document imperatively (file picker, application command, …). */
   open: (src: PdfSource) => Promise<void>;
   /** Clears {@link error} — e.g. when the user dismisses an error banner. */
@@ -64,6 +70,9 @@ export function usePdfDocument(): PdfDocumentState {
       progress: viewer?.loadingProgress ?? null,
       error: store.error,
       isCopyAllowed: viewer?.isCopyAllowed ?? false,
+      isPrintAllowed: viewer?.isPrintAllowed ?? false,
+      isDocumentAssemblyAllowed: viewer?.isDocumentAssemblyAllowed ?? false,
+      isAnnotationEditingAllowed: viewer?.isAnnotationEditingAllowed ?? false,
     }),
     shallowEqual,
   );

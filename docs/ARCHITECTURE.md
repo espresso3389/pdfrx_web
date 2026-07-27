@@ -214,7 +214,10 @@ JSON-serializable objects.
 - `geometry.ts` — rect/point math, rotation, PDF↔document conversions.
 - `transform.ts` — viewport math, fit calculations, 14 page anchors, boundary
   clamping and underflow alignment.
-- `layout.ts` — vertical/horizontal page layout and hit testing.
+- `layout.ts` — vertical/horizontal and odd/even two-page spread layout, plus
+  hit testing. The viewer's capture and marquee-zoom tools share one
+  page-coordinate rectangle-selection path; capture delegates the selected
+  sub-region to `PdfPage.render`.
 - `text.ts` / `text-formatter.ts` — the structured text model and flow analysis
   (reading order, line splitting, word/space/newline fragments, vertical-text
   virtual-newline removal).

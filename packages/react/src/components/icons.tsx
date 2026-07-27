@@ -286,3 +286,40 @@ export const IconPlus = (): ReactNode => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+
+/** @internal */
+export const IconFullscreen = (): ReactNode => (
+  <Icon>
+    <path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4" />
+  </Icon>
+);
+
+/** @internal */
+export const IconExitFullscreen = (): ReactNode => (
+  <Icon>
+    <path d="M4 9h5V4M20 9h-5V4M15 20v-5h5M9 20v-5H4" />
+  </Icon>
+);
+
+/** @internal */
+export const IconSpread = (): ReactNode => (
+  <Icon>
+    <path d="M3 5h8v14H3zM13 5h8v14h-8zM11 7c-2-1-4-1-6 0M13 7c2-1 4-1 6 0" />
+  </Icon>
+);
+
+/** @internal */
+export const IconCapture = (): ReactNode => (
+  <Icon>
+    <path d="M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4" />
+    <rect x="8" y="8" width="8" height="8" />
+  </Icon>
+);
+
+/** @internal */
+export const IconZoomArea = (): ReactNode => (
+  <Icon>
+    <circle cx="10.5" cy="10.5" r="5.5" />
+    <path d="M15 15l5 5M8 10.5h5M10.5 8v5" />
+  </Icon>
+);

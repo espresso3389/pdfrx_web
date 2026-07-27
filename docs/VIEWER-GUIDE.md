@@ -19,6 +19,8 @@ a framework-agnostic custom element or a plain class.
 - Printing
 - Automatic missing-font fallback via Google Fonts
 - Password-protected documents
+- Single-page, horizontal, and odd/even two-page book layouts
+- Rectangular page capture and marquee zoom
 - Interactive AcroForm filling through accessible native HTML controls
 - SVG annotation editing: ink, shapes, notes/free text, text markup,
   live marquee multi-selection, duplication, snapping guides, and undo/redo
@@ -117,6 +119,76 @@ Each symbol links directly to its entry in the
 
 See the [repository](https://github.com/espresso3389/pdfrx_web) for the demo
 app and [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md).
+
+## Layout, capture, and permissions
+
+### Layout modes
+
+`layoutDirection: 'vertical' | 'horizontal'` remains the continuous single-page
+layout. Set `spreadMode` to switch to a built-in book layout:
+
+```ts
+const viewer = new PdfrxViewer(host, {
+  spreadMode: 'even', // page 1 alone, then [2,3], [4,5], …
+});
+
+viewer.setSpreadMode('odd');  // [1,2], [3,4], …
+viewer.setSpreadMode('none'); // return to layoutDirection
+```
+
+In spread mode, `fitToWidth(pageNumber)` fits the complete row containing that
+page—not one half of the spread—and aligns the row to the viewport top.
+`fitToPage()` and `fitToHeight()` remain page-scoped.
+
+The DOM-free `@pdfrx/viewer-core` package exports `layoutPagesSpread()` for
+applications that want the same geometry without constructing a viewer.
+`layoutPages` still takes precedence when a completely custom grid is needed.
+
+### Area capture and marquee zoom
+
+PDF rectangles use points, a bottom-left origin, and y-up coordinates:
+
+```ts
+const area = await viewer.selectPageArea(); // Escape returns null
+if (area) {
+  viewer.zoomToPageArea(area.pageNumber, area.rect, 200);
+
+  const png = await viewer.capturePageArea(area.pageNumber, area.rect, {
+    scale: 2,
+    type: 'image/png',
+    withAnnotations: true,
+  });
+}
+```
+
+`selectPageArea()` is the shared pointer UI; `zoomToPageArea()` and
+`capturePageArea()` can also be called directly with application-provided
+coordinates. Image encoding uses the browser canvas encoder. PNG is the
+portable default; JPEG and WebP availability follows the browser.
+
+### Effective PDF permissions
+
+The viewer respects PDF permission flags by default. Copying, printing, page
+assembly, annotation editing, and form editing use the effective permission
+getters (`isCopyAllowed`, `isPrintAllowed`, `isDocumentAssemblyAllowed`, and
+`isAnnotationEditingAllowed`). Permission flags are advisory interoperability
+metadata, not cryptographic enforcement.
+
+Applications can override individual decisions, or deliberately ignore the
+document flags:
+
+```ts
+const viewer = new PdfrxViewer(host, {
+  permissionOverrides: {
+    printing: false,
+    copying: true,
+  },
+  // enforceDocumentPermissions: false,
+});
+```
+
+Direct `PdfDocument` mutation remains an engine-level operation. The permission
+policy above governs standard `PdfrxViewer` interactions and UI behavior.
 
 ## The pdfrx_web family
 

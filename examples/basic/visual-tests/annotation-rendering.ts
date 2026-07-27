@@ -575,6 +575,47 @@ function readAnnotationInteractionState(): { tool: ReturnType<typeof viewer.getA
   };
 }
 
+async function runPageToolChecks(): Promise<{
+  captureType: string;
+  captureWidth: number;
+  captureHeight: number;
+  spreadModes: string[];
+  zoomIncreased: boolean;
+  spreadFitIsWider: boolean;
+}> {
+  const blob = await viewer.capturePageArea(
+    1,
+    { left: 32, top: 224, right: 96, bottom: 160 },
+    { scale: 2, type: 'image/png', withAnnotations: false },
+  );
+  const bitmap = await createImageBitmap(blob);
+  const captureWidth = bitmap.width;
+  const captureHeight = bitmap.height;
+  bitmap.close();
+  const spreadModes: string[] = [];
+  for (const mode of ['odd', 'even'] as const) {
+    viewer.setSpreadMode(mode);
+    spreadModes.push(viewer.spreadMode);
+  }
+  viewer.setSpreadMode('odd');
+  viewer.fitToWidth(1, 0);
+  const spreadFitZoom = viewer.zoom;
+  viewer.setSpreadMode('none');
+  spreadModes.push(viewer.spreadMode);
+  viewer.fitToWidth(1, 0);
+  const singleFitZoom = viewer.zoom;
+  const before = viewer.zoom;
+  viewer.zoomToPageArea(1, { left: 64, top: 192, right: 192, bottom: 64 }, 0);
+  return {
+    captureType: blob.type,
+    captureWidth,
+    captureHeight,
+    spreadModes,
+    zoomIncreased: viewer.zoom > before,
+    spreadFitIsWider: spreadFitZoom < singleFitZoom,
+  };
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -609,6 +650,7 @@ declare global {
       editSelectedLink: typeof editSelectedLink;
       readLinkDrawPreview: typeof readLinkDrawPreview;
       readAnnotationInteractionState: typeof readAnnotationInteractionState;
+      runPageToolChecks: typeof runPageToolChecks;
     };
   }
 }
@@ -645,4 +687,5 @@ window.annotationVisualTest = {
   editSelectedLink,
   readLinkDrawPreview,
   readAnnotationInteractionState,
+  runPageToolChecks,
 };

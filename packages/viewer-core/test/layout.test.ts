@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPageIndexAt, layoutPagesHorizontal, layoutPagesVertical } from '../src/index.js';
+import { findPageIndexAt, layoutPagesHorizontal, layoutPagesSpread, layoutPagesVertical } from '../src/index.js';
 
 const pages = [
   { width: 595, height: 842, rotation: 0 },
@@ -24,6 +24,34 @@ describe('layoutPagesHorizontal', () => {
     expect(layout.documentSize.height).toBe(862);
     expect(layout.pageLayouts[0]).toEqual({ left: 10, top: 10, right: 605, bottom: 852 });
     expect(layout.pageLayouts[1]).toEqual({ left: 615, top: 10, right: 1015, bottom: 852 });
+  });
+});
+
+describe('layoutPagesSpread', () => {
+  const spreadPages = [
+    { width: 100, height: 200, rotation: 0 },
+    { width: 120, height: 180, rotation: 0 },
+    { width: 80, height: 160, rotation: 0 },
+  ];
+
+  it('pairs from page one in odd mode', () => {
+    const layout = layoutPagesSpread(spreadPages, 'odd', { margin: 10 });
+    expect(layout.documentSize).toEqual({ width: 250, height: 390 });
+    expect(layout.pageLayouts).toEqual([
+      { left: 10, top: 10, right: 110, bottom: 210 },
+      { left: 120, top: 10, right: 240, bottom: 190 },
+      { left: 85, top: 220, right: 165, bottom: 380 },
+    ]);
+  });
+
+  it('leaves the cover alone in even mode', () => {
+    const layout = layoutPagesSpread(spreadPages, 'even', { margin: 10 });
+    expect(layout.documentSize).toEqual({ width: 230, height: 410 });
+    expect(layout.pageLayouts).toEqual([
+      { left: 65, top: 10, right: 165, bottom: 210 },
+      { left: 10, top: 220, right: 130, bottom: 400 },
+      { left: 140, top: 220, right: 220, bottom: 380 },
+    ]);
   });
 });
 

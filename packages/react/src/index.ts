@@ -78,6 +78,8 @@ export {
   type PdfrxViewerAppOverrides,
   type PdfrxViewerAppProps,
   type PdfrxViewerAppRenderContext,
+  type PdfrxViewerFeature,
+  type PdfrxViewerFeatures,
 } from './components/viewer-app.js';
 export { PdfToolbar, type PdfToolbarProps } from './components/toolbar.js';
 export { PdfSidebar, type PdfSidebarProps, type PdfSidebarTab } from './components/sidebar.js';
@@ -96,6 +98,13 @@ export {
   type PdfPageRotationDelta,
 } from './components/page-actions.js';
 export { PdfSaveButton, type PdfSaveButtonProps } from './components/save-button.js';
+export { PdfFullscreenButton, type PdfFullscreenButtonProps } from './components/fullscreen-button.js';
+export {
+  PdfCaptureAreaButton,
+  PdfMarqueeZoomButton,
+  type PdfCaptureAreaButtonProps,
+} from './components/area-tool-buttons.js';
+export { PdfSpreadButton } from './components/spread-button.js';
 export { IconAnnotate, IconOpenFile } from './components/icons.js';
 export {
   PdfPageIndicator,
@@ -124,6 +133,7 @@ export { usePdfSearch, type PdfSearch } from './hooks/use-pdf-search.js';
 export { usePdfSelection, type PdfSelection } from './hooks/use-pdf-selection.js';
 export { usePdfPageThumbnail, type PdfPageThumbnail } from './hooks/use-pdf-page-thumbnail.js';
 export { usePdfPrint, type PdfPrint } from './hooks/use-pdf-print.js';
+export { usePdfFullscreen, type PdfFullscreen } from './hooks/use-pdf-fullscreen.js';
 export { useViewerSnapshot, shallowEqual, type ViewerSubscribe } from './hooks/use-viewer-snapshot.js';
 
 // --- Re-exports, so apps rarely need to depend on @pdfrx/viewer directly ---

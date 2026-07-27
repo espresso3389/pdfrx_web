@@ -22,7 +22,7 @@ export interface PdfToolbarProps {
   showZoomControls?: boolean;
   /** Show the search field. Defaults to `true`. */
   showSearch?: boolean;
-  /** Show the print button. Defaults to `true`. */
+  /** Show the print button. Defaults to `false`. */
   showPrint?: boolean;
   /** Controls placed in the left group after page/zoom controls, separated by a gap. */
   afterZoom?: ReactNode;
@@ -63,7 +63,7 @@ export function PdfToolbar({
   showPageIndicator = true,
   showZoomControls = true,
   showSearch = true,
-  showPrint = true,
+  showPrint = false,
   afterZoom,
   beforeSearch,
   afterSearch,

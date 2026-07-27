@@ -33,6 +33,13 @@ export interface PdfrxStrings {
   print: string;
   /** Print button while pages are being rasterized. */
   preparingToPrint: string;
+  enterFullscreen: string;
+  exitFullscreen: string;
+  spreadNone: string;
+  spreadOdd: string;
+  spreadEven: string;
+  captureArea: string;
+  zoomToArea: string;
 
   // Search box
   /** Default placeholder for the search field (overridable per box). */
@@ -152,6 +159,13 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   fitWidth: 'Fit width',
   print: 'Print',
   preparingToPrint: 'Preparing pages…',
+  enterFullscreen: 'Enter fullscreen',
+  exitFullscreen: 'Exit fullscreen',
+  spreadNone: 'Single-page layout',
+  spreadOdd: 'Two-page layout',
+  spreadEven: 'Book layout (cover first)',
+  captureArea: 'Capture area',
+  zoomToArea: 'Zoom to area',
 
   searchPlaceholder: 'Search',
   previousMatch: 'Previous match (Shift+Enter)',

@@ -19,8 +19,12 @@ selection, links, search, forms, annotations, and page editing.
 - Interactive AcroForm controls stay synchronized with the underlying PDF.
 - Page insertion, deletion, reordering, duplication, and rotation remain
   history-aware and can be encoded back to PDF.
-- Vertical, horizontal, and custom page layouts share navigation, animated fit
-  modes, zoom, and coordinate conversion APIs.
+- Vertical, horizontal, odd/even two-page spreads, and custom page layouts
+  share navigation, animated fit modes, zoom, and coordinate conversion APIs.
+- Rectangular capture renders a page sub-region to PNG/JPEG/WebP, and the same
+  selection UI supports marquee zoom.
+- Standard interactions resolve PDF copying, printing, assembly, annotation,
+  and form permissions with optional application overrides.
 - Page-following and viewport-fixed DOM overlays support custom application UI
   without replacing canvas rendering.
 

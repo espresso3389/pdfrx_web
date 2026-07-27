@@ -18,6 +18,58 @@ export interface LayoutPagesOptions {
   margin?: number;
 }
 
+/** Pairing used by {@link layoutPagesSpread}. */
+export type SpreadMode = 'odd' | 'even';
+
+/**
+ * Vertical book/spread layout.
+ *
+ * `odd` pairs pages `[1, 2], [3, 4]`; `even` leaves the cover alone and then
+ * pairs `[2, 3], [4, 5]`. Rows are centered and their pages are aligned at the
+ * top, which keeps differently sized pages predictable.
+ */
+export function layoutPagesSpread(
+  pages: readonly PageGeometry[],
+  mode: SpreadMode,
+  options: LayoutPagesOptions = {},
+): PageLayout {
+  const margin = options.margin ?? 8;
+  const rows: Array<readonly [number] | readonly [number, number]> = [];
+  let index = 0;
+  if (mode === 'even' && pages.length > 0) {
+    rows.push([0]);
+    index = 1;
+  }
+  while (index < pages.length) {
+    rows.push(index + 1 < pages.length ? [index, index + 1] : [index]);
+    index += 2;
+  }
+
+  const rowWidths = rows.map((row) =>
+    row.reduce((width, pageIndex) => width + pages[pageIndex]!.width, 0)
+      + (row.length - 1) * margin,
+  );
+  const contentWidth = rowWidths.reduce((width, rowWidth) => Math.max(width, rowWidth), 0);
+  const pageLayouts: Rect[] = new Array(pages.length);
+  let y = margin;
+  rows.forEach((row, rowIndex) => {
+    let x = margin + (contentWidth - rowWidths[rowIndex]!) / 2;
+    let rowHeight = 0;
+    for (const pageIndex of row) {
+      const page = pages[pageIndex]!;
+      pageLayouts[pageIndex] = rectFromLTWH(x, y, page.width, page.height);
+      x += page.width + margin;
+      rowHeight = Math.max(rowHeight, page.height);
+    }
+    y += rowHeight + margin;
+  });
+
+  return {
+    pageLayouts,
+    documentSize: { width: contentWidth + margin * 2, height: y },
+  };
+}
+
 /** Default vertical layout: pages stacked top-to-bottom, centered horizontally. */
 export function layoutPagesVertical(pages: readonly PageGeometry[], options: LayoutPagesOptions = {}): PageLayout {
   const margin = options.margin ?? 8;

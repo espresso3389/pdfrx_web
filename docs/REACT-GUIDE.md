@@ -30,6 +30,67 @@ import '@pdfrx/react/styles.css';
 <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} enableFileOpen />;
 ```
 
+Two-page layout switching, rectangular capture, marquee zoom, and browser
+fullscreen controls are available as standalone components for composed
+layouts:
+
+```tsx
+<PdfToolbar>
+  <PdfSpreadButton />
+  <PdfMarqueeZoomButton />
+  <PdfCaptureAreaButton onCapture={(blob) => uploadPreview(blob)} />
+  <PdfFullscreenButton />
+</PdfToolbar>
+```
+
+`PdfCaptureAreaButton` downloads `capture.png` when `onCapture` is omitted.
+Its active state remains highlighted through both area selection and image
+encoding. Escape cancels capture or marquee zoom.
+
+Print, spread switching, capture, and marquee zoom are deliberately hidden in
+the standard app. They compete for limited toolbar space, and capture is often
+an application workflow rather than a general viewer action. Enable only the
+ones the application needs:
+
+```tsx
+<PdfrxViewerApp
+  src="/manual.pdf"
+  features={{
+    print: true,
+    spread: true,
+    // capture: true,
+    // marqueeZoom: true,
+  }}
+/>
+```
+
+Supported groups include `sidebar`, `search`, `zoom`, `print`, `open`,
+`download`, `annotations`, `pageEditing`, `history`, `fullscreen`, `spread`,
+`capture`, and `marqueeZoom`. The four opt-in groups above default to `false`;
+the other groups default to `true` and can be hidden explicitly. This controls
+the standard app chrome; composed or headless consumers remain responsible for
+their own controls. `PdfToolbar` also hides print by default; pass
+`showPrint={true}` when composing it directly.
+
+PDF permission flags are applied after these application choices. The standard
+print entry disappears when printing is forbidden, page actions are removed
+when document assembly is forbidden, and annotation/form editing is disabled
+when annotation modification is forbidden. Read the resolved state from
+`usePdfDocument()`:
+
+```tsx
+const {
+  isCopyAllowed,
+  isPrintAllowed,
+  isDocumentAssemblyAllowed,
+  isAnnotationEditingAllowed,
+} = usePdfDocument();
+```
+
+`permissionOverrides` and `enforceDocumentPermissions` are accepted by
+`PdfrxProvider` and `PdfrxViewerApp` when an application policy needs to
+override the PDF's advisory flags.
+
 The annotation toolbar, narrow-screen search row, and dismissible error banner
 animate as they enter and leave the layout. The default stylesheet disables
 these transitions when the user requests reduced motion.

@@ -13,6 +13,31 @@ import { PdfPageActions, type PdfPageRotationDelta } from './page-actions.js';
 import { IconAnnotate, IconClose, IconOpenFile, IconRedo, IconSave, IconUndo } from './icons.js';
 import { PdfSidebar, type PdfSidebarProps } from './sidebar.js';
 import { PdfToolbar, type PdfToolbarProps } from './toolbar.js';
+import { PdfFullscreenButton } from './fullscreen-button.js';
+import { PdfCaptureAreaButton, PdfMarqueeZoomButton } from './area-tool-buttons.js';
+import { PdfSpreadButton } from './spread-button.js';
+
+/** Declaratively controlled feature groups in {@link PdfrxViewerApp}. */
+export type PdfrxViewerFeature =
+  | 'sidebar'
+  | 'search'
+  | 'zoom'
+  | 'print'
+  | 'open'
+  | 'download'
+  | 'annotations'
+  | 'pageEditing'
+  | 'history'
+  | 'fullscreen'
+  | 'spread'
+  | 'capture'
+  | 'marqueeZoom';
+
+/**
+ * `false` hides a standard feature entry point. Print, spread, capture, and
+ * marquee zoom are opt-in and require `true`; the other groups default on.
+ */
+export type PdfrxViewerFeatures = Partial<Record<PdfrxViewerFeature, boolean>>;
 
 /** Props for {@link PdfrxViewerApp}. */
 export interface PdfrxViewerAppProps extends PdfrxProviderProps {
@@ -66,6 +91,12 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * `interactiveAnnotations` (on by default). Defaults to `true`.
    */
   enableAnnotations?: boolean;
+  /**
+   * Declaratively controls standard feature groups. Print, spread, capture,
+   * and marquee zoom default off; other omitted entries default on. PDF
+   * permission flags are applied afterwards.
+   */
+  features?: PdfrxViewerFeatures;
   /** Extra toolbar controls, placed after the built-in ones. */
   children?: ReactNode;
   /**
@@ -264,23 +295,28 @@ export function PdfrxViewerApp({
   showOpenButton,
   showDownloadButton,
   enableAnnotations = true,
+  features,
   children,
   renderContent,
   ...providerProps
 }: PdfrxViewerAppProps): ReactNode {
-  const pageEditingEnabled = enablePageEditing && providerProps.editing?.pages !== false;
-  const annotationEditingEnabled = enableAnnotations && providerProps.editing?.annotations !== false;
-  const historyEnabled = providerProps.editing?.history !== false;
+  const pageEditingEnabled =
+    enablePageEditing && features?.pageEditing !== false && providerProps.editing?.pages !== false;
+  const annotationEditingEnabled =
+    enableAnnotations && features?.annotations !== false && providerProps.editing?.annotations !== false;
+  const historyEnabled = features?.history !== false && providerProps.editing?.history !== false;
   return (
     <PdfrxProvider {...providerProps}>
       <PdfrxViewerAppHost
         chromeProps={{
-          className, style, toolbar, toolbarProps, sidebar, sidebarProps, sidebarWidth, sidebarSide,
+          className, style, toolbar, toolbarProps, sidebar: sidebar && features?.sidebar !== false,
+          sidebarProps, sidebarWidth, sidebarSide,
           enablePageEditing: pageEditingEnabled,
-          showOpenButton: showOpenButton ?? enableFileOpen,
-          showDownloadButton: showDownloadButton ?? pageEditingEnabled,
+          showOpenButton: features?.open !== false && (showOpenButton ?? enableFileOpen),
+          showDownloadButton: features?.download !== false && (showDownloadButton ?? pageEditingEnabled),
           enableAnnotations: annotationEditingEnabled,
           historyEnabled,
+          features,
           children,
         }}
         renderContent={renderContent}
@@ -304,7 +340,7 @@ type ChromeProps = Pick<
   | 'showDownloadButton'
   | 'enableAnnotations'
   | 'children'
-> & { historyEnabled: boolean };
+> & { historyEnabled: boolean; features?: PdfrxViewerFeatures };
 
 function PdfrxViewerAppHost({
   chromeProps,
@@ -337,10 +373,18 @@ function PdfrxViewerAppChrome({
   showDownloadButton,
   enableAnnotations,
   historyEnabled,
+  features,
   children,
   overrides,
 }: ChromeProps & { overrides?: PdfrxViewerAppOverrides }): ReactNode {
-  const { open, error, clearError } = usePdfDocument();
+  const {
+    open,
+    error,
+    clearError,
+    isPrintAllowed,
+    isDocumentAssemblyAllowed,
+    isAnnotationEditingAllowed,
+  } = usePdfDocument();
   const store = usePdfrxStore();
   const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();
@@ -348,6 +392,8 @@ function PdfrxViewerAppChrome({
   const isNarrow = useIsNarrow();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [annotating, setAnnotating] = useState(false);
+  const effectivePageEditing = enablePageEditing && isDocumentAssemblyAllowed;
+  const effectiveAnnotations = enableAnnotations && isAnnotationEditingAllowed;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const errorMessageRef = useRef('');
   if (error !== null) {
@@ -412,7 +458,7 @@ function PdfrxViewerAppChrome({
   );
 
   const imageAnnotationDrop = useImageAnnotationDrop({
-    enabled: enableAnnotations && !overrides?.editingDisabled,
+    enabled: effectiveAnnotations && !overrides?.editingDisabled,
     onError: (error, file) => {
       console.error(`Failed to add image annotation from ${file.name}:`, error);
       store.reportImportError(error, file.name);
@@ -446,7 +492,7 @@ function PdfrxViewerAppChrome({
     if (isNarrow) setIsSidebarOpen(false);
   }, [isNarrow]);
 
-  const renderPageActions = enablePageEditing
+  const renderPageActions = effectivePageEditing
     ? (pageNumber: number): ReactNode => (
       <PdfPageActions
         pageNumber={pageNumber}
@@ -468,10 +514,10 @@ function PdfrxViewerAppChrome({
         style={{ width: sidebarWidth, ...sidebarProps?.style }}
         onNavigate={closeDrawerIfNarrow}
         renderPageActions={renderPageActions}
-        onInsertFiles={enablePageEditing && !overrides?.editingDisabled
+        onInsertFiles={effectivePageEditing && !overrides?.editingDisabled
           ? (files, index) => void (overrides?.insertFiles ?? insertFiles)(files, index)
           : undefined}
-        onMovePage={enablePageEditing && !overrides?.editingDisabled ? (overrides?.movePage ?? movePage) : undefined}
+        onMovePage={effectivePageEditing && !overrides?.editingDisabled ? (overrides?.movePage ?? movePage) : undefined}
       />
     </div>
   ) : null;
@@ -488,11 +534,18 @@ function PdfrxViewerAppChrome({
       {toolbar && (
         <PdfToolbar
           {...toolbarProps}
+          showSearch={features?.search === false ? false : toolbarProps?.showSearch}
+          showZoomControls={features?.zoom === false ? false : toolbarProps?.showZoomControls}
+          showPrint={
+            !isPrintAllowed
+              ? false
+              : (features?.print ?? toolbarProps?.showPrint ?? false)
+          }
           showSidebarToggle={sidebar}
           onToggleSidebar={() => setIsSidebarOpen((previous) => !previous)}
           // Put the hamburger next to the sidebar it controls.
           sidebarTogglePosition={sidebarSide === 'right' ? 'end' : 'start'}
-          afterZoom={(enableAnnotations || enablePageEditing) ? (
+          afterZoom={(effectiveAnnotations || effectivePageEditing) ? (
             <>
               {historyEnabled ? <><button
                 type="button"
@@ -514,7 +567,7 @@ function PdfrxViewerAppChrome({
               >
                 <IconRedo />
               </button></> : null}
-              {enableAnnotations && (
+              {effectiveAnnotations && (
                 <button
                   className={`pdfrx-button${annotating ? ' pdfrx-button-active' : ''}`}
                   aria-pressed={annotating}
@@ -560,10 +613,14 @@ function PdfrxViewerAppChrome({
               disabled={overrides?.editingDisabled}
             />
           )}
+          {features?.fullscreen !== false && <PdfFullscreenButton />}
+          {features?.spread === true && <PdfSpreadButton />}
+          {features?.marqueeZoom === true && <PdfMarqueeZoomButton />}
+          {features?.capture === true && <PdfCaptureAreaButton />}
           {children}
         </PdfToolbar>
       )}
-      {enableAnnotations && (
+      {effectiveAnnotations && (
         <div
           className={`pdfrx-collapsible${annotating ? ' pdfrx-collapsible-open' : ''}`}
           aria-hidden={!annotating}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePdfrxStore } from '../context.js';
+import { usePdfDocument } from './use-pdf-document.js';
 
 /** Print state and action returned by {@link usePdfPrint}. */
 export interface PdfPrint {
@@ -9,6 +10,8 @@ export interface PdfPrint {
   isPrinting: boolean;
   /** False on iOS/iPadOS, where WebKit cannot reliably isolate PDF pages from viewer UI. */
   isSupported: boolean;
+  /** Whether the current PDF's permission flags allow printing. */
+  isAllowed: boolean;
   /** The error from the last print attempt, or `null`. */
   error: unknown;
 }
@@ -37,6 +40,7 @@ function isPrintingSupported(): boolean {
  */
 export function usePdfPrint(): PdfPrint {
   const store = usePdfrxStore();
+  const { isPrintAllowed } = usePdfDocument();
   const [isPrinting, setIsPrinting] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -60,5 +64,5 @@ export function usePdfPrint(): PdfPrint {
     [store],
   );
 
-  return { print, isPrinting, isSupported, error };
+  return { print, isPrinting, isSupported, isAllowed: isPrintAllowed, error };
 }

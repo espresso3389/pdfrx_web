@@ -46,6 +46,10 @@ export {
   type ContextMenuBuilder,
   type ContextMenuContext,
   type LayoutDirection,
+  type ViewerSpreadMode,
+  type PdfCaptureOptions,
+  type PdfPageArea,
+  type PdfViewerPermissionOverrides,
   type LayoutPagesFn,
   type PdfViewerTapEvent,
   type PdfViewerTapType,
@@ -61,7 +65,7 @@ export type {
   LayoutPagesOptions,
   ViewTransform,
 } from '@pdfrx/viewer-core';
-export { layoutPagesVertical, layoutPagesHorizontal } from '@pdfrx/viewer-core';
+export { layoutPagesVertical, layoutPagesHorizontal, layoutPagesSpread } from '@pdfrx/viewer-core';
 export { definePdfrxViewerElement, PdfrxViewerElement } from './element.js';
 export { PdfTextSearcher, type SearchMatch, type StartTextSearchOptions } from './text-searcher.js';
 export { googleFontsResolver, type FontResolution, type FontResolver } from './font-fallback.js';

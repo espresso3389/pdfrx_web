@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   goToPage: vi.fn(),
   print: vi.fn(),
   printSupported: true,
+  printAllowed: true,
 }));
 
 vi.mock('./hooks/use-pdf-navigation.js', () => ({
@@ -23,6 +24,7 @@ vi.mock('./hooks/use-pdf-print.js', () => ({
     print: state.print,
     isPrinting: false,
     isSupported: state.printSupported,
+    isAllowed: state.printAllowed,
     error: null,
   }),
 }));
@@ -41,6 +43,7 @@ afterEach(() => {
   state.currentPageNumber = 2;
   state.pageCount = 8;
   state.printSupported = true;
+  state.printAllowed = true;
 });
 
 describe('PdfPrintButton', () => {

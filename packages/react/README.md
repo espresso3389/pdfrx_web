@@ -17,6 +17,11 @@ compose the supplied UI pieces, or build custom UI with headless hooks.
 - Annotation, form, and page changes share one chronological Undo/Redo history.
 - PDF and image opening, thumbnail insertion/reordering, and image annotation
   drops are supported by the standard UI.
+- Two-page book layouts, rectangular image capture, marquee zoom, and browser
+  fullscreen are available as composed controls; the all-in-one app keeps the
+  specialized layout/capture tools and printing hidden until explicitly enabled.
+- Declarative feature groups and effective PDF permissions consistently hide
+  or disable standard print, page-editing, annotation, and form entry points.
 - English, Japanese, Simplified and Traditional Chinese, French, and German are
   built in, with string overrides for additional locales.
 - CSS custom properties provide theming and responsive behavior; server

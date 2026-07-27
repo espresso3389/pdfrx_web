@@ -121,6 +121,11 @@ export class PdfrxViewerStore {
     return this.#viewer;
   }
 
+  /** DOM surface currently hosting the viewer, or `null` before mount. */
+  get surfaceElement(): HTMLElement | null {
+    return this.#element;
+  }
+
   /** The error thrown by the most recent open attempt, or `null`. */
   get error(): unknown {
     return this.#error;
@@ -289,6 +294,15 @@ export class PdfrxViewerStore {
     // A few options are cached by the viewer rather than read live.
     if (options.layoutDirection && options.layoutDirection !== previous.layoutDirection) {
       viewer.setLayoutDirection(options.layoutDirection);
+    }
+    if (options.spreadMode && options.spreadMode !== previous.spreadMode) {
+      viewer.setSpreadMode(options.spreadMode);
+    }
+    if (
+      options.enforceDocumentPermissions !== previous.enforceDocumentPermissions ||
+      options.permissionOverrides !== previous.permissionOverrides
+    ) {
+      viewer.refreshPermissionPolicy();
     }
     if (options.pageOverlaysBuilder !== previous.pageOverlaysBuilder) viewer.refreshOverlays();
     if (options.viewerOverlayBuilder !== previous.viewerOverlayBuilder) viewer.refreshViewerOverlays();

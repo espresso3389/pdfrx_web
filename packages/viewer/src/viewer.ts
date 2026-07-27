@@ -55,6 +55,7 @@ import {
   formatText,
   getSelectedRanges,
   layoutPagesHorizontal,
+  layoutPagesSpread,
   layoutPagesVertical,
   offsetToPdfPoint,
   offsetDeltaToPdfDelta,
@@ -144,6 +145,12 @@ export interface PdfrxViewerOptions {
    * {@link PdfrxViewer.setLayoutDirection}.
    */
   layoutDirection?: LayoutDirection;
+  /**
+   * Built-in two-page book layout. `'odd'` pairs pages 1–2, 3–4; `'even'`
+   * leaves page 1 alone and pairs 2–3, 4–5. Default: `'none'`.
+   * Ignored when {@link layoutPages} is set.
+   */
+  spreadMode?: ViewerSpreadMode;
   /**
    * Custom page-layout function, for facing/two-up/grid arrangements. Given the
    * page geometries and the resolved margin, return each page's rect (document
@@ -337,6 +344,13 @@ export interface PdfrxViewerOptions {
    * application-level AcroForm catalog merge. Default: `true`.
    */
   interactiveForms?: boolean;
+  /**
+   * Respect the PDF permission flags in standard viewer interactions.
+   * Default: `true`. These flags are advisory, not cryptographic security.
+   */
+  enforceDocumentPermissions?: boolean;
+  /** Application overrides applied before PDF permission flags. */
+  permissionOverrides?: PdfViewerPermissionOverrides;
   /**
    * Paints page annotations (ink, shapes, text markup, notes) through an SVG
    * overlay instead of the canvas, and enables in-viewer annotation editing via
@@ -576,6 +590,37 @@ export type PageOverlaysBuilder = (info: PageOverlayInfo) => HTMLElement | HTMLE
 
 /** Page-layout direction (see {@link PdfrxViewerOptions.layoutDirection}). */
 export type LayoutDirection = 'vertical' | 'horizontal';
+
+/** Built-in single-page or two-page book layout. */
+export type ViewerSpreadMode = 'none' | 'odd' | 'even';
+
+/** Options for {@link PdfrxViewer.capturePageArea}. */
+export interface PdfCaptureOptions {
+  /** Output pixels per PDF point. Default: `2`. */
+  scale?: number;
+  /** Browser image encoding. Default: `'image/png'`. */
+  type?: 'image/png' | 'image/jpeg' | 'image/webp';
+  /** JPEG/WebP quality from 0 to 1. */
+  quality?: number;
+  /** Include PDF annotations and interactive form appearances. Default: `true`. */
+  withAnnotations?: boolean;
+  /** Opaque PDFium background in ARGB. Default: white. */
+  backgroundColor?: number;
+}
+
+/** Application-level overrides for effective viewer permissions. */
+export interface PdfViewerPermissionOverrides {
+  copying?: boolean;
+  printing?: boolean;
+  documentAssembly?: boolean;
+  modifyAnnotations?: boolean;
+}
+
+/** A rectangular selection on one page. */
+export interface PdfPageArea {
+  readonly pageNumber: number;
+  readonly rect: PdfRect;
+}
 
 /**
  * A custom page-layout function (see {@link PdfrxViewerOptions.layoutPages}).
@@ -1779,6 +1824,7 @@ export class PdfrxViewer {
     this.#engine = options.engine ?? new PdfrxEngine(options.engineOptions ?? { wasmModulesUrl: 'pdfium/' });
     this.ownsEngine = !options.engine;
     this.layoutDirectionValue = options.layoutDirection ?? 'vertical';
+    this.spreadModeValue = options.spreadMode ?? 'none';
     this.previousContainerTouchAction = container.style.touchAction;
     this.previousContainerOverscrollBehavior = container.style.overscrollBehavior;
     container.style.touchAction = 'none';
@@ -1969,6 +2015,8 @@ export class PdfrxViewer {
   private pageGeoms: PageGeometry[] = [];
   private layout: PageLayout | null = null;
   private layoutDirectionValue: LayoutDirection;
+  private spreadModeValue: ViewerSpreadMode;
+  private areaSelectionCancel: (() => void) | null = null;
   private cache: PageRenderCache | null = null;
   private readonly pageTexts = new Map<number, PdfPageText | Promise<PdfPageText>>();
   private readonly pageLinks = new Map<number, PdfLink[] | Promise<PdfLink[]>>();
@@ -1997,8 +2045,8 @@ export class PdfrxViewer {
    * Effective minimum zoom. If {@link PdfrxViewerOptions.minZoom} is set, that
    * value is used. Otherwise it is the smaller of
    * {@link coverScale} (fit the whole document's bounding box) and the current
-   * page's {@link fitPageScale} (fit one whole page), computed dynamically from
-   * the current page so you can never zoom out past seeing a whole page.
+   * page's {@link fitPageScale} (the complete row in spread mode), computed
+   * dynamically so the active page or spread can remain fully visible.
    */
   private get minZoom(): number {
     if (this.options.minZoom !== undefined) return this.options.minZoom;
@@ -2363,6 +2411,23 @@ export class PdfrxViewer {
     this.resetView();
   }
 
+  /** Current built-in spread mode. */
+  get spreadMode(): ViewerSpreadMode {
+    return this.spreadModeValue;
+  }
+
+  /**
+   * Switches between continuous single-page layout and the two book pairings.
+   * Re-lays out and refits the current document.
+   */
+  setSpreadMode(mode: ViewerSpreadMode): void {
+    if (mode === this.spreadModeValue || this.options.layoutPages) return;
+    this.spreadModeValue = mode;
+    if (!this.doc) return;
+    this.layout = this.computeLayout();
+    this.resetView();
+  }
+
   /**
    * The plain text of the current selection (empty string when nothing is
    * selected). Only pages whose text has already loaded contribute; text is
@@ -2463,7 +2528,42 @@ export class PdfrxViewer {
    * (`PdfPermissions.allowsCopying` is `false`).
    */
   get isCopyAllowed(): boolean {
-    return this.doc?.permissions?.allowsCopying !== false;
+    return this.resolvePermission('copying', this.doc?.permissions?.allowsCopying);
+  }
+
+  /** Whether the PDF permission flags allow printing. */
+  get isPrintAllowed(): boolean {
+    return this.resolvePermission('printing', this.doc?.permissions?.allowsPrinting);
+  }
+
+  /** Whether the PDF permission flags allow page insertion, removal and rearrangement. */
+  get isDocumentAssemblyAllowed(): boolean {
+    return this.resolvePermission('documentAssembly', this.doc?.permissions?.allowsDocumentAssembly);
+  }
+
+  /** Whether the PDF permission flags allow annotation and form modifications. */
+  get isAnnotationEditingAllowed(): boolean {
+    return this.resolvePermission('modifyAnnotations', this.doc?.permissions?.allowsModifyAnnotations);
+  }
+
+  private resolvePermission(
+    key: keyof PdfViewerPermissionOverrides,
+    documentValue: boolean | undefined,
+  ): boolean {
+    const override = this.options.permissionOverrides?.[key];
+    if (override !== undefined) return override;
+    return this.options.enforceDocumentPermissions === false || documentValue !== false;
+  }
+
+  /**
+   * Re-evaluates permission-dependent overlays and listeners after changing
+   * `enforceDocumentPermissions` or `permissionOverrides` at runtime.
+   */
+  refreshPermissionPolicy(): void {
+    if (!this.isAnnotationEditingAllowed && this.annotationMode) this.setAnnotationMode(false);
+    this.updateFormOverlays();
+    this.notifyDocumentChanged();
+    this.invalidate();
   }
 
   /**
@@ -2543,11 +2643,9 @@ export class PdfrxViewer {
   }
 
   /**
-   * The **fit-page scale**: the zoom at which an
-   * entire page fits within the viewport, `min(viewW / pageW, viewH / pageH)`
-   * (page size includes the {@link PdfrxViewerOptions.margin}). Defaults to the
-   * current page. Returns `null` before a document is laid out or if the page
-   * number is out of range.
+   * The **fit-page scale**: the zoom at which an entire page fits within the
+   * viewport; in built-in spread mode this is the scale for the complete row
+   * containing that page. Defaults to the current page.
    *
    * The effective minimum zoom is `min(coverScale, fitPageScale)`.
    */
@@ -2558,8 +2656,9 @@ export class PdfrxViewer {
   /** @internal Fit-page scale for a specific page (1-based), or null if out of range. */
   private pageFitScale(pageNumber: number): number | null {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return null;
-    const pr = this.layout.pageLayouts[pageNumber - 1];
+    let pr = this.layout.pageLayouts[pageNumber - 1];
     if (!pr) return null;
+    if (this.spreadModeValue !== 'none') pr = this.spreadRowRect(pr);
     const m2 = this.margin * 2;
     const scale = Math.min(
       this.viewSize.width / (rectWidth(pr) + m2),
@@ -2568,12 +2667,34 @@ export class PdfrxViewer {
     return scale > 0 ? scale : null;
   }
 
+  /** Complete row containing `pageRect` in the built-in spread layout. */
+  private spreadRowRect(pageRect: Rect): Rect {
+    if (!this.layout || this.spreadModeValue === 'none') return pageRect;
+    let row = pageRect;
+    for (const candidate of this.layout.pageLayouts) {
+      if (Math.abs(candidate.top - pageRect.top) > 0.001) continue;
+      row = {
+        left: Math.min(row.left, candidate.left),
+        top: Math.min(row.top, candidate.top),
+        right: Math.max(row.right, candidate.right),
+        bottom: Math.max(row.bottom, candidate.bottom),
+      };
+    }
+    return row;
+  }
+
   /** @internal Computes the transform that fits a page into the view per mode. */
   private fitTransform(pageNumber: number, mode: FitMode): ViewTransform | null {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return null;
     const pr = this.layout.pageLayouts[pageNumber - 1];
     if (!pr) return null;
-    const inflated = rectInflate(pr, this.margin);
+    // In book mode, "fit width" means the complete row/spread containing the
+    // target page. Fit-page and fit-height intentionally remain page-scoped.
+    const fitRect =
+      mode === 'width' && this.spreadModeValue !== 'none'
+        ? this.spreadRowRect(pr)
+        : pr;
+    const inflated = rectInflate(fitRect, this.margin);
     const w = rectWidth(inflated);
     const h = rectHeight(inflated);
     const clampZoom = (z: number): number => Math.min(Math.max(z, this.minZoom), this.maxZoom);
@@ -2585,7 +2706,7 @@ export class PdfrxViewer {
       }
       case 'width': {
         const zoom = clampZoom(this.viewSize.width / w);
-        // Fill width, aligning the top of the page to the top of the viewport.
+        // Fill width, aligning the page or spread row to the viewport top.
         return calcTransformFor({ x: center.x, y: inflated.top + this.viewSize.height / 2 / zoom }, zoom, this.viewSize);
       }
       case 'height': {
@@ -2611,9 +2732,9 @@ export class PdfrxViewer {
   }
 
   /**
-   * Scale a page so its width fills the viewport, aligning the top of the page
-   * to the top of the viewport. Defaults to the current page. This is the
-   * "Fit Width" action (a common default for continuous reading).
+   * Scale a page so its width fills the viewport, aligning its top to the
+   * viewport. In odd/even spread mode, fits the complete row containing the
+   * page instead. Defaults to the current page.
    */
   fitToWidth(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'width');
@@ -2753,6 +2874,151 @@ export class PdfrxViewer {
     const visible = calcVisibleRect(this.transform, this.viewSize, margin);
     if (rectContainsRect(visible, docRect)) return;
     this.setTransform(calcTransformFor(rectCenter(docRect), this.transform.zoom, this.viewSize));
+  }
+
+  /** Zooms and pans so a PDF-page rectangle fills the viewport. */
+  zoomToPageArea(pageNumber: number, rect: PdfRect, duration?: number): void {
+    if (!this.layout) return;
+    const page = this.pageGeoms[pageNumber - 1];
+    const pageRect = this.layout.pageLayouts[pageNumber - 1];
+    if (!page || !pageRect) return;
+    const docRect = pdfRectToRectInDocument(rect, page, pageRect);
+    if (rectIsEmpty(docRect)) return;
+    const target = calcTransformForRect(docRect, this.viewSize, {
+      zoomMax: this.maxZoom,
+    });
+    this.zoomModeValue = target.zoom;
+    this.navigateTo(target, duration ?? this.defaultAnimationDuration);
+  }
+
+  /**
+   * Renders a rectangular PDF-page region and encodes it as a browser image.
+   * The rectangle uses normal PDF coordinates (points, origin bottom-left).
+   */
+  async capturePageArea(
+    pageNumber: number,
+    rect: PdfRect,
+    options: PdfCaptureOptions = {},
+  ): Promise<Blob> {
+    const page = this.doc?.pages[pageNumber - 1];
+    const geom = this.pageGeoms[pageNumber - 1];
+    if (!page || !geom) throw new RangeError(`Page ${pageNumber} is not available`);
+    const scale = options.scale ?? 2;
+    if (!Number.isFinite(scale) || scale <= 0) throw new RangeError('Capture scale must be greater than zero');
+    const local = pdfRectToRect(rect, { page: geom });
+    const left = Math.max(0, Math.min(geom.width, local.left));
+    const top = Math.max(0, Math.min(geom.height, local.top));
+    const right = Math.max(left, Math.min(geom.width, local.right));
+    const bottom = Math.max(top, Math.min(geom.height, local.bottom));
+    const width = Math.max(1, Math.round((right - left) * scale));
+    const height = Math.max(1, Math.round((bottom - top) * scale));
+    const image = await page.render({
+      fullWidth: Math.max(1, Math.round(geom.width * scale)),
+      fullHeight: Math.max(1, Math.round(geom.height * scale)),
+      x: Math.round(left * scale),
+      y: Math.round(top * scale),
+      width,
+      height,
+      annotationRenderingMode: options.withAnnotations === false ? 'none' : 'annotationAndForms',
+      backgroundColor: options.backgroundColor,
+    });
+    if (!image) throw new Error('Page capture was cancelled');
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext('2d')!.putImageData(image.toImageData(), 0, 0);
+    const type = options.type ?? 'image/png';
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error(`The browser cannot encode ${type}`)),
+        type,
+        options.quality,
+      );
+    });
+  }
+
+  /**
+   * Lets the user drag a rectangular page area. Escape or a pointer release
+   * outside the starting page cancels. Only one selection can run at a time.
+   */
+  selectPageArea(): Promise<PdfPageArea | null> {
+    if (!this.doc || this.areaSelectionCancel) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText =
+        'position:absolute;inset:0;z-index:40;cursor:crosshair;touch-action:none;';
+      const marquee = document.createElement('div');
+      marquee.style.cssText =
+        'position:absolute;display:none;border:1px dashed #1976d2;background:rgba(25,118,210,.14);pointer-events:none;';
+      overlay.appendChild(marquee);
+      this.container.appendChild(overlay);
+
+      let pointerId: number | null = null;
+      let startView: Offset | null = null;
+      let startHit: PdfPageHitTestResult | null = null;
+      const position = (event: PointerEvent): Offset => {
+        const bounds = this.container.getBoundingClientRect();
+        return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+      };
+      const draw = (point: Offset): void => {
+        if (!startView) return;
+        const left = Math.min(startView.x, point.x);
+        const top = Math.min(startView.y, point.y);
+        marquee.style.display = 'block';
+        marquee.style.left = `${left}px`;
+        marquee.style.top = `${top}px`;
+        marquee.style.width = `${Math.abs(point.x - startView.x)}px`;
+        marquee.style.height = `${Math.abs(point.y - startView.y)}px`;
+      };
+      const finish = (result: PdfPageArea | null): void => {
+        overlay.remove();
+        document.removeEventListener('keydown', onKeyDown, true);
+        this.areaSelectionCancel = null;
+        resolve(result);
+      };
+      const onKeyDown = (event: KeyboardEvent): void => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        finish(null);
+      };
+      overlay.addEventListener('pointerdown', (event) => {
+        if (pointerId !== null) return;
+        const point = position(event);
+        const hit = this.getPageHitTestResult(point);
+        if (!hit) return;
+        pointerId = event.pointerId;
+        startView = point;
+        startHit = hit;
+        overlay.setPointerCapture(event.pointerId);
+        draw(point);
+        event.preventDefault();
+      });
+      overlay.addEventListener('pointermove', (event) => {
+        if (event.pointerId === pointerId) draw(position(event));
+      });
+      overlay.addEventListener('pointerup', (event) => {
+        if (event.pointerId !== pointerId || !startHit) return;
+        const endHit = this.getPageHitTestResult(position(event));
+        if (!endHit || endHit.pageNumber !== startHit.pageNumber) {
+          finish(null);
+          return;
+        }
+        const a = startHit.pdfPoint;
+        const b = endHit.pdfPoint;
+        const rect: PdfRect = {
+          left: Math.min(a.x, b.x),
+          right: Math.max(a.x, b.x),
+          bottom: Math.min(a.y, b.y),
+          top: Math.max(a.y, b.y),
+        };
+        finish(rect.right - rect.left < 1 || rect.top - rect.bottom < 1
+          ? null
+          : { pageNumber: startHit.pageNumber, rect });
+      });
+      overlay.addEventListener('pointercancel', () => finish(null));
+      document.addEventListener('keydown', onKeyDown, true);
+      this.areaSelectionCancel = () => finish(null);
+    });
   }
 
   /** Loads (and caches) the structured text of a page. */
@@ -2917,6 +3183,7 @@ export class PdfrxViewer {
    * PDF pages from the surrounding viewer UI in print preview.
    */
   async print(options: { dpi?: number } = {}): Promise<void> {
+    if (!this.isPrintAllowed) throw new Error('Printing is not permitted by this PDF');
     if (!this.doc) return;
     if (!isPdfPrintingSupported()) {
       throw new Error('Printing is not supported on iOS or iPadOS');
@@ -3055,6 +3322,7 @@ export class PdfrxViewer {
    * rendering worker is shut down too. Idempotent.
    */
   dispose(): void {
+    this.areaSelectionCancel?.();
     if (this.disposed) return;
     this.disposed = true;
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
@@ -3273,6 +3541,9 @@ export class PdfrxViewer {
   private computeLayout(): PageLayout {
     const opts = { margin: this.margin };
     if (this.options.layoutPages) return this.options.layoutPages(this.pageGeoms, opts);
+    if (this.spreadModeValue !== 'none') {
+      return layoutPagesSpread(this.pageGeoms, this.spreadModeValue, opts);
+    }
     const layout = this.layoutDirectionValue === 'horizontal' ? layoutPagesHorizontal : layoutPagesVertical;
     return layout(this.pageGeoms, opts);
   }
@@ -5393,7 +5664,12 @@ export class PdfrxViewer {
    * transform. Mirrors {@link updateOverlays}; called from the paint loop.
    */
   private updateFormOverlays(): void {
-    if (this.options.interactiveForms === false || !this.layout || !this.doc) {
+    if (
+      this.options.interactiveForms === false ||
+      !this.isAnnotationEditingAllowed ||
+      !this.layout ||
+      !this.doc
+    ) {
       if (this.formOverlays.size) this.clearFormOverlays();
       return;
     }
@@ -5675,7 +5951,7 @@ export class PdfrxViewer {
 
   /** Whether the SVG annotation overlay is active (option default: on). */
   private annotationsEnabled(): boolean {
-    return this.options.interactiveAnnotations !== false;
+    return this.options.interactiveAnnotations !== false && this.isAnnotationEditingAllowed;
   }
 
   private annotationsEditable(): boolean {
@@ -7088,6 +7364,7 @@ export class PdfrxViewer {
 
   /** Replaces the page arrangement and records it as one undoable edit. */
   setPages(pages: readonly PdfPage[], options: PdfrxPageMutationOptions = {}): void {
+    if (!this.isDocumentAssemblyAllowed) return;
     if (!this.doc) return;
     if (this.options.editing?.pages === false) throw new Error('Page editing is disabled');
     const before = this.doc.pages.slice();

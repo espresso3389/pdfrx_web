@@ -163,6 +163,34 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
   },
 ];
 
+test('spread, page capture, and rectangle zoom share correct page geometry', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const result = await page.evaluate(async () => {
+    const api = (window as unknown as {
+      annotationVisualTest: {
+        runPageToolChecks(): Promise<{
+          captureType: string;
+          captureWidth: number;
+          captureHeight: number;
+          spreadModes: string[];
+          zoomIncreased: boolean;
+          spreadFitIsWider: boolean;
+        }>;
+      };
+    }).annotationVisualTest;
+    return api.runPageToolChecks();
+  });
+  expect(result).toEqual({
+    captureType: 'image/png',
+    captureWidth: 128,
+    captureHeight: 128,
+    spreadModes: ['odd', 'even', 'none'],
+    zoomIncreased: true,
+    spreadFitIsWider: true,
+  });
+});
+
 for (const visualCase of cases) {
   test(visualCase.name, async ({ page }, testInfo) => {
     page.on('pageerror', (error) => console.error(`visual harness: ${error.message}`));
