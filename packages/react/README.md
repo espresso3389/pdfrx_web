@@ -208,10 +208,13 @@ vertical alignment, wrapping, and clipping while it is resized.
 Its text uses the annotation's current text color. The editing background uses
 the fill color at full opacity, or white when no fill is set.
 
-Annotation selection is always available; the toolbar contains drawing tools,
-not text/object selection mode buttons. A primary click selects one object,
-primary-button object and anchor drags move or reshape it, and secondary-button
-drag updates a marquee selection continuously during its drag.
+Opening the annotation toolbar enters annotation-object mode; its leading mode
+buttons can explicitly switch between object and text selection while the
+toolbar remains open. Closing the toolbar always returns to normal
+viewing/text-selection mode. Holding `Alt`/`Option` temporarily swaps those
+modes and updates the active mode button. In annotation mode, a primary click selects one object,
+primary-button object and anchor drags move or reshape it, and primary-button
+drag from empty page space updates a marquee selection continuously.
 Objects that leave the marquee are removed from the selection; holding
 `Ctrl`/`Cmd` preserves the existing selection and adds intersecting objects.
 The same modifier toggles objects on click. Pen strokes, straight lines, and
@@ -508,6 +511,7 @@ The dark palette follows `prefers-color-scheme` by default.
   state on
   [`useDocumentGeneration()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useDocumentGeneration.html).
 - **Options are live.** Changing `backgroundColor`, `panEnabled`,
+  [`autoLinkDetection`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#autolinkdetection),
   `layoutDirection` and friends applies to the running viewer. `engine`,
   `engineOptions` and `initialFit` are read once at construction, so changing
   those requires remounting the provider.

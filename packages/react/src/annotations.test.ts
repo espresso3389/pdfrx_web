@@ -29,9 +29,9 @@ describe('pdfAnnotationSubtypeFromName', () => {
     }
   });
 
-  it('folds widgets, links, popups and unknown names to "unknown"', () => {
+  it('surfaces links and folds widgets, popups and unknown names to "unknown"', () => {
     expect(pdfAnnotationSubtypeFromName('widget')).toBe('unknown');
-    expect(pdfAnnotationSubtypeFromName('link')).toBe('unknown');
+    expect(pdfAnnotationSubtypeFromName('link')).toBe('link');
     expect(pdfAnnotationSubtypeFromName('popup')).toBe('unknown');
     expect(pdfAnnotationSubtypeFromName('')).toBe('unknown');
     expect(pdfAnnotationSubtypeFromName('Highlight')).toBe('unknown'); // case-sensitive (wire is lowercased)

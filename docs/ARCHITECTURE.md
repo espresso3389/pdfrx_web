@@ -54,7 +54,7 @@ materialized document. Notable client behaviors:
   React subscribes to these explicit refreshes and invalidates its outline,
   form, annotation, search, and thumbnail state as well.
 
-- `setPages()` / `setPage()`, `setOutline()`, and `setLinks()` first update only
+- `setPages()` / `setPage()` and `setOutline()` first update only
   client-side pending state. The worker's catalog, page tree, annotations, and
   indirect object numbers remain physical-PDF state until `materialize()` (also
   called by `encodePdf()`). `createMaterializedCopy()` applies the same logical
@@ -71,11 +71,10 @@ materialized document. Notable client behaviors:
   destinations deliberately retain a fixed position. Repeating one identity in
   `setPages()` is allowed and resolves to one matching placement.
 
-- Outline and Link-annotation edits are staged as immutable high-level values.
-  `setOutline()` replaces the logical outline tree and `setLinks()` replaces
-  supported links on one logical page. `materialize()` writes those values to
-  raw PDF objects, preserving non-Link annotations and unsupported Link
-  actions. Auto-detected URL text is never treated as a persisted annotation.
+- Outline edits are staged as immutable high-level values. Link annotations
+  use ordinary annotation CRUD; their raw-object writes remain pending until
+  `materialize()` writes them while preserving unsupported Link actions.
+  Auto-detected URL text is never treated as a persisted annotation.
 
 - The worker runs on a `blob:` URL (a bootstrap blob injects the wasm URL), so
   the engine resolves relative document URLs against `document.baseURI` before
@@ -132,8 +131,8 @@ the canvas approach enables selection behavior DOM ranges cannot express. The
 shell adds:
 
 - a pointer state machine (`pan / select / dragHandle / pinch`): mouse text-drag
-  selects, primary-button background drag pans, primary-button annotation/anchor
-  drag moves or reshapes objects, secondary-button drag marquee-selects objects,
+  selects, primary-button background drag pans, and in annotation mode the same
+  button moves/reshapes objects or marquee-selects from empty space,
   and touch pans with long-press word selection
   and draggable A/B handles. Two-finger midpoint movement
   pans while separation changes zoom; the two parts independently honor
@@ -275,7 +274,9 @@ on (the `interactiveAnnotations` option, default on) the canvas renders with a n
 `'formsOnly'` mode — form widgets via `FPDF_FFLDraw` but **not** `FPDF_ANNOT` — so
 annotations come only from the SVG and per-edit updates never re-render the page
 (no flicker). A drawing tool (`setAnnotationTool`) makes the SVG capture pointer
-drags to create annotations; with no tool, a selected annotation shows draggable
+drags to create annotations; `setAnnotationMode` toggles object manipulation
+versus text selection and link activation. Holding
+Alt/Option temporarily inverts the effective mode. A selected annotation shows draggable
 **anchor handles** — the sole selection indicator — sized to a constant 8px
 on-screen regardless of zoom. Freehand pen, rectangle, ellipse and other
 rect/markup shapes expose the eight bounding-box handles (corners + edge
@@ -296,12 +297,12 @@ quadpoints (`getSelectedRanges` + `enumerateFragmentBoundingRects`, the same
 geometry that paints the selection) and adds one `Highlight` markup annotation
 per page as a single undo group. `canHighlightSelection()` gates the menu item.
 
-**Always-available object selection & multi-selection.** Annotation selection
-has no toolbar mode: a primary click selects one object, a primary drag on an
-object or anchor moves or reshapes it, and a secondary-button drag draws a
+**Object selection & multi-selection.** Annotation mode (or Alt/Option while
+viewing) makes a primary click select one object, a primary drag on an
+object or anchor move or reshape it, and a primary drag from empty space draw a
 rubber-band marquee. The marquee continuously selects every intersecting
-annotation; objects that leave it are removed. A moved secondary drag suppresses
-the trailing context menu, while a stationary secondary click still opens it.
+annotation; objects that leave it are removed. Right-click remains the ordinary
+context-menu gesture.
 Holding Ctrl/Cmd preserves the pre-drag selection and adds intersections, and
 modifier-click toggles one object. Pen strokes, lines, and arrows bypass
 bounding-box hits: selection uses the closest finite stroke segment within 6
@@ -325,8 +326,9 @@ is already selected, it instead selects every annotation on the current page.
 `Delete`/`Backspace` removes the selection. Arrow keys translate it by one
 screen pixel (ten with Shift), converting that screen-space delta through page
 rotation and constraining the group to the page before recording one history
-step. Clear the active drawing tool with `setAnnotationTool(null)`; object
-selection remains available independently of the active tool.
+step. `setAnnotationMode(false)` returns to viewing/text-selection mode; holding
+Alt/Option temporarily exposes object selection, while holding it in any
+annotation mode temporarily exposes text selection and link activation.
 
 **Rectangle text editing.** Square and FreeText remain distinct PDF annotation
 subtypes but are one GUI object. Double-clicking either opens the same inline

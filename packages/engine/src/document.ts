@@ -36,6 +36,7 @@ import {
   pdfPageRotationFromIndex,
   pdfPageRotationToIndex,
   type PdfAnnotationColor,
+  type PdfAnnotation,
   type PdfAnnotationGeometry,
   type PdfAnnotationObject,
   type PdfAnnotationChange,
@@ -60,7 +61,7 @@ import {
   type PdfFormMutationOptions,
   type PdfHighlightObject,
   type PdfLink,
-  type PdfLinkSpec,
+  type PdfLinkTarget,
   type PdfLoadAnnotationsOptions,
   type PdfLoadHighlightsOptions,
   type PdfOutlineNode,
@@ -81,6 +82,29 @@ const createPdfPageId = (): PdfPageId => `pdf-page-${nextPdfPageIdentity++}` as 
 let nextPdfLinkIdentity = 1;
 const createPdfLinkId = (): string => `pdfrx-link-${Date.now().toString(36)}-${nextPdfLinkIdentity++}`;
 
+interface PdfLinkSpec {
+  readonly rect: PdfRect;
+  readonly target: PdfLinkTarget;
+  readonly id?: string;
+  readonly annotation?: PdfAnnotation | null;
+}
+
+function linkSpecFromAnnotationSpec(spec: PdfAnnotationSpec & { id: string; linkTarget: PdfLinkTarget }): PdfLinkSpec {
+  if (!spec.rect) throw new Error('Link annotation requires rect');
+  return {
+    id: spec.id,
+    rect: structuredClone(spec.rect),
+    target: structuredClone(spec.linkTarget),
+    annotation: {
+      title: spec.author ?? null,
+      content: spec.contents ?? null,
+      subject: null,
+      modificationDate: null,
+      creationDate: null,
+    },
+  };
+}
+
 /** Converts the richer read model into the complete writable/persistable shape. */
 export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnnotationSpec {
   const appearanceWidth = Math.max(0.01, annotation.rect.right - annotation.rect.left);
@@ -88,6 +112,7 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
   return {
     id: annotation.id,
     subtype: annotation.subtype,
+    linkTarget: annotation.linkTarget ? structuredClone(annotation.linkTarget) : undefined,
     rect: structuredClone(annotation.rect),
     color: annotation.color ? structuredClone(annotation.color) : null,
     interiorColor: annotation.interiorColor ? structuredClone(annotation.interiorColor) : null,
@@ -1551,7 +1576,7 @@ export class PdfDocument {
    *
    * This reads the physical PDF object graph in the worker, not pending logical
    * state created by {@link setPages}, {@link setPage}, {@link setOutline}, or
-   * {@link PdfPage.setLinks}. When {@link hasPendingChanges} is `true`, call
+   * Link-annotation CRUD. When {@link hasPendingChanges} is `true`, call
    * {@link materialize} first (or use in-place {@link encodePdf}) before
    * interpreting affected page-tree dictionaries, page references, outlines,
    * annotations, or other catalog data.
@@ -1572,7 +1597,7 @@ export class PdfDocument {
    *
    * Object numbers and references belong to the physical PDF object graph in
    * the worker. Pending edits from {@link setPages}, {@link setPage},
-   * {@link setOutline}, or {@link PdfPage.setLinks} exist only in logical state
+   * {@link setOutline}, or Link-annotation edits exist only in logical state
    * and can disagree with that graph. Call {@link materialize} first (or use
    * in-place {@link encodePdf}) before reading affected objects or retaining
    * object numbers for later edits.
@@ -1606,7 +1631,7 @@ export class PdfDocument {
    *
    * Raw targets and object numbers address the physical PDF object graph, not
    * pending edits created by {@link setPages}, {@link setPage},
-   * {@link setOutline}, or {@link PdfPage.setLinks}. Raw editing does not
+   * {@link setOutline}, or Link-annotation CRUD. Raw editing does not
    * materialize those edits automatically. Call {@link materialize} explicitly
    * before inspecting raw objects and constructing a related edit batch;
    * otherwise the batch can target the old page tree, outline, annotations, or
@@ -2008,6 +2033,23 @@ export class PdfDocument {
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
+    if (effectiveSpec.subtype === 'link') {
+      if (!effectiveSpec.linkTarget) throw new Error('Link annotation requires linkTarget');
+      const id = effectiveSpec.id ?? createPdfLinkId();
+      const links = await page.loadEditableLinkSpecs();
+      page.stageLinkAnnotations([...links, linkSpecFromAnnotationSpec({
+        ...effectiveSpec,
+        id,
+        linkTarget: effectiveSpec.linkTarget,
+      })]);
+      const storedSpec = { ...structuredClone(effectiveSpec), id, revision: effectiveSpec.revision ?? 1 };
+      this.emitAnnotationChanges(
+        [{ type: 'add', id, pageNumber: page.pageNumber, spec: storedSpec }],
+        [{ id, pageNumber: page.pageNumber, before: null, after: storedSpec }],
+        options,
+      );
+      return id;
+    }
     const result = await page.sourceDocument.sendCommand('addAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
@@ -2036,6 +2078,32 @@ export class PdfDocument {
     const effectiveSpec = options.origin === 'remote' || options.origin === 'restore'
       ? { ...spec, actorId: options.actorId ?? spec.actorId }
       : { ...spec, actorId: options.actorId ?? spec.actorId, revision: undefined };
+    if (before?.subtype === 'link' || effectiveSpec.subtype === 'link') {
+      if (before?.subtype !== 'link' || effectiveSpec.subtype !== 'link') {
+        throw new Error('Changing an annotation to or from link is not supported');
+      }
+      if (!effectiveSpec.linkTarget) throw new Error('Link annotation requires linkTarget');
+      const links = await page.loadEditableLinkSpecs();
+      const index = links.findIndex((link) => link.id === id);
+      if (index < 0) throw new Error(`Annotation not found: ${id}`);
+      links[index] = linkSpecFromAnnotationSpec({
+        ...effectiveSpec,
+        id,
+        linkTarget: effectiveSpec.linkTarget,
+      });
+      page.stageLinkAnnotations(links);
+      const storedSpec = {
+        ...structuredClone(effectiveSpec),
+        id,
+        revision: (before.revision ?? 0) + 1,
+      };
+      this.emitAnnotationChanges(
+        [{ type: 'update', id, pageNumber: page.pageNumber, spec: storedSpec }],
+        [{ id, pageNumber: page.pageNumber, before, after: storedSpec }],
+        options,
+      );
+      return id;
+    }
     const result = await page.sourceDocument.sendCommand('updateAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
@@ -2062,6 +2130,18 @@ export class PdfDocument {
     if (this._isDisposed) throw new Error('Document is disposed');
     if (page.document !== this) throw new Error('Page does not belong to this document arrangement');
     const before = await this.loadAnnotationSpec(page, id);
+    if (before?.subtype === 'link') {
+      const links = await page.loadEditableLinkSpecs();
+      const remaining = links.filter((link) => link.id !== id);
+      if (remaining.length === links.length) return false;
+      page.stageLinkAnnotations(remaining);
+      this.emitAnnotationChanges(
+        [{ type: 'remove', id, pageNumber: page.pageNumber }],
+        [{ id, pageNumber: page.pageNumber, before, after: null }],
+        options,
+      );
+      return true;
+    }
     const result = await page.sourceDocument.sendCommand('removeAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
@@ -2121,14 +2201,17 @@ export class PdfDocument {
     for (const item of snapshot.annotations) {
       const spec = { ...structuredClone(item.spec), id: item.id };
       const page = this.pageForAnnotation(item.pageNumber);
-      const result = await page.sourceDocument.sendCommand(existingIds.has(item.id) ? 'updateAnnotation' : 'addAnnotation', {
-        docHandle: page.sourceDocument.docHandle,
-        pageIndex: page.sourcePageIndex,
-        ...(existingIds.has(item.id) ? { id: item.id } : {}),
-        ...(existingIds.has(item.id) && options.preserveAppearance ? { preserveAppearance: true } : {}),
-        spec: page.annotationSpecToWorker(spec),
-      } as never);
-      changes.push({ type: existingIds.has(item.id) ? 'update' : 'add', id: result.id, pageNumber: item.pageNumber, spec });
+      const type = existingIds.has(item.id) ? 'update' : 'add';
+      const resultId = spec.subtype === 'link'
+        ? await this.writeLinkAnnotationRaw(page, type, item.id, spec)
+        : (await page.sourceDocument.sendCommand(type === 'update' ? 'updateAnnotation' : 'addAnnotation', {
+            docHandle: page.sourceDocument.docHandle,
+            pageIndex: page.sourcePageIndex,
+            ...(type === 'update' ? { id: item.id } : {}),
+            ...(type === 'update' && options.preserveAppearance ? { preserveAppearance: true } : {}),
+            spec: page.annotationSpecToWorker(spec),
+          } as never)).id;
+      changes.push({ type, id: resultId, pageNumber: item.pageNumber, spec });
     }
     this.emitAnnotationChanges(
       changes,
@@ -2159,27 +2242,58 @@ export class PdfDocument {
       }
       const spec = { ...structuredClone(change.spec), id: change.id };
       const command = change.type === 'add' ? 'addAnnotation' : 'updateAnnotation';
-      const result = await page.sourceDocument.sendCommand(command, {
-        docHandle: page.sourceDocument.docHandle,
-        pageIndex: page.sourcePageIndex,
-        ...(command === 'updateAnnotation' ? { id: change.id } : {}),
-        ...(command === 'updateAnnotation' && options.preserveAppearance ? { preserveAppearance: true } : {}),
-        spec: page.annotationSpecToWorker(spec),
-      } as never);
-      applied.push({ ...change, id: result.id, spec });
-      historyChanges.push({ id: result.id, pageNumber: change.pageNumber, before, after: spec });
+      const resultId = spec.subtype === 'link'
+        ? await this.writeLinkAnnotationRaw(page, change.type, change.id, spec)
+        : (await page.sourceDocument.sendCommand(command, {
+            docHandle: page.sourceDocument.docHandle,
+            pageIndex: page.sourcePageIndex,
+            ...(command === 'updateAnnotation' ? { id: change.id } : {}),
+            ...(command === 'updateAnnotation' && options.preserveAppearance ? { preserveAppearance: true } : {}),
+            spec: page.annotationSpecToWorker(spec),
+          } as never)).id;
+      applied.push({ ...change, id: resultId, spec });
+      historyChanges.push({ id: resultId, pageNumber: change.pageNumber, before, after: spec });
     }
     this.emitAnnotationChanges(applied, historyChanges, options);
   }
 
   private async removeAnnotationRaw(pageNumber: number, id: string): Promise<boolean> {
     const page = this.pageForAnnotation(pageNumber);
+    const existing = await this.loadAnnotationSpec(page, id);
+    if (existing?.subtype === 'link') {
+      const links = await page.loadEditableLinkSpecs();
+      const remaining = links.filter((link) => link.id !== id);
+      if (remaining.length === links.length) return false;
+      page.stageLinkAnnotations(remaining);
+      return true;
+    }
     const result = await page.sourceDocument.sendCommand('removeAnnotation', {
       docHandle: page.sourceDocument.docHandle,
       pageIndex: page.sourcePageIndex,
       id,
     });
     return result.ok;
+  }
+
+  private async writeLinkAnnotationRaw(
+    page: PdfPage,
+    type: 'add' | 'update',
+    id: string,
+    spec: PdfAnnotationSpec,
+  ): Promise<string> {
+    if (spec.subtype !== 'link' || !spec.linkTarget) throw new Error('Link annotation requires linkTarget');
+    const links = await page.loadEditableLinkSpecs();
+    const writable = linkSpecFromAnnotationSpec({ ...spec, id, linkTarget: spec.linkTarget });
+    if (type === 'add') {
+      if (links.some((link) => link.id === id)) throw new Error(`Annotation already exists: ${id}`);
+      page.stageLinkAnnotations([...links, writable]);
+    } else {
+      const index = links.findIndex((link) => link.id === id);
+      if (index < 0) throw new Error(`Annotation not found: ${id}`);
+      links[index] = writable;
+      page.stageLinkAnnotations(links);
+    }
+    return id;
   }
 
   /**
@@ -2896,10 +3010,8 @@ export class PdfPage {
   /**
    * Loads link annotations on the page and, when
    * `enableAutoLinkDetection` is true (the default), URL-like text detected in
-   * the page content. A staged {@link setLinks} replacement is returned instead
-   * of the physical Link annotations while retaining any transient detected
-   * URLs. Returns an empty array if the document is disposed or the page is not
-   * yet loaded.
+   * the page content. Pending annotation-CRUD changes are returned instead of
+   * physical Link annotations while retaining transient detected URLs.
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
     const loaded = await this.loadLinksFromWorker(options);
@@ -2944,14 +3056,12 @@ export class PdfPage {
   }
 
   /**
-   * Stages a replacement for the editable Link annotations on this logical
-   * page. Other annotation subtypes and unsupported Link actions are preserved
-   * when {@link PdfDocument.materialize} writes the pending change.
-   *
-   * URL-like text returned with `kind: "detected"` is not a PDF object; create
-   * a {@link PdfLinkSpec} to persist it as a Link annotation.
+   * Stages the editable Link annotations on this logical page. Other annotation
+   * subtypes and unsupported Link actions are preserved when
+   * {@link PdfDocument.materialize} writes the pending change.
    */
-  setLinks(links: readonly PdfLinkSpec[]): void {
+  /** @internal Stages the complete Link list used by ordinary annotation CRUD. */
+  stageLinkAnnotations(links: readonly PdfLinkSpec[]): void {
     if (this.document.isDisposed || !this.isLoaded) return;
     validateLinkSpecs(links);
     this.document.stageLinks(this.id, links, this.pageNumber);
@@ -3055,8 +3165,8 @@ export class PdfPage {
   }
 
   /**
-   * Loads the content annotations on this page (ink, shapes, text markup, notes,
-   * free text — not widgets/links/popups), with rects and geometry in
+   * Loads the editable annotations on this page (including Link annotations,
+   * but not widgets/popups), with rects and geometry in
    * bounding-box-relative page coordinates (like {@link loadLinks}). Returns an
    * empty array if the document is disposed or the page is not yet loaded.
    */
@@ -3066,7 +3176,14 @@ export class PdfPage {
       docHandle: this.sourceDocument.docHandle,
       pageIndex: this.sourcePageIndex,
     });
-    const annotations = result.annotations.map((a) => this.annotationFromWorker(a));
+    const annotations = [
+      ...result.annotations.map((a) => this.annotationFromWorker(a)),
+      ...(await this.loadLinks({ enableAutoLinkDetection: false }))
+        .filter((link): link is PdfLink & { kind: 'annotation'; id: string } =>
+          link.kind === 'annotation' && link.id !== null && link.rects.length > 0
+        )
+        .map((link) => this.annotationFromLink(link)),
+    ];
     if (options.subtype === undefined) return annotations;
     const subtypes = new Set(Array.isArray(options.subtype) ? options.subtype : [options.subtype]);
     return annotations.filter((annotation) => subtypes.has(annotation.subtype));
@@ -3155,12 +3272,60 @@ export class PdfPage {
     return this.document.removeAnnotationForPage(this, id, options);
   }
 
+  /** @internal Returns the complete writable Link-annotation list for CRUD. */
+  async loadEditableLinkSpecs(): Promise<PdfLinkSpec[]> {
+    return (await this.loadLinks({ enableAutoLinkDetection: false }))
+      .filter((link): link is PdfLink & { kind: 'annotation'; id: string } =>
+        link.kind === 'annotation' && link.id !== null && link.rects.length > 0
+      )
+      .map((link) => ({
+        id: link.id,
+        rect: structuredClone(link.rects[0]!),
+        target: structuredClone(link.target),
+        annotation: link.annotation ? structuredClone(link.annotation) : null,
+      }));
+  }
+
+  private annotationFromLink(link: PdfLink & { id: string }): PdfAnnotationObject {
+    return {
+      id: link.id,
+      pageNumber: this.pageNumber,
+      subtype: 'link',
+      linkTarget: structuredClone(link.target),
+      rect: structuredClone(link.rects[0]!),
+      color: null,
+      interiorColor: null,
+      borderWidth: 0,
+      flags: 0,
+      contents: link.annotation?.content ?? null,
+      author: link.annotation?.title ?? null,
+      actorId: null,
+      revision: 0,
+      textOrientation: { rotation: 0, behavior: 'page' },
+      textColor: null,
+      fontSize: null,
+      textAlign: 'left',
+      textVerticalAlign: 'top',
+      fontFace: null,
+      appearanceLines: null,
+      appearanceRuns: null,
+      appearanceImage: null,
+      appearancePaths: [],
+      appearanceTextStyles: [],
+      subject: link.annotation?.subject ?? null,
+      modificationDate: link.annotation?.modificationDate ?? null,
+      creationDate: link.annotation?.creationDate ?? null,
+      geometry: { kind: 'none' },
+    };
+  }
+
   /** @internal Converts a wire annotation (raw coords) to the public model (bbox-relative). */
   private annotationFromWorker(a: WorkerAnnotationObject): PdfAnnotationObject {
     return {
       id: a.id,
       pageNumber: this.pageNumber,
       subtype: pdfAnnotationSubtypeFromName(a.subtype),
+      linkTarget: null,
       rect: this.rectFromWorker(a.rect),
       color: colorFromWorker(a.color),
       interiorColor: colorFromWorker(a.interiorColor),

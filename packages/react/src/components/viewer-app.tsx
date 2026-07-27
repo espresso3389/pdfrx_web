@@ -58,8 +58,8 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   showDownloadButton?: boolean;
   /**
    * Show the toolbar's *Annotate* button (right of search), which reveals the
-   * annotation toolbar; closing it clears any active drawing tool. Annotation
-   * object selection remains available independently of the toolbar.
+   * annotation toolbar and enters annotation-object mode; closing it returns
+   * to viewing/text-selection mode. Alt/Option temporarily inverts the mode.
    * toolbar can add an image stamp at the center of the current page, while
    * images dropped onto a page are centered at the drop point. Both paths use
    * the same bounded size and fit oversized images within the page. Requires the viewer's
@@ -571,7 +571,10 @@ function PdfrxViewerAppChrome({
         >
           <div className="pdfrx-collapsible-content">
             <div className="pdfrx-toolbar pdfrx-toolbar-annot">
-              <PdfAnnotationToolbar onClose={() => setAnnotating(false)} />
+              <PdfAnnotationToolbar
+                modeActive={annotating}
+                onClose={() => setAnnotating(false)}
+              />
             </div>
           </div>
         </div>

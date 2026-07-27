@@ -20,8 +20,10 @@ import {
   IconLine,
   IconNote,
   IconOpacity,
+  IconObjectSelection,
   IconPen,
   IconRectangle,
+  IconTextSelection,
   IconTextSize,
   IconThickness,
   IconTrash,
@@ -33,6 +35,11 @@ export interface PdfAnnotationToolbarProps {
   style?: CSSProperties;
   /** Which tools to show, in order. Note remains opt-in. */
   tools?: readonly AnnotationTool[];
+  /**
+   * Whether this toolbar currently enables annotation-object interaction.
+   * Defaults to `true`; collapsible hosts should pass their visible/open state.
+   */
+  modeActive?: boolean;
   /** Preset colors offered in the color picker. */
   colors?: readonly string[];
   /**
@@ -278,11 +285,10 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
 };
 
 /**
- * The annotation toolbar: drawing-tool toggles, an image picker, plus
- * color/width pickers. Text interaction remains on the primary mouse button
- * and annotation selection remains available independently of the toolbar:
- * primary-click/body/anchor interaction edits one object and secondary drag
- * marquee-selects. The image picker adds a printable stamp annotation
+ * The annotation toolbar starts in annotation-object mode and provides
+ * object/text selection toggles, drawing tools, an image picker, plus
+ * color/width pickers. Closing it returns to normal viewing; Alt/Option
+ * temporarily swaps the two selection modes and their pressed states.
  * to the center of the current page, using the same sizing as image drop (240pt
  * wide at most, with additional proportional scaling when needed to fit the page). Drawing
  * controls are wired to {@link PdfrxViewer.setAnnotationTool} /
@@ -295,6 +301,7 @@ export function PdfAnnotationToolbar({
   className,
   style,
   tools = DEFAULT_TOOLS,
+  modeActive = true,
   colors = DEFAULT_COLORS,
   onClose,
 }: PdfAnnotationToolbarProps): ReactNode {
@@ -316,6 +323,8 @@ export function PdfAnnotationToolbar({
   );
   const initialDefaults = initialPreferences.defaults;
   const [active, setActive] = useState<AnnotationTool | null>(null);
+  const [objectSelectionMode, setObjectSelectionMode] = useState(modeActive);
+  const [modeModifierHeld, setModeModifierHeld] = useState(false);
   const [color, setColor] = useState(initialDefaults.color);
   const [strokeEnabled, setStrokeEnabled] = useState(initialDefaults.strokeEnabled);
   const [fillColor, setFillColor] = useState<string | null>(initialDefaults.fillColor);
@@ -366,14 +375,38 @@ export function PdfAnnotationToolbar({
   // toolbar returns to the tool-free interaction state.
   useEffect(() => {
     if (!viewer) return;
-    const syncMode = (): void => setActive(viewer.getAnnotationTool());
+    viewer.setAnnotationMode(modeActive);
+    setObjectSelectionMode(modeActive);
+    const syncMode = (): void => {
+      const tool = viewer.getAnnotationTool();
+      setActive(tool);
+      if (tool) setObjectSelectionMode(true);
+    };
     syncMode();
     const unsubscribe = viewer.addAnnotationToolChangeListener(syncMode);
     return () => {
       unsubscribe();
-      viewer.setAnnotationTool(null);
+      viewer.setAnnotationMode(false);
     };
-  }, [viewer]);
+  }, [viewer, modeActive]);
+
+  useEffect(() => {
+    const onModifierDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt') setModeModifierHeld(true);
+    };
+    const onModifierUp = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt') setModeModifierHeld(false);
+    };
+    const resetModifier = (): void => setModeModifierHeld(false);
+    window.addEventListener('keydown', onModifierDown);
+    window.addEventListener('keyup', onModifierUp);
+    window.addEventListener('blur', resetModifier);
+    return () => {
+      window.removeEventListener('keydown', onModifierDown);
+      window.removeEventListener('keyup', onModifierUp);
+      window.removeEventListener('blur', resetModifier);
+    };
+  }, []);
 
   useEffect(() => {
     if (!viewer) return;
@@ -484,9 +517,20 @@ export function PdfAnnotationToolbar({
 
   const applyMode = (mode: AnnotationTool): void => {
     const next = active === mode ? null : mode;
+    if (next) {
+      setObjectSelectionMode(true);
+      viewer?.setAnnotationMode(true);
+    }
     setActive(next);
     viewer?.setAnnotationTool(next);
   };
+  const applyInteractionMode = (objectMode: boolean): void => {
+    const persistentMode = objectMode !== modeModifierHeld;
+    setObjectSelectionMode(persistentMode);
+    viewer?.setAnnotationMode(persistentMode);
+  };
+  const effectiveObjectSelectionMode =
+    modeActive && objectSelectionMode !== modeModifierHeld;
   const rememberCustomColor = (selectedColor: string): void => {
     const normalized = selectedColor.toLowerCase();
     if (colors.some((preset) => preset.toLowerCase() === normalized)) return;
@@ -609,6 +653,21 @@ export function PdfAnnotationToolbar({
 
   return (
     <div className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
+      <InteractionModeButton
+        active={effectiveObjectSelectionMode}
+        onClick={() => applyInteractionMode(true)}
+        title={strings.objectSelection}
+      >
+        <IconObjectSelection />
+      </InteractionModeButton>
+      <InteractionModeButton
+        active={!effectiveObjectSelectionMode}
+        onClick={() => applyInteractionMode(false)}
+        title={strings.textSelection}
+      >
+        <IconTextSelection />
+      </InteractionModeButton>
+      <span className="pdfrx-toolbar-separator" aria-hidden />
       {visibleTools.map((tool) => {
         const ToolIcon = TOOL_ICON[tool];
         return (
@@ -1189,6 +1248,32 @@ function ModeButton({
       className={['pdfrx-button', isActive ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
       aria-pressed={isActive}
       onClick={() => onClick(mode)}
+      title={title}
+      aria-label={title}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** One interaction-mode choice in {@link PdfAnnotationToolbar}. */
+function InteractionModeButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: ReactNode;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      className={['pdfrx-button', active ? 'pdfrx-button-active' : ''].filter(Boolean).join(' ')}
+      aria-pressed={active}
+      onClick={onClick}
       title={title}
       aria-label={title}
     >

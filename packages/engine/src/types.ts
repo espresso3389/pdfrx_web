@@ -264,18 +264,6 @@ export interface PdfLink {
   readonly annotation: PdfAnnotation | null;
 }
 
-/** Complete writable shape accepted by `PdfPage.setLinks()`. */
-export interface PdfLinkSpec {
-  /** Link annotation rectangle in page coordinates. */
-  readonly rect: PdfRect;
-  /** URI or in-document destination followed by this link. */
-  readonly target: PdfLinkTarget;
-  /** Optional stable annotation `/NM`; one is generated when omitted. */
-  readonly id?: string;
-  /** Optional annotation metadata. */
-  readonly annotation?: PdfAnnotation | null;
-}
-
 /**
  * Kind of an AcroForm field, mapped from PDFium's `FPDF_FORMFIELD_*` codes.
  * The corresponding PDF field types are specified by ISO 32000-2:2020,
@@ -587,6 +575,7 @@ export type PdfAnnotationGeometry =
  * Table 171.
  */
 export type PdfAnnotationSubtype =
+  | 'link'
   | 'text'
   | 'freeText'
   | 'line'
@@ -605,6 +594,7 @@ export type PdfAnnotationSubtype =
 
 /** Subtypes surfaced as their own {@link PdfAnnotationSubtype}; others fold to `unknown`. */
 const pdfAnnotationSubtypeNames: ReadonlySet<string> = new Set<PdfAnnotationSubtype>([
+  'link',
   'text',
   'freeText',
   'line',
@@ -624,7 +614,7 @@ const pdfAnnotationSubtypeNames: ReadonlySet<string> = new Set<PdfAnnotationSubt
 /**
  * Maps a worker subtype string (lowercased `/Subtype`) to a
  * {@link PdfAnnotationSubtype}, falling back to `unknown` for anything not
- * surfaced (widgets, links, popups, and rarer types).
+ * surfaced (widgets, popups, and rarer types).
  */
 export const pdfAnnotationSubtypeFromName = (name: string): PdfAnnotationSubtype =>
   (pdfAnnotationSubtypeNames.has(name) ? name : 'unknown') as PdfAnnotationSubtype;
@@ -648,7 +638,7 @@ export const PdfAnnotationFlag = {
 } as const;
 
 /**
- * A content annotation on a page (not a widget/link/popup), as read by
+ * An editable annotation on a page (not a widget/popup), as read by
  * {@link PdfPage.loadAnnotations} / {@link PdfDocument.loadAnnotations}. Rects and
  * geometry are in bounding-box-relative page coordinates (y-up).
  *
@@ -678,6 +668,8 @@ export interface PdfAnnotationObject {
   /** 1-based page number the annotation belongs to. */
   readonly pageNumber: number;
   readonly subtype: PdfAnnotationSubtype;
+  /** URI or in-document destination for a Link annotation; null otherwise. */
+  readonly linkTarget: PdfLinkTarget | null;
   /** Bounding rectangle in page coordinates. */
   readonly rect: PdfRect;
   /** Stroke/primary color, or null when unset. */
@@ -795,6 +787,8 @@ export interface PdfAnnotationSpec {
    */
   id?: string;
   subtype: PdfAnnotationSubtype;
+  /** Required when `subtype` is `link`; ignored for other annotation types. */
+  linkTarget?: PdfLinkTarget;
   rect?: PdfRect;
   color?: PdfAnnotationColor | null;
   interiorColor?: PdfAnnotationColor | null;

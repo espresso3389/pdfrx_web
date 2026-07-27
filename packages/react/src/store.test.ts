@@ -12,6 +12,7 @@ class FakeViewer {
   openUrlCalls: unknown[] = [];
   openDataCalls: unknown[] = [];
   searcherCount = 0;
+  refreshPagesCalls: unknown[] = [];
   document: unknown = null;
   #documentListeners = new Set<() => void>();
   #refreshListeners = new Set<() => void>();
@@ -63,6 +64,9 @@ class FakeViewer {
   setLayoutDirection(): void {}
   refreshOverlays(): void {}
   refreshViewerOverlays(): void {}
+  async refreshPages(options: unknown): Promise<void> {
+    this.refreshPagesCalls.push(options);
+  }
   invalidatePaint(): void {}
 
   dispose(): void {
@@ -292,5 +296,17 @@ describe('PdfrxViewerStore', () => {
     // The viewer reads its options live, so the same object reflects the change.
     expect(viewer.options.backgroundColor).toBe('#000');
     expect(FakeViewer.instances).toHaveLength(1);
+  });
+
+  it('reloads link state when automatic detection changes', () => {
+    const store = new PdfrxViewerStore();
+    store.updateOptions({ autoLinkDetection: true });
+    store.attach(element);
+    const viewer = FakeViewer.instances[0]!;
+
+    store.updateOptions({ autoLinkDetection: false });
+
+    expect(viewer.options.autoLinkDetection).toBe(false);
+    expect(viewer.refreshPagesCalls).toEqual([{ content: ['links'] }]);
   });
 });

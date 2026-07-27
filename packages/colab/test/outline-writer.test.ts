@@ -126,7 +126,7 @@ describe('raw PDF object API', () => {
 });
 
 describe('page-scoped annotation API', () => {
-  it('replaces editable link annotations while preserving other annotations', async () => {
+  it('edits links through the ordinary annotation API while preserving other annotations', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
     const document = await engine.createFromImages([pixel, pixel]);
     try {
@@ -135,18 +135,18 @@ describe('page-scoped annotation API', () => {
       await linkPage.addAnnotation(squareAnnotation());
       const destination = destinationPage.dest({ by: 'id', command: 'fit', params: [] });
       document.setPages([destinationPage, linkPage]);
-      linkPage.setLinks([
-        {
-          id: 'internal-link',
-          rect: { left: 1, bottom: 1, right: 20, top: 10 },
-          target: { kind: 'destination', dest: destination },
-        },
-        {
-          id: 'web-link',
-          rect: { left: 1, bottom: 12, right: 20, top: 22 },
-          target: { kind: 'uri', url: 'https://example.com/' },
-        },
-      ]);
+      await linkPage.addAnnotation({
+        id: 'internal-link',
+        subtype: 'link',
+        rect: { left: 1, bottom: 1, right: 20, top: 10 },
+        linkTarget: { kind: 'destination', dest: destination },
+      });
+      await linkPage.addAnnotation({
+        id: 'web-link',
+        subtype: 'link',
+        rect: { left: 1, bottom: 12, right: 20, top: 22 },
+        linkTarget: { kind: 'uri', url: 'https://example.com/' },
+      });
       expect(document.hasPendingChanges).toBe(true);
 
       const links = await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false });
@@ -159,14 +159,23 @@ describe('page-scoped annotation API', () => {
       expect(internal?.target.kind).toBe('destination');
       if (internal?.target.kind !== 'destination') throw new Error('Expected an internal link');
       expect(document.resolveDest(internal.target.dest)?.pageNumber).toBe(1);
-      expect(await document.pages[1]!.loadAnnotations()).toHaveLength(1);
+      const annotations = await document.pages[1]!.loadAnnotations();
+      expect(annotations).toHaveLength(3);
+      const webAnnotation = annotations.find((annotation) => annotation.id === 'web-link');
+      expect(webAnnotation?.subtype).toBe('link');
+      expect(webAnnotation?.linkTarget).toEqual({ kind: 'uri', url: 'https://example.com/' });
+      await document.pages[1]!.updateAnnotation('web-link', {
+        ...webAnnotation!,
+        rect: { left: 2, bottom: 13, right: 21, top: 23 },
+      });
 
       await document.materialize();
       expect(document.hasPendingChanges).toBe(false);
       const persisted = await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false });
       expect(persisted.map((link) => link.id).sort()).toEqual(['internal-link', 'web-link']);
 
-      document.pages[1]!.setLinks([]);
+      await document.pages[1]!.removeAnnotation('internal-link');
+      await document.pages[1]!.removeAnnotation('web-link');
       expect(document.hasPendingChanges).toBe(true);
       expect(await document.pages[1]!.loadLinks({ enableAutoLinkDetection: false })).toEqual([]);
       expect(await document.pages[1]!.loadAnnotations()).toHaveLength(1);

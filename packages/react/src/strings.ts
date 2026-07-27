@@ -68,8 +68,8 @@ export interface PdfrxStrings {
   // Editing / annotation toolbar
   undo: string;
   redo: string;
+  objectSelection: string;
   textSelection: string;
-  selectObjects: string;
   penTool: string;
   rectangleTool: string;
   ellipseTool: string;
@@ -84,8 +84,6 @@ export interface PdfrxStrings {
   annotationTextPlaceholder: string;
   /** Placeholder shown while editing a sticky note. */
   annotationNotePlaceholder: string;
-  /** Banner shown while an empty rectangle is selected. */
-  annotationAddText: string;
   strokeColor: string;
   noStroke: string;
   fillColor: string;
@@ -170,8 +168,8 @@ export const defaultPdfrxStrings: PdfrxStrings = {
 
   undo: 'Undo',
   redo: 'Redo',
+  objectSelection: 'Select objects',
   textSelection: 'Text selection',
-  selectObjects: 'Select objects',
   penTool: 'Pen',
   rectangleTool: 'Rectangle',
   ellipseTool: 'Ellipse',
@@ -183,7 +181,6 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   addImage: 'Add image',
   annotationTextPlaceholder: 'Text',
   annotationNotePlaceholder: 'Note',
-  annotationAddText: 'Add text',
   strokeColor: 'Stroke color',
   noStroke: 'No stroke',
   fillColor: 'Fill color',

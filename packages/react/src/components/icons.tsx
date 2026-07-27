@@ -149,6 +149,21 @@ export const IconAnnotate = (): ReactNode => (
   </Icon>
 );
 
+/** @internal Annotation-object selection cursor. */
+export const IconObjectSelection = (): ReactNode => (
+  <Icon>
+    <path d="M5 3l11 10-5 .8 3 6-2.8 1.2-2.8-6-3.4 3z" />
+  </Icon>
+);
+
+/** @internal Text selection cursor. */
+export const IconTextSelection = (): ReactNode => (
+  <Icon>
+    <path d="M9 4h6M12 4v16M9 20h6" />
+    <path d="M7 8H5v8h2M17 8h2v8h-2" />
+  </Icon>
+);
+
 /** @internal Freehand pen tool. */
 export const IconPen = (): ReactNode => (
   <Icon>

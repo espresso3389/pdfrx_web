@@ -1,12 +1,79 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotationTextCompositionKey,
+  annotationTextEntryKey,
+  annotationObjectInteractionEnabled,
   clientPointToPagePx,
   constrainAnnotationTranslation,
+  forwardArmedEditorKeyToViewer,
   pointToSegmentDistance,
+  preserveAnnotationSelectionOnEmptySpace,
   resizeBoxByHandle,
   segmentIntersectsRect,
   translateSpec,
 } from './viewer.js';
+
+describe('annotationObjectInteractionEnabled', () => {
+  it('inverts viewing mode while Alt/Option is held', () => {
+    expect(annotationObjectInteractionEnabled(false, false)).toBe(false);
+    expect(annotationObjectInteractionEnabled(false, true)).toBe(true);
+  });
+
+  it('temporarily returns annotation mode to viewing with Alt/Option', () => {
+    expect(annotationObjectInteractionEnabled(true, false)).toBe(true);
+    expect(annotationObjectInteractionEnabled(true, true)).toBe(false);
+  });
+});
+
+describe('preserveAnnotationSelectionOnEmptySpace', () => {
+  it('preserves objects only for Cmd/Ctrl gestures in object mode', () => {
+    expect(preserveAnnotationSelectionOnEmptySpace(true, true)).toBe(true);
+    expect(preserveAnnotationSelectionOnEmptySpace(true, false)).toBe(false);
+    expect(preserveAnnotationSelectionOnEmptySpace(false, true)).toBe(false);
+    expect(preserveAnnotationSelectionOnEmptySpace(false, false)).toBe(false);
+  });
+});
+
+describe('annotationTextEntryKey', () => {
+  it('accepts printable single-character input including Space', () => {
+    expect(annotationTextEntryKey('A', false, false, false, false)).toBe('A');
+    expect(annotationTextEntryKey(' ', false, false, false, false)).toBe(' ');
+  });
+
+  it('rejects shortcuts, navigation keys, and active composition', () => {
+    expect(annotationTextEntryKey('a', true, false, false, false)).toBeNull();
+    expect(annotationTextEntryKey('a', false, true, false, false)).toBeNull();
+    expect(annotationTextEntryKey('a', false, false, true, false)).toBeNull();
+    expect(annotationTextEntryKey('ArrowLeft', false, false, false, false)).toBeNull();
+    expect(annotationTextEntryKey('Process', false, false, false, true)).toBeNull();
+  });
+});
+
+describe('annotationTextCompositionKey', () => {
+  it('recognizes browser IME keydown variants', () => {
+    expect(annotationTextCompositionKey('Process', 0, false)).toBe(true);
+    expect(annotationTextCompositionKey('Unidentified', 0, false)).toBe(true);
+    expect(annotationTextCompositionKey('a', 229, false)).toBe(true);
+    expect(annotationTextCompositionKey('a', 65, true)).toBe(true);
+    expect(annotationTextCompositionKey('a', 65, false)).toBe(false);
+  });
+});
+
+describe('forwardArmedEditorKeyToViewer', () => {
+  it('forwards annotation editing/navigation commands', () => {
+    expect(forwardArmedEditorKeyToViewer('Delete', false, false)).toBe(true);
+    expect(forwardArmedEditorKeyToViewer('ArrowLeft', false, false)).toBe(true);
+    expect(forwardArmedEditorKeyToViewer('z', true, false)).toBe(true);
+    expect(forwardArmedEditorKeyToViewer('c', false, true)).toBe(true);
+  });
+
+  it('leaves platform IME toggles and unknown keys native', () => {
+    expect(forwardArmedEditorKeyToViewer('HankakuZenkaku', false, false)).toBe(false);
+    expect(forwardArmedEditorKeyToViewer('KanaMode', false, false)).toBe(false);
+    expect(forwardArmedEditorKeyToViewer(' ', true, false)).toBe(false);
+    expect(forwardArmedEditorKeyToViewer('`', false, false)).toBe(false);
+  });
+});
 
 const box = { left: 10, bottom: 20, right: 110, top: 70 };
 

@@ -282,7 +282,7 @@ export class PdfrxViewerStore {
    * provider.
    */
   updateOptions(options: PdfrxViewerOptions): void {
-    const previous = this.#options;
+    const previous = { ...this.#options };
     Object.assign(this.#options, options);
     const viewer = this.#viewer;
     if (!viewer) return;
@@ -292,6 +292,12 @@ export class PdfrxViewerStore {
     }
     if (options.pageOverlaysBuilder !== previous.pageOverlaysBuilder) viewer.refreshOverlays();
     if (options.viewerOverlayBuilder !== previous.viewerOverlayBuilder) viewer.refreshViewerOverlays();
+    if (
+      options.autoLinkDetection !== undefined &&
+      options.autoLinkDetection !== previous.autoLinkDetection
+    ) {
+      void viewer.refreshPages({ content: ['links'] });
+    }
     viewer.invalidatePaint();
   }
 

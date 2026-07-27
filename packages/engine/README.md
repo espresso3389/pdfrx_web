@@ -112,10 +112,9 @@ Each symbol links to its entry in the
 - Cancellable rendering: renders are queued client-side (one in the worker at a time) instead of being posted all at once, so work that is no longer wanted can be dropped before it starts. Pass a [`PdfPageRenderCancellationToken`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPageRenderCancellationToken.html) from [`createCancellationToken()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#createcancellationtoken) and [`cancel()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPageRenderCancellationToken.html#cancel) it; `render` then resolves to `null`
 - [`PdfPage.loadText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadtext) /
   [`loadLinks`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#loadlinks).
-  Replace persisted Link annotations with
-  [`setLinks()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#setlinks);
-  the replacement is staged until `materialize()` or `encodePdf()`.
-  Auto-detected URL text is explicitly marked as non-persisted. Link targets use
+  Auto-detected URL text is explicitly marked as non-persisted. Persisted Link
+  annotations are returned by `loadAnnotations()` and use the same annotation
+  CRUD API as every other subtype. Link targets use
   [`PdfLinkTarget`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_engine.PdfLinkTarget.html).
 - [`PdfDocument.loadOutline`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadoutline) /
   [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline)
@@ -209,8 +208,7 @@ Each symbol links to its entry in the
 - Raw-object APIs inspect the physical PDF held by the worker. In contrast,
   [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages)
   / [`setPage()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpage),
-  [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline),
-  and [`setLinks()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#setlinks)
+  and [`setOutline()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setoutline)
   initially change only logical in-memory state. While
   [`hasPendingChanges`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#haspendingchanges)
   is true, call
