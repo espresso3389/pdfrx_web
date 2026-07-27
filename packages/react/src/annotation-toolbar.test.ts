@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotationColorPreviewStyle,
   annotationPopupHistoryAction,
   annotationSelectionControls,
+  annotationTextAlignmentPreviewStyle,
   popupViewportShift,
 } from './components/annotation-toolbar.js';
 
@@ -108,5 +110,23 @@ describe('popupViewportShift', () => {
       { left: 20, top: 30, right: 120, bottom: 130 },
       { width: 320, height: 240 },
     )).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('annotationColorPreviewStyle', () => {
+  it('maps each palette color to its transient annotation style', () => {
+    expect(annotationColorPreviewStyle('stroke', '#e53935')).toEqual({ color: '#e53935' });
+    expect(annotationColorPreviewStyle('fill', '#43a047')).toEqual({ fillColor: '#43a047' });
+    expect(annotationColorPreviewStyle('fill', null)).toEqual({ fillColor: null });
+    expect(annotationColorPreviewStyle('textColor', '#1e88e5')).toEqual({ textColor: '#1e88e5' });
+  });
+});
+
+describe('annotationTextAlignmentPreviewStyle', () => {
+  it('previews both horizontal and vertical placement together', () => {
+    expect(annotationTextAlignmentPreviewStyle('right', 'bottom')).toEqual({
+      textAlign: 'right',
+      textVerticalAlign: 'bottom',
+    });
   });
 });

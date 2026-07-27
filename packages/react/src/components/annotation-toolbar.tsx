@@ -1,4 +1,4 @@
-import type { AnnotationTool } from '@pdfrx/viewer';
+import type { AnnotationStyle, AnnotationTool } from '@pdfrx/viewer';
 import {
   useEffect,
   useLayoutEffect,
@@ -122,6 +122,26 @@ export function popupViewportShift(
   if (rect.top < margin) y = margin - rect.top;
   else if (rect.bottom > viewport.height - margin) y = viewport.height - margin - rect.bottom;
   return { x, y };
+}
+
+type AnnotationColorPalette = 'stroke' | 'fill' | 'textColor';
+
+/** @internal */
+export function annotationColorPreviewStyle(
+  palette: AnnotationColorPalette,
+  color: string | null,
+): Pick<Partial<AnnotationStyle>, 'color' | 'fillColor' | 'textColor'> | null {
+  if (palette === 'stroke') return color === null ? null : { color };
+  if (palette === 'fill') return { fillColor: color };
+  return color === null ? null : { textColor: color };
+}
+
+/** @internal */
+export function annotationTextAlignmentPreviewStyle(
+  horizontal: AnnotationStyle['textAlign'],
+  vertical: AnnotationStyle['textVerticalAlign'],
+): Pick<AnnotationStyle, 'textAlign' | 'textVerticalAlign'> {
+  return { textAlign: horizontal, textVerticalAlign: vertical };
 }
 
 interface AnnotationSelectionControls {
@@ -723,7 +743,7 @@ export function PdfAnnotationToolbar({
 
   useEffect(() => {
     return () => viewer?.clearSelectionStylePreview();
-  }, [viewer, customPicker]);
+  }, [viewer, customPicker, openPalette]);
 
   const applyMode = (mode: AnnotationTool): void => {
     const next = active === mode ? null : mode;
@@ -866,6 +886,14 @@ export function PdfAnnotationToolbar({
     else if (customPicker === 'fill') viewer?.previewStyleToSelection({ fillColor: normalized });
     else viewer?.previewStyleToSelection({ textColor: normalized });
   };
+  const previewPaletteColor = (
+    palette: AnnotationColorPalette,
+    previewColor: string | null,
+  ): void => {
+    const style = annotationColorPreviewStyle(palette, previewColor);
+    if (style) viewer?.previewStyleToSelection(style);
+    else viewer?.clearSelectionStylePreview();
+  };
   const preserveViewerFocusOnPopupMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
     if (event.target instanceof HTMLButtonElement) event.preventDefault();
   };
@@ -968,7 +996,12 @@ export function PdfAnnotationToolbar({
             />
           </button>
           {openPalette === 'stroke' && (
-            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.strokeColor}>
+            <div
+              className="pdfrx-annot-popup"
+              role="listbox"
+              aria-label={strings.strokeColor}
+              onPointerLeave={() => viewer?.clearSelectionStylePreview()}
+            >
               <button
                 type="button"
                 role="option"
@@ -996,6 +1029,8 @@ export function PdfAnnotationToolbar({
                     !mixed.stroke && !mixed.color && strokeEnabled && color === c ? 'pdfrx-annot-swatch-active' : '',
                   ].filter(Boolean).join(' ')}
                   aria-label={`${strings.strokeColor}: ${c}`}
+                  onPointerEnter={() => previewPaletteColor('stroke', c)}
+                  onPointerLeave={() => viewer?.clearSelectionStylePreview()}
                   onClick={() => {
                     rememberCustomColor(c);
                     pickStroke(c);
@@ -1045,7 +1080,12 @@ export function PdfAnnotationToolbar({
             />
           </button>
           {openPalette === 'fill' && (
-            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.fillColor}>
+            <div
+              className="pdfrx-annot-popup"
+              role="listbox"
+              aria-label={strings.fillColor}
+              onPointerLeave={() => viewer?.clearSelectionStylePreview()}
+            >
               <button
                 type="button"
                 role="option"
@@ -1059,6 +1099,8 @@ export function PdfAnnotationToolbar({
                   .join(' ')}
                 aria-label={strings.noFill}
                 title={strings.noFill}
+                onPointerEnter={() => previewPaletteColor('fill', null)}
+                onPointerLeave={() => viewer?.clearSelectionStylePreview()}
                 onClick={() => pickFill(null)}
               />
               {displayColors.map((c) => (
@@ -1073,6 +1115,8 @@ export function PdfAnnotationToolbar({
                     !mixed.fill && fillColor === c ? 'pdfrx-annot-swatch-active' : '',
                   ].filter(Boolean).join(' ')}
                   aria-label={`${strings.fillColor}: ${c}`}
+                  onPointerEnter={() => previewPaletteColor('fill', c)}
+                  onPointerLeave={() => viewer?.clearSelectionStylePreview()}
                   onClick={() => {
                     rememberCustomColor(c);
                     pickFill(c);
@@ -1196,7 +1240,12 @@ export function PdfAnnotationToolbar({
             </span>
           </button>
           {openPalette === 'textColor' && (
-            <div className="pdfrx-annot-popup" role="listbox" aria-label={strings.textColor}>
+            <div
+              className="pdfrx-annot-popup"
+              role="listbox"
+              aria-label={strings.textColor}
+              onPointerLeave={() => viewer?.clearSelectionStylePreview()}
+            >
               {displayColors.map((c) => (
                 <button
                   key={c}
@@ -1209,6 +1258,8 @@ export function PdfAnnotationToolbar({
                     !mixed.textColor && textColor === c ? 'pdfrx-annot-swatch-active' : '',
                   ].filter(Boolean).join(' ')}
                   aria-label={`${strings.textColor}: ${c}`}
+                  onPointerEnter={() => previewPaletteColor('textColor', c)}
+                  onPointerLeave={() => viewer?.clearSelectionStylePreview()}
                   onClick={() => {
                     rememberCustomColor(c);
                     pickTextColor(c);
@@ -1281,7 +1332,12 @@ export function PdfAnnotationToolbar({
             <TextAlignIcon horizontal={textAlign} vertical={textVerticalAlign} />
           </button>
           {openPalette === 'textAlign' && (
-            <div className="pdfrx-annot-align-popup" role="dialog" aria-label={strings.textAlignment}>
+            <div
+              className="pdfrx-annot-align-popup"
+              role="dialog"
+              aria-label={strings.textAlignment}
+              onPointerLeave={() => viewer?.clearSelectionStylePreview()}
+            >
               {(['top', 'middle', 'bottom'] as const).flatMap((vertical) =>
                 (['left', 'center', 'right'] as const).map((horizontal) => {
                   const horizontalLabel =
@@ -1297,6 +1353,10 @@ export function PdfAnnotationToolbar({
                       aria-pressed={selected}
                       aria-label={`${verticalLabel}, ${horizontalLabel}`}
                       title={`${verticalLabel}, ${horizontalLabel}`}
+                      onPointerEnter={() => viewer?.previewStyleToSelection(
+                        annotationTextAlignmentPreviewStyle(horizontal, vertical),
+                      )}
+                      onPointerLeave={() => viewer?.clearSelectionStylePreview()}
                       onClick={() => pickTextAlignment(horizontal, vertical)}
                     >
                       <TextAlignIcon horizontal={horizontal} vertical={vertical} />

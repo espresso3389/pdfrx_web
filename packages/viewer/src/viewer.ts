@@ -6324,8 +6324,13 @@ export class PdfrxViewer {
     return { ...this.annotationStyle };
   }
 
-  /** @internal Live-previews colors on the selection without writing the PDF or undo history. */
-  previewStyleToSelection(style: Pick<Partial<AnnotationStyle>, 'color' | 'fillColor' | 'textColor'>): void {
+  /** @internal Live-previews colors/text placement without writing the PDF or undo history. */
+  previewStyleToSelection(
+    style: Pick<
+      Partial<AnnotationStyle>,
+      'color' | 'fillColor' | 'textColor' | 'textAlign' | 'textVerticalAlign'
+    >,
+  ): void {
     this.clearSelectionStylePreview();
     for (const id of this.selectedAnnotationIds) {
       const target = this.locateAnnotation(id);
@@ -6345,6 +6350,15 @@ export class PdfrxViewer {
         && (target.annotation.subtype === 'square' || target.annotation.subtype === 'freeText')
       ) {
         after.textColor = cssColorToRgba(style.textColor, this.annotationStyle.opacity);
+      }
+      if (
+        (style.textAlign !== undefined || style.textVerticalAlign !== undefined)
+        && (target.annotation.subtype === 'square' || target.annotation.subtype === 'freeText')
+      ) {
+        if (style.textAlign !== undefined) after.textAlign = style.textAlign;
+        if (style.textVerticalAlign !== undefined) {
+          after.textVerticalAlign = style.textVerticalAlign;
+        }
       }
       const overlay = this.annotationOverlays.get(target.pageNumber);
       if (!overlay) continue;

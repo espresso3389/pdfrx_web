@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keyboard shortcuts continue working after a click.
 - Kept nested property palettes, sliders, alignment controls, and expanded
   custom-color editors inside the viewport by flipping and shifting them.
+- Added live hover previews for stroke, fill, no-fill, text colors, and
+  horizontal/vertical text placement in the floating annotation property popup
+  without writing history until the user selects a value.
 
 ## [0.20.0] - 2026-07-27
 
