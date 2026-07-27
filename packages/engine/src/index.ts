@@ -50,6 +50,26 @@ export {
 export { PdfPageRenderCancellationToken } from './render-queue.js';
 export { deserializeAnnotationSnapshot, serializeAnnotationSnapshot } from './annotation-storage.js';
 export {
+  PdfMemoryTextAssetCache,
+  PdfIndexedDbTextAssetCache,
+  createCanvasTextMeasureProvider,
+  createDefaultEmojiRenderer,
+  createNotoEmojiPngSource,
+  decodeRgbaPng,
+  defaultNotoEmojiPngBaseUrl,
+  prepareFreeTextAppearance,
+  type PdfDefaultEmojiRendererOptions,
+  type PdfEmojiAssetSource,
+  type PdfEmojiImage,
+  type PdfEmojiRenderer,
+  type PdfFreeTextAppearanceOptions,
+  type PdfFreeTextFontResolver,
+  type PdfNotoEmojiSourceOptions,
+  type PdfTextAppearanceServices,
+  type PdfTextAssetCache,
+  type PdfTextMeasureProvider,
+} from './text-appearance.js';
+export {
   parseCalcAction,
   evaluateCalc,
   parseFieldNumber,

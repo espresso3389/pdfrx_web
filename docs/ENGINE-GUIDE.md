@@ -241,6 +241,15 @@ Each symbol links to its entry in the
   thumbnail state.
 - AcroForm: [`loadFormFields()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#loadformfields) / [`getFormFieldValue()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#getformfieldvalue) / [`setFormFieldValue()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalue) / [`setFormFieldValues()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalues), reversible [`formFieldsChanged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#formfieldschanged) batches, and JS-free `AFSimple_Calculate` support for SUM/PRD/AVG/MIN/MAX. Arbitrary field JavaScript is not executed.
 - Text orientation is explicit: FreeText specs expose `textOrientation`, and form fields expose `textOrientations` parallel to Widget rects. Intrinsic 0/90/180/270-degree rotation can follow the page or remain viewport-upright.
+- FreeText appearance preparation is available directly through
+  [`PdfDocument.prepareFreeTextAppearance()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#preparefreetextappearance-1).
+  It shares grapheme, language,
+  mixed-script font-run, wrapping, and emoji behavior with the viewer, works in
+  browser and server runtimes, and accepts replaceable measurement, font,
+  emoji-source, renderer, and cache services. See
+  [Text, language, and emoji appearance](TEXT-APPEARANCE.md). Direct engine
+  integrations should supply `resolveFont` when PDFium does not already have
+  fonts for the scripts they author.
 - [`doc.permissions`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#permissions) — encrypted-document permissions with [`allowsCopying`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPermissions.html#allowscopying) / `allowsPrinting` / `allowsDocumentAssembly` / `allowsModifyAnnotations` helpers
 - [`openData`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#opendata) transfers ownership of a full `ArrayBuffer` (or full `Uint8Array` view) to the worker by default. The caller's buffer is detached. Password retries reuse the worker-owned bytes; partial views are copied into a tightly sized transferable buffer. Set `transferData: false` in [`PdfOpenDataOptions`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfOpenDataOptions.html) to keep the input usable by transferring an internal copy instead.
 - Document events: [`pageStatusChanged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#pagestatuschanged), [`pagesRearranged`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#pagesrearranged), [`loadComplete`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#loadcomplete), [`missingFonts`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfDocumentEventMap.html#missingfonts)

@@ -14,6 +14,11 @@ used for what**. The code lives in
 (the vendored weight tables — a bulk data file listing each downloadable TTF by
 its `fonts.gstatic.com` hash).
 
+This mechanism supplies fonts to PDFium. FreeText script selection and emoji
+image fallback use the shared engine text-appearance pipeline described in
+[TEXT-APPEARANCE.md](TEXT-APPEARANCE.md); emoji assets are deliberately not
+treated as missing PDF fonts.
+
 ## How it works
 
 1. **Discovery.** When the engine opens or renders a document and cannot satisfy

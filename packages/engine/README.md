@@ -17,6 +17,9 @@ browsers, Node.js, Bun, and Deno.
   annotations are exposed as typed data.
 - Annotation, form, outline, and page-arrangement edits can be encoded back to
   PDF, including non-destructive copy encoding.
+- Mixed-script FreeText preparation handles grapheme-safe wrapping, CJK
+  language hints, and cross-runtime emoji appearances with configurable asset,
+  renderer, and cache services.
 - HTTP range access can avoid downloading an entire remote PDF up front.
 - The same API runs in browsers, Node.js, Bun, and Deno.
 - Password callbacks, custom font registration, and raw PDF-object inspection
@@ -111,6 +114,11 @@ reads AcroForm controls and their values.
   and
   [`removeAnnotation()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfPage.html#removeannotation)
   modify page annotations.
+- [`prepareFreeTextAppearance()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#preparefreetextappearance-1)
+  prepares wrapping, mixed-script font runs, and emoji images before a
+  FreeText annotation is added or updated. Its
+  [`PdfTextAppearanceServices`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfTextAppearanceServices.html)
+  can replace measurement, font resolution, or emoji rendering.
 - [`setFormFieldValue()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalue)
   and
   [`setFormFieldValues()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setformfieldvalues)
@@ -141,6 +149,9 @@ keeps the process alive.
 - The [engine guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ENGINE-GUIDE.md)
   covers non-browser use, rendering, editing, events, encoding, and advanced
   worker configuration.
+- The [text, language, and emoji guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md)
+  covers automatic Noto fallback, caching, offline assets, and custom
+  renderers.
 - The [`PdfrxEngine` API](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
   lists all open/create methods and engine options.
 - Use [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) for a

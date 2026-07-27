@@ -187,6 +187,25 @@ to `{ rotation: 0, behavior: 'page' }`.
 `PdfPage.loadText()` / `loadLinks()` already compensate for the page
 bounding-box offset (`bbLeft` / `bbBottom`).
 
+## Authored text appearance
+
+FreeText appearance preparation belongs to `@pdfrx/engine`, rather than the
+viewer UI. The engine segments Unicode into grapheme clusters, classifies
+scripts, resolves ambiguous Han from language hints, wraps lines, and produces
+mixed text/image `appearanceRuns`. Environment-dependent measurement, font
+registration, emoji rendering, asset loading, and caching are replaceable
+services; `@pdfrx/viewer` supplies its Canvas measurement and existing Google
+Fonts resolver through that boundary.
+
+Emoji are persisted as image runs, not PDF font glyphs. A browser-native color
+emoji font is preferred. Without one—and by default on headless server
+runtimes—the engine lazily downloads the corresponding version-pinned Noto
+Emoji PNG, decodes it to RGBA without a platform image codec, and hands it to
+the worker. The worker combines those image runs with PDF text objects in the
+annotation appearance. Noto assets are cached but not distributed in the npm
+package. See [TEXT-APPEARANCE.md](TEXT-APPEARANCE.md) for runtime, offline, and
+custom-provider behavior.
+
 ## viewer-core: pure logic
 
 `@pdfrx/viewer-core` contains no DOM access; all types are plain

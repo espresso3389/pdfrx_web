@@ -7,6 +7,10 @@ import {
 } from './image-source.js';
 import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
+  prepareFreeTextAppearance,
+  type PdfFreeTextAppearanceOptions,
+} from './text-appearance.js';
+import {
   isWorkerError,
   PdfErrorCode,
   type WorkerAnnotationGeometry,
@@ -915,6 +919,23 @@ export class PdfDocument {
   /** Whether page, outline, or link edits are waiting to be {@link materialize | materialized}. */
   get hasPendingChanges(): boolean {
     return this.arrangementDirty || this.pendingOutline !== undefined || this.pendingLinks.size > 0;
+  }
+
+  /**
+   * Prepares wrapped, mixed-script text and emoji image runs for a FreeText
+   * annotation. The supplied spec is updated in place and can then be passed to
+   * {@link PdfPage.addAnnotation} or {@link PdfPage.updateAnnotation}.
+   *
+   * The default services work in browsers and server runtimes: browser-native
+   * emoji is preferred, with a lazily downloaded, version-pinned Noto Emoji PNG
+   * fallback. Pass custom services for private assets, offline operation, or a
+   * different text/emoji renderer.
+   */
+  async prepareFreeTextAppearance(
+    spec: PdfAnnotationSpec,
+    options: PdfFreeTextAppearanceOptions = {},
+  ): Promise<void> {
+    await prepareFreeTextAppearance(spec, options);
   }
 
   /**

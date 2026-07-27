@@ -425,6 +425,12 @@ The built-in components ship with English, Japanese, Simplified and Traditional
 Chinese, French and German. By default the language is auto-detected from the
 browser (`navigator.languages`); English is the fallback.
 
+The UI locale also supplies the default language hint for mixed-script
+FreeText, notably Han-only text. This does not change PDF text extraction.
+FreeText grapheme, CJK-font, and emoji appearance handling is implemented by
+`@pdfrx/engine`; see
+[Text, language, and emoji appearance](TEXT-APPEARANCE.md).
+
 ```tsx
 // Auto-detect from the browser (default — no prop needed)
 <PdfrxViewerApp src="/manual.pdf" />
