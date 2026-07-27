@@ -4545,11 +4545,16 @@ function updateAnnotation(params) {
           spec.subtype === 'stamp' &&
           ((!spec.appearanceImage && !spec.appearancePaths) || (preserveAppearance && spec.appearanceImage))
         ) {
+          const keepsCustomAppearance = preserveAppearance && !!spec.appearanceImage;
           const revision = spec.revision ?? existingRevision + 1;
           spec = { ...spec, revision };
           _applyAnnotSpec(existing, spec, docHandle);
           w.FPDFPage_CloseAnnot(existing);
-          _forceAnnotAppearances(pageHandle);
+          // Rendering the page to force PDFium-generated appearances is useful
+          // for ordinary stamps, but it may replace a custom raster stamp's /AP.
+          // A preserveAppearance update changes metadata/rect in place, so keep
+          // that existing image appearance untouched.
+          if (!keepsCustomAppearance) _forceAnnotAppearances(pageHandle);
           w.FPDFPage_GenerateContent(pageHandle);
           return { id, revision };
         }

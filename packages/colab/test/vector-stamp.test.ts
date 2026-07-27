@@ -5,6 +5,38 @@ const engine = new PdfrxEngine();
 afterAll(() => engine.dispose());
 
 describe('vector stamp appearance round-trip', () => {
+  it('keeps a raster stamp visible after an in-place move', async () => {
+    const background = { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) };
+    const stampPixels = new Uint8Array(8 * 8 * 4);
+    for (let offset = 0; offset < stampPixels.length; offset += 4) {
+      stampPixels.set([255, 0, 0, 255], offset);
+    }
+    const document = await engine.createFromImages([background]);
+    try {
+      const page = document.pages[0]!;
+      const id = await page.addAnnotation({
+        subtype: 'stamp',
+        rect: { left: 0, bottom: 0, right: 0.4, top: 0.4 },
+        appearanceImage: { width: 8, height: 8, pixels: stampPixels },
+      });
+      const before = await page.render({ fullWidth: 100, fullHeight: 100 });
+      expect(before?.pixels.slice((80 * 100 + 20) * 4, (80 * 100 + 20) * 4 + 4))
+        .toEqual(new Uint8Array([255, 0, 0, 255]));
+
+      await page.updateAnnotation(id, {
+        subtype: 'stamp',
+        rect: { left: 0.5, bottom: 0, right: 0.9, top: 0.4 },
+        appearanceImage: { width: 8, height: 8, pixels: stampPixels },
+      }, { preserveAppearance: true });
+
+      const after = await page.render({ fullWidth: 100, fullHeight: 100 });
+      expect(after?.pixels.slice((80 * 100 + 70) * 4, (80 * 100 + 70) * 4 + 4))
+        .toEqual(new Uint8Array([255, 0, 0, 255]));
+    } finally {
+      await document.dispose();
+    }
+  });
+
   it('does not enable PDFium default fill colors on stroke-only paths', async () => {
     const background = { width: 32, height: 32, pixels: new Uint8Array(32 * 32 * 4).fill(255) };
     const document = await engine.createFromImages([background]);

@@ -472,6 +472,7 @@ export function PdfAnnotationToolbar({
   );
   const initialDefaults = initialPreferences.defaults;
   const [active, setActive] = useState<AnnotationTool | null>(null);
+  const [imageInsertionPending, setImageInsertionPending] = useState(false);
   const [objectSelectionMode, setObjectSelectionMode] = useState(modeActive);
   const [modeModifierHeld, setModeModifierHeld] = useState(false);
   const [color, setColor] = useState(initialDefaults.color);
@@ -587,7 +588,7 @@ export function PdfAnnotationToolbar({
     const syncMode = (): void => {
       const tool = viewer.getAnnotationTool();
       setActive(tool);
-      if (tool) setObjectSelectionMode(true);
+      setObjectSelectionMode(viewer.isAnnotationSelectMode(false));
     };
     syncMode();
     const unsubscribe = viewer.addAnnotationToolChangeListener(syncMode);
@@ -1038,9 +1039,13 @@ export function PdfAnnotationToolbar({
       })}
       <button
         type="button"
-        className="pdfrx-button"
+        className={[
+          'pdfrx-button',
+          imageInsertionPending ? 'pdfrx-button-active' : '',
+        ].filter(Boolean).join(' ')}
+        aria-pressed={imageInsertionPending}
         onClick={() => imageInputRef.current?.click()}
-        disabled={!viewer?.document}
+        disabled={!viewer?.document || imageInsertionPending}
         title={strings.addImage}
         aria-label={strings.addImage}
       >
@@ -1055,11 +1060,13 @@ export function PdfAnnotationToolbar({
           const file = event.target.files?.[0];
           event.target.value = '';
           if (file && viewer) {
+            setImageInsertionPending(true);
             void addCenteredImageAnnotation(viewer, file, undefined, store.imageDecoder)
               .catch((error: unknown) => {
                 console.error(`Failed to add image annotation from ${file.name}:`, error);
                 store.reportImportError(error, file.name);
-              });
+              })
+              .finally(() => setImageInsertionPending(false));
           }
         }}
       />

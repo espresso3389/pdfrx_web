@@ -549,6 +549,46 @@ test('a selected fill-only rectangle shows a dashed bounding box', async ({ page
   await expect(guide).toHaveAttribute('stroke-dasharray', /\d/);
 });
 
+test('an invisible annotation guide follows its live drag preview', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 176, bottom: 80 },
+    color: rgba(30, 136, 229, 5),
+    borderWidth: 4,
+  };
+  const id = await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    return api.setupDuplicateGesture(annotation);
+  }, spec);
+  const shape = page.locator(`g[data-annot-id="${id}"]`);
+  const guide = page.locator(`rect[data-annot-guide-id="${id}"]`);
+  await expect(shape).toHaveCount(1);
+  await expect(guide).toHaveCount(1);
+  const shapeBox = await shape.boundingBox();
+  const guideBefore = await guide.boundingBox();
+  if (!shapeBox || !guideBefore) throw new Error('Invisible annotation guide is not visible');
+
+  const start = { x: shapeBox.x + shapeBox.width / 4, y: shapeBox.y + 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 64, start.y + 32, { steps: 4 });
+
+  const shapeDuring = await shape.boundingBox();
+  const guideDuring = await guide.boundingBox();
+  if (!shapeDuring || !guideDuring) throw new Error('Drag preview is not visible');
+  expect(guideDuring.x - guideBefore.x).toBeGreaterThan(50);
+  expect(guideDuring.y - guideBefore.y).toBeGreaterThan(20);
+  expect(Math.abs(guideDuring.x - shapeDuring.x)).toBeLessThan(1.5);
+  expect(Math.abs(guideDuring.y - shapeDuring.y)).toBeLessThan(1.5);
+  await page.mouse.up();
+});
+
 test('selection client bounds follow the selected annotation region', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
@@ -1114,6 +1154,15 @@ test('link tool creates and edits a URI link that survives PDF round-trip', asyn
     (
       window as unknown as {
         annotationVisualTest: {
+          readAnnotationInteractionState(): { tool: string | null; objectMode: boolean };
+        };
+      }
+    ).annotationVisualTest.readAnnotationInteractionState(),
+  )).toEqual({ tool: null, objectMode: true });
+  expect(await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
           readLinkAppearance(): Promise<{ borderWidth: number; color: unknown } | null>;
         };
       }
@@ -1180,4 +1229,13 @@ test('link insertion preview remains visible until the target popup resolves', a
     ).annotationVisualTest.resolvePendingLink(null),
   );
   await expect(preview).toHaveCount(0);
+  expect(await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readAnnotationInteractionState(): { tool: string | null; objectMode: boolean };
+        };
+      }
+    ).annotationVisualTest.readAnnotationInteractionState(),
+  )).toEqual({ tool: null, objectMode: true });
 });

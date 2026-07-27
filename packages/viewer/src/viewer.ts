@@ -7175,9 +7175,29 @@ export class PdfrxViewer {
       guide.setAttribute('stroke-opacity', '0.35');
       guide.setAttribute('stroke-width', `${1 / zoom}`);
       guide.dataset.pdfrxSolid = 'true';
+      guide.dataset.annotGuideId = annotation.id;
       guide.style.pointerEvents = 'none';
       overlay.invisibleGuideLayer.appendChild(guide);
     }
+  }
+
+  /** Keeps one editing-only visibility guide aligned with a live preview. */
+  private updateInvisibleAnnotationGuide(
+    overlay: AnnotationPageOverlay,
+    annotation: PdfAnnotationObject,
+  ): void {
+    const guide = overlay.invisibleGuideLayer.querySelector<SVGRectElement>(
+      `rect[data-annot-guide-id="${CSS.escape(annotation.id)}"]`,
+    );
+    if (!guide) return;
+    const bounds = annotationBounds(annotation);
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    const topLeft = pdfPointToOffset({ x: bounds.left, y: bounds.top }, opts);
+    const bottomRight = pdfPointToOffset({ x: bounds.right, y: bounds.bottom }, opts);
+    guide.setAttribute('x', `${Math.min(topLeft.x, bottomRight.x)}`);
+    guide.setAttribute('y', `${Math.min(topLeft.y, bottomRight.y)}`);
+    guide.setAttribute('width', `${Math.abs(bottomRight.x - topLeft.x)}`);
+    guide.setAttribute('height', `${Math.abs(bottomRight.y - topLeft.y)}`);
   }
 
   /** Finger-friendly anchors after a touch selection; compact anchors for mouse/pen. */
@@ -7352,7 +7372,8 @@ export class PdfrxViewer {
       (c) => (c as SVGGElement).dataset?.annotId === base.id,
     ) as SVGGElement | undefined;
     if (!old) return;
-    const fresh = this.buildAnnotationShape(syntheticAnnotation(base, spec), overlay.pageGeom, overlay.pageSize, true);
+    const display = syntheticAnnotation(base, spec);
+    const fresh = this.buildAnnotationShape(display, overlay.pageGeom, overlay.pageSize, true);
     if (!fresh) return;
     fresh.dataset.annotId = base.id;
     fresh.style.pointerEvents = 'auto';
@@ -7368,6 +7389,7 @@ export class PdfrxViewer {
       fresh.style.opacity = '0';
     }
     overlay.svg.replaceChild(fresh, old);
+    this.updateInvisibleAnnotationGuide(overlay, display);
   }
 
   /** Visible shape for an id (highlights paint on their separate blend layer). */
@@ -7723,7 +7745,12 @@ export class PdfrxViewer {
       } finally {
         s.preview.remove();
       }
-      if (!target) return;
+      if (!target) {
+        // Cancelling the target editor completes this one-shot tool just like a
+        // successful insertion; leave the viewer ready to select objects.
+        this.setAnnotationTool(null);
+        return;
+      }
       spec.linkTarget = target;
     }
     let id: string;

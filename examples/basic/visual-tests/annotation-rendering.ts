@@ -553,6 +553,13 @@ function readLinkDrawPreview(): { stroke: string | null; opacity: string | null;
     : null;
 }
 
+function readAnnotationInteractionState(): { tool: ReturnType<typeof viewer.getAnnotationTool>; objectMode: boolean } {
+  return {
+    tool: viewer.getAnnotationTool(),
+    objectMode: viewer.isAnnotationSelectMode(false),
+  };
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -585,6 +592,7 @@ declare global {
       readLinkAppearance: typeof readLinkAppearance;
       editSelectedLink: typeof editSelectedLink;
       readLinkDrawPreview: typeof readLinkDrawPreview;
+      readAnnotationInteractionState: typeof readAnnotationInteractionState;
     };
   }
 }
@@ -619,4 +627,5 @@ window.annotationVisualTest = {
   readLinkAppearance,
   editSelectedLink,
   readLinkDrawPreview,
+  readAnnotationInteractionState,
 };
