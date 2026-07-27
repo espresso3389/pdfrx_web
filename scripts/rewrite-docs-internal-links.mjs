@@ -1,40 +1,26 @@
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const docsDirectory = resolve('docs-site');
-const sourceDocsDirectory = resolve('docs');
 const publicPrefix = 'https://espresso3389.github.io/pdfrx_web/';
-const githubDocsPrefix = 'https://github.com/espresso3389/pdfrx_web/blob/master/docs/';
-const copiedDocs = new Set();
 let rewritten = 0;
 
 for (const file of await htmlFiles(docsDirectory)) {
   const source = await readFile(file, 'utf8');
-  const links = [...source.matchAll(/href="(https:\/\/(?:espresso3389\.github\.io\/pdfrx_web\/|github\.com\/espresso3389\/pdfrx_web\/blob\/master\/docs\/)[^"]*)"/g)];
+  const links = [...source.matchAll(/href="(https:\/\/espresso3389\.github\.io\/pdfrx_web\/[^"]*)"/g)];
   let output = source;
   for (const match of links) {
     const url = match[1];
     if (!url) continue;
-    const isSourceDoc = url.startsWith(githubDocsPrefix);
-    const suffix = url.slice(isSourceDoc ? githubDocsPrefix.length : publicPrefix.length);
+    const suffix = url.slice(publicPrefix.length);
     const [pathAndQuery, fragment] = suffix.split('#', 2);
     const [pathPart, query] = (pathAndQuery ?? '').split('?', 2);
     if (!pathPart) continue;
     const decodedParts = decodeURIComponent(pathPart).split('/');
-    const target = resolve(docsDirectory, ...(isSourceDoc ? ['docs', ...decodedParts] : decodedParts));
-    const sourceDoc = isSourceDoc ? resolve(sourceDocsDirectory, ...decodedParts) : undefined;
+    const target = resolve(docsDirectory, ...decodedParts);
     if (!target.startsWith(`${docsDirectory}${sep}`) && target !== docsDirectory) continue;
     try {
-      if (sourceDoc) {
-        if (!sourceDoc.startsWith(`${sourceDocsDirectory}${sep}`) || !(await stat(sourceDoc)).isFile()) continue;
-        if (!copiedDocs.has(sourceDoc)) {
-          await mkdir(dirname(target), { recursive: true });
-          await copyFile(sourceDoc, target);
-          copiedDocs.add(sourceDoc);
-        }
-      } else if (!(await stat(target)).isFile()) {
-        continue;
-      }
+      if (!(await stat(target)).isFile()) continue;
     } catch {
       continue;
     }
@@ -46,9 +32,7 @@ for (const file of await htmlFiles(docsDirectory)) {
   if (output !== source) await writeFile(file, output, 'utf8');
 }
 
-console.log(
-  `Rewrote ${rewritten} generated links to local relative paths and copied ${copiedDocs.size} source document(s).`,
-);
+console.log(`Rewrote ${rewritten} generated API links to local relative paths.`);
 
 async function htmlFiles(directory) {
   const files = [];

@@ -118,6 +118,17 @@ in prose or API tables. A module-level API-reference link is useful, but it is
 not a substitute for direct symbol links. Code fences do not need embedded
 links.
 
+Topic documents under `docs/` are maintained as GitHub Markdown, not bundled
+into the TypeDoc site. Links from TypeDoc comments to those documents must use
+the GitHub Markdown-preview URL
+`https://github.com/espresso3389/pdfrx_web/blob/master/docs/<FILE>.md`.
+Keep those links external in generated API pages: do not rewrite them to
+`docs-site/docs/*.md`, copy raw Markdown into `docs-site/`, or guess an
+`espresso3389.github.io` document URL. The
+`scripts/rewrite-docs-internal-links.mjs` postprocessor is only for converting
+absolute API-reference URLs that already map to generated TypeDoc HTML into
+local relative links.
+
 Do this link pass whenever public exports are added, renamed, or substantially
 documented, whenever a package README is expanded, and again during release
 preparation. Run `npm run docs` first and derive links from the files actually
@@ -138,7 +149,10 @@ do not use an intermediate commit/push or wait for the deployed Pages site:
 3. Run `npm run check:readme-api-links`. It verifies that every public API
    symbol introduced as inline code in a README has a direct link and that
    every public API URL maps to a generated local file.
-4. Commit and push the API and README updates together. Do not create a release
+4. When TypeDoc comments link to a topic document, inspect the generated HTML
+   and confirm that the target remains the GitHub `blob/master/docs/*.md`
+   preview URL and that no raw Markdown copy was added under `docs-site/`.
+5. Commit and push the API and README updates together. Do not create a release
    tag until the local documentation and README checks pass.
 
 ### Package documentation boundaries
