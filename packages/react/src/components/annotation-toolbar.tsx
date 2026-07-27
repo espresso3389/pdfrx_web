@@ -1,3 +1,4 @@
+import type { PdfLinkTarget } from '@pdfrx/engine';
 import type { AnnotationStyle, AnnotationTool } from '@pdfrx/viewer';
 import {
   useEffect,
@@ -22,6 +23,7 @@ import {
   IconHighlighter,
   IconImage,
   IconLine,
+  IconLink,
   IconNote,
   IconOpacity,
   IconObjectSelection,
@@ -55,7 +57,7 @@ export interface PdfAnnotationToolbarProps {
 
 // Highlight is not a drawing tool here — it is applied to a text selection via
 // the right-click context menu (a Highlight markup over the selected text).
-const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow'];
+const DEFAULT_TOOLS: readonly AnnotationTool[] = ['ink', 'rectangle', 'ellipse', 'line', 'arrow', 'link'];
 
 const DEFAULT_COLORS: readonly string[] = [
   '#e53935',
@@ -392,6 +394,7 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
   arrow: IconArrowTool,
   highlight: IconHighlighter,
   note: IconNote,
+  link: IconLink,
 };
 
 /**
@@ -426,6 +429,7 @@ export function PdfAnnotationToolbar({
     arrow: strings.arrowTool,
     highlight: strings.highlighterTool,
     note: strings.noteTool,
+    link: strings.linkTool,
   };
   const visibleTools = tools.filter((tool, index, all) => all.indexOf(tool) === index);
   const [initialPreferences] = useState(() =>
@@ -448,6 +452,16 @@ export function PdfAnnotationToolbar({
   const [opacity, setOpacity] = useState(initialDefaults.opacity);
   const [width, setWidth] = useState(initialDefaults.width);
   const [hasSelection, setHasSelection] = useState(false);
+  const [selectedLinkUrl, setSelectedLinkUrl] = useState<string | null>(null);
+  const [linkEditor, setLinkEditor] = useState<{
+    value: string;
+    editing: boolean;
+    left: number;
+    top: number;
+    above: boolean;
+    theme: CSSProperties;
+  } | null>(null);
+  const linkResolverRef = useRef<((target: PdfLinkTarget | null) => void) | null>(null);
   const [selectionControls, setSelectionControls] =
     useState<Readonly<AnnotationSelectionControls>>(NO_SELECTION_CONTROLS);
   const [selectionPopupPosition, setSelectionPopupPosition] = useState<{
@@ -597,6 +611,12 @@ export function PdfAnnotationToolbar({
     const syncSelectionStyle = (): void => {
       const annotations = viewer.getSelectedAnnotations();
       setHasSelection(viewer.getSelectedAnnotationIds().length > 0);
+      const selected = annotations.length === 1 ? annotations[0] : undefined;
+      setSelectedLinkUrl(
+        selected?.subtype === 'link' && selected.linkTarget?.kind === 'uri'
+          ? selected.linkTarget.url
+          : null,
+      );
       setSelectionControls(annotationSelectionControls(annotations));
       requestAnimationFrame(updateSelectionPopupPosition);
       if (annotations.length === 0) {
@@ -657,6 +677,41 @@ export function PdfAnnotationToolbar({
       unsubscribeTransform();
       unsubscribePreview();
       window.removeEventListener('resize', updateSelectionPopupPosition);
+    };
+  }, [viewer]);
+
+  useEffect(() => {
+    if (!viewer) return;
+    viewer.setAnnotationLinkRequestHandler((current, anchor) =>
+      new Promise<PdfLinkTarget | null>((resolve) => {
+        linkResolverRef.current?.(null);
+        linkResolverRef.current = resolve;
+        const computed = toolbarRef.current ? getComputedStyle(toolbarRef.current) : null;
+        const theme = computed
+          ? Object.fromEntries(
+              [
+                '--pdfrx-accent', '--pdfrx-accent-contrast', '--pdfrx-fg', '--pdfrx-fg-muted',
+                '--pdfrx-bg', '--pdfrx-bg-subtle', '--pdfrx-border', '--pdfrx-hover',
+                '--pdfrx-danger', '--pdfrx-radius', '--pdfrx-font',
+              ].map((name) => [name, computed.getPropertyValue(name)]),
+            ) as CSSProperties
+          : {};
+        const popupHeight = 112;
+        const above = anchor.bottom + popupHeight + 8 > window.innerHeight && anchor.top > popupHeight + 8;
+        setLinkEditor({
+          value: current?.kind === 'uri' ? current.url : '',
+          editing: current !== null,
+          left: Math.max(168, Math.min(window.innerWidth - 168, anchor.left + anchor.width / 2)),
+          top: above ? anchor.top - 8 : anchor.bottom + 8,
+          above,
+          theme,
+        });
+      }),
+    );
+    return () => {
+      viewer.setAnnotationLinkRequestHandler(null);
+      linkResolverRef.current?.(null);
+      linkResolverRef.current = null;
     };
   }, [viewer]);
 
@@ -905,6 +960,18 @@ export function PdfAnnotationToolbar({
     if (action === 'undo') void viewer?.undo();
     else void viewer?.redo();
   };
+  const closeLinkEditor = (target: PdfLinkTarget | null): void => {
+    const resolve = linkResolverRef.current;
+    linkResolverRef.current = null;
+    setLinkEditor(null);
+    resolve?.(target);
+  };
+  const applyLinkEditor = (): void => {
+    const value = linkEditor?.value.trim() ?? '';
+    if (!value) return;
+    const url = /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`;
+    closeLinkEditor({ kind: 'uri', url });
+  };
   return (
     <div ref={toolbarRef} className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
       <InteractionModeButton
@@ -974,6 +1041,17 @@ export function PdfAnnotationToolbar({
           onKeyDown={handlePopupKeyDown}
         >
           <span className="pdfrx-annot-colors" ref={paletteHostRef}>
+        {selectedLinkUrl && (
+          <button
+            type="button"
+            className="pdfrx-button"
+            onClick={() => void viewer?.editSelectedAnnotationLink()}
+            title={selectedLinkUrl}
+            aria-label={strings.editLink}
+          >
+            <IconLink />
+          </button>
+        )}
         {selectionControls.stroke && (
         <span className="pdfrx-annot-colorbtn">
           <button
@@ -1382,6 +1460,53 @@ export function PdfAnnotationToolbar({
           >
             <IconTrash />
           </button>
+        </div>,
+        document.body,
+      )}
+      {linkEditor && createPortal(
+        <div className="pdfrx-annot-link-dismiss-layer" onMouseDown={() => closeLinkEditor(null)}>
+          <form
+            className={[
+              'pdfrx-annot-link-popover',
+              linkEditor.above ? 'pdfrx-annot-link-popover-above' : '',
+            ].filter(Boolean).join(' ')}
+            role="dialog"
+            aria-modal="true"
+            aria-label={linkEditor.editing ? strings.editLink : strings.linkTool}
+            style={{
+              ...linkEditor.theme,
+              left: linkEditor.left,
+              top: linkEditor.top,
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              applyLinkEditor();
+            }}
+          >
+            <label>
+              <span>{strings.linkUrl}</span>
+              <input
+                autoFocus
+                type="text"
+                inputMode="url"
+                value={linkEditor.value}
+                placeholder="https://example.com"
+                onChange={(event) => setLinkEditor({ ...linkEditor, value: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') closeLinkEditor(null);
+                }}
+              />
+            </label>
+            <div className="pdfrx-annot-link-actions">
+              <button type="button" className="pdfrx-button" onClick={() => closeLinkEditor(null)}>
+                {strings.cancel}
+              </button>
+              <button type="submit" className="pdfrx-button pdfrx-button-active" disabled={!linkEditor.value.trim()}>
+                {strings.applyLink}
+              </button>
+            </div>
+          </form>
         </div>,
         document.body,
       )}

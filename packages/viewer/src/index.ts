@@ -22,6 +22,7 @@ export {
   type PdfrxViewerOptions,
   type PdfrxPageMutationOptions,
   type AnnotationTool,
+  type AnnotationLinkRequestHandler,
   type AnnotationStyle,
   type FitMode,
   type ZoomMode,

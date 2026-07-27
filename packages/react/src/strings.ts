@@ -77,6 +77,11 @@ export interface PdfrxStrings {
   arrowTool: string;
   highlighterTool: string;
   noteTool: string;
+  linkTool: string;
+  editLink: string;
+  linkUrl: string;
+  applyLink: string;
+  cancel: string;
   textBoxTool: string;
   /** Add an image annotation to the center of the current page. */
   addImage: string;
@@ -177,6 +182,11 @@ export const defaultPdfrxStrings: PdfrxStrings = {
   arrowTool: 'Arrow',
   highlighterTool: 'Highlighter',
   noteTool: 'Note',
+  linkTool: 'Link',
+  editLink: 'Edit link',
+  linkUrl: 'Link URL',
+  applyLink: 'Apply',
+  cancel: 'Cancel',
   textBoxTool: 'Text box',
   addImage: 'Add image',
   annotationTextPlaceholder: 'Text',

@@ -22,6 +22,7 @@ import {
   type PdfFormField,
   type PdfFormFieldChange,
   type PdfLink,
+  type PdfLinkTarget,
   type PdfPage,
   type PdfTextOrientation,
   type PdfPageChangeOrigin,
@@ -795,7 +796,11 @@ interface AnnotationDuplicateRepeat {
 }
 
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
-export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note';
+export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'link';
+export type AnnotationLinkRequestHandler = (
+  current: PdfLinkTarget | null,
+  anchor: DOMRectReadOnly,
+) => Promise<PdfLinkTarget | null>;
 
 /**
  * Resolves the persistent annotation tool and the held Alt/Option modifier to
@@ -1974,6 +1979,7 @@ export class PdfrxViewer {
   private readonly transformChangeListeners = new Set<() => void>();
   private readonly annotationToolChangeListeners = new Set<(tool: AnnotationTool | null) => void>();
   private readonly annotationSelectionChangeListeners = new Set<() => void>();
+  private annotationLinkRequestHandler: AnnotationLinkRequestHandler | null = null;
   private readonly annotationPreviewChangeListeners = new Set<
     (changes: readonly AnnotationPreviewChange[]) => void
   >();
@@ -5727,7 +5733,11 @@ export class PdfrxViewer {
               child.setAttribute('stroke-width', `${1.5 / t.zoom}`);
             } else {
               child.setAttribute('stroke-width', `${1 / t.zoom}`);
-              child.setAttribute('stroke-dasharray', dash);
+              if ((child as SVGElement).dataset.pdfrxSolid === 'true') {
+                child.removeAttribute('stroke-dasharray');
+              } else {
+                child.setAttribute('stroke-dasharray', dash);
+              }
             }
           }
         }
@@ -6538,6 +6548,31 @@ export class PdfrxViewer {
     return () => this.annotationSelectionChangeListeners.delete(listener);
   }
 
+  /** Installs the UI used to request a target for new or existing Link annotations. */
+  setAnnotationLinkRequestHandler(handler: AnnotationLinkRequestHandler | null): void {
+    this.annotationLinkRequestHandler = handler;
+  }
+
+  /** Opens the configured target editor for the single selected Link annotation. */
+  async editSelectedAnnotationLink(): Promise<void> {
+    if (!this.annotationLinkRequestHandler || this.selectedAnnotationIds.size !== 1) return;
+    const id = this.getSelectedAnnotationId();
+    let located = id ? this.locateAnnotation(id) : null;
+    for (let attempt = 0; id && !located && attempt < 10; attempt++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      located = this.locateAnnotation(id);
+    }
+    if (!id || !located || located.annotation.subtype !== 'link' || !located.annotation.linkTarget) return;
+    const anchor = this.getSelectedAnnotationClientRect();
+    if (!anchor) return;
+    const target = await this.annotationLinkRequestHandler(located.annotation.linkTarget, anchor);
+    if (!target || JSON.stringify(target) === JSON.stringify(located.annotation.linkTarget)) return;
+    const before = annotationToSpec(located.annotation);
+    const after = { ...structuredClone(before), linkTarget: structuredClone(target) };
+    await this.annotationPage(located.pageNumber).updateAnnotation(id, after, this.annotationMutationOptions(after));
+    this.recordAnnotationCommand({ pageNumber: located.pageNumber, id, before, after });
+  }
+
   /** Selects (highlights) a single annotation by id, or clears with `null`. */
   setSelectedAnnotation(id: string | null): void {
     this.setSelectedAnnotations(id ? [id] : []);
@@ -6905,11 +6940,15 @@ export class PdfrxViewer {
         actorId: this.options.editing?.actorId,
       });
     } else {
-      await this.annotationPage(pageNumber).updateAnnotation(id, spec, {
-        origin: 'history',
+      const page = this.annotationPage(pageNumber);
+      const exists = (await page.loadAnnotations()).some((annotation) => annotation.id === id);
+      const options = {
+        origin: 'history' as const,
         actorId: this.options.editing?.actorId,
         ...(spec.subtype === 'stamp' && spec.appearanceImage ? { preserveAppearance: true } : {}),
-      });
+      };
+      if (exists) await page.updateAnnotation(id, spec, options);
+      else await page.addAnnotation({ ...spec, id }, options);
     }
   }
 
@@ -7086,7 +7125,7 @@ export class PdfrxViewer {
     // A dashed bounding rectangle guides scaling of shapes whose bounds are not
     // already obvious from the shape (freehand pen, ellipse — not a rectangle,
     // not line/arrow).
-    if (annotationShowsBoundingBox(annotation)) {
+    if (annotationShowsBoundingBox(annotation) || annotation.subtype === 'link') {
       const b = annotationBounds(annotation);
       const tl = pdfPointToOffset({ x: b.left, y: b.top }, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
       const br = pdfPointToOffset({ x: b.right, y: b.bottom }, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
@@ -7097,9 +7136,10 @@ export class PdfrxViewer {
       box.setAttribute('height', `${Math.abs(br.y - tl.y)}`);
       box.setAttribute('fill', 'none');
       box.setAttribute('stroke', '#2196f3');
-      box.setAttribute('stroke-opacity', '0.9');
+      box.setAttribute('stroke-opacity', annotation.subtype === 'link' ? '0.5' : '0.9');
       box.setAttribute('stroke-width', `${1 / zoom}`);
-      box.setAttribute('stroke-dasharray', `${4 / zoom} ${3 / zoom}`);
+      if (annotation.subtype === 'link') box.dataset.pdfrxSolid = 'true';
+      else box.setAttribute('stroke-dasharray', `${4 / zoom} ${3 / zoom}`);
       box.style.pointerEvents = 'none';
       overlay.anchorLayer.appendChild(box);
     }
@@ -7427,7 +7467,7 @@ export class PdfrxViewer {
       tool === 'ink'
         ? start
         : this.snapAnnotationPoint(overlay, start, new Set<string>()).point;
-    const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight';
+    const isShape = tool === 'rectangle' || tool === 'ellipse' || tool === 'highlight' || tool === 'link';
     const previewTag = tool === 'ellipse' ? 'ellipse' : isShape ? 'rect' : tool === 'ink' ? 'polyline' : 'line';
     const preview = document.createElementNS(SVG_NS, previewTag);
     const previewFill =
@@ -7441,9 +7481,12 @@ export class PdfrxViewer {
       preview.setAttribute('fill-opacity', `${this.annotationStyle.opacity}`);
     }
     else if (previewFill !== 'none') preview.setAttribute('fill-opacity', `${this.annotationStyle.opacity}`);
-    preview.setAttribute('stroke', this.annotationStyle.strokeWidth > 0 ? this.annotationStyle.color : 'none');
-    preview.setAttribute('stroke-opacity', `${this.annotationStyle.opacity}`);
-    preview.setAttribute('stroke-width', `${this.annotationStyle.strokeWidth}`);
+    preview.setAttribute(
+      'stroke',
+      tool === 'link' ? '#2196f3' : this.annotationStyle.strokeWidth > 0 ? this.annotationStyle.color : 'none',
+    );
+    preview.setAttribute('stroke-opacity', tool === 'link' ? '0.5' : `${this.annotationStyle.opacity}`);
+    preview.setAttribute('stroke-width', `${tool === 'link' ? 1 / this.transform.zoom : this.annotationStyle.strokeWidth}`);
     preview.setAttribute('stroke-linejoin', tool === 'ink' ? 'round' : 'miter');
     preview.setAttribute('stroke-linecap', tool === 'ink' ? 'round' : 'butt');
     (tool === 'highlight' ? overlay.highlightSvg : overlay.svg).appendChild(preview);
@@ -7520,11 +7563,14 @@ export class PdfrxViewer {
     } catch {
       /* ignore */
     }
-    s.preview.remove();
+    if (s.tool !== 'link') s.preview.remove();
     if (s.tool !== 'ink') end = this.snapAnnotationPoint(overlay, end, new Set<string>()).point;
     this.renderAnnotationSnapGuides(overlay);
     const spec = this.buildSpecFromDraw(s, end);
-    if (!spec) return;
+    if (!spec) {
+      s.preview.remove();
+      return;
+    }
     let editorCleanup: (() => void) | null = null;
     if (spec.subtype === 'text') {
       const result = await this.requestAnnotationText(overlay, spec);
@@ -7532,6 +7578,38 @@ export class PdfrxViewer {
       if (contents === null) return;
       editorCleanup = result.cleanup;
       spec.contents = contents;
+    } else if (spec.subtype === 'link') {
+      if (!this.annotationLinkRequestHandler || !spec.rect) {
+        s.preview.remove();
+        return;
+      }
+      const local = pdfRectToRect(spec.rect, { page: overlay.pageGeom, scaledPageSize: overlay.pageSize });
+      // Keep the unresolved insertion preview in sync with the normalized
+      // annotation geometry. In particular, a click or accidental tiny drag
+      // expands to the same minimum box as rectangle annotations before the
+      // URL popup is shown.
+      const preview = s.preview as SVGRectElement;
+      preview.setAttribute('x', `${local.left}`);
+      preview.setAttribute('y', `${local.top}`);
+      preview.setAttribute('width', `${rectWidth(local)}`);
+      preview.setAttribute('height', `${rectHeight(local)}`);
+      const surface = overlay.svg.getBoundingClientRect();
+      const scaleX = surface.width / overlay.pageSize.width;
+      const scaleY = surface.height / overlay.pageSize.height;
+      const anchor = new DOMRectReadOnly(
+        surface.left + local.left * scaleX,
+        surface.top + local.top * scaleY,
+        rectWidth(local) * scaleX,
+        rectHeight(local) * scaleY,
+      );
+      let target: PdfLinkTarget | null;
+      try {
+        target = await this.annotationLinkRequestHandler(null, anchor);
+      } finally {
+        s.preview.remove();
+      }
+      if (!target) return;
+      spec.linkTarget = target;
     }
     let id: string;
     try {
@@ -8095,6 +8173,7 @@ export class PdfrxViewer {
         const strokes = arrowInkStrokes(toPdf(lineStart), toPdf(lineEnd));
         return { subtype: 'ink', rect: bboxOfPoints(strokes.flat()), color, borderWidth, geometry: { kind: 'ink', strokes } };
       }
+      case 'link':
       case 'rectangle':
       case 'ellipse': {
         const minimum = SHAPE_MIN_SCREEN_SIZE / this.transform.zoom;
@@ -8108,9 +8187,18 @@ export class PdfrxViewer {
         const interiorColor = this.annotationStyle.fillColor
           ? cssColorToRgba(this.annotationStyle.fillColor, this.annotationStyle.opacity)
           : undefined;
+        const rect = rectOf({ x: box.left, y: box.top }, { x: box.right, y: box.bottom });
+        if (s.tool === 'link') {
+          return {
+            subtype: 'link',
+            rect,
+            linkTarget: { kind: 'uri', url: '' },
+            borderWidth: 0,
+          };
+        }
         return {
           subtype: s.tool === 'rectangle' ? 'square' : 'circle',
-          rect: rectOf({ x: box.left, y: box.top }, { x: box.right, y: box.bottom }),
+          rect,
           color,
           interiorColor,
           borderWidth,

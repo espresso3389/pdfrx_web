@@ -488,6 +488,71 @@ function readSelectionClientRect(): { left: number; top: number; width: number; 
     : null;
 }
 
+async function setupLinkTool(url: string): Promise<void> {
+  await clearAnnotations();
+  viewer.setAnnotationLinkRequestHandler(async () => ({ kind: 'uri', url }));
+  viewer.setAnnotationMode(true);
+  viewer.setAnnotationTool('link');
+}
+
+let pendingLinkTarget: ((target: { kind: 'uri'; url: string } | null) => void) | null = null;
+async function setupPendingLinkTool(): Promise<void> {
+  await clearAnnotations();
+  viewer.setAnnotationLinkRequestHandler(() => new Promise((resolve) => {
+    pendingLinkTarget = resolve;
+  }));
+  viewer.setAnnotationMode(true);
+  viewer.setAnnotationTool('link');
+}
+
+function resolvePendingLink(url: string | null): void {
+  pendingLinkTarget?.(url ? { kind: 'uri', url } : null);
+  pendingLinkTarget = null;
+}
+
+async function undo(): Promise<void> {
+  await viewer.undo();
+}
+
+async function redo(): Promise<void> {
+  await viewer.redo();
+}
+
+async function readLinkTargets(roundTrip = false): Promise<string[]> {
+  const doc = viewer.document;
+  if (!doc) return [];
+  const source = roundTrip ? await viewer.engine.openData(await doc.encodePdf()) : doc;
+  try {
+    return (await source.pages[0]!.loadAnnotations())
+      .filter((annotation) => annotation.subtype === 'link' && annotation.linkTarget?.kind === 'uri')
+      .map((annotation) => annotation.linkTarget!.kind === 'uri' ? annotation.linkTarget!.url : '');
+  } finally {
+    if (roundTrip) await source.dispose();
+  }
+}
+
+async function readLinkAppearance(): Promise<{ borderWidth: number; color: unknown } | null> {
+  const annotation = (await viewer.document?.pages[0]?.loadAnnotations())
+    ?.find((item) => item.subtype === 'link');
+  return annotation ? { borderWidth: annotation.borderWidth, color: annotation.color } : null;
+}
+
+async function editSelectedLink(url: string): Promise<void> {
+  viewer.setAnnotationLinkRequestHandler(async () => ({ kind: 'uri', url }));
+  await viewer.editSelectedAnnotationLink();
+}
+
+function readLinkDrawPreview(): { stroke: string | null; opacity: string | null; width: string | null } | null {
+  const preview = host.querySelector<SVGRectElement>('svg[style*="touch-action"] > rect');
+  return preview
+    ? {
+        stroke: preview.getAttribute('stroke'),
+        opacity: preview.getAttribute('stroke-opacity'),
+        width: preview.getAttribute('stroke-width'),
+      }
+    : null;
+}
+
 declare global {
   interface Window {
     annotationVisualTest: {
@@ -511,6 +576,15 @@ declare global {
       runFreeTextRoundTrip: typeof runFreeTextRoundTrip;
       inspectCurrentFreeTextRoundTrip: typeof inspectCurrentFreeTextRoundTrip;
       readSelectionClientRect: typeof readSelectionClientRect;
+      setupLinkTool: typeof setupLinkTool;
+      setupPendingLinkTool: typeof setupPendingLinkTool;
+      resolvePendingLink: typeof resolvePendingLink;
+      undo: typeof undo;
+      redo: typeof redo;
+      readLinkTargets: typeof readLinkTargets;
+      readLinkAppearance: typeof readLinkAppearance;
+      editSelectedLink: typeof editSelectedLink;
+      readLinkDrawPreview: typeof readLinkDrawPreview;
     };
   }
 }
@@ -536,4 +610,13 @@ window.annotationVisualTest = {
   runFreeTextRoundTrip,
   inspectCurrentFreeTextRoundTrip,
   readSelectionClientRect,
+  setupLinkTool,
+  setupPendingLinkTool,
+  resolvePendingLink,
+  undo,
+  redo,
+  readLinkTargets,
+  readLinkAppearance,
+  editSelectedLink,
+  readLinkDrawPreview,
 };

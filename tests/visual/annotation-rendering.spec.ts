@@ -1065,3 +1065,105 @@ test('FreeText contents survive encode and render after reopening', async ({ pag
   expect(result.contents).toBe(spec.contents);
   expect(result.darkInteriorPixels, 'reopened PDF should paint the FreeText glyphs').toBeGreaterThan(20);
 });
+
+test('link tool creates and edits a URI link that survives PDF round-trip', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupLinkTool(url: string): Promise<void> };
+      }
+    ).annotationVisualTest.setupLinkTool('https://example.com/first'),
+  );
+  await page.mouse.move(40, 80);
+  await page.mouse.down();
+  await page.mouse.move(180, 130, { steps: 3 });
+  expect(await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readLinkDrawPreview(): { stroke: string | null; opacity: string | null; width: string | null } | null;
+        };
+      }
+    ).annotationVisualTest.readLinkDrawPreview(),
+  )).toEqual({ stroke: '#2196f3', opacity: '0.5', width: '1' });
+  await page.mouse.up();
+  const read = (roundTrip = false) => page.evaluate((value) =>
+    (
+      window as unknown as {
+        annotationVisualTest: { readLinkTargets(roundTrip?: boolean): Promise<string[]> };
+      }
+    ).annotationVisualTest.readLinkTargets(value), roundTrip);
+  await expect.poll(() => read()).toEqual(['https://example.com/first']);
+  expect(await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readLinkAppearance(): Promise<{ borderWidth: number; color: unknown } | null>;
+        };
+      }
+    ).annotationVisualTest.readLinkAppearance(),
+  )).toEqual({ borderWidth: 0, color: null });
+  const selectionGuide = page.locator('.pdfrx-anchors rect');
+  await expect(selectionGuide).toHaveCount(1);
+  await expect(selectionGuide).toHaveAttribute('stroke', '#2196f3');
+  await expect(selectionGuide).toHaveAttribute('stroke-opacity', '0.5');
+  await expect(selectionGuide).not.toHaveAttribute('stroke-dasharray');
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { editSelectedLink(url: string): Promise<void> };
+      }
+    ).annotationVisualTest.editSelectedLink('https://example.org/updated'),
+  );
+  await expect.poll(() => read()).toEqual(['https://example.org/updated']);
+  expect(await read(true)).toEqual(['https://example.org/updated']);
+  const history = (action: 'undo' | 'redo') => page.evaluate((value) =>
+    (
+      window as unknown as {
+        annotationVisualTest: { undo(): Promise<void>; redo(): Promise<void> };
+      }
+    ).annotationVisualTest[value](), action);
+  await history('undo');
+  await expect.poll(() => read()).toEqual(['https://example.com/first']);
+  await history('redo');
+  await expect.poll(() => read()).toEqual(['https://example.org/updated']);
+  await history('undo');
+  await history('undo');
+  await expect.poll(() => read()).toEqual([]);
+  await history('redo');
+  await expect.poll(() => read()).toEqual(['https://example.com/first']);
+  await history('redo');
+  await expect.poll(() => read()).toEqual(['https://example.org/updated']);
+});
+
+test('link insertion preview remains visible until the target popup resolves', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupPendingLinkTool(): Promise<void> };
+      }
+    ).annotationVisualTest.setupPendingLinkTool(),
+  );
+  await page.mouse.move(48, 88);
+  await page.mouse.down();
+  await page.mouse.move(50, 90);
+  await page.mouse.up();
+  const preview = page.locator('svg[style*="touch-action"] > rect');
+  await expect(preview).toHaveCount(1);
+  const previewBox = await preview.boundingBox();
+  expect(previewBox).not.toBeNull();
+  expect(previewBox!.width).toBeGreaterThanOrEqual(71);
+  expect(previewBox!.height).toBeGreaterThanOrEqual(71);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { resolvePendingLink(url: string | null): void };
+      }
+    ).annotationVisualTest.resolvePendingLink(null),
+  );
+  await expect(preview).toHaveCount(0);
+});
