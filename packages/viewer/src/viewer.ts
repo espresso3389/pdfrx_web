@@ -9,6 +9,7 @@
 
 import {
   PdfrxEngine,
+  type PdfAnnotationColor,
   type PdfAnnotationObject,
   type PdfAnnotationMutationOptions,
   type PdfAnnotationPoint,
@@ -1405,6 +1406,38 @@ function annotationShowsBoundingBox(a: PdfAnnotationObject): boolean {
   if (a.subtype === 'square' && (a.borderWidth <= 0 || a.color === null)) return true;
   if (a.geometry.kind === 'ink') return inkStrokeKind(a.geometry) === 'curve'; // freehand pen
   return false; // stroked rectangle, line/arrow, markup, free text, …
+}
+
+const EFFECTIVELY_INVISIBLE_ALPHA = 0.05 * 255;
+
+/**
+ * Whether an annotation has no appearance channel above 5% opacity.
+ *
+ * Link annotations are intentionally appearance-less. Images and note icons
+ * remain visible independently of the annotation dictionary's paint colors.
+ *
+ * @internal
+ */
+export function annotationIsEffectivelyInvisible(a: PdfAnnotationObject): boolean {
+  if (a.subtype === 'link') return true;
+  const visible = (color: PdfAnnotationColor | null | undefined): boolean =>
+    (color?.a ?? 0) > EFFECTIVELY_INVISIBLE_ALPHA;
+  const hasVisibleAppearancePath = a.appearancePaths.some((path) =>
+    (path.fillMode !== 0 && visible(path.fillColor)) ||
+    (path.stroke && path.strokeWidth > 0 && visible(path.strokeColor)),
+  );
+  if (
+    (a.subtype === 'ink' || a.subtype === 'polygon' || a.subtype === 'polyline') &&
+    hasVisibleAppearancePath
+  ) return false;
+  const groupAlpha = a.color?.a ?? a.interiorColor?.a ?? 255;
+  if (groupAlpha <= EFFECTIVELY_INVISIBLE_ALPHA) return true;
+  if (a.appearanceImage || a.subtype === 'text') return false;
+  if (a.geometry.kind === 'markup') return !visible(a.color);
+  if (a.subtype === 'freeText' && a.contents && visible(a.textColor)) return false;
+  const hasStroke = a.borderWidth > 0 && visible(a.color);
+  const hasFill = visible(a.interiorColor);
+  return !hasStroke && !hasFill;
 }
 
 /**
@@ -4759,6 +4792,7 @@ export class PdfrxViewer {
   private readonly onAnnotationModeModifierDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Alt' || this.annotationModeModifierHeld) return;
     this.annotationModeModifierHeld = true;
+    this.refreshAnnotationSelectionAll();
     this.invalidate();
   };
 
@@ -4791,12 +4825,14 @@ export class PdfrxViewer {
   private readonly onAnnotationModeModifierUp = (event: KeyboardEvent): void => {
     if (event.key !== 'Alt') return;
     this.annotationModeModifierHeld = false;
+    this.refreshAnnotationSelectionAll();
     this.invalidate();
   };
 
   private readonly onAnnotationModeModifierReset = (): void => {
     if (!this.annotationModeModifierHeld) return;
     this.annotationModeModifierHeld = false;
+    this.refreshAnnotationSelectionAll();
     this.invalidate();
   };
 
@@ -4944,6 +4980,10 @@ export class PdfrxViewer {
     addItem('Highlight', this.canHighlightSelection(), () => {
       this.hideContextMenu();
       void this.highlightSelection();
+    });
+    addItem('Add link', this.canAddLinkToSelection(), () => {
+      this.hideContextMenu();
+      void this.addLinkToSelection();
     });
     addItem('Select All', true, () => {
       this.hideContextMenu();
@@ -6296,6 +6336,7 @@ export class PdfrxViewer {
       this.updateAnnotationTool(null);
       this.setSelectedAnnotations([]);
     }
+    this.refreshAnnotationSelectionAll();
     this.invalidate();
   }
 
@@ -6680,6 +6721,50 @@ export class PdfrxViewer {
   /** Whether the current text selection can be highlighted (has a selection + annotations on). */
   canHighlightSelection(): boolean {
     return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
+  }
+
+  /**
+   * Adds Link annotations over the current text selection. The configured
+   * annotation-link request handler is opened once, then the chosen target is
+   * applied to each selected visual line as one undoable step.
+   */
+  async addLinkToSelection(): Promise<void> {
+    if (!this.doc || !this.selA || !this.selB || !this.annotationLinkRequestHandler) return;
+    const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
+    const selectedRects = ranges.flatMap((range) =>
+      enumerateLineBoundingRects({ pageText: range.pageText, start: range.start, end: range.end })
+        .map((line) => ({ pageNumber: range.pageText.pageNumber, rect: line.bounds })),
+    );
+    if (selectedRects.length === 0) return;
+
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const end = this.anchors
+      ? documentToView(this.transform, anchorPoint(this.anchors.b))
+      : { x: 0, y: 0 };
+    const anchor = new DOMRectReadOnly(canvasRect.left + end.x, canvasRect.top + end.y, 0, 0);
+    const target = await this.annotationLinkRequestHandler(null, anchor);
+    if (!target || !this.selA || !this.selB) return;
+
+    const group: AnnotationCommand[] = [];
+    const ids: string[] = [];
+    for (const { pageNumber, rect } of selectedRects) {
+      const spec: PdfAnnotationSpec = {
+        subtype: 'link',
+        rect,
+        linkTarget: structuredClone(target),
+      };
+      const id = await this.annotationPage(pageNumber).addAnnotation(spec, this.annotationMutationOptions());
+      ids.push(id);
+      group.push({ pageNumber, id, before: null, after: spec });
+    }
+    this.recordAnnotationCommandGroup(group);
+    this.clearSelection();
+    this.setSelectedAnnotations(ids);
+  }
+
+  /** Whether the current text selection can be converted to Link annotations. */
+  canAddLinkToSelection(): boolean {
+    return this.canHighlightSelection() && this.annotationLinkRequestHandler !== null;
   }
 
   /** Copies the selected annotations to the viewer-local object clipboard. */
@@ -7069,6 +7154,7 @@ export class PdfrxViewer {
    */
   private refreshAnnotationSelection(overlay: AnnotationPageOverlay): void {
     overlay.anchorLayer.replaceChildren();
+    this.renderInvisibleAnnotationGuides(overlay);
     // Outline every selected shape so a multi-selection is visible around the box.
     const multi = this.selectedAnnotationIds.size > 1;
     for (const child of Array.from(overlay.svg.children)) {
@@ -7091,6 +7177,32 @@ export class PdfrxViewer {
     const sel = this.selectedAnnotationsOn(overlay);
     if (sel.length === 1) this.renderAnnotationAnchors(overlay, sel[0]!);
     else if (sel.length > 1) this.renderGroupSelection(overlay, sel);
+  }
+
+  /** Shows otherwise unfindable annotation bounds while object editing is active. */
+  private renderInvisibleAnnotationGuides(overlay: AnnotationPageOverlay): void {
+    if (!this.isAnnotationSelectMode()) return;
+    const zoom = this.transform.zoom;
+    const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
+    for (const annotation of overlay.annotations.values()) {
+      if (!annotationIsEffectivelyInvisible(annotation)) continue;
+      const bounds = annotationBounds(annotation);
+      const topLeft = pdfPointToOffset({ x: bounds.left, y: bounds.top }, opts);
+      const bottomRight = pdfPointToOffset({ x: bounds.right, y: bounds.bottom }, opts);
+      const guide = document.createElementNS(SVG_NS, 'rect');
+      guide.setAttribute('class', 'pdfrx-invisible-annotation-guide');
+      guide.setAttribute('x', `${Math.min(topLeft.x, bottomRight.x)}`);
+      guide.setAttribute('y', `${Math.min(topLeft.y, bottomRight.y)}`);
+      guide.setAttribute('width', `${Math.abs(bottomRight.x - topLeft.x)}`);
+      guide.setAttribute('height', `${Math.abs(bottomRight.y - topLeft.y)}`);
+      guide.setAttribute('fill', 'none');
+      guide.setAttribute('stroke', '#2196f3');
+      guide.setAttribute('stroke-opacity', '0.35');
+      guide.setAttribute('stroke-width', `${1 / zoom}`);
+      guide.dataset.pdfrxSolid = 'true';
+      guide.style.pointerEvents = 'none';
+      overlay.anchorLayer.appendChild(guide);
+    }
   }
 
   /** Finger-friendly anchors after a touch selection; compact anchors for mouse/pen. */

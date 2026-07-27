@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotationIsEffectivelyInvisible,
   annotationTextCompositionKey,
   annotationTextEntryKey,
   annotationObjectInteractionEnabled,
@@ -12,6 +13,83 @@ import {
   segmentIntersectsRect,
   translateSpec,
 } from './viewer.js';
+import type { PdfAnnotationObject } from '@pdfrx/engine';
+
+const annotationWith = (values: Partial<PdfAnnotationObject>): PdfAnnotationObject => ({
+  id: 'a',
+  pageNumber: 1,
+  subtype: 'square',
+  linkTarget: null,
+  rect: { left: 0, top: 10, right: 10, bottom: 0 },
+  color: null,
+  interiorColor: null,
+  borderWidth: 0,
+  flags: 0,
+  contents: null,
+  author: null,
+  actorId: null,
+  revision: 0,
+  textOrientation: 0,
+  textColor: null,
+  fontSize: null,
+  textAlign: 'left',
+  textVerticalAlign: 'top',
+  fontFace: null,
+  geometry: { kind: 'none' },
+  appearancePaths: [],
+  appearanceImage: null,
+  ...values,
+} as PdfAnnotationObject);
+
+describe('annotationIsEffectivelyInvisible', () => {
+  it('includes links and shapes whose stroke and fill are transparent', () => {
+    expect(annotationIsEffectivelyInvisible(annotationWith({ subtype: 'link' }))).toBe(true);
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      borderWidth: 2,
+      color: { r: 0, g: 0, b: 0, a: 0 },
+      interiorColor: { r: 255, g: 0, b: 0, a: 0 },
+    }))).toBe(true);
+  });
+
+  it('uses 5% as an inclusive invisibility threshold', () => {
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      borderWidth: 1,
+      color: { r: 0, g: 0, b: 0, a: 12 },
+    }))).toBe(true);
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      borderWidth: 1,
+      color: { r: 0, g: 0, b: 0, a: 13 },
+    }))).toBe(false);
+  });
+
+  it('keeps visible fills, text, images, and appearance paths unmarked', () => {
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      interiorColor: { r: 255, g: 0, b: 0, a: 255 },
+    }))).toBe(false);
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      subtype: 'freeText',
+      contents: 'visible',
+      textColor: { r: 0, g: 0, b: 0, a: 255 },
+    }))).toBe(false);
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      appearanceImage: { width: 1, height: 1, pixels: new Uint8Array(4) },
+    }))).toBe(false);
+    expect(annotationIsEffectivelyInvisible(annotationWith({
+      subtype: 'ink',
+      geometry: { kind: 'ink', strokes: [] },
+      appearancePaths: [{
+        segments: [],
+        fillMode: 1,
+        fillColor: { r: 0, g: 0, b: 0, a: 255 },
+        stroke: false,
+        strokeColor: null,
+        strokeWidth: 0,
+        lineCap: 0,
+        lineJoin: 0,
+      }],
+    }))).toBe(false);
+  });
+});
 
 describe('annotationObjectInteractionEnabled', () => {
   it('inverts viewing mode while Alt/Option is held', () => {

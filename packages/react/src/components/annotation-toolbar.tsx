@@ -822,6 +822,7 @@ export function PdfAnnotationToolbar({
     selectionControls.text ||
     selectionControls.opacity ||
     selectionControls.width;
+  const hasSelectionPopupControls = hasSelectionControls || selectedLinkUrl !== null;
   const rememberCustomColor = (selectedColor: string): void => {
     const normalized = selectedColor.toLowerCase();
     if (colors.some((preset) => preset.toLowerCase() === normalized)) return;
@@ -1040,6 +1041,7 @@ export function PdfAnnotationToolbar({
           onMouseDown={preserveViewerFocusOnPopupMouseDown}
           onKeyDown={handlePopupKeyDown}
         >
+          {hasSelectionPopupControls && (
           <span className="pdfrx-annot-colors" ref={paletteHostRef}>
         {selectedLinkUrl && (
           <button
@@ -1448,6 +1450,7 @@ export function PdfAnnotationToolbar({
         </>
         )}
           </span>
+          )}
           {hasSelectionControls && (
             <span className="pdfrx-toolbar-separator" aria-hidden />
           )}

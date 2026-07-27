@@ -4,8 +4,11 @@ import { buildDefaultContextMenu, TEXT_HIGHLIGHT_COLORS, TEXT_HIGHLIGHT_OPACITY 
 import { defaultPdfrxStrings } from './strings.js';
 
 describe('buildDefaultContextMenu', () => {
-  it('orders copy and select-all before highlight', () => {
-    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
+  it('places add-link directly below highlight', () => {
+    const viewer = {
+      canHighlightSelection: () => true,
+      canAddLinkToSelection: () => true,
+    } as unknown as PdfrxViewer;
     const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
       viewPoint: { x: 0, y: 0 },
       hasSelection: true,
@@ -17,7 +20,32 @@ describe('buildDefaultContextMenu', () => {
       defaultPdfrxStrings.copy,
       defaultPdfrxStrings.selectAll,
       `${defaultPdfrxStrings.highlight}›`,
+      defaultPdfrxStrings.addLink,
     ]);
+  });
+
+  it('adds a link from the current selection and closes the menu', () => {
+    const addLinkToSelection = vi.fn(() => Promise.resolve());
+    const close = vi.fn();
+    const viewer = {
+      canHighlightSelection: () => true,
+      canAddLinkToSelection: () => true,
+      addLinkToSelection,
+    } as unknown as PdfrxViewer;
+    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
+      viewPoint: { x: 0, y: 0 },
+      hasSelection: true,
+      isCopyAllowed: true,
+      pointerType: 'mouse',
+      close,
+    });
+
+    [...menu.querySelectorAll<HTMLButtonElement>('.pdfrx-context-menu-item')]
+      .find((item) => item.textContent === defaultPdfrxStrings.addLink)!
+      .click();
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(addLinkToSelection).toHaveBeenCalledOnce();
   });
 
   it('opens a dedicated highlight palette and applies its fixed opacity', () => {

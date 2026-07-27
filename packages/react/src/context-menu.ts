@@ -189,6 +189,10 @@ export function buildDefaultContextMenu(
     void viewer.selectAll();
   });
   addHighlightPalette();
+  addItem(strings.addLink, viewer.canAddLinkToSelection?.() ?? false, () => {
+    context.close();
+    void viewer.addLinkToSelection();
+  });
 
   return menu;
 }

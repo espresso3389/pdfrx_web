@@ -63,6 +63,8 @@ export interface PdfrxStrings {
   // Context menu (right-click / long-press)
   copy: string;
   highlight: string;
+  /** Adds a link annotation over the selected text. */
+  addLink: string;
   selectAll: string;
 
   // Editing / annotation toolbar
@@ -169,6 +171,7 @@ export const defaultPdfrxStrings: PdfrxStrings = {
 
   copy: 'Copy',
   highlight: 'Highlight',
+  addLink: 'Add link',
   selectAll: 'Select All',
 
   undo: 'Undo',
