@@ -1818,6 +1818,7 @@ export class PdfrxViewer {
     this.canvas.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('keydown', this.onAnnotationModeModifierDown);
+    window.addEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.addEventListener('keyup', this.onAnnotationModeModifierUp);
     window.addEventListener('blur', this.onAnnotationModeModifierReset);
   }
@@ -3024,6 +3025,7 @@ export class PdfrxViewer {
     this.container.removeEventListener('pointerdown', this.onAnnotationPointerDown, { capture: true });
     this.container.removeEventListener('dblclick', this.onAnnotationDoubleClick, { capture: true });
     window.removeEventListener('keydown', this.onAnnotationModeModifierDown);
+    window.removeEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.removeEventListener('keyup', this.onAnnotationModeModifierUp);
     window.removeEventListener('blur', this.onAnnotationModeModifierReset);
     this.container.style.touchAction = this.previousContainerTouchAction;
@@ -4679,7 +4681,7 @@ export class PdfrxViewer {
         return true;
       }
       if (cmd && e.key.toLowerCase() === 'a') {
-        if (this.selectedAnnotationIds.size) void this.selectAllAnnotationsOnPage();
+        if (this.isAnnotationSelectMode() && this.annotationTool === null) void this.selectAllAnnotationsOnPage();
         else void this.selectAll();
         return true;
       }
@@ -4758,6 +4760,32 @@ export class PdfrxViewer {
     if (event.key !== 'Alt' || this.annotationModeModifierHeld) return;
     this.annotationModeModifierHeld = true;
     this.invalidate();
+  };
+
+  /**
+   * Keeps object-mode Select All inside the viewer even when a toolbar button
+   * still owns focus. The canvas handler covers normal viewer focus; this
+   * window-level fallback also consumes the shortcut when there are no
+   * annotations, so the browser never selects surrounding UI text instead.
+   */
+  private readonly onAnnotationSelectAllShortcut = (event: KeyboardEvent): void => {
+    if (
+      event.defaultPrevented ||
+      (!event.ctrlKey && !event.metaKey) ||
+      event.key.toLowerCase() !== 'a' ||
+      !this.isAnnotationSelectMode() ||
+      this.annotationTool !== null
+    ) {
+      return;
+    }
+    if (
+      event.target instanceof Element &&
+      event.target.closest('input, textarea, select, [contenteditable="true"]')
+    ) {
+      return;
+    }
+    event.preventDefault();
+    void this.selectAllAnnotationsOnPage();
   };
 
   private readonly onAnnotationModeModifierUp = (event: KeyboardEvent): void => {

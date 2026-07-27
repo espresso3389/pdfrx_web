@@ -465,7 +465,7 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   expect(state.rects[2]!.left - state.rects[1]!.left).toBeCloseTo(64, 5);
 });
 
-test('Ctrl+A selects every annotation when one annotation is already selected', async ({ page }) => {
+test('Ctrl+A selects every annotation in annotation selection mode without a prior selection', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);
   const specs: AnnotationSpec[] = [
@@ -491,10 +491,6 @@ test('Ctrl+A selects every annotation when one annotation is already selected', 
     await api.setupSelectAllTest(annotations);
   }, specs);
   await expect(page.locator('g[data-annot-id]')).toHaveCount(2);
-  const rectangle = page.locator('g[data-annot-id]').filter({ has: page.locator('rect') });
-  const rectangleBox = await rectangle.boundingBox();
-  if (!rectangleBox) throw new Error('Select-all test rectangle is not visible');
-  await page.mouse.click(rectangleBox.x + rectangleBox.width / 4, rectangleBox.y + 2);
   const canvas = page.locator('canvas');
   await expect(canvas).toHaveCount(1);
   await canvas.press('Control+a');
@@ -510,6 +506,24 @@ test('Ctrl+A selects every annotation when one annotation is already selected', 
       }),
     )
     .toBe(2);
+});
+
+test('Ctrl+A does not select surrounding UI text when annotation selection mode is empty', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(async () => {
+    await (
+      window as unknown as {
+        annotationVisualTest: { setupSelectAllTest(s: unknown[]): Promise<void> };
+      }
+    ).annotationVisualTest.setupSelectAllTest([]);
+    const button = document.createElement('button');
+    button.textContent = 'Annotation toolbar control';
+    document.body.appendChild(button);
+    button.focus();
+  });
+  await page.keyboard.press('Control+a');
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
 test('a selected fill-only rectangle shows a dashed bounding box', async ({ page }) => {
