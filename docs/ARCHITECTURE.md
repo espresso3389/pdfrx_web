@@ -1,6 +1,6 @@
 # Architecture
 
-pdfrx_web is a canvas-based PDF viewer for the browser, split into four
+pdfrx_web is a canvas-based PDF viewer for the browser, split into five
 layered packages over a WASM rendering engine that runs in a Web Worker.
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
@@ -15,26 +15,121 @@ layered packages over a WASM rendering engine that runs in a Web Worker.
 | Viewer shell | `@pdfrx/viewer` | The `<canvas>` shell plus HTML/SVG overlays: rendering, gestures, selection, search, forms, annotations, and printing. |
 | React bindings | `@pdfrx/react` | All-in-one and composable viewer UI, localized controls, animated chrome, and headless hooks. |
 
+## Logical page editing and materialization
+
+Page editing is a first-class engine-client architecture, not merely a set of
+worker commands. `PdfDocument` presents an ordered, logical **page
+arrangement** that can differ from the page tree currently stored in a physical
+PDF. Applications edit that arrangement synchronously with `setPages()` and
+`setPage()`; reordering, removing, rotating, duplicating, and importing pages
+therefore do not rewrite PDF bytes during an interactive operation.
+
+A `PdfPage` in an arrangement is a lightweight proxy with two distinct roles:
+
+- `document` and `pageNumber` describe its current placement in the logical
+  arrangement. Array order supplies page numbers, so rearranging pages is
+  cheap and immediately visible to the viewer.
+- `sourceDocument` and `sourcePageIndex` identify the physical PDF page used
+  for rendering, text extraction, forms, and annotation operations. An
+  arrangement may borrow pages from other open documents without first copying
+  them.
+
+```mermaid
+flowchart LR
+  subgraph logical["Logical arrangement in PdfDocument"]
+    direction LR
+    p1["slot 1<br/>PdfPage A"]
+    p2["slot 2<br/>PdfPage C, rotated"]
+    p3["slot 3<br/>PdfPage B"]
+    p4["slot 4<br/>PdfPage B'"]
+  end
+
+  subgraph local["Physical PDF: document"]
+    direction TB
+    a["source page 1"]
+    b["source page 2"]
+  end
+
+  subgraph imported["Physical PDF: imported document"]
+    c["source page 4"]
+  end
+
+  p1 -->|"sourceDocument + sourcePageIndex"| a
+  p2 -->|"borrowed page"| c
+  p3 -->|"physical page"| b
+  p4 -->|"same physical page,<br/>distinct logical identity"| b
+```
+
+Rotation and placement operations create new proxies rather than copying page
+data. Proxies retain an opaque logical page identity across rearrangement,
+rotation, and materialization, so ID-based `PdfDest` values follow the intended
+page. `PdfPage.duplicate()` deliberately creates a new logical identity while
+still referring to the same physical source page; use it when two placements
+must be distinguishable as destination targets. Reusing the same identity in
+multiple arrangement slots is allowed, but an ID-based destination resolves to
+one matching placement.
+
+This separation creates two editing timelines:
+
+1. `setPages()`, `setPage()`, `setOutline()`, and Link-annotation replacement
+   update pending logical state. Viewer layout and navigation use that state
+   immediately, while the worker's page tree, catalog, and indirect object
+   numbers remain unchanged.
+2. `materialize()` assembles the arrangement into the live physical PDF,
+   imports borrowed pages, writes pending outline and Link edits, and replaces
+   the proxies with pages loaded from the assembled document while preserving
+   logical identities. The arrangement no longer depends on the imported
+   source documents afterward.
+
+`encodePdf()` materializes before serialization. Its default
+`{ mode: 'in-place' }` path rewrites the live document. `{ mode: 'copy' }`
+performs that work on an independent document so the live arrangement is not
+rewritten; when every arranged page comes from one imported document, that
+source is cloned to preserve its document-level catalog structures.
+`createMaterializedCopy({ catalog: 'rebuild' })` (also used by compact
+encoding) instead assembles into a new empty document. This keeps only objects
+reachable from the arranged pages plus the explicitly applied pending edits,
+so callers must reconstruct any required AcroForm, outline, metadata,
+name-tree, or other document-level structures.
+
+```mermaid
+flowchart TD
+  edit["setPages / setPage / setOutline / Link edits"]
+  pending["Pending logical state<br/>viewer updates immediately"]
+  choice{"Materialization strategy"}
+  live["materialize or encodePdf<br/>mode: in-place"]
+  preserve["mode: copy<br/>or catalog: preserve"]
+  rebuild["mode: compact<br/>or catalog: rebuild"]
+  assembleLive["assemble into live PDF<br/>reload real pages"]
+  clone["clone catalog base<br/>assemble independent copy"]
+  empty["create empty PDF<br/>import arranged pages"]
+  materialized["Materialized PDF document"]
+  bytes["Optional encodePdf serialization"]
+
+  edit --> pending --> choice
+  choice --> live --> assembleLive
+  choice --> preserve --> clone
+  choice --> rebuild --> empty
+  assembleLive --> materialized
+  clone --> materialized
+  empty --> materialized
+  materialized --> bytes
+```
+
+Raw-object inspection and editing operate on physical worker state and never
+materialize pending logical edits automatically. Materialize first if raw
+object numbers or page-tree relationships must describe the current
+arrangement. Likewise, a document that lends physical pages must remain open
+until every borrowing arrangement has been materialized or disposed.
+
 ### The worker protocol
 
 `packages/engine/src/protocol.ts` documents every command's parameter and
 result shapes (document open/close, progressive loading, page rendering with
 partial regions, text with per-character rects, links, outline, font management,
 `assemble`/`encodePdf`, and the AcroForm commands — see *Form filling* below).
-`assemble` is surfaced on
-`PdfDocument` as `materialize()`, which writes every pending page, outline, and
-Link-annotation edit into the physical PDF; `encodePdf()` reflects
-those edits. `encodePdf({ mode: 'copy' })` normally clones the root document, but when its
-virtual arrangement contains pages from exactly one imported document it clones
-that source instead; PDFium page import does not copy document-level AcroForm,
-outline, metadata, or name-tree dictionaries.
-`createMaterializedCopy({ catalog: 'rebuild' })` deliberately rebuilds the
-arranged pages in a new empty document instead. It
-omits objects not reachable from those pages, whether they were already present
-in the source PDF or resulted from subsequent edits, but applications must
-reconstruct any required existing document-level catalog structures. Pending
-logical page, outline, and Link edits are nevertheless applied to the returned
-materialized document. Notable client behaviors:
+The logical editing layer above translates its pending arrangement into these
+worker operations. Other notable client and transport behaviors:
 
 - The custom PDFium build uses
   [espresso3389/pdfium-binaries](https://github.com/espresso3389/pdfium-binaries/)
@@ -53,23 +148,6 @@ materialized document. Notable client behaviors:
   `reloadDocument()` to copy and reparse the PDF into a fresh native document.
   React subscribes to these explicit refreshes and invalidates its outline,
   form, annotation, search, and thumbnail state as well.
-
-- `setPages()` / `setPage()` and `setOutline()` first update only
-  client-side pending state. The worker's catalog, page tree, annotations, and
-  indirect object numbers remain physical-PDF state until `materialize()` (also
-  called by `encodePdf()`). `createMaterializedCopy()` applies the same logical
-  state only to its returned independent document and leaves the source's
-  pending state unchanged. Raw inspection and editing never materialize
-  automatically, so callers must explicitly materialize before interpreting or
-  targeting affected raw objects.
-
-- Each `PdfPage` has a logical identity distinct from its physical
-  `sourceDocument`/`sourcePageIndex`. Placement and rotation proxies, and the
-  real pages reloaded after `materialize()`, retain that identity.
-  `PdfPage.duplicate()` forks only this identity and copies no PDF data.
-  ID-based `PdfDest` values therefore follow rearrangement; page-number-based
-  destinations deliberately retain a fixed position. Repeating one identity in
-  `setPages()` is allowed and resolves to one matching placement.
 
 - Outline edits are staged as immutable high-level values. Link annotations
   use ordinary annotation CRUD; their raw-object writes remain pending until
