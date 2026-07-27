@@ -774,8 +774,16 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  * strikeout), and rect-defined `square`/`circle`. `freeText`/`text` use `rect` +
  * `contents`. Coordinates are bounding-box-relative page coordinates (y-up).
  *
+ * FreeText requires language-aware font selection, measurement and wrapping;
+ * emoji are rendered as image runs because PDF text appearances cannot
+ * reliably represent modern color emoji. Call
+ * {@link PdfDocument.prepareFreeTextAppearance} before adding or updating
+ * authored FreeText unless the appearance fields are supplied directly.
+ *
  * The corresponding PDF annotation dictionaries are defined by
  * ISO 32000-2:2020, 12.5.2 and the subtype-specific parts of 12.5.6.
+ *
+ * @see [Text, language, and emoji appearance](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md)
  */
 export interface PdfAnnotationSpec {
   /**
@@ -794,6 +802,11 @@ export interface PdfAnnotationSpec {
   interiorColor?: PdfAnnotationColor | null;
   borderWidth?: number;
   flags?: number;
+  /**
+   * Annotation text. For authored FreeText, pass this spec through
+   * {@link PdfDocument.prepareFreeTextAppearance} to resolve its fonts,
+   * wrapping, and emoji image runs.
+   */
   contents?: string | null;
   author?: string | null;
   actorId?: string | null;
@@ -808,11 +821,23 @@ export interface PdfAnnotationSpec {
   textAlign?: 'left' | 'center' | 'right';
   /** Vertical placement of FreeText content within its box. Defaults to `top`. */
   textVerticalAlign?: 'top' | 'middle' | 'bottom';
-  /** Font face registered with the engine for a generated FreeText appearance. */
+  /**
+   * Primary font face registered with the engine for a generated FreeText
+   * appearance. Usually populated by
+   * {@link PdfDocument.prepareFreeTextAppearance}.
+   */
   fontFace?: string | null;
-  /** Pre-wrapped lines used by the generated FreeText appearance. */
+  /**
+   * Pre-wrapped lines used by the generated FreeText appearance. Usually
+   * populated by {@link PdfDocument.prepareFreeTextAppearance}.
+   */
   appearanceLines?: string[];
-  /** Per-line font runs used for mixed-script FreeText. */
+  /**
+   * Per-line positioned font and image runs used for mixed-script text and
+   * emoji. Usually populated by
+   * {@link PdfDocument.prepareFreeTextAppearance}; advanced integrations may
+   * construct the runs directly.
+   */
   appearanceRuns?: {
     text: string;
     fontFace: string | null;

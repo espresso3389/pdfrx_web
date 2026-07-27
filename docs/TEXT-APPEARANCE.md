@@ -1,16 +1,39 @@
 # Text, language, and emoji appearance
 
-pdfrx separates text already stored in a PDF from text newly authored in a
-FreeText annotation:
+Writing text into a PDF is more involved than drawing the same JavaScript
+string on a web page.
 
-- PDF text extraction is decoded by PDFium and exposed as JavaScript strings
-  with one rectangle per UTF-16 code unit.
-- FreeText authoring starts with a Unicode string and must choose fonts, wrap
-  lines, preserve grapheme clusters, and build a PDF appearance.
+First, a Unicode character does not always identify one universal glyph.
+Japanese, Simplified Chinese, Traditional Chinese, and Korean can share the
+same Han code point while using visibly different glyph forms. The authoring
+code therefore has to infer the intended language and select a font for that
+language. A mixed string may need several fonts, and measuring with the wrong
+font also produces incorrect line breaks.
 
-The second path is implemented by `@pdfrx/engine`, so direct engine users,
-`@pdfrx/viewer`, and `@pdfrx/react` share the same script, language, wrapping,
-and emoji decisions.
+Second, PDF text appearances cannot reliably use modern color emoji fonts.
+Color glyph formats and multi-code-point sequences such as skin tones, flags,
+and family ZWJ emoji are not consistently supported by PDF writers or readers.
+pdfrx therefore renders an emoji to RGBA pixels and embeds it as an image run
+inside the FreeText appearance.
+
+Finally, the available fonts and rendering facilities depend on the runtime:
+
+- a desktop or mobile browser can often use an OS emoji font;
+- Linux may have no color emoji font until one is installed;
+- a server runtime may have neither a DOM canvas nor system fonts;
+- CSP, offline operation, or deployment policy may prohibit downloading
+  fallback assets.
+
+`@pdfrx/engine` handles the common work automatically: grapheme segmentation,
+language-aware script selection, mixed-font runs, measurement, wrapping, and
+emoji image runs. In a normal viewer or React integration, pdfrx also connects
+browser measurement, downloadable font fallback, native emoji fonts, and a
+cached Noto Emoji fallback. Applications with different runtime constraints
+can replace only the font, measurement, emoji, or cache providers.
+
+This guide describes newly authored FreeText appearances. Text already stored
+in an existing PDF follows a different path: PDFium decodes it to JavaScript
+strings and returns its character geometry.
 
 ## Preparing FreeText
 
