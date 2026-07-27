@@ -465,6 +465,50 @@ test('modifier-drag duplicates on one axis and Ctrl+D repeats the spacing', asyn
   expect(state.rects[2]!.left - state.rects[1]!.left).toBeCloseTo(64, 5);
 });
 
+test('a raster stamp remains visible after its drag update reloads the overlay', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const id = await page.evaluate(async () => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupRasterStampGesture(): Promise<string> };
+      }
+    ).annotationVisualTest;
+    return api.setupRasterStampGesture();
+  });
+  const shape = page.locator(`g[data-annot-id="${id}"]`);
+  await expect(shape.locator('image')).toHaveCount(1);
+  const box = await shape.boundingBox();
+  if (!box) throw new Error('Raster stamp is not visible');
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 48, start.y + 24, { steps: 4 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(async () => {
+        const api = (
+          window as unknown as {
+            annotationVisualTest: {
+              readDuplicateState(): Promise<{
+                rects: { left: number; top: number; right: number; bottom: number }[];
+              }>;
+            };
+          }
+        ).annotationVisualTest;
+        return api.readDuplicateState();
+      });
+      return state.rects[0]?.left;
+    })
+    .toBeCloseTo(96, 5);
+  // The worker notification triggers an asynchronous annotation-overlay
+  // replacement after the gesture has committed.
+  await page.waitForTimeout(500);
+  await expect(page.locator(`g[data-annot-id="${id}"] image`)).toHaveCount(1);
+});
+
 test('Ctrl+A selects every annotation in annotation selection mode without a prior selection', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);

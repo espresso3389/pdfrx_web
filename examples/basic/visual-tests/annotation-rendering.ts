@@ -269,6 +269,21 @@ async function setupDuplicateGesture(spec: PdfAnnotationSpec): Promise<string> {
   return id;
 }
 
+async function setupRasterStampGesture(): Promise<string> {
+  const pixels = new Uint8Array(12 * 12 * 4);
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = 229;
+    pixels[i + 1] = 57;
+    pixels[i + 2] = 53;
+    pixels[i + 3] = 255;
+  }
+  return setupDuplicateGesture({
+    subtype: 'stamp',
+    rect: { left: 48, top: 208, right: 112, bottom: 144 },
+    appearanceImage: { width: 12, height: 12, pixels },
+  });
+}
+
 async function readDuplicateState(): Promise<{
   rects: { left: number; top: number; right: number; bottom: number }[];
   selectedCount: number;
@@ -568,6 +583,7 @@ declare global {
       runAtomicUpdate: typeof runAtomicUpdate;
       runClipboardTest: typeof runClipboardTest;
       setupDuplicateGesture: typeof setupDuplicateGesture;
+      setupRasterStampGesture: typeof setupRasterStampGesture;
       readDuplicateState: typeof readDuplicateState;
       setupSelectAllTest: typeof setupSelectAllTest;
       setupSnapGesture: typeof setupSnapGesture;
@@ -603,6 +619,7 @@ window.annotationVisualTest = {
   runAtomicUpdate,
   runClipboardTest,
   setupDuplicateGesture,
+  setupRasterStampGesture,
   readDuplicateState,
   setupSelectAllTest,
   setupSnapGesture,

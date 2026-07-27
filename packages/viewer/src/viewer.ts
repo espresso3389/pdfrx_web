@@ -3100,7 +3100,7 @@ export class PdfrxViewer {
     });
     this.syncFormDocumentListeners();
     doc.addEventListener('annotationsChanged', (event) => {
-      this.onAnnotationsChanged();
+      this.onAnnotationsChanged(event);
       this.recordDirectAnnotationMutation(event);
     });
     this.resetView();
@@ -5822,15 +5822,19 @@ export class PdfrxViewer {
     for (const loadedAnnotation of annotations) {
       const imageSourceKey = `${pageNumber}\0${loadedAnnotation.id}`;
       let a = loadedAnnotation;
-      if (loadedAnnotation.appearanceImage) {
-        let source = this.annotationImageSources.get(imageSourceKey);
-        if (!source) {
+      const cachedImageSource = this.annotationImageSources.get(imageSourceKey);
+      if (loadedAnnotation.appearanceImage || cachedImageSource) {
+        let source = cachedImageSource;
+        if (!source && loadedAnnotation.appearanceImage) {
           source = structuredClone(loadedAnnotation.appearanceImage);
           this.annotationImageSources.set(imageSourceKey, source);
         }
         // Render and build transform specs from the original pixels rather than
-        // PDFium's latest transformed appearance readback.
-        a = { ...loadedAnnotation, appearanceImage: source };
+        // PDFium's latest transformed appearance readback. PDFium can render a
+        // preserved raster Stamp after a move even when its annotation
+        // readback no longer exposes appearanceImage, so retain the source
+        // supplied by the mutation event in that case.
+        if (source) a = { ...loadedAnnotation, appearanceImage: source };
       }
       this.annotationSnapshots.set(a.id, { pageNumber, annotation: a });
       const el = this.buildAnnotationShape(a, pageGeom, pageSize);
@@ -6261,7 +6265,15 @@ export class PdfrxViewer {
   }
 
   /** Reloads/repaints annotation overlays on the affected pages after a change. */
-  private onAnnotationsChanged(): void {
+  private onAnnotationsChanged(event: PdfDocumentEventMap['annotationsChanged']): void {
+    for (const change of event.changes) {
+      const key = `${change.pageNumber}\0${change.id}`;
+      if (change.type === 'remove' || !change.spec.appearanceImage) {
+        this.annotationImageSources.delete(key);
+      } else {
+        this.annotationImageSources.set(key, structuredClone(change.spec.appearanceImage));
+      }
+    }
     // Keep the current SVGs on screen while fresh annotation data is loaded.
     // updateAnnotationOverlays replaces each affected page synchronously once
     // its replacement is ready, avoiding an empty frame between old and new.
