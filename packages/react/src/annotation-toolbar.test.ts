@@ -38,9 +38,22 @@ describe('annotationSelectionControls', () => {
     ]).text).toBe(true);
   });
 
-  it('uses only controls shared by a mixed selection', () => {
+  it('uses the union of controls supported by a mixed selection', () => {
     expect(annotationSelectionControls([
       { subtype: 'square' },
+      { subtype: 'line' },
+    ])).toEqual({
+      stroke: true,
+      fill: true,
+      text: false,
+      opacity: true,
+      width: true,
+    });
+  });
+
+  it('combines disjoint controls from different selected annotation types', () => {
+    expect(annotationSelectionControls([
+      { subtype: 'stamp' },
       { subtype: 'line' },
     ])).toEqual({
       stroke: true,
@@ -49,6 +62,12 @@ describe('annotationSelectionControls', () => {
       opacity: true,
       width: true,
     });
+  });
+
+  it('does not offer ineffective opacity for pen, line, or arrow annotations', () => {
+    for (const subtype of ['ink', 'line']) {
+      expect(annotationSelectionControls([{ subtype }]).opacity).toBe(false);
+    }
   });
 
   it('hides the popup when no selected annotation supports its controls', () => {

@@ -4,6 +4,7 @@ import {
   annotationTextCompositionKey,
   annotationTextEntryKey,
   annotationObjectInteractionEnabled,
+  annotationSupportsStyleProperty,
   clientPointToPagePx,
   constrainAnnotationTranslation,
   forwardArmedEditorKeyToViewer,
@@ -100,6 +101,20 @@ describe('annotationObjectInteractionEnabled', () => {
   it('temporarily returns annotation mode to viewing with Alt/Option', () => {
     expect(annotationObjectInteractionEnabled(true, false)).toBe(true);
     expect(annotationObjectInteractionEnabled(true, true)).toBe(false);
+  });
+});
+
+describe('annotationSupportsStyleProperty', () => {
+  it('supports the union UI while keeping each property scoped to eligible annotations', () => {
+    const square = annotationWith({ subtype: 'square', contents: null });
+    const line = annotationWith({ subtype: 'line' });
+    const ink = annotationWith({ subtype: 'ink' });
+    expect(annotationSupportsStyleProperty(square, 'fillColor')).toBe(true);
+    expect(annotationSupportsStyleProperty(line, 'fillColor')).toBe(false);
+    expect(annotationSupportsStyleProperty(square, 'opacity')).toBe(true);
+    expect(annotationSupportsStyleProperty(line, 'opacity')).toBe(false);
+    expect(annotationSupportsStyleProperty(ink, 'opacity')).toBe(false);
+    expect(annotationSupportsStyleProperty(line, 'strokeWidth')).toBe(true);
   });
 });
 

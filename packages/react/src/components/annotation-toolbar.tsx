@@ -197,28 +197,49 @@ const NO_SELECTION_CONTROLS: Readonly<AnnotationSelectionControls> = {
   width: false,
 };
 
-/** @internal Returns style controls shared by every selected annotation. */
+const STROKE_SUBTYPES = new Set([
+  'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
+  'highlight', 'underline', 'squiggly', 'strikeout', 'caret', 'ink',
+]);
+const FILL_SUBTYPES = new Set(['freeText', 'square', 'circle', 'polygon']);
+const OPACITY_SUBTYPES = new Set([
+  'text', 'freeText', 'square', 'circle', 'polygon', 'polyline',
+  'highlight', 'underline', 'squiggly', 'strikeout', 'stamp', 'caret',
+]);
+const WIDTH_SUBTYPES = new Set(['freeText', 'line', 'square', 'circle', 'polygon', 'polyline', 'ink']);
+
+type SelectionControl = keyof AnnotationSelectionControls;
+
+function annotationSupportsSelectionControl(
+  annotation: { subtype: string; contents?: string | null },
+  control: SelectionControl,
+): boolean {
+  switch (control) {
+    case 'stroke':
+      return STROKE_SUBTYPES.has(annotation.subtype);
+    case 'fill':
+      return FILL_SUBTYPES.has(annotation.subtype);
+    case 'text':
+      return annotation.subtype === 'freeText' ||
+        (annotation.subtype === 'square' && (annotation.contents?.trim().length ?? 0) > 0);
+    case 'opacity':
+      return OPACITY_SUBTYPES.has(annotation.subtype);
+    case 'width':
+      return WIDTH_SUBTYPES.has(annotation.subtype);
+  }
+}
+
+/** @internal Returns style controls supported by any selected annotation. */
 export function annotationSelectionControls(
   annotations: readonly { subtype: string; contents?: string | null }[],
 ): Readonly<AnnotationSelectionControls> {
   if (annotations.length === 0) return NO_SELECTION_CONTROLS;
-  const everySubtype = (subtypes: ReadonlySet<string>): boolean =>
-    annotations.every((annotation) => subtypes.has(annotation.subtype));
   return {
-    stroke: everySubtype(new Set([
-      'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
-      'highlight', 'underline', 'squiggly', 'strikeout', 'caret', 'ink',
-    ])),
-    fill: everySubtype(new Set(['freeText', 'square', 'circle', 'polygon'])),
-    text: annotations.every((annotation) =>
-      annotation.subtype === 'freeText' ||
-      (annotation.subtype === 'square' && (annotation.contents?.trim().length ?? 0) > 0),
-    ),
-    opacity: everySubtype(new Set([
-      'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
-      'highlight', 'underline', 'squiggly', 'strikeout', 'stamp', 'caret', 'ink',
-    ])),
-    width: everySubtype(new Set(['freeText', 'line', 'square', 'circle', 'polygon', 'polyline', 'ink'])),
+    stroke: annotations.some((annotation) => annotationSupportsSelectionControl(annotation, 'stroke')),
+    fill: annotations.some((annotation) => annotationSupportsSelectionControl(annotation, 'fill')),
+    text: annotations.some((annotation) => annotationSupportsSelectionControl(annotation, 'text')),
+    opacity: annotations.some((annotation) => annotationSupportsSelectionControl(annotation, 'opacity')),
+    width: annotations.some((annotation) => annotationSupportsSelectionControl(annotation, 'width')),
   };
 }
 
@@ -255,9 +276,10 @@ function annotationColorToCss(color: { r: number; g: number; b: number } | null)
   return `#${[color.r, color.g, color.b].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
-function commonValue<T>(values: readonly T[]): { value: T; mixed: boolean } {
-  const value = values[0]!;
-  return { value, mixed: values.some((candidate) => candidate !== value) };
+function commonValue<T>(values: readonly T[]): { value: T | undefined; mixed: boolean } {
+  const value = values[0];
+  const mixed = values.some((candidate) => candidate !== value);
+  return { value: mixed ? undefined : value, mixed };
 }
 
 /** Classifies hexadecimal colors that may disappear into a light/dark toolbar. */
@@ -667,28 +689,35 @@ export function PdfAnnotationToolbar({
         return;
       }
 
-      const strokes = commonValue(annotations.map((annotation) => annotation.borderWidth > 0));
-      const strokeColors = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.color) ?? '#000000'));
-      const fills = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.interiorColor)));
-      const textColors = commonValue(annotations.map((annotation) => annotationColorToCss(annotation.textColor) ?? defaultsRef.current.textColor));
-      const fontSizes = commonValue(annotations.map((annotation) => annotation.fontSize ?? defaultsRef.current.fontSize));
-      const horizontal = commonValue(annotations.map((annotation) => annotation.textAlign));
-      const vertical = commonValue(annotations.map((annotation) => annotation.textVerticalAlign));
-      const opacities = commonValue(annotations.map((annotation) => {
+      const supporting = (control: SelectionControl) =>
+        annotations.filter((annotation) => annotationSupportsSelectionControl(annotation, control));
+      const strokeAnnotations = supporting('stroke');
+      const fillAnnotations = supporting('fill');
+      const textAnnotations = supporting('text');
+      const opacityAnnotations = supporting('opacity');
+      const widthAnnotations = supporting('width');
+      const strokes = commonValue(strokeAnnotations.map((annotation) => annotation.borderWidth > 0));
+      const strokeColors = commonValue(strokeAnnotations.map((annotation) => annotationColorToCss(annotation.color) ?? '#000000'));
+      const fills = commonValue(fillAnnotations.map((annotation) => annotationColorToCss(annotation.interiorColor)));
+      const textColors = commonValue(textAnnotations.map((annotation) => annotationColorToCss(annotation.textColor) ?? defaultsRef.current.textColor));
+      const fontSizes = commonValue(textAnnotations.map((annotation) => annotation.fontSize ?? defaultsRef.current.fontSize));
+      const horizontal = commonValue(textAnnotations.map((annotation) => annotation.textAlign ?? defaultsRef.current.textAlign));
+      const vertical = commonValue(textAnnotations.map((annotation) => annotation.textVerticalAlign ?? defaultsRef.current.textVerticalAlign));
+      const opacities = commonValue(opacityAnnotations.map((annotation) => {
         const alpha = annotation.color?.a ?? annotation.interiorColor?.a ?? annotation.textColor?.a ?? 255;
         return alpha / 255;
       }));
-      const widths = commonValue(annotations.map((annotation) => annotation.borderWidth));
+      const widths = commonValue(widthAnnotations.map((annotation) => annotation.borderWidth));
 
-      setStrokeEnabled(strokes.value);
-      setColor(strokeColors.value);
-      setFillColor(fills.value);
-      setTextColor(textColors.value);
-      setFontSize(fontSizes.value);
-      setTextAlign(horizontal.value);
-      setTextVerticalAlign(vertical.value);
-      setOpacity(opacities.value);
-      setWidth(widths.value);
+      if (strokes.value !== undefined) setStrokeEnabled(strokes.value);
+      if (strokeColors.value !== undefined) setColor(strokeColors.value);
+      if (fills.value !== undefined) setFillColor(fills.value);
+      if (textColors.value !== undefined) setTextColor(textColors.value);
+      if (fontSizes.value !== undefined) setFontSize(fontSizes.value);
+      if (horizontal.value !== undefined) setTextAlign(horizontal.value);
+      if (vertical.value !== undefined) setTextVerticalAlign(vertical.value);
+      if (opacities.value !== undefined) setOpacity(opacities.value);
+      if (widths.value !== undefined) setWidth(widths.value);
       setMixed({
         stroke: strokes.mixed,
         color: strokeColors.mixed,

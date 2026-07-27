@@ -1690,6 +1690,41 @@ const TAP_SLOP = 4;
 const LONG_PRESS_MS = 500;
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_SLOP = 30;
+const ANNOTATION_STROKE_STYLE_SUBTYPES = new Set([
+  'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
+  'highlight', 'underline', 'squiggly', 'strikeout', 'caret', 'ink',
+]);
+const ANNOTATION_FILL_STYLE_SUBTYPES = new Set(['freeText', 'square', 'circle', 'polygon']);
+const ANNOTATION_OPACITY_STYLE_SUBTYPES = new Set([
+  'text', 'freeText', 'square', 'circle', 'polygon', 'polyline',
+  'highlight', 'underline', 'squiggly', 'strikeout', 'stamp', 'caret',
+]);
+const ANNOTATION_WIDTH_STYLE_SUBTYPES = new Set([
+  'freeText', 'line', 'square', 'circle', 'polygon', 'polyline', 'ink',
+]);
+
+/** @internal Whether an existing annotation accepts a selection style property. */
+export function annotationSupportsStyleProperty(
+  annotation: Pick<PdfAnnotationObject, 'subtype' | 'contents'>,
+  property: keyof AnnotationStyle,
+): boolean {
+  switch (property) {
+    case 'color':
+      return ANNOTATION_STROKE_STYLE_SUBTYPES.has(annotation.subtype);
+    case 'fillColor':
+      return ANNOTATION_FILL_STYLE_SUBTYPES.has(annotation.subtype);
+    case 'opacity':
+      return ANNOTATION_OPACITY_STYLE_SUBTYPES.has(annotation.subtype);
+    case 'strokeWidth':
+      return ANNOTATION_WIDTH_STYLE_SUBTYPES.has(annotation.subtype);
+    case 'textColor':
+    case 'fontSize':
+    case 'textAlign':
+    case 'textVerticalAlign':
+      return annotation.subtype === 'freeText' ||
+        (annotation.subtype === 'square' && (annotation.contents?.trim().length ?? 0) > 0);
+  }
+}
 
 /**
  * Canvas-based PDF viewer: renders pages to a `<canvas>` and drives panning,
@@ -6513,22 +6548,55 @@ export class PdfrxViewer {
     for (const t of targets) {
       const before = annotationToSpec(t.annotation);
       const after = annotationToSpec(t.annotation);
-      if (stroke) after.color = stroke;
+      const supportsStroke = annotationSupportsStyleProperty(t.annotation, 'color');
+      const supportsFill = annotationSupportsStyleProperty(t.annotation, 'fillColor');
+      const supportsText = annotationSupportsStyleProperty(t.annotation, 'textColor');
+      const supportsOpacity = annotationSupportsStyleProperty(t.annotation, 'opacity');
+      const supportsWidth = annotationSupportsStyleProperty(t.annotation, 'strokeWidth');
+      let changed = false;
+      if (stroke && supportsStroke) {
+        after.color = stroke;
+        changed = true;
+      }
       // Opacity belongs to the annotation as a whole. Re-alpha both authored
       // colors so the SVG overlay and PDFium's single /CA value agree.
-      else if (opacity !== undefined && after.color) after.color = { ...after.color, a: toAlpha(opacity) };
-      if (fill !== undefined) after.interiorColor = fill;
-      else if (opacity !== undefined && after.interiorColor) {
+      else if (opacity !== undefined && supportsOpacity && after.color) {
+        after.color = { ...after.color, a: toAlpha(opacity) };
+        changed = true;
+      }
+      if (fill !== undefined && supportsFill) {
+        after.interiorColor = fill;
+        changed = true;
+      } else if (opacity !== undefined && supportsOpacity && after.interiorColor) {
         after.interiorColor = { ...after.interiorColor, a: toAlpha(opacity) };
+        changed = true;
       }
-      if (strokeWidth !== undefined) after.borderWidth = strokeWidth;
-      if (t.annotation.subtype === 'square' || t.annotation.subtype === 'freeText') {
-        if (text) after.textColor = text;
-        else if (opacity !== undefined && after.textColor) after.textColor = { ...after.textColor, a: toAlpha(opacity) };
-        if (fontSize !== undefined) after.fontSize = Math.max(1, fontSize);
-        if (textAlign !== undefined) after.textAlign = textAlign;
-        if (textVerticalAlign !== undefined) after.textVerticalAlign = textVerticalAlign;
+      if (strokeWidth !== undefined && supportsWidth) {
+        after.borderWidth = strokeWidth;
+        changed = true;
       }
+      if (supportsText) {
+        if (text) {
+          after.textColor = text;
+          changed = true;
+        } else if (opacity !== undefined && supportsOpacity && after.textColor) {
+          after.textColor = { ...after.textColor, a: toAlpha(opacity) };
+          changed = true;
+        }
+        if (fontSize !== undefined) {
+          after.fontSize = Math.max(1, fontSize);
+          changed = true;
+        }
+        if (textAlign !== undefined) {
+          after.textAlign = textAlign;
+          changed = true;
+        }
+        if (textVerticalAlign !== undefined) {
+          after.textVerticalAlign = textVerticalAlign;
+          changed = true;
+        }
+      }
+      if (!changed) continue;
       refreshFreeTextLayout(after);
       group.push({ pageNumber: t.pageNumber, id: t.annotation.id, before, after });
     }
