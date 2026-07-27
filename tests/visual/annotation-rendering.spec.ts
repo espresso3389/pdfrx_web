@@ -687,6 +687,32 @@ test('an empty-area touch long press opens the viewer context menu', async ({ pa
   await expect(page.getByRole('button', { name: 'Select All' })).toBeVisible();
 });
 
+test('clicking an empty page area leaves the viewer focused for keyboard shortcuts', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const spec: AnnotationSpec = {
+    subtype: 'square',
+    rect: { left: 48, top: 208, right: 176, bottom: 80 },
+    color: rgba(30, 136, 229),
+    borderWidth: 4,
+  };
+  await page.evaluate(async (annotation) => {
+    const api = (
+      window as unknown as {
+        annotationVisualTest: { setupDuplicateGesture(s: unknown): Promise<string> };
+      }
+    ).annotationVisualTest;
+    await api.setupDuplicateGesture(annotation);
+  }, spec);
+  const canvas = page.locator('canvas');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+
+  await page.mouse.click(bounds!.x + bounds!.width - 12, bounds!.y + bounds!.height - 12);
+
+  await expect(canvas).toBeFocused();
+});
+
 test('the box tool switches automatically between rectangle and FreeText', async ({ page }) => {
   await page.goto('/visual-tests/annotation-rendering.html');
   await page.waitForFunction(() => 'annotationVisualTest' in window);

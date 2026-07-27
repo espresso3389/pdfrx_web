@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it.
 - Made empty-area touch long presses open the viewer context menu directly and
   disabled the native iOS canvas callout.
+- Kept annotation history shortcuts working after operating the floating
+  property popup, while preserving native Undo inside text inputs.
+- Made ordinary page and annotation interactions leave the viewer focused so
+  keyboard shortcuts continue working after a click.
+- Kept nested property palettes, sliders, alignment controls, and expanded
+  custom-color editors inside the viewport by flipping and shifting them.
 
 ## [0.20.0] - 2026-07-27
 

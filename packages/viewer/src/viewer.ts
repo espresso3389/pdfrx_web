@@ -1797,6 +1797,7 @@ export class PdfrxViewer {
     this.container.addEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.addEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.addEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
+    this.container.addEventListener('pointerup', this.onViewerPointerUpFocus, { capture: true });
     this.container.addEventListener('pointerdown', this.onAnnotationPointerDown, { capture: true });
     this.container.addEventListener('dblclick', this.onAnnotationDoubleClick, { capture: true });
     this.canvas.addEventListener('keydown', this.onKeyDown);
@@ -2987,6 +2988,7 @@ export class PdfrxViewer {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     if (this.paintTimer !== null) clearTimeout(this.paintTimer);
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.cancelAnnotationLongPress();
     this.stopAnimation();
     this.stopAutoScroll();
     this.stopFling();
@@ -3002,6 +3004,7 @@ export class PdfrxViewer {
     this.container.removeEventListener('pointermove', this.onSelectGesturePointerMove, { capture: true });
     this.container.removeEventListener('pointerup', this.onSelectGesturePointerUp, { capture: true });
     this.container.removeEventListener('pointercancel', this.onSelectGesturePointerUp, { capture: true });
+    this.container.removeEventListener('pointerup', this.onViewerPointerUpFocus, { capture: true });
     this.container.removeEventListener('pointerdown', this.onAnnotationPointerDown, { capture: true });
     this.container.removeEventListener('dblclick', this.onAnnotationDoubleClick, { capture: true });
     window.removeEventListener('keydown', this.onAnnotationModeModifierDown);
@@ -4224,9 +4227,31 @@ export class PdfrxViewer {
     lockAxis?: 'x' | 'y';
   } | null = null;
   private cancellingSelectTouch = false;
+  private annotationLongPress: {
+    pointerId: number;
+    start: Offset;
+    overlay: AnnotationPageOverlay;
+    id: string;
+    timer: ReturnType<typeof setTimeout>;
+    ready: boolean;
+  } | null = null;
+  /** Covers touch-generated `contextmenu` events that report themselves as mouse input. */
+  private annotationTouchContextMenuUntil = 0;
+
+  private cancelAnnotationLongPress(pointerId?: number): void {
+    if (!this.annotationLongPress || (
+      pointerId !== undefined &&
+      this.annotationLongPress.pointerId !== pointerId
+    )) {
+      return;
+    }
+    clearTimeout(this.annotationLongPress.timer);
+    this.annotationLongPress = null;
+  }
 
   private readonly onSelectGesturePointerDown = (event: PointerEvent): void => {
     if (this.cancellingSelectTouch || event.pointerType !== 'touch' || !this.isAnnotationSelectMode()) return;
+    if (this.selectTouchPoints.size > 0) this.cancelAnnotationLongPress();
     this.selectTouchPoints.set(event.pointerId, {
       point: this.localPoint(event),
       target: event.target ?? this.canvas,
@@ -4273,6 +4298,16 @@ export class PdfrxViewer {
   };
 
   private readonly onSelectGesturePointerMove = (event: PointerEvent): void => {
+    const annotationLongPress = this.annotationLongPress;
+    if (
+      annotationLongPress?.pointerId === event.pointerId &&
+      Math.hypot(
+        event.clientX - annotationLongPress.start.x,
+        event.clientY - annotationLongPress.start.y,
+      ) >= TAP_SLOP
+    ) {
+      this.cancelAnnotationLongPress(event.pointerId);
+    }
     const gesture = this.selectTouchGesture;
     if (!gesture || event.pointerType !== 'touch' || !gesture.pointers.includes(event.pointerId)) return;
     const tracked = this.selectTouchPoints.get(event.pointerId);
@@ -4311,6 +4346,24 @@ export class PdfrxViewer {
 
   private readonly onSelectGesturePointerUp = (event: PointerEvent): void => {
     if (this.cancellingSelectTouch || event.pointerType !== 'touch') return;
+    const annotationLongPress =
+      event.type === 'pointerup' &&
+      this.annotationLongPress?.pointerId === event.pointerId &&
+      this.annotationLongPress.ready
+        ? this.annotationLongPress
+        : null;
+    this.cancelAnnotationLongPress(event.pointerId);
+    if (annotationLongPress && this.isAnnotationSelectMode()) {
+      this.pendingMenuOnUp = false;
+      this.hideContextMenu();
+      const annotation = annotationLongPress.overlay.annotations.get(annotationLongPress.id);
+      if (annotation) {
+        this.setSelectedAnnotation(annotationLongPress.id);
+        this.trackAnnotationTextEdit(
+          this.editTextAnnotation(annotationLongPress.overlay, annotation),
+        );
+      }
+    }
     const owned = this.selectTouchGesture?.pointers.includes(event.pointerId) ?? false;
     this.selectTouchPoints.delete(event.pointerId);
     if (owned) {
@@ -4460,6 +4513,35 @@ export class PdfrxViewer {
     if (!overlay) return;
     const start = this.clientToPagePx(overlay.svg, event.clientX, event.clientY);
     const hitId = hit?.id;
+
+    if (event.pointerType === 'touch' && hit) {
+      const annotation = hit.overlay.annotations.get(hit.id);
+      if (
+        annotation &&
+        (
+          annotation.subtype === 'text' ||
+          annotation.subtype === 'freeText' ||
+          annotation.subtype === 'square'
+        )
+      ) {
+        this.annotationTouchContextMenuUntil = performance.now() + LONG_PRESS_MS + 1000;
+        this.cancelAnnotationLongPress();
+        const pointerId = event.pointerId;
+        const timer = setTimeout(() => {
+          const pending = this.annotationLongPress;
+          if (!pending || pending.pointerId !== pointerId) return;
+          pending.ready = true;
+        }, LONG_PRESS_MS);
+        this.annotationLongPress = {
+          pointerId,
+          start: { x: event.clientX, y: event.clientY },
+          overlay: hit.overlay,
+          id: hit.id,
+          timer,
+          ready: false,
+        };
+      }
+    }
 
     if (
       event.target instanceof Element &&
@@ -4704,6 +4786,22 @@ export class PdfrxViewer {
 
   private readonly onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
+    if (
+      (
+        this.lastPointerType === 'touch' ||
+        performance.now() <= this.annotationTouchContextMenuUntil
+      ) &&
+      this.isAnnotationSelectMode() &&
+      this.annotationHitAtClientPoint(e.clientX, e.clientY, 'touch')
+    ) {
+      // Mobile browsers synthesize `contextmenu` during a long-press. A text
+      // annotation owns that gesture for inline editing, so do not also show
+      // the viewer's text-selection popup over it.
+      this.pendingMenuOnUp = false;
+      this.annotationTouchContextMenuUntil = 0;
+      this.hideContextMenu();
+      return;
+    }
     const local = this.localPoint(e);
     this.emitTap('secondaryTap', local);
     this.showContextMenu(local);
@@ -4818,6 +4916,34 @@ export class PdfrxViewer {
     ) {
       this.hideContextMenu();
     }
+  };
+
+  private readonly onViewerPointerUpFocus = (event: PointerEvent): void => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest(
+        'input, textarea, select, button, [contenteditable="true"], .pdfrx-annotation-text-editor',
+      )
+    ) {
+      return;
+    }
+    // Selection changes and overlay replacement can remove the element that
+    // temporarily owned focus during pointerdown. Establish the viewer as the
+    // final keyboard target after an ordinary page/object interaction, but
+    // never override a form field or text editor that acquired focus from the
+    // same gesture.
+    queueMicrotask(() => {
+      if (!this.canvas.isConnected) return;
+      const active = document.activeElement;
+      if (
+        active === null ||
+        active === document.body ||
+        active === document.documentElement ||
+        active === this.canvas
+      ) {
+        this.canvas.focus({ preventScroll: true });
+      }
+    });
   };
 
   private hideContextMenu(): void {
@@ -5509,6 +5635,7 @@ export class PdfrxViewer {
           '.pdfrx-annotation-text-editor',
         );
         if (textEditor) {
+          const commitPending = textEditor.dataset.commitPending === 'true';
           // Keep the focused textarea (and an active IME composition) in the
           // connected SVG, but reconcile every annotation around it. Deferring
           // the whole page would also hide unrelated peers' text updates.
@@ -5524,6 +5651,13 @@ export class PdfrxViewer {
           overlay.anchorLayer = replacement.anchorLayer;
           overlay.annotations = replacement.annotations;
           this.refreshAnnotationSelection(overlay);
+          if (commitPending) {
+            // The committed textarea covered the old annotation while its PDF
+            // update was loading. Remove it only after the replacement shapes
+            // are in the same connected SVG, so no blank frame is exposed.
+            textEditor.remove();
+            queueMicrotask(() => this.armSelectedTextAnnotationEditor());
+          }
         } else {
           overlay.container.replaceWith(replacement.container);
           overlay.highlightContainer.replaceWith(replacement.highlightContainer);
@@ -6784,11 +6918,19 @@ export class PdfrxViewer {
     return out;
   }
 
-  /** Pre-focuses an invisible native editor so IME owns the very first key. */
+  /**
+   * Pre-focuses an invisible native editor so IME owns the very first key on
+   * keyboard-first devices. Touch-first devices require an explicit edit
+   * gesture instead, otherwise selecting an annotation summons the software
+   * keyboard while the editor is still invisible.
+   */
   private armSelectedTextAnnotationEditor(
     attempt = 0,
     expected?: { id: string; spec: PdfAnnotationSpec },
   ): void {
+    const touchFirst =
+      globalThis.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+    if (touchFirst) return;
     if (!this.isAnnotationSelectMode() || this.selectedAnnotationIds.size !== 1) return;
     if (this.annotationOverlayRoot.querySelector('.pdfrx-annotation-text-editor')) return;
     const id = this.getSelectedAnnotationId();
@@ -7359,12 +7501,21 @@ export class PdfrxViewer {
     this.renderAnnotationSnapGuides(overlay);
     const spec = this.buildSpecFromDraw(s, end);
     if (!spec) return;
+    let editorCleanup: (() => void) | null = null;
     if (spec.subtype === 'text') {
-      const contents = await this.requestAnnotationText(overlay, spec);
+      const result = await this.requestAnnotationText(overlay, spec);
+      const contents = result.value;
       if (contents === null) return;
+      editorCleanup = result.cleanup;
       spec.contents = contents;
     }
-    const id = await this.annotationPage(s.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
+    let id: string;
+    try {
+      id = await this.annotationPage(s.pageNumber).addAnnotation(spec, this.annotationMutationOptions());
+    } catch (error) {
+      editorCleanup?.();
+      throw error;
+    }
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
     this.setAnnotationTool(null);
     this.setSelectedAnnotation(id);
@@ -7510,9 +7661,9 @@ export class PdfrxViewer {
     placeCaretAtEnd = false,
     armed = false,
     onActivate?: () => void,
-  ): Promise<string | null> {
+  ): Promise<{ value: string | null; cleanup: () => void }> {
     const rect = spec.rect;
-    if (!rect) return Promise.resolve(null);
+    if (!rect) return Promise.resolve({ value: null, cleanup: () => {} });
     // A second interaction (notably double-click after the first click has
     // armed the hidden IME editor) may replace an existing editor. Finish it
     // through its normal lifecycle so its promise and document listener do
@@ -7568,12 +7719,75 @@ export class PdfrxViewer {
       foreign.setAttribute('height', `${nextHeight}`);
     });
     resizeObserver.observe(textarea);
-    const result = new Promise<string | null>((resolve) => {
+    const result = new Promise<{ value: string | null; cleanup: () => void }>((resolve) => {
       let finished = false;
       let composing = false;
       let finishAfterComposition = false;
       let activated = !armed;
       let onDocumentPointerDown: ((event: PointerEvent) => void) | null = null;
+      let viewportRaf: number | null = null;
+      const visualViewport = globalThis.visualViewport;
+      const touchFirst =
+        globalThis.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+      const keepEditorInVisualViewport = (): void => {
+        viewportRaf = null;
+        if (finished || !activated || document.activeElement !== textarea) return;
+        const editorRect = textarea.getBoundingClientRect();
+        const containerRect = this.container.getBoundingClientRect();
+        const viewportTop = Math.max(
+          containerRect.top,
+          visualViewport?.offsetTop ?? 0,
+        ) + 12;
+        const viewportBottom = Math.min(
+          containerRect.bottom,
+          (visualViewport?.offsetTop ?? 0) +
+            (visualViewport?.height ?? globalThis.innerHeight),
+        ) - 12;
+        if (viewportBottom <= viewportTop) return;
+        let dy = 0;
+        if (editorRect.height > viewportBottom - viewportTop) {
+          dy = viewportTop - editorRect.top;
+        } else if (editorRect.bottom > viewportBottom) {
+          dy = viewportBottom - editorRect.bottom;
+        } else if (editorRect.top < viewportTop) {
+          dy = viewportTop - editorRect.top;
+        }
+        if (Math.abs(dy) < 0.5) return;
+        // The layout viewport still includes the area behind the software
+        // keyboard, so normal boundary clamping would undo this reveal. Apply
+        // the temporary pan directly; the next ordinary navigation gesture
+        // re-enters the standard clamped transform path.
+        this.stopAnimation();
+        this.transform = {
+          ...this.transform,
+          yZoomed: this.transform.yZoomed + dy,
+        };
+        this.invalidate();
+      };
+      const scheduleEditorReveal = (): void => {
+        if (viewportRaf !== null) cancelAnimationFrame(viewportRaf);
+        viewportRaf = requestAnimationFrame(keepEditorInVisualViewport);
+      };
+      const detachViewportTracking = (): void => {
+        if (viewportRaf !== null) {
+          cancelAnimationFrame(viewportRaf);
+          viewportRaf = null;
+        }
+        visualViewport?.removeEventListener('resize', scheduleEditorReveal);
+        visualViewport?.removeEventListener('scroll', scheduleEditorReveal);
+        window.removeEventListener('resize', scheduleEditorReveal);
+      };
+      if (touchFirst) {
+        visualViewport?.addEventListener('resize', scheduleEditorReveal);
+        visualViewport?.addEventListener('scroll', scheduleEditorReveal);
+        window.addEventListener('resize', scheduleEditorReveal);
+        scheduleEditorReveal();
+      }
+      const cleanup = (): void => {
+        detachViewportTracking();
+        resizeObserver.disconnect();
+        foreign.remove();
+      };
       const activate = (): void => {
         if (activated) return;
         activated = true;
@@ -7589,14 +7803,23 @@ export class PdfrxViewer {
           document.removeEventListener('pointerdown', onDocumentPointerDown, true);
           onDocumentPointerDown = null;
         }
+        detachViewportTracking();
         resizeObserver.disconnect();
-        foreign.remove();
+        if (activated && value !== null) {
+          // Keep the final editor pixels over the old annotation until the
+          // freshly loaded annotation SVG is ready to replace them atomically.
+          foreign.dataset.commitPending = 'true';
+          foreign.style.pointerEvents = 'none';
+          textarea.readOnly = true;
+        } else {
+          cleanup();
+        }
         // A visible editor may have deferred presentation work while it was
         // open. An untouched armed editor must not schedule a paint here:
         // pointerdown may already be dragging one of the current SVG anchors,
         // and rebuilding that layer would detach the live drag target.
         if (activated) this.invalidate();
-        resolve(value);
+        resolve({ value, cleanup });
       };
       this.annotationTextEditorFinish = finish;
       textarea.addEventListener('compositionstart', () => {
@@ -7732,7 +7955,7 @@ export class PdfrxViewer {
     if (!this.doc) return;
     const before = annotationToSpec(annotation);
     let activated = !armed;
-    const contents = await this.requestAnnotationText(
+    const result = await this.requestAnnotationText(
       overlay,
       before,
       initialText,
@@ -7742,7 +7965,9 @@ export class PdfrxViewer {
         activated = true;
       },
     );
+    const contents = result.value;
     if (contents === null) {
+      result.cleanup();
       if (activated) this.refreshAnnotationSelection(overlay);
       if (activated) this.rearmSelectedTextAnnotationEditor(annotation.id, before);
       return;
@@ -7751,6 +7976,7 @@ export class PdfrxViewer {
     if (before.subtype === 'text') after.contents = contents;
     else await this.applyBoxContents(after, contents);
     if (contents === (before.contents ?? '') && after.subtype === before.subtype) {
+      result.cleanup();
       // An armed invisible editor can close on the same pointerdown that starts
       // an anchor resize/move. Rebuilding anchors here would detach that live
       // gesture's target. Its unchanged selection DOM is already correct.
@@ -7758,11 +7984,16 @@ export class PdfrxViewer {
       if (activated) this.rearmSelectedTextAnnotationEditor(annotation.id, after);
       return;
     }
-    await this.annotationPage(overlay.pageNumber).updateAnnotation(
-      annotation.id,
-      after,
-      this.annotationMutationOptions(after),
-    );
+    try {
+      await this.annotationPage(overlay.pageNumber).updateAnnotation(
+        annotation.id,
+        after,
+        this.annotationMutationOptions(after),
+      );
+    } catch (error) {
+      result.cleanup();
+      throw error;
+    }
     this.recordAnnotationCommand({ pageNumber: overlay.pageNumber, id: annotation.id, before, after });
     if (activated) this.rearmSelectedTextAnnotationEditor(annotation.id, after);
   }

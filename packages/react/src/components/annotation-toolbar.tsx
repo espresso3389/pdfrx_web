@@ -1,9 +1,12 @@
 import type { AnnotationTool } from '@pdfrx/viewer';
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -75,6 +78,92 @@ type MixedAttribute =
   | 'textAlign'
   | 'opacity'
   | 'width';
+
+type SelectionPalette =
+  | 'stroke'
+  | 'fill'
+  | 'textColor'
+  | 'textSize'
+  | 'textAlign'
+  | 'opacity'
+  | 'width';
+
+type AnnotationPopupHistoryAction = 'undo' | 'redo';
+
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.closest('[contenteditable="true"]')) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  return !['button', 'checkbox', 'color', 'file', 'radio', 'range', 'reset', 'submit'].includes(target.type);
+}
+
+/** @internal */
+export function annotationPopupHistoryAction(
+  event: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'shiftKey' | 'key' | 'target'>,
+): AnnotationPopupHistoryAction | null {
+  if ((!event.ctrlKey && !event.metaKey) || isTextEditingTarget(event.target)) return null;
+  const key = event.key.toLowerCase();
+  if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+  if (key === 'y') return 'redo';
+  return null;
+}
+
+/** @internal */
+export function popupViewportShift(
+  rect: Pick<DOMRect, 'left' | 'top' | 'right' | 'bottom'>,
+  viewport: { width: number; height: number },
+  margin = 4,
+): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  if (rect.left < margin) x = margin - rect.left;
+  else if (rect.right > viewport.width - margin) x = viewport.width - margin - rect.right;
+  if (rect.top < margin) y = margin - rect.top;
+  else if (rect.bottom > viewport.height - margin) y = viewport.height - margin - rect.bottom;
+  return { x, y };
+}
+
+interface AnnotationSelectionControls {
+  stroke: boolean;
+  fill: boolean;
+  text: boolean;
+  opacity: boolean;
+  width: boolean;
+}
+
+const NO_SELECTION_CONTROLS: Readonly<AnnotationSelectionControls> = {
+  stroke: false,
+  fill: false,
+  text: false,
+  opacity: false,
+  width: false,
+};
+
+/** @internal Returns style controls shared by every selected annotation. */
+export function annotationSelectionControls(
+  annotations: readonly { subtype: string; contents?: string | null }[],
+): Readonly<AnnotationSelectionControls> {
+  if (annotations.length === 0) return NO_SELECTION_CONTROLS;
+  const everySubtype = (subtypes: ReadonlySet<string>): boolean =>
+    annotations.every((annotation) => subtypes.has(annotation.subtype));
+  return {
+    stroke: everySubtype(new Set([
+      'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
+      'highlight', 'underline', 'squiggly', 'strikeout', 'caret', 'ink',
+    ])),
+    fill: everySubtype(new Set(['freeText', 'square', 'circle', 'polygon'])),
+    text: annotations.every((annotation) =>
+      annotation.subtype === 'freeText' ||
+      (annotation.subtype === 'square' && (annotation.contents?.trim().length ?? 0) > 0),
+    ),
+    opacity: everySubtype(new Set([
+      'text', 'freeText', 'line', 'square', 'circle', 'polygon', 'polyline',
+      'highlight', 'underline', 'squiggly', 'strikeout', 'stamp', 'caret', 'ink',
+    ])),
+    width: everySubtype(new Set(['freeText', 'line', 'square', 'circle', 'polygon', 'polyline', 'ink'])),
+  };
+}
 
 interface AnnotationToolbarDefaults {
   color: string;
@@ -339,6 +428,8 @@ export function PdfAnnotationToolbar({
   const [opacity, setOpacity] = useState(initialDefaults.opacity);
   const [width, setWidth] = useState(initialDefaults.width);
   const [hasSelection, setHasSelection] = useState(false);
+  const [selectionControls, setSelectionControls] =
+    useState<Readonly<AnnotationSelectionControls>>(NO_SELECTION_CONTROLS);
   const [selectionPopupPosition, setSelectionPopupPosition] = useState<{
     left: number;
     top: number;
@@ -352,8 +443,9 @@ export function PdfAnnotationToolbar({
   const [customColorInput, setCustomColorInput] = useState('#000000');
   const defaultsRef = useRef<AnnotationToolbarDefaults>(initialDefaults);
   /** Which attribute popup is open, if any. */
-  const [openPalette, setOpenPalette] = useState<'stroke' | 'fill' | 'textColor' | 'textSize' | 'textAlign' | 'opacity' | 'width' | null>(null);
+  const [openPalette, setOpenPalette] = useState<SelectionPalette | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const selectionPopupRef = useRef<HTMLDivElement>(null);
   const paletteHostRef = useRef<HTMLSpanElement>(null);
   const sliderGestureRef = useRef<{ key: string; sequence: number } | null>(null);
   const sliderSequenceRef = useRef(0);
@@ -374,10 +466,10 @@ export function PdfAnnotationToolbar({
     }
     const gap = 10;
     const popupWidth = Math.min(
-      paletteHostRef.current?.getBoundingClientRect().width ?? 300,
+      selectionPopupRef.current?.getBoundingClientRect().width ?? 300,
       window.innerWidth - 16,
     );
-    const popupHeight = paletteHostRef.current?.getBoundingClientRect().height ?? 38;
+    const popupHeight = selectionPopupRef.current?.getBoundingClientRect().height ?? 38;
     const halfWidth = popupWidth / 2;
     const above =
       rect.bottom + popupHeight + gap > window.innerHeight
@@ -485,6 +577,7 @@ export function PdfAnnotationToolbar({
     const syncSelectionStyle = (): void => {
       const annotations = viewer.getSelectedAnnotations();
       setHasSelection(viewer.getSelectedAnnotationIds().length > 0);
+      setSelectionControls(annotationSelectionControls(annotations));
       requestAnimationFrame(updateSelectionPopupPosition);
       if (annotations.length === 0) {
         const defaults = defaultsRef.current;
@@ -547,6 +640,64 @@ export function PdfAnnotationToolbar({
     };
   }, [viewer]);
 
+  useEffect(() => {
+    if (!openPalette) return;
+    const relevant =
+      openPalette === 'stroke'
+        ? selectionControls.stroke
+        : openPalette === 'fill'
+          ? selectionControls.fill
+          : openPalette === 'opacity'
+            ? selectionControls.opacity
+            : openPalette === 'width'
+              ? selectionControls.width
+              : selectionControls.text;
+    if (!relevant) {
+      setOpenPalette(null);
+      setCustomPicker(null);
+    }
+  }, [openPalette, selectionControls]);
+
+  useLayoutEffect(() => {
+    const popup = selectionPopupRef.current;
+    if (!popup || !openPalette) return;
+    const panel = popup.querySelector<HTMLElement>(
+      '.pdfrx-annot-popup, .pdfrx-annot-slider-popup, .pdfrx-annot-align-popup',
+    );
+    if (!panel) return;
+    const host = panel.parentElement;
+    const trigger = host?.querySelector<HTMLElement>(':scope > button');
+    if (!trigger) return;
+    const place = (): void => {
+      panel.style.translate = '';
+      panel.dataset.pdfrxPlacement = 'below';
+      const triggerRect = trigger.getBoundingClientRect();
+      let panelRect = panel.getBoundingClientRect();
+      const margin = 4;
+      const gap = 6;
+      const spaceBelow = window.innerHeight - triggerRect.bottom - gap - margin;
+      const spaceAbove = triggerRect.top - gap - margin;
+      if (panelRect.height > spaceBelow && spaceAbove > spaceBelow) {
+        panel.dataset.pdfrxPlacement = 'above';
+        panelRect = panel.getBoundingClientRect();
+      }
+      const shift = popupViewportShift(
+        panelRect,
+        { width: window.innerWidth, height: window.innerHeight },
+        margin,
+      );
+      panel.style.translate = `${shift.x}px ${shift.y}px`;
+    };
+    place();
+    const resizeObserver = new ResizeObserver(place);
+    resizeObserver.observe(panel);
+    window.addEventListener('resize', place);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [openPalette, customPicker, selectionPopupPosition]);
+
   // Dismiss an open palette on outside pointerdown or Escape.
   useEffect(() => {
     if (!openPalette) return;
@@ -590,6 +741,12 @@ export function PdfAnnotationToolbar({
   };
   const effectiveObjectSelectionMode =
     modeActive && objectSelectionMode !== modeModifierHeld;
+  const hasSelectionControls =
+    selectionControls.stroke ||
+    selectionControls.fill ||
+    selectionControls.text ||
+    selectionControls.opacity ||
+    selectionControls.width;
   const rememberCustomColor = (selectedColor: string): void => {
     const normalized = selectedColor.toLowerCase();
     if (colors.some((preset) => preset.toLowerCase() === normalized)) return;
@@ -600,7 +757,7 @@ export function PdfAnnotationToolbar({
     markPreferencesChanged();
   };
   const togglePalette = (
-    palette: 'stroke' | 'fill' | 'textColor' | 'textSize' | 'textAlign' | 'opacity' | 'width',
+    palette: SelectionPalette,
   ): void => {
     setCustomPicker(null);
     setOpenPalette(openPalette === palette ? null : palette);
@@ -709,6 +866,17 @@ export function PdfAnnotationToolbar({
     else if (customPicker === 'fill') viewer?.previewStyleToSelection({ fillColor: normalized });
     else viewer?.previewStyleToSelection({ textColor: normalized });
   };
+  const preserveViewerFocusOnPopupMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (event.target instanceof HTMLButtonElement) event.preventDefault();
+  };
+  const handlePopupKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const action = annotationPopupHistoryAction(event.nativeEvent);
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (action === 'undo') void viewer?.undo();
+    else void viewer?.redo();
+  };
   return (
     <div ref={toolbarRef} className={['pdfrx-annot-toolbar', className].filter(Boolean).join(' ')} style={style}>
       <InteractionModeButton
@@ -763,6 +931,7 @@ export function PdfAnnotationToolbar({
       />
       {hasSelection && selectionPopupPosition && createPortal(
         <div
+          ref={selectionPopupRef}
           className={[
             'pdfrx-toolbar',
             'pdfrx-annot-selection-popup',
@@ -773,8 +942,11 @@ export function PdfAnnotationToolbar({
             left: selectionPopupPosition.left,
             top: selectionPopupPosition.top,
           }}
+          onMouseDown={preserveViewerFocusOnPopupMouseDown}
+          onKeyDown={handlePopupKeyDown}
         >
           <span className="pdfrx-annot-colors" ref={paletteHostRef}>
+        {selectionControls.stroke && (
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -852,6 +1024,8 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        )}
+        {selectionControls.fill && (
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -927,6 +1101,8 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        )}
+        {selectionControls.opacity && (
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -959,6 +1135,8 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        )}
+        {selectionControls.width && (
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -991,6 +1169,9 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        )}
+        {selectionControls.text && (
+        <>
         <span className="pdfrx-annot-colorbtn">
           <button
             type="button"
@@ -1126,23 +1307,27 @@ export function PdfAnnotationToolbar({
             </div>
           )}
         </span>
+        </>
+        )}
           </span>
+          {hasSelectionControls && (
+            <span className="pdfrx-toolbar-separator" aria-hidden />
+          )}
+          <button
+            type="button"
+            className="pdfrx-button pdfrx-danger"
+            onClick={() => void viewer?.deleteSelectedAnnotation()}
+            title={strings.deleteAnnotations}
+            aria-label={strings.deleteAnnotations}
+          >
+            <IconTrash />
+          </button>
         </div>,
         document.body,
       )}
-      <span className="pdfrx-toolbar-separator" aria-hidden />
-      <button
-        type="button"
-        className="pdfrx-button pdfrx-danger"
-        disabled={!viewer || !hasSelection}
-        onClick={() => void viewer?.deleteSelectedAnnotation()}
-        title={strings.deleteAnnotations}
-        aria-label={strings.deleteAnnotations}
-      >
-        <IconTrash />
-      </button>
       {onClose && (
         <>
+          <span className="pdfrx-toolbar-separator" aria-hidden />
           <button
             type="button"
             className="pdfrx-button pdfrx-annot-close"

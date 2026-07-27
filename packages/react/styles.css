@@ -922,6 +922,14 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
+.pdfrx-annot-popup[data-pdfrx-placement='above'],
+.pdfrx-annot-slider-popup[data-pdfrx-placement='above'],
+.pdfrx-annot-align-popup[data-pdfrx-placement='above'] {
+  top: auto;
+  inset-block-start: auto;
+  bottom: calc(100% + 6px);
+}
+
 .pdfrx-annot-swatch {
   width: 18px;
   height: 18px;
