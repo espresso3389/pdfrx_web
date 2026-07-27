@@ -436,8 +436,59 @@ browser (`navigator.languages`); English is the fallback.
 <PdfrxViewerApp src="/manual.pdf" locale={['fr-CA', 'fr', 'en']} />
 ```
 
-Override individual strings, or add a language that isn't built in, with
-`strings` (applied on top of `locale`; anything you omit falls back to English):
+### Adjusting individual translations
+
+Use the `strings` prop to replace only the labels that need different wording.
+The provider first resolves the built-in dictionary for `locale`, then applies
+the supplied keys on top:
+
+```text
+built-in strings for locale → strings overrides
+```
+
+Omitted keys therefore keep the selected locale's built-in translation. For
+example, this viewer remains Japanese except for the three adjusted labels:
+
+```tsx
+import { PdfrxViewerApp, type PdfrxStrings } from '@pdfrx/react';
+
+const stringOverrides: Partial<PdfrxStrings> = {
+  search: '文書内を検索',
+  pagesTab: 'ページ一覧',
+  print: '印刷する',
+};
+
+<PdfrxViewerApp
+  src="/manual.pdf"
+  locale="ja"
+  strings={stringOverrides}
+/>;
+```
+
+`PdfrxProvider` accepts the same `locale` and `strings` props when using the
+composable API. Declare overrides as `Partial<PdfrxStrings>` to have TypeScript
+check the property names and value signatures without requiring the complete
+dictionary.
+
+Strings that interpolate runtime values are functions rather than fixed text:
+
+```tsx
+const stringOverrides: Partial<PdfrxStrings> = {
+  goToPage: (pageNumber) => `${pageNumber}ページへ移動`,
+  failedToOpen: (message) => `PDFを開けませんでした: ${message}`,
+  failedToImport: (fileName, message) =>
+    `${fileName}を読み込めませんでした: ${message}`,
+};
+```
+
+The override object participates in the localization context's memoization.
+Keep it at module scope, as above, or create it with `useMemo()` when its values
+depend on component state. An inline object is valid, but creates a new context
+value on every parent render.
+
+The same mechanism can supply part or all of a language that is not built in.
+An unsupported `locale` resolves to the English dictionary first, so omitted
+keys in this case remain English:
 
 ```tsx
 <PdfrxViewerApp
@@ -451,8 +502,17 @@ The full string set is the
 [`PdfrxStrings`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_react.PdfrxStrings.html)
 interface;
 [`usePdfrxStrings()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.usePdfrxStrings.html)
-gives
-your own components the active strings so they translate alongside the rest.
+gives custom components the final merged strings so they translate alongside
+the built-in UI:
+
+```tsx
+import { usePdfrxStrings } from '@pdfrx/react';
+
+function CustomPrintButton() {
+  const strings = usePdfrxStrings();
+  return <button>{strings.print}</button>;
+}
+```
 
 ## Context menu
 
