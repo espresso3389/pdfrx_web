@@ -14,6 +14,8 @@ editing support.
 **[API reference](https://espresso3389.github.io/pdfrx_web/)** ·
 **[Documentation](https://github.com/espresso3389/pdfrx_web/blob/master/docs/README.md)**
 
+![](docs/images/main.png)
+
 ## Choose a package
 
 | Package | Use it for |
