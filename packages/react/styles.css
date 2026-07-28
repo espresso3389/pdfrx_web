@@ -1320,26 +1320,13 @@
   position: relative;
 }
 
-.pdfrx-context-menu-split {
-  display: grid;
-  grid-template-columns: 1fr auto;
-}
-
-.pdfrx-context-menu-markup-apply {
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-}
-
 .pdfrx-context-menu-submenu-trigger {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 16px;
   box-sizing: border-box;
-  min-width: 30px;
-  padding-inline: 8px;
-  border-inline-start: 1px solid var(--pdfrx-border);
-  border-start-start-radius: 0;
-  border-end-start-radius: 0;
+  width: 100%;
 }
 
 .pdfrx-text-markup-palette {

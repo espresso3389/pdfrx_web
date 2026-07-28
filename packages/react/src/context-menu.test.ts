@@ -62,19 +62,18 @@ describe('buildDefaultContextMenu', () => {
     );
   });
 
-  it('places a split markup action above add-link', () => {
+  it('places a markup submenu above add-link', () => {
     const menu = buildDefaultContextMenu(viewerWithMarkup(), defaultPdfrxStrings, context());
     expect([...menu.querySelectorAll<HTMLButtonElement>(':scope > button, :scope > div button')]
       .map((item) => item.textContent)).toEqual([
       defaultPdfrxStrings.copy,
       defaultPdfrxStrings.selectAll,
-      defaultPdfrxStrings.textMarkup,
-      '›',
+      `${defaultPdfrxStrings.textMarkup}›`,
       defaultPdfrxStrings.addLink,
     ]);
   });
 
-  it('applies the default highlight from the primary split action', () => {
+  it('opens the palette without applying markup when the markup item is clicked', () => {
     const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
     const close = vi.fn();
     const menu = buildDefaultContextMenu(
@@ -82,13 +81,12 @@ describe('buildDefaultContextMenu', () => {
       defaultPdfrxStrings,
       context(close),
     );
-    menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.click();
-    expect(addTextMarkupToSelection).toHaveBeenCalledWith(
-      'highlight',
-      TEXT_HIGHLIGHT_COLORS[0],
-      TEXT_HIGHLIGHT_OPACITY,
-    );
-    expect(close).toHaveBeenCalledOnce();
+    const trigger = menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
+    trigger.click();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.querySelector('.pdfrx-text-markup-palette')).not.toBeNull();
+    expect(addTextMarkupToSelection).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('offers every subtype/color combination and applies the chosen cell', () => {
@@ -138,24 +136,6 @@ describe('buildDefaultContextMenu', () => {
     expect(viewer.clearTextMarkupSelectionPreview).toHaveBeenCalled();
   });
 
-  it('remembers the last subtype/color cell for the viewer', () => {
-    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
-    const viewer = viewerWithMarkup(addTextMarkupToSelection);
-    const first = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context());
-    first.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
-    first.querySelectorAll<HTMLButtonElement>('.pdfrx-text-markup-choice')[
-      TEXT_HIGHLIGHT_COLORS.length + 3
-    ]!.click();
-
-    const second = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context());
-    second.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.click();
-    expect(addTextMarkupToSelection).toHaveBeenLastCalledWith(
-      'underline',
-      TEXT_MARKUP_LINE_COLORS[3],
-      1,
-    );
-  });
-
   it('applies a touch-selected color before focus removes the palette', () => {
     const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
     const close = vi.fn();
@@ -179,13 +159,12 @@ describe('buildDefaultContextMenu', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it('disables both split controls when text markup is unavailable', () => {
+  it('disables the submenu item when text markup is unavailable', () => {
     const viewer = { canAddTextMarkupToSelection: () => false } as unknown as PdfrxViewer;
     const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
       ...context(),
       hasSelection: false,
     });
-    expect(menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.disabled).toBe(true);
     const trigger = menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
     expect(trigger.disabled).toBe(true);
     trigger.click();

@@ -33,15 +33,6 @@ export const TEXT_MARKUP_LINE_COLORS = [
   '#7b1fa2',
 ] as const;
 
-const DEFAULT_TEXT_MARKUP = {
-  subtype: 'highlight' as TextMarkupAnnotationSubtype,
-  color: TEXT_HIGHLIGHT_COLORS[0],
-};
-const lastTextMarkupByViewer = new WeakMap<PdfrxViewer, {
-  subtype: TextMarkupAnnotationSubtype;
-  color: string;
-}>();
-
 /** Extra arguments `@pdfrx/react` hands a {@link PdfReactContextMenuBuilder}. */
 export interface PdfContextMenuHelpers {
   /** The live viewer — call `copySelection()` / `selectAll()` / `selection` etc. */
@@ -74,11 +65,9 @@ export type PdfReactContextMenuBuilder = (
  * {@link PdfrxStrings}; the look is themeable through the `pdfrx-context-menu`
  * classes in `styles.css`.
  *
- * Markup is a split action. Its primary button reapplies the viewer's last
- * committed subtype and color; its submenu is a subtype-by-color matrix.
- * Hovering or focusing a cell previews it without mutating the PDF, and
- * clicking commits it. Highlight uses {@link TEXT_HIGHLIGHT_COLORS} and
- * {@link TEXT_HIGHLIGHT_OPACITY}; line subtypes use
+ * Markup opens a subtype-by-color matrix. Hovering or focusing a cell previews
+ * it without mutating the PDF, and clicking commits it. Highlight uses
+ * {@link TEXT_HIGHLIGHT_COLORS} and {@link TEXT_HIGHLIGHT_OPACITY}; line subtypes use
  * {@link TEXT_MARKUP_LINE_COLORS} at full opacity.
  *
  * Apps that want different items can pass their own `contextMenuBuilder` prop
@@ -110,14 +99,9 @@ export function buildDefaultContextMenu(
     const enabled = viewer.canAddTextMarkupToSelection();
     const host = document.createElement('div');
     host.className = 'pdfrx-context-menu-submenu-host';
-    const split = document.createElement('div');
-    split.className = 'pdfrx-context-menu-split';
-    const applyItem = document.createElement('button');
-    applyItem.className = 'pdfrx-context-menu-item pdfrx-context-menu-markup-apply';
-    applyItem.textContent = strings.textMarkup;
-    applyItem.disabled = !enabled;
     const item = document.createElement('button');
     item.className = 'pdfrx-context-menu-item pdfrx-context-menu-submenu-trigger';
+    item.append(strings.textMarkup);
     item.title = strings.textMarkupOptions;
     item.setAttribute('aria-label', strings.textMarkupOptions);
     item.disabled = !enabled;
@@ -127,19 +111,15 @@ export function buildDefaultContextMenu(
     arrow.textContent = '›';
     arrow.setAttribute('aria-hidden', 'true');
     item.appendChild(arrow);
-    split.append(applyItem, item);
-    host.appendChild(split);
+    host.appendChild(item);
     if (enabled) {
       const PALETTE_HOVER_GRACE = 6;
       let trackPalettePointer: ((event: MouseEvent) => void) | null = null;
-      const current = (): { subtype: TextMarkupAnnotationSubtype; color: string } =>
-        lastTextMarkupByViewer.get(viewer) ?? DEFAULT_TEXT_MARKUP;
       const applyMarkup = (
-        subtype: TextMarkupAnnotationSubtype = current().subtype,
-        color: string = current().color,
+        subtype: TextMarkupAnnotationSubtype,
+        color: string,
       ): void => {
         viewer.clearTextMarkupSelectionPreview();
-        lastTextMarkupByViewer.set(viewer, { subtype, color });
         void viewer.addTextMarkupToSelection(
           subtype,
           color,
@@ -147,7 +127,6 @@ export function buildDefaultContextMenu(
         );
         context.close();
       };
-      applyItem.addEventListener('click', () => applyMarkup());
       const closePalette = (): void => {
         viewer.clearTextMarkupSelectionPreview();
         if (trackPalettePointer) {
