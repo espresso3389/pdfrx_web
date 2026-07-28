@@ -5,6 +5,11 @@ This guide describes the standard
 provided by `@pdfrx/react`. For viewer setup and component composition, start
 with the [`@pdfrx/react` guide](REACT-GUIDE.md).
 
+![The annotation toolbar open above the PDF viewer](images/react-annotation-toolbar/toolbar-overview.png)
+
+The toolbar starts in object-selection mode. Its leading buttons switch between
+object and text selection, followed by the available creation tools.
+
 ## Properties and color
 
 The toolbar reflects the common stroke, fill, text, opacity, thickness, size,
@@ -18,6 +23,8 @@ custom-color slots, and an inline HSV picker with direct `#RRGGBB` input. HSV
 changes live-preview the selected objects without writing the PDF or undo
 history; **Apply color** commits the result, while Escape or an outside click
 restores the original display.
+
+![The stroke-color presets for a selected rectangle](images/react-annotation-toolbar/color-palette.png)
 
 Text controls follow line thickness and provide independent text color and
 font-size settings plus one alignment button whose popup is a 3 × 3 position
@@ -95,6 +102,8 @@ screen pixel, or ten screen pixels while Shift is held, with page bounds and
 page rotation respected.
 
 ## Floating property toolbar
+
+![A selected rectangle with its floating property toolbar](images/react-annotation-toolbar/floating-properties.png)
 
 When one or more annotation objects are selected, their stroke, fill, opacity,
 thickness, and text controls appear in a floating property toolbar. The toolbar
