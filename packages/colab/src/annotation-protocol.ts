@@ -72,6 +72,11 @@ export interface AnnotationPreview {
 /**
  * Validates and commits an annotation operation against authoritative state.
  * @throws {@link AnnotationProtocolError} for a stale revision or missing placement.
+ * @param snapshot - The current immutable session snapshot.
+ * @param pages - The pages to process, in document order.
+ * @param request - The request value (AnnotationOperationRequest).
+ * @returns The updated result.
+ *
  */
 export function commitAnnotationOperation(
   snapshot: AnnotationSessionSnapshot,
@@ -106,6 +111,10 @@ export function commitAnnotationOperation(
 /**
  * Applies the next committed annotation event to a client-side snapshot.
  * @throws {@link AnnotationProtocolError} when a revision is skipped or replayed.
+ * @param snapshot - The current immutable session snapshot.
+ * @param committed - The committed value (CommittedAnnotationOperation).
+ * @returns The resulting AnnotationSessionSnapshot.
+ *
  */
 export function applyCommittedAnnotationOperation(
   snapshot: AnnotationSessionSnapshot,
@@ -134,7 +143,13 @@ export function applyCommittedAnnotationOperation(
 
 /** Protocol validation error carrying a machine-readable relay error code. */
 export class AnnotationProtocolError extends Error {
-  /** Creates an annotation protocol failure with a relay-safe error code. */
+  /**
+   * Creates an annotation protocol failure with a relay-safe error code.
+   *
+   * @param code - The machine-readable error code.
+   * @param message - The human-readable error message.
+   *
+   */
   constructor(readonly code: string, message: string) {
     super(message);
     this.name = 'AnnotationProtocolError';

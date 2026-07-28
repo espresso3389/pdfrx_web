@@ -7,7 +7,13 @@ export class PageSourceRegistry {
   readonly #documents = new Map<string, { document: PdfDocument; pages: readonly PdfPage[] }>();
   readonly #ids = new WeakMap<PdfDocument, string>();
 
-  /** Registers an open PDF and captures its immutable physical source pages. */
+  /**
+   * Registers an open PDF and captures its immutable physical source pages.
+   *
+   * @param documentId - The stable document identifier.
+   * @param document - The PDF document to process.
+   *
+   */
   register(documentId: string, document: PdfDocument): void {
     if (documentId.length === 0) throw new Error('documentId must not be empty');
     const existingDocument = this.#documents.get(documentId);
@@ -27,7 +33,12 @@ export class PageSourceRegistry {
     this.#ids.set(document, documentId);
   }
 
-  /** Removes a source mapping without disposing the caller-owned document. */
+  /**
+   * Removes a source mapping without disposing the caller-owned document.
+   *
+   * @param documentId - The stable document identifier.
+   *
+   */
   unregister(documentId: string): void {
     const registered = this.#documents.get(documentId);
     if (!registered) return;
@@ -35,13 +46,25 @@ export class PageSourceRegistry {
     this.#ids.delete(registered.document);
   }
 
-  /** Returns whether a live document is registered for `documentId`. */
+  /**
+   * Returns whether a live document is registered for `documentId`.
+   *
+   * @param documentId - The stable document identifier.
+   * @returns Whether the condition is satisfied.
+   *
+   */
   has(documentId: string): boolean {
     const registered = this.#documents.get(documentId);
     return registered !== undefined && !registered.document.isDisposed;
   }
 
-  /** @throws `Error` when the source is missing or disposed. */
+  /**
+   * @throws `Error` when the source is missing or disposed.
+   *
+   * @param documentId - The stable document identifier.
+   * @returns The resulting PdfDocument.
+   *
+   */
   document(documentId: string): PdfDocument {
     const registered = this.#documents.get(documentId);
     if (!registered) throw new Error(`Source document is not registered: ${documentId}`);
@@ -49,7 +72,14 @@ export class PageSourceRegistry {
     return registered.document;
   }
 
-  /** Resolves a zero-based physical source page. @throws `RangeError` if missing. */
+  /**
+   * Resolves a zero-based physical source page. @throws `RangeError` if missing.
+   *
+   * @param documentId - The stable document identifier.
+   * @param pageIndex - The 0-based page index.
+   * @returns The resulting PdfPage.
+   *
+   */
   page(documentId: string, pageIndex: number): PdfPage {
     this.document(documentId); // validates registration and lifetime
     const page = this.#documents.get(documentId)!.pages[pageIndex];
@@ -57,7 +87,13 @@ export class PageSourceRegistry {
     return page;
   }
 
-  /** Resolves the session id previously assigned to a PDF document. */
+  /**
+   * Resolves the session id previously assigned to a PDF document.
+   *
+   * @param document - The PDF document to process.
+   * @returns The resulting string.
+   *
+   */
   documentId(document: PdfDocument): string {
     const documentId = this.#ids.get(document);
     if (!documentId) throw new Error('PDF document is not registered as a session source');
@@ -65,7 +101,14 @@ export class PageSourceRegistry {
   }
 }
 
-/** Converts a session arrangement into rotated engine page proxies for this client. */
+/**
+ * Converts a session arrangement into rotated engine page proxies for this client.
+ *
+ * @param placements - The placements value.
+ * @param sources - The sources value (PageSourceRegistry).
+ * @returns The resolved value.
+ *
+ */
 export function resolvePagePlacements(
   placements: readonly PagePlacement[],
   sources: PageSourceRegistry,
@@ -79,6 +122,11 @@ export function resolvePagePlacements(
 /**
  * Captures an engine arrangement as independently addressable placements.
  * @throws `Error` for unregistered documents or empty/duplicate generated ids.
+ * @param pages - The pages to process, in document order.
+ * @param sources - The sources value (PageSourceRegistry).
+ * @param createPlacementId - The stable create placement identifier.
+ * @returns The updated result.
+ *
  */
 export function createPagePlacements(
   pages: readonly PdfPage[],
@@ -105,6 +153,11 @@ export function createPagePlacements(
 /**
  * Applies resolved placements through the viewer's origin-aware page API.
  * Remote replay should use `origin: 'remote'` and `recordHistory: false`.
+ * @param viewer - The viewer value (PdfrxViewer).
+ * @param placements - The placements value.
+ * @param sources - The sources value (PageSourceRegistry).
+ * @param options - Options that customize the operation.
+ *
  */
 export function applyPagePlacementsToViewer(
   viewer: PdfrxViewer,

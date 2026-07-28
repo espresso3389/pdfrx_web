@@ -19,7 +19,13 @@ export interface PdfPageActionsProps {
   style?: CSSProperties;
 }
 
-/** Reusable rotate/delete controls for one page with optional mutation overrides. */
+/**
+ * Reusable rotate/delete controls for one page with optional mutation overrides.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfPageActions({
   pageNumber,
   rotationDeltas = DEFAULT_ROTATIONS,

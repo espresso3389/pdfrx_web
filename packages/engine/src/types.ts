@@ -4,6 +4,7 @@
  * PDF page coordinates are in points
  * (1/72 inch), origin at the bottom-left corner, y-axis pointing up.
  * Rects are `{left, top, right, bottom}` with `top >= bottom`.
+ *
  */
 
 /**
@@ -14,6 +15,7 @@
  *
  * See {@link PdfRect} (the companion namespace-like value) for helpers that
  * operate on these rects.
+ *
  */
 export interface PdfRect {
   left: number;
@@ -38,17 +40,27 @@ export const PdfRect = {
 /**
  * Page rotation in clockwise 90-degree steps, corresponding to the page
  * dictionary's `/Rotate` entry in ISO 32000-2:2020, 7.7.3.3, Table 31.
+ *
  */
 export type PdfPageRotation = 0 | 90 | 180 | 270;
 
 /**
  * Converts a rotation index (0-3) to a {@link PdfPageRotation}.
  * The index is masked to 0-3, so out-of-range values wrap around.
+ * @param index - The 0-based index.
+ * @returns The resulting PdfPageRotation.
+ *
  */
 export const pdfPageRotationFromIndex = (index: number): PdfPageRotation =>
   ((index & 3) * 90) as PdfPageRotation;
 
-/** Inverse of {@link pdfPageRotationFromIndex}: converts a rotation to an index (0-3). */
+/**
+ * Inverse of {@link pdfPageRotationFromIndex}: converts a rotation to an index (0-3).
+ *
+ * @param rotation - The clockwise page rotation, in 90-degree steps.
+ * @returns The converted number.
+ *
+ */
 export const pdfPageRotationToIndex = (rotation: PdfPageRotation): number => rotation / 90;
 
 /**
@@ -58,6 +70,7 @@ export const pdfPageRotationToIndex = (rotation: PdfPageRotation): number => rot
  * The permission flags follow ISO 32000-1:2008, Table 22. The `allows*` helpers
  * mirror the pdfrx semantics exactly, including the same bit masks, so a
  * document evaluates identically here and in upstream pdfrx.
+ *
  */
 export class PdfPermissions {
   constructor(
@@ -110,6 +123,7 @@ export type PdfPageId = string & { readonly __pdfPageId: unique symbol };
  * When the same identity appears more than once, one matching placement is
  * selected; use {@link PdfPage.duplicate} when placements need distinct
  * identities.
+ *
  */
 export interface PdfDestById {
   readonly by: 'id';
@@ -136,11 +150,13 @@ export interface PdfDestById {
  *
  * The resulting destination keeps page number 5 even if another logical page
  * later occupies that position.
+ *
  */
 export interface PdfDestByPageNumber {
   readonly by: 'pageNumber';
   /**
    * 1-based position to resolve when the destination is followed or encoded.
+   *
    */
   readonly pageNumber: number;
   /**
@@ -149,6 +165,7 @@ export interface PdfDestByPageNumber {
    *
    * The corresponding PDF names and their semantics are specified by
    * ISO 32000-2:2020, 12.3.2.2, Table 149.
+   *
    */
   readonly command: string;
   /**
@@ -157,6 +174,7 @@ export interface PdfDestByPageNumber {
    * are `left`, `top`, `right`, `bottom`, and/or `zoom`; `null` represents a
    * PDF `null` operand, meaning that the corresponding current value is
    * retained.
+   *
    */
   readonly params: readonly (number | null)[];
 }
@@ -181,6 +199,7 @@ export interface PdfDestByPageNumber {
  *   params: [],
  * });
  * ```
+ *
  */
 export type PdfDest = PdfDestById | PdfDestByPageNumber;
 
@@ -201,6 +220,7 @@ export interface PdfDestOptions {
 /**
  * A node of the document outline (a.k.a. bookmarks), corresponding to an
  * outline item dictionary in ISO 32000-2:2020, 12.3.3, Table 151.
+ *
  */
 export interface PdfOutlineNode {
   /** Human-readable label from the outline item's `Title` entry. */
@@ -209,6 +229,7 @@ export interface PdfOutlineNode {
    * Destination from the outline item's `Dest` entry or Go-To action, or
    * `null` if it has none. See ISO 32000-2:2020, 12.3.3, Table 151 and
    * 12.6.4.2, Table 202.
+   *
    */
   readonly dest: PdfDest | null;
   /** Nested outline items linked through the `First`/`Last` hierarchy. */
@@ -219,6 +240,7 @@ export interface PdfOutlineNode {
  * Markup metadata shared with link annotations. The represented PDF entries
  * are specified by ISO 32000-2:2020, 12.5.2, Table 166 and 12.5.6.2,
  * Table 172.
+ *
  */
 export interface PdfAnnotation {
   /** Markup annotation title from `/T`, or `null`; Table 172. */
@@ -230,11 +252,13 @@ export interface PdfAnnotation {
   /**
    * Raw `/M` PDF date string (e.g. `D:20240131120000+09'00'`), if any.
    * See ISO 32000-2:2020, 7.9.4 and Table 166.
+   *
    */
   readonly modificationDate: string | null;
   /**
    * Raw `/CreationDate` PDF date string, if any. See ISO 32000-2:2020,
    * 7.9.4 and Table 172.
+   *
    */
   readonly creationDate: string | null;
 }
@@ -246,6 +270,7 @@ export interface PdfAnnotation {
  * Explicit link annotations are defined by ISO 32000-2:2020, 12.5.6.5,
  * Table 176. Their destinations use 12.3.2; URI actions use 12.6.4.8.
  * See {@link PdfPage.loadLinks}.
+ *
  */
 export type PdfLinkTarget =
   | { readonly kind: 'uri'; readonly url: string }
@@ -268,6 +293,7 @@ export interface PdfLink {
  * Kind of an AcroForm field, mapped from PDFium's `FPDF_FORMFIELD_*` codes.
  * The corresponding PDF field types are specified by ISO 32000-2:2020,
  * 12.7.5 ("Field types").
+ *
  */
 export type PdfFormFieldType =
   | 'unknown'
@@ -290,7 +316,13 @@ export interface PdfTextOrientation {
   readonly behavior: PdfTextOrientationBehavior;
 }
 
-/** Maps a raw `FPDF_FORMFIELD_*` code to a {@link PdfFormFieldType}. */
+/**
+ * Maps a raw `FPDF_FORMFIELD_*` code to a {@link PdfFormFieldType}.
+ *
+ * @param code - The machine-readable error code.
+ * @returns The resulting PdfFormFieldType.
+ *
+ */
 export const pdfFormFieldTypeFromCode = (code: number): PdfFormFieldType => {
   switch (code) {
     case 1:
@@ -316,6 +348,7 @@ export const pdfFormFieldTypeFromCode = (code: number): PdfFormFieldType => {
  * Decoded common AcroForm field flags from `/Ff`. See ISO 32000-2:2020,
  * 12.7.4.1, Tables 226 ("Entries common to all field dictionaries") and 227
  * ("Field flags common to all field types").
+ *
  */
 export interface PdfFormFieldFlags {
   /** The field cannot be edited by the user. */
@@ -326,7 +359,13 @@ export interface PdfFormFieldFlags {
   readonly noExport: boolean;
 }
 
-/** Decodes the raw `FPDF_FORMFLAG_*` bitmask into {@link PdfFormFieldFlags}. */
+/**
+ * Decodes the raw `FPDF_FORMFLAG_*` bitmask into {@link PdfFormFieldFlags}.
+ *
+ * @param flags - The flags value (number).
+ * @returns The resulting PdfFormFieldFlags.
+ *
+ */
 export const decodeFormFieldFlags = (flags: number): PdfFormFieldFlags => ({
   readOnly: (flags & 1) !== 0,
   required: (flags & 2) !== 0,
@@ -336,6 +375,7 @@ export const decodeFormFieldFlags = (flags: number): PdfFormFieldFlags => ({
 /**
  * One selectable option of a combo box or list box. Choice-field option arrays
  * are specified by ISO 32000-2:2020, 12.7.5.4, Table 234.
+ *
  */
 export interface PdfFormFieldOption {
   readonly label: string;
@@ -352,6 +392,7 @@ export interface PdfFormFieldOption {
  * Field dictionaries and fully-qualified field names are specified by
  * ISO 32000-2:2020, 12.7.4, especially Tables 226 and 227. Type-specific
  * entries are specified by 12.7.5.
+ *
  */
 export interface PdfFormField {
   /** Fully-qualified field name (`/T`); may be empty for unnamed fields. */
@@ -386,6 +427,7 @@ export interface PdfFormField {
  * selects a radio export value, or selects one choice option by its label; and
  * a `string[]` selects choice options by label (including single-select
  * combo/list fields when replaying history).
+ *
  */
 export type PdfFormFieldValue = string | boolean | string[];
 
@@ -393,6 +435,7 @@ export type PdfFormFieldValue = string | boolean | string[];
  * One field value changed as part of a form mutation transaction. Choice-field
  * states use selected option-label arrays so they remain replayable when a
  * PDF's export value differs from its display label.
+ *
  */
 export interface PdfFormFieldChange {
   readonly name: string;
@@ -416,6 +459,7 @@ export interface PdfFormMutationOptions {
 /**
  * Raw text of a page: full text plus one rect per UTF-16 code unit.
  * See {@link PdfPage.loadText}.
+ *
  */
 export interface PdfPageRawText {
   readonly fullText: string;
@@ -430,6 +474,7 @@ export interface PdfPageRawText {
  *
  * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
  *   — how the default resolver maps these queries to downloadable fonts.
+ *
  */
 export interface PdfFontQuery {
   /** Requested typeface (family) name. */
@@ -443,6 +488,7 @@ export interface PdfFontQuery {
    * `query.charset === PdfFontCharset.shiftJis`), or turn it into a label with
    * {@link pdfFontCharsetName}. May be any value PDFium reports; the named set
    * covers the ones it commonly emits.
+   *
    */
   readonly charset: number;
   /**
@@ -450,6 +496,7 @@ export interface PdfFontQuery {
    * `lfPitchAndFamily` value). The low two bits are pitch flags, while the high
    * nibble is one mutually exclusive family value. Use the helpers below
    * rather than treating all values as independent flags.
+   *
    */
   readonly pitchFamily: number;
 }
@@ -461,6 +508,7 @@ export interface PdfFontQuery {
  * ```ts
  * if (query.charset === PdfFontCharset.shiftJis) { … } // Japanese
  * ```
+ *
  */
 export const PdfFontCharset = {
   /** Windows-1252 / Latin-1. */
@@ -496,6 +544,9 @@ const pdfFontCharsetNames = new Map<number, string>(
 /**
  * Returns the {@link PdfFontCharset} name for a charset id (e.g. `128` →
  * `'shiftJis'`), or `undefined` if the id is not one of the named charsets.
+ * @param charset - The charset value (number).
+ * @returns The resulting string or undefined.
+ *
  */
 export const pdfFontCharsetName = (charset: number): string | undefined => pdfFontCharsetNames.get(charset);
 
@@ -503,6 +554,7 @@ export const pdfFontCharsetName = (charset: number): string | undefined => pdfFo
  * Values used by the PDFium LOGFONT-compatible `lfPitchAndFamily` byte. Pitch
  * occupies the low two bits; family occupies the high nibble and must be
  * compared after applying {@link PdfFontPitchFamily.familyMask}.
+ *
  */
 export const PdfFontPitchFamily = {
   /** Fixed-pitch (monospace) font. */
@@ -520,20 +572,39 @@ export const PdfFontPitchFamily = {
   decorative: 80,
 } as const;
 
-/** Whether a {@link PdfFontQuery.pitchFamily} value has the fixed-pitch (monospace) bit set. */
+/**
+ * Whether a {@link PdfFontQuery.pitchFamily} value has the fixed-pitch (monospace) bit set.
+ *
+ * @param pitchFamily - The pitchFamily value (number).
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export const isFixedPitch = (pitchFamily: number): boolean => (pitchFamily & PdfFontPitchFamily.fixed) !== 0;
 
-/** Whether a {@link PdfFontQuery.pitchFamily} value names the Roman (serif) family. */
+/**
+ * Whether a {@link PdfFontQuery.pitchFamily} value names the Roman (serif) family.
+ *
+ * @param pitchFamily - The pitchFamily value (number).
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export const isRomanFamily = (pitchFamily: number): boolean =>
   (pitchFamily & PdfFontPitchFamily.familyMask) === PdfFontPitchFamily.roman;
 
-/** Whether a {@link PdfFontQuery.pitchFamily} value names the Script family. */
+/**
+ * Whether a {@link PdfFontQuery.pitchFamily} value names the Script family.
+ *
+ * @param pitchFamily - The pitchFamily value (number).
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export const isScriptFamily = (pitchFamily: number): boolean =>
   (pitchFamily & PdfFontPitchFamily.familyMask) === PdfFontPitchFamily.script;
 
 /**
  * A point in bounding-box-relative PDF page coordinates (points, y-up) — the
  * same space as {@link PdfRect} and {@link PdfFormField} rects.
+ *
  */
 export interface PdfAnnotationPoint {
   x: number;
@@ -560,6 +631,7 @@ export interface PdfAnnotationColor {
  * Subtype-specific geometry of an annotation, in bounding-box-relative page
  * coordinates. `none` covers subtypes whose shape is fully described by
  * {@link PdfAnnotationObject.rect} (square, circle, freeText, text, …).
+ *
  */
 export type PdfAnnotationGeometry =
   | { kind: 'none' }
@@ -573,6 +645,7 @@ export type PdfAnnotationGeometry =
  * PDF annotation subtype (`/Subtype`), lowercased; `unknown` for unmapped
  * types. Standard annotation types are listed by ISO 32000-2:2020, 12.5.6,
  * Table 171.
+ *
  */
 export type PdfAnnotationSubtype =
   | 'link'
@@ -615,6 +688,9 @@ const pdfAnnotationSubtypeNames: ReadonlySet<string> = new Set<PdfAnnotationSubt
  * Maps a worker subtype string (lowercased `/Subtype`) to a
  * {@link PdfAnnotationSubtype}, falling back to `unknown` for anything not
  * surfaced (widgets, popups, and rarer types).
+ * @param name - The name to look up.
+ * @returns The resulting PdfAnnotationSubtype.
+ *
  */
 export const pdfAnnotationSubtypeFromName = (name: string): PdfAnnotationSubtype =>
   (pdfAnnotationSubtypeNames.has(name) ? name : 'unknown') as PdfAnnotationSubtype;
@@ -623,6 +699,7 @@ export const pdfAnnotationSubtypeFromName = (name: string): PdfAnnotationSubtype
  * Bit masks for {@link PdfAnnotationObject.flags} (`/F`), matching PDFium's
  * `FPDF_ANNOT_FLAG_*`. Their meanings and bit positions are specified by
  * ISO 32000-2:2020, 12.5.3, Table 167 ("Annotation flags").
+ *
  */
 export const PdfAnnotationFlag = {
   invisible: 1,
@@ -645,6 +722,7 @@ export const PdfAnnotationFlag = {
  * Standard annotation dictionary entries are specified by ISO 32000-2:2020,
  * 12.5.2, Table 166; markup entries by 12.5.6.2, Table 172; and
  * subtype-specific geometry by the applicable subclause of 12.5.6.
+ *
  */
 export interface PdfAnnotationObject {
   /**
@@ -663,6 +741,7 @@ export interface PdfAnnotationObject {
    * `@<index>` fallback. That fallback is positional rather than stable: after
    * adding, removing, or replacing annotations on the page, call
    * `PdfPage.loadAnnotations()` again before using it.
+   *
    */
   readonly id: string;
   /** 1-based page number the annotation belongs to. */
@@ -754,6 +833,7 @@ export interface PdfLoadHighlightsOptions {
   /**
    * Extract the page text covered by each highlight's quadpoints. This loads
    * page text in addition to annotations, so it is disabled by default.
+   *
    */
   readonly includeText?: boolean;
 }
@@ -819,6 +899,7 @@ export interface PdfHighlightObject extends PdfAnnotationObject {
  *
  * The corresponding PDF annotation dictionaries are defined by
  * ISO 32000-2:2020, 12.5.2 and the subtype-specific parts of 12.5.6.
+ *
  */
 export interface PdfAnnotationSpec {
   /**
@@ -827,6 +908,7 @@ export interface PdfAnnotationSpec {
    * with another representation, such as an external store. Omit it to let the
    * engine generate an id; {@link PdfPage.addAnnotation} returns the generated
    * value.
+   *
    */
   id?: string;
   subtype: PdfAnnotationSubtype;
@@ -841,6 +923,7 @@ export interface PdfAnnotationSpec {
    * Annotation text. For authored FreeText, pass this spec through
    * {@link PdfDocument.prepareFreeTextAppearance} to resolve its fonts,
    * wrapping, and emoji image runs.
+   *
    */
   contents?: string | null;
   author?: string | null;
@@ -860,11 +943,13 @@ export interface PdfAnnotationSpec {
    * Primary font face registered with the engine for a generated FreeText
    * appearance. Usually populated by
    * {@link PdfDocument.prepareFreeTextAppearance}.
+   *
    */
   fontFace?: string | null;
   /**
    * Pre-wrapped lines used by the generated FreeText appearance. Usually
    * populated by {@link PdfDocument.prepareFreeTextAppearance}.
+   *
    */
   appearanceLines?: string[];
   /**
@@ -872,6 +957,7 @@ export interface PdfAnnotationSpec {
    * emoji. Usually populated by
    * {@link PdfDocument.prepareFreeTextAppearance}; advanced integrations may
    * construct the runs directly.
+   *
    */
   appearanceRuns?: {
     text: string;
@@ -888,6 +974,7 @@ export interface PdfAnnotationSpec {
   /**
    * Normalized vector paths used as the normal appearance of a `stamp`
    * annotation. Points are in a 0–1 box with an SVG-style y-down axis.
+   *
    */
   appearancePaths?: {
     segments: {
@@ -932,6 +1019,7 @@ export type PdfAnnotationChange =
  * A reversible annotation mutation. Unlike {@link PdfAnnotationChange}, this
  * carries both states so observers can build Undo/Redo history without having
  * to intercept the API call before it reaches {@link PdfDocument}.
+ *
  */
 export interface PdfAnnotationHistoryChange {
   readonly id: string;
@@ -953,6 +1041,7 @@ export interface PdfAnnotationMutationOptions {
    * existing appearance stream. Set this when the appearance pixels are
    * unchanged, so the existing image resources remain associated with the
    * annotation.
+   *
    */
   readonly preserveAppearance?: boolean;
 }
@@ -995,10 +1084,17 @@ export interface PdfPageArrangementEntry {
  * - `formsOnly` — draw interactive form widgets but *not* other annotations;
  *   used by the viewer when annotations are shown through the SVG overlay
  *   instead of the canvas.
+ *
  */
 export type PdfAnnotationRenderingMode = 'none' | 'annotation' | 'annotationAndForms' | 'formsOnly';
 
-/** Maps a {@link PdfAnnotationRenderingMode} to the numeric code used by the worker protocol. */
+/**
+ * Maps a {@link PdfAnnotationRenderingMode} to the numeric code used by the worker protocol.
+ *
+ * @param mode - The mode value (PdfAnnotationRenderingMode).
+ * @returns The resulting number.
+ *
+ */
 export const annotationRenderingModeToIndex = (mode: PdfAnnotationRenderingMode): number => {
   switch (mode) {
     case 'none':
@@ -1019,6 +1115,7 @@ export const annotationRenderingModeToIndex = (mode: PdfAnnotationRenderingMode)
  *
  * It is called repeatedly on each failed attempt until it returns `null` or a
  * correct password, so it may prompt the user anew each time.
+ *
  */
 export type PdfPasswordProvider = () => string | null | Promise<string | null>;
 
@@ -1026,6 +1123,7 @@ export type PdfPasswordProvider = () => string | null | Promise<string | null>;
  * Callback invoked while a document is being downloaded (see
  * {@link PdfOpenUrlOptions.progressCallback}). `bytesTotal` is omitted when the
  * total size is unknown (e.g. no `Content-Length`).
+ *
  */
 export type PdfDownloadProgressCallback = (bytesReceived: number, bytesTotal?: number) => void;
 
@@ -1033,8 +1131,14 @@ export type PdfDownloadProgressCallback = (bytesReceived: number, bytesTotal?: n
  * Thrown when opening an encrypted document fails due to a missing/wrong
  * password (i.e. the {@link PdfPasswordProvider} returned `null` or ran out of
  * passwords to try).
+ *
  */
 export class PdfPasswordException extends Error {
+  /**
+   * Creates a password failure.
+   *
+   * @param message - The human-readable error message.
+   */
   constructor(message: string) {
     super(message);
     this.name = 'PdfPasswordException';
@@ -1049,6 +1153,7 @@ export class PdfPasswordException extends Error {
  * copying the bitmap out (effectively free), so {@link pixels} is already
  * RGBA — the only pixel format the web can consume directly. See
  * {@link PdfPage.render}.
+ *
  */
 export class PdfImage {
   constructor(
@@ -1064,6 +1169,9 @@ export class PdfImage {
    * Wraps the RGBA pixels in an `ImageData` for Canvas 2D. Zero-copy: the
    * returned `ImageData` shares this image's pixel buffer, so do not mutate
    * {@link pixels} afterwards if you keep using the `ImageData`.
+   *
+   * @returns The converted ImageData.
+   *
    */
   toImageData(): ImageData {
     const p = this.pixels;
@@ -1071,7 +1179,12 @@ export class PdfImage {
     return new ImageData(data, this.width, this.height);
   }
 
-  /** Creates an `ImageBitmap`, which is cheaper to draw repeatedly than `putImageData`. */
+  /**
+   * Creates an `ImageBitmap`, which is cheaper to draw repeatedly than `putImageData`.
+   *
+   * @returns The converted Promise.
+   *
+   */
   toImageBitmap(): Promise<ImageBitmap> {
     return createImageBitmap(this.toImageData());
   }
@@ -1080,6 +1193,7 @@ export class PdfImage {
 /**
  * Payload types of the events emitted by {@link PdfDocument}, keyed by event
  * name. Subscribe with {@link PdfDocument.addEventListener}.
+ *
  */
 export interface PdfDocumentEventMap {
   /** All pages are loaded (fired immediately for non-progressive loading). */
@@ -1095,6 +1209,7 @@ export interface PdfDocumentEventMap {
    * `PdfDocument.setPages` or `PdfDocument.materialize`. Always accompanied by
    * `pageStatusChanged`; listen to this one to invalidate things keyed by page
    * position, which a plain progressive-load update does not disturb.
+   *
    */
   pagesRearranged: {
     origin: PdfPageChangeOrigin;
@@ -1113,6 +1228,7 @@ export interface PdfDocumentEventMap {
    * before/after diff, including calculated fields changed as a consequence.
    * `source` is `'user'` for interactive edits in the viewer (relayed from the
    * form-fill module) and `'api'` for programmatic writes.
+   *
    */
   formFieldsChanged: {
     /** Kept for UI consumers distinguishing interactive and programmatic writes. */
@@ -1131,6 +1247,7 @@ export interface PdfDocumentEventMap {
    * reported by the source document and by every open arrangement that places
    * that physical page; duplicate placements contribute each affected
    * arrangement page number.
+   *
    */
   annotationsChanged: {
     origin: PdfAnnotationChangeOrigin;

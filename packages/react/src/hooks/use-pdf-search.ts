@@ -49,6 +49,8 @@ export interface PdfSearch {
  *   </>
  * );
  * ```
+ * @returns The current pdf search state and actions.
+ *
  */
 export function usePdfSearch(): PdfSearch {
   const store = usePdfrxStore();

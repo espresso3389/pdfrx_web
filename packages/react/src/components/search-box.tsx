@@ -16,6 +16,7 @@ export interface PdfSearchBoxProps {
    * clearing the query: it resets the search and then calls this. Used by
    * {@link PdfToolbar} to close its collapsed mobile search row. The button is
    * then always shown (so the box can be closed before anything is typed).
+   *
    */
   onClose?: () => void;
 }
@@ -34,6 +35,9 @@ export interface PdfSearchBoxProps {
  *   <PdfViewerSurface style={{ flex: 1 }} />
  * </PdfrxProvider>
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfSearchBox({ className, style, placeholder, autoFocus = false, onClose }: PdfSearchBoxProps): ReactNode {
   const { query, setQuery, currentIndex, matchCount, isSearching, goToNext, goToPrevious, reset } = usePdfSearch();

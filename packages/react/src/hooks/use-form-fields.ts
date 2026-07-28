@@ -13,6 +13,7 @@ export interface PdfFormFieldsState {
    * Sets a field's value (see {@link PdfFormFieldValue}). The change is applied
    * through the form-fill module, re-renders the affected page, and refreshes
    * {@link fields} via the document's `formFieldsChanged` event.
+   *
    */
   setValue: (name: string, value: PdfFormFieldValue) => Promise<void>;
   /** Forces a reload of the field list. */
@@ -40,6 +41,8 @@ export interface PdfFormFieldsState {
  *   ),
  * );
  * ```
+ * @returns The current form fields state and actions.
+ *
  */
 export function useFormFields(): PdfFormFieldsState {
   const viewer = usePdfrxViewer();

@@ -50,6 +50,8 @@ const DEFAULT_ZOOM_DURATION = 200;
  *   </>
  * );
  * ```
+ * @returns The current pdf zoom state and actions.
+ *
  */
 export function usePdfZoom(): PdfZoom {
   const store = usePdfrxStore();

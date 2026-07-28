@@ -175,6 +175,7 @@ export interface PdfOpenDataOptions extends PdfOpenOptions {
    * Transfer ownership of a full input buffer to the worker. Default: true.
    * Set to false to keep the caller's buffer usable; the engine transfers an
    * internal copy instead.
+   *
    */
   transferData?: boolean;
 }
@@ -186,6 +187,7 @@ export interface PdfOpenUrlOptions extends PdfOpenOptions {
   /**
    * Access the file via HTTP range requests instead of downloading it whole.
    * Requires a CORS-enabled server that honors range requests.
+   *
    */
   preferRangeAccess?: boolean;
   /** Extra HTTP headers for the fetch (e.g. authorization). */
@@ -204,6 +206,7 @@ export interface PdfEncodeOptions {
    * clones a catalog-preserving base first; `compact` rebuilds the arranged
    * pages and their reachable page-level objects in a fresh document. Defaults
    * to `in-place`.
+   *
    */
   readonly mode?: PdfEncodeMode;
   /** Requests incremental serialization. Not supported by `compact`. */
@@ -221,6 +224,7 @@ export interface PdfMaterializedCopyOptions {
    * `preserve` retains the selected base document's catalog; `rebuild` creates
    * a fresh catalog from the arranged pages and their reachable page-level
    * objects. Defaults to `preserve`.
+   *
    */
   readonly catalog?: PdfMaterializedCopyCatalog;
 }
@@ -239,14 +243,23 @@ export interface PdfMaterializedCopyOptions {
  * {@link PdfRawCreatedObject}: pass it directly as a later target, or pass its
  * {@link PdfRawCreatedObject.reference | reference} property as a value in
  * another object.
+ *
  */
 export interface PdfRawObjectEditor {
-  /** Returns a target for the document catalog (`/Root`) dictionary. */
+  /**
+   * Returns a target for the document catalog (`/Root`) dictionary.
+   *
+   * @returns The resulting PdfRawTarget.
+   *
+   */
   catalog(): PdfRawTarget;
   /**
    * Returns a target for an existing indirect object.
    * @param objectNumber Positive PDF object number, as returned by
    *   {@link PdfDocument.getRawObject} or an indirect `reference` value.
+   *
+   * @returns The resulting PdfRawTarget.
+   *
    */
   object(objectNumber: number): PdfRawTarget;
   /**
@@ -260,6 +273,11 @@ export interface PdfRawObjectEditor {
    * ```ts
    * const firstKid = editor.at(editor.object(pagesObjectNumber), 'Kids', 0);
    * ```
+   *
+   * @param target - The target value.
+   * @param path - The path value (string or number[]).
+   * @returns The resulting PdfRawTarget.
+   *
    */
   at(target: PdfRawTarget, ...path: (string | number)[]): PdfRawTarget;
   /**
@@ -268,21 +286,61 @@ export interface PdfRawObjectEditor {
    * The returned object is itself a target for further edits. Use its
    * {@link PdfRawCreatedObject.reference} property when storing an indirect
    * reference to it in another dictionary or array.
+   *
+   * @param entries - The entries value (Record).
+   * @returns The resulting PdfRawCreatedObject.
+   *
    */
   createDictionary(entries?: Record<string, PdfRawPatchValue>): PdfRawCreatedObject;
-  /** Sets or replaces one dictionary entry; `key` omits the leading `/`. */
+  /**
+   * Sets or replaces one dictionary entry; `key` omits the leading `/`.
+   *
+   * @param target - The target value.
+   * @param key - The cache key.
+   * @param value - The value to use.
+   *
+   */
   setDictionaryValue(target: PdfRawTarget, key: string, value: PdfRawPatchValue): void;
-  /** Removes one dictionary entry; `key` omits the leading `/`. */
+  /**
+   * Removes one dictionary entry; `key` omits the leading `/`.
+   *
+   * @param target - The target value.
+   * @param key - The cache key.
+   *
+   */
   removeDictionaryValue(target: PdfRawTarget, key: string): void;
-  /** Appends a value to the target array. */
+  /**
+   * Appends a value to the target array.
+   *
+   * @param target - The target value.
+   * @param value - The value to use.
+   *
+   */
   appendArrayValue(target: PdfRawTarget, value: PdfRawPatchValue): void;
-  /** Replaces the value at a zero-based array index. */
+  /**
+   * Replaces the value at a zero-based array index.
+   *
+   * @param target - The target value.
+   * @param index - The 0-based index.
+   * @param value - The value to use.
+   *
+   */
   setArrayValue(target: PdfRawTarget, index: number, value: PdfRawPatchValue): void;
-  /** Removes the value at a zero-based array index. */
+  /**
+   * Removes the value at a zero-based array index.
+   *
+   * @param target - The target value.
+   * @param index - The 0-based index.
+   *
+   */
   removeArrayValue(target: PdfRawTarget, index: number): void;
   /**
    * Replaces a stream's decoded bytes. PDFium updates the stream representation
    * when the document is encoded.
+   *
+   * @param target - The target value.
+   * @param data - The input data.
+   *
    */
   setStreamData(target: PdfRawTarget, data: Uint8Array): void;
 }
@@ -295,6 +353,7 @@ export interface PdfRawObjectEditor {
  * {@link reference} as a patch value to store an indirect reference to it in a
  * catalog, dictionary, or array. The final numeric PDF object number is assigned
  * inside the worker and intentionally hidden from the callback.
+ *
  */
 export interface PdfRawCreatedObject extends PdfRawTarget {
   /** Batch-local identity used internally; it is not a PDF object number. */
@@ -317,6 +376,7 @@ export interface PdfRawObjectEditOptions {
    * Set this to `true` when failure must also roll back errors encountered while
    * PDFium applies the batch. This copies and reloads the complete document, so
    * its time and peak-memory cost grow with the PDF size.
+   *
    */
   atomic?: boolean;
 }
@@ -387,6 +447,7 @@ class RawPdfObjectEditor implements PdfRawObjectEditor {
  * The page is conceptually scaled to `fullWidth` x `fullHeight` pixels, and the
  * `x`/`y`/`width`/`height` sub-rectangle of that scaled page is what gets
  * rendered. All values are in pixels unless noted otherwise.
+ *
  */
 export interface PdfPageRenderOptions {
   /** Left of the rendered region in the scaled page (pixels). Default: 0. */
@@ -412,6 +473,7 @@ export interface PdfPageRenderOptions {
   /**
    * Cancels the render while it is still queued, making it resolve to `null`.
    * Create it with {@link PdfPage.createCancellationToken}.
+   *
    */
   cancellationToken?: PdfPageRenderCancellationToken;
 }
@@ -439,16 +501,27 @@ export interface PdfPageRenderOptions {
  * await doc.dispose();
  * engine.dispose();
  * ```
+ *
  */
 export class PdfrxEngine {
   private communicator: WorkerCommunicator | null = null;
   private readonly options: PdfrxEngineOptions;
 
+  /**
+   * Creates an engine whose documents share one lazily initialized worker.
+   *
+   * @param options - Worker asset locations, factories, and host-specific configuration.
+   */
   constructor(options: PdfrxEngineOptions = {}) {
     this.options = options;
   }
 
-  /** Spawns the worker and initializes the engine. Called implicitly by the open functions. */
+  /**
+   * Spawns the worker and initializes the engine. Called implicitly by the open functions.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async init(): Promise<void> {
     if (!this.communicator) {
       this.communicator = new WorkerCommunicator(this.options);
@@ -459,6 +532,7 @@ export class PdfrxEngine {
   /**
    * The active communicator, or throws if {@link init} has not run.
    * @internal
+   *
    */
   private get comm(): WorkerCommunicator {
     if (!this.communicator) throw new Error('PdfrxEngine is not initialized');
@@ -479,6 +553,11 @@ export class PdfrxEngine {
    * first copied into a tightly sized buffer and that copy is transferred.
    * Password retries reuse the worker-owned bytes and transfer only the new
    * password.
+   *
+   * @param data - The input data.
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenDataOptions = {}): Promise<PdfDocument> {
     await this.init();
@@ -540,6 +619,11 @@ export class PdfrxEngine {
    * {@link WorkerCommunicatorOptions.baseUrl} (`document.baseURI` by default).
    * Set {@link PdfOpenUrlOptions.preferRangeAccess} to stream the file via range
    * requests.
+   *
+   * @param url - The URL to use.
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<PdfDocument> {
     await this.init();
@@ -580,7 +664,13 @@ export class PdfrxEngine {
     }
   }
 
-  /** Creates a new empty document. */
+  /**
+   * Creates a new empty document.
+   *
+   * @param sourceName - The sourceName value (string).
+   * @returns The resulting Promise.
+   *
+   */
   async createNew(sourceName = 'new'): Promise<PdfDocument> {
     await this.init();
     const result = await this.comm.sendCommand('createNewDocument', {});
@@ -610,6 +700,11 @@ export class PdfrxEngine {
    * // A PNG and a JPEG, one per page:
    * const doc = await engine.createFromImages([pngBlob, jpegBytes]);
    * ```
+   *
+   * @param images - The images value (PdfImageSource[]).
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async createFromImages(
     images: PdfImageSource[],
@@ -625,7 +720,15 @@ export class PdfrxEngine {
     return new PdfDocument(this.comm, result, options.sourceName ?? 'images', null);
   }
 
-  /** Registers font data used to substitute missing fonts, then re-render affected pages. */
+  /**
+   * Registers font data used to substitute missing fonts, then re-render affected pages.
+   *
+   * @param face - The face value (string).
+   * @param data - The input data.
+   * @param resolvedFace - The resolvedFace value (string).
+   * @returns The resulting Promise.
+   *
+   */
   async addFontData(face: string, data: Uint8Array, resolvedFace?: string): Promise<void> {
     await this.init();
     const buffer = data.slice().buffer;
@@ -636,13 +739,23 @@ export class PdfrxEngine {
     );
   }
 
-  /** Re-applies registered font data across the worker (e.g. after adding fonts). */
+  /**
+   * Re-applies registered font data across the worker (e.g. after adding fonts).
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async reloadFonts(): Promise<void> {
     await this.init();
     await this.comm.sendCommand('reloadFonts', { dummy: true });
   }
 
-  /** Discards all font data registered via {@link addFontData}. */
+  /**
+   * Discards all font data registered via {@link addFontData}.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async clearAllFontData(): Promise<void> {
     await this.init();
     await this.comm.sendCommand('clearAllFontData', { dummy: true });
@@ -656,6 +769,7 @@ export class PdfrxEngine {
    * is consulted and the open is retried while the engine reports a password error.
    * Throws {@link PdfPasswordException} if the provider gives up.
    * @internal
+   *
    */
   private async openByFunc(
     open: (password: string | null) => Promise<WorkerDocument | import('./protocol.js').WorkerError>,
@@ -729,6 +843,7 @@ const extractHighlightText = (highlight: PdfHighlightObject, pageText: PdfPageRa
 /**
  * Listener for a document event named `E`.
  * @internal
+ *
  */
 type Listener<E extends PdfDocumentEventName> = (event: PdfDocumentEventMap[E]) => void;
 
@@ -738,16 +853,19 @@ type Listener<E extends PdfDocumentEventName> = (event: PdfDocumentEventMap[E]) 
  * Obtain instances from the opening methods of {@link PdfrxEngine}; do not
  * construct directly. Always {@link dispose} a document when finished to release
  * the underlying native handles.
+ *
  */
 /**
  * One page slot of an arrangement being written back to the PDF: which page to
  * place, from which document, at what rotation.
  * @internal
+ *
  */
 export interface PdfAssembleSource {
   /**
    * Source document to take the page from. Defaults to the document being
    * assembled; pass another {@link PdfDocument} to import one of its pages.
+   *
    */
   document?: PdfDocument;
   /** 1-based page number within {@link document}. */
@@ -782,6 +900,7 @@ export class PdfDocument {
    * notifications for this document, so interactive edits repaint and
    * `formFieldsChanged` fires. No-op for documents without a form environment.
    * @internal
+   *
    */
   private ensureFormNotify(): void {
     if (this.formNotifyCallbackId !== null || !this.formHandle || this._isDisposed) return;
@@ -796,6 +915,7 @@ export class PdfDocument {
   /**
    * Dispatches a form notification relayed from the worker's form-fill callbacks.
    * @internal
+   *
    */
   private handleFormNotification(notification: WorkerFormNotification): void {
     if (this._isDisposed) return;
@@ -842,6 +962,7 @@ export class PdfDocument {
    * Reserved for internal use only (the viewer). Subscribes to form dirty-region
    * redraws (page number + rect in PDF page coordinates). Returns an unsubscribe.
    * @internal
+   *
    */
   addFormInvalidateListener(listener: (pageNumber: number, rect: PdfRect) => void): () => void {
     this.ensureFormNotify();
@@ -853,12 +974,14 @@ export class PdfDocument {
   /**
    * Reserved for internal use only. Native handle of the document in the worker.
    * @internal
+   *
    */
   docHandle: number;
   /**
    * Reserved for internal use only. Native handle of the document's form
    * environment in the worker.
    * @internal
+   *
    */
   formHandle: number;
   private formInfo: number;
@@ -895,6 +1018,7 @@ export class PdfDocument {
   /**
    * Whether {@link setFormFieldValue} recomputes dependent calculated fields
    * (`AFSimple_Calculate`) after a change. Default `true`.
+   *
    */
   formCalculationEnabled = true;
 
@@ -922,63 +1046,68 @@ export class PdfDocument {
   }
 
   /**
-     * Turns the Unicode `contents` of a FreeText spec into a stable PDF
-     * appearance. Call this after constructing the spec and before passing that
-     * same object to {@link PdfPage.addAnnotation} or
-     * {@link PdfPage.updateAnnotation}.
-     *
-     * This step is necessary because a PDF cannot simply inherit browser text
-     * rendering. Han characters can require different glyphs for Japanese,
-     * Simplified Chinese, Traditional Chinese, and Korean, while modern color
-     * emoji must be rasterized and embedded as image runs. The method also
-     * measures the resolved fonts and wraps the text to the annotation rectangle.
-     *
-     * The supplied spec is mutated in place: `fontFace`, `appearanceLines`, and
-     * `appearanceRuns` are replaced.
-     *
-     * `language` is optional. Kana and Hangul identify Japanese and Korean
-     * without a hint, and a browser automatically contributes
-     * `navigator.languages` / `navigator.language`. Pass an explicit BCP-47
-     * value when Han-only text is ambiguous, when the document language should
-     * override the browser locale, or when running on a server. Server
-     * integrations commonly use document metadata, the signed-in user's
-     * locale, or a parsed `Accept-Language` preference.
-     *
-     * @example
-     * ```ts
-     * const spec: PdfAnnotationSpec = {
-     *   subtype: 'freeText',
-     *   rect: { left: 40, bottom: 700, right: 260, top: 750 },
-     *   // Han-only text is ambiguous without a language or browser locale.
-     *   contents: '契約内容 😀',
-     *   fontSize: 14,
-     * };
-     *
-     * await document.prepareFreeTextAppearance(spec, { language: 'ja' });
-     * await document.pages[0]!.addAnnotation(spec);
-     * ```
-     *
-     * In a browser whose locale represents the intended reader, the explicit
-     * option can be omitted:
-     *
-     * @example Use the browser language automatically
-     * ```ts
-     * await document.prepareFreeTextAppearance(spec);
-     * ```
-     *
-     * The default services work in browsers and server runtimes: browser-native
-     * emoji is preferred, with a lazily downloaded, version-pinned Noto Emoji PNG
-     * fallback. `@pdfrx/viewer` also supplies its browser font resolver and exact
-     * Canvas measurement. Direct engine integrations can pass `services` for
-     * private or offline fonts/assets, persistent server caches, or a different
-     * text/emoji renderer.
-     *
-     * If `subtype` is not `freeText`, or `rect`/`contents` is absent, the method
-     * returns without changing the spec.
-     *
-     * For runtime behavior and complete customization examples, read the
-     * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
-     */
+   * Turns the Unicode `contents` of a FreeText spec into a stable PDF
+   * appearance. Call this after constructing the spec and before passing that
+   * same object to {@link PdfPage.addAnnotation} or
+   * {@link PdfPage.updateAnnotation}.
+   *
+   * This step is necessary because a PDF cannot simply inherit browser text
+   * rendering. Han characters can require different glyphs for Japanese,
+   * Simplified Chinese, Traditional Chinese, and Korean, while modern color
+   * emoji must be rasterized and embedded as image runs. The method also
+   * measures the resolved fonts and wraps the text to the annotation rectangle.
+   *
+   * The supplied spec is mutated in place: `fontFace`, `appearanceLines`, and
+   * `appearanceRuns` are replaced.
+   *
+   * `language` is optional. Kana and Hangul identify Japanese and Korean
+   * without a hint, and a browser automatically contributes
+   * `navigator.languages` / `navigator.language`. Pass an explicit BCP-47
+   * value when Han-only text is ambiguous, when the document language should
+   * override the browser locale, or when running on a server. Server
+   * integrations commonly use document metadata, the signed-in user's
+   * locale, or a parsed `Accept-Language` preference.
+   *
+   * @example
+   * ```ts
+   * const spec: PdfAnnotationSpec = {
+   *   subtype: 'freeText',
+   *   rect: { left: 40, bottom: 700, right: 260, top: 750 },
+   *   // Han-only text is ambiguous without a language or browser locale.
+   *   contents: '契約内容 😀',
+   *   fontSize: 14,
+   * };
+   *
+   * await document.prepareFreeTextAppearance(spec, { language: 'ja' });
+   * await document.pages[0]!.addAnnotation(spec);
+   * ```
+   *
+   * In a browser whose locale represents the intended reader, the explicit
+   * option can be omitted:
+   *
+   * @example Use the browser language automatically
+   * ```ts
+   * await document.prepareFreeTextAppearance(spec);
+   * ```
+   *
+   * The default services work in browsers and server runtimes: browser-native
+   * emoji is preferred, with a lazily downloaded, version-pinned Noto Emoji PNG
+   * fallback. `@pdfrx/viewer` also supplies its browser font resolver and exact
+   * Canvas measurement. Direct engine integrations can pass `services` for
+   * private or offline fonts/assets, persistent server caches, or a different
+   * text/emoji renderer.
+   *
+   * If `subtype` is not `freeText`, or `rect`/`contents` is absent, the method
+   * returns without changing the spec.
+   *
+   * For runtime behavior and complete customization examples, read the
+   * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
+   *
+   * @param spec - The spec value (PdfAnnotationSpec).
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
+   */
   async prepareFreeTextAppearance(
     spec: PdfAnnotationSpec,
     options: PdfFreeTextAppearanceOptions = {},
@@ -1019,6 +1148,10 @@ export class PdfDocument {
    * await doc.encodePdf();                             // now it becomes a PDF
    * ```
    * @throws if `pages` is empty, or a page belongs to a disposed document.
+   *
+   * @param pages - The pages to process, in document order.
+   * @param options - Options that customize the operation.
+   *
    */
   setPages(pages: readonly PdfPage[], options: PdfPageMutationOptions = {}): void {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1053,6 +1186,11 @@ export class PdfDocument {
    * Setting a page that is already present elsewhere reuses its logical
    * identity, so ID-based destinations cannot distinguish the two placements.
    * Use {@link PdfPage.duplicate}; see that method for examples and details.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param page - The page to process.
+   * @param options - Options that customize the operation.
+   *
    */
   setPage(pageNumber: number, page: PdfPage, options: PdfPageMutationOptions = {}): void {
     if (pageNumber < 1 || pageNumber > this._pages.length) {
@@ -1076,6 +1214,7 @@ export class PdfDocument {
    * pages from, so that disposing one of them can be reported instead of quietly
    * turning those pages blank.
    * @internal
+   *
    */
   private trackBorrowedDocuments(arranged: readonly PdfPage[]): void {
     const lenders = new Set<PdfDocument>();
@@ -1108,6 +1247,10 @@ export class PdfDocument {
    * Two caveats are inherent rather than fixable: a page placed twice can only
    * resolve to one position (the first wins), and a page removed from the
    * arrangement has no position at all, so destinations into it become `null`.
+   *
+   * @param physicalPageIndex - The 0-based physical page index.
+   * @returns The resulting number or `null`.
+   *
    */
   pageNumberOfSourceIndex(physicalPageIndex: number): number | null {
     if (!this.arrangementDirty) {
@@ -1125,6 +1268,10 @@ export class PdfDocument {
    * Resolves a destination against the current arrangement. When an ID occurs
    * more than once, one matching placement is selected; callers that need to
    * distinguish repeated pages should use {@link PdfPage.duplicate}.
+   *
+   * @param dest - The dest value (PdfDest).
+   * @returns The resolved PdfResolvedDest or `null`.
+   *
    */
   resolveDest(dest: PdfDest): PdfResolvedDest | null {
     const pageNumber = dest.by === 'pageNumber'
@@ -1141,6 +1288,11 @@ export class PdfDocument {
    * For `missingFonts`, queries already discovered while the document was
    * opening are replayed to the new listener on a microtask, so late
    * subscribers do not miss them.
+   *
+   * @param event - The event name to subscribe to.
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
    */
   addEventListener<E extends PdfDocumentEventName>(
     event: E,
@@ -1169,6 +1321,7 @@ export class PdfDocument {
   /**
    * Dispatches `payload` to every listener of `event`, isolating listener errors.
    * @internal
+   *
    */
   private emit<E extends PdfDocumentEventName>(event: E, payload: PdfDocumentEventMap[E]): void {
     const set = this.listeners.get(event);
@@ -1202,6 +1355,7 @@ export class PdfDocument {
    * Reserved for internal use only. Fires `loadComplete`; listen for the event
    * with {@link addEventListener} instead.
    * @internal
+   *
    */
   notifyLoadComplete(): void {
     this.emit('loadComplete', {});
@@ -1216,6 +1370,7 @@ export class PdfDocument {
    * missing and fires `missingFonts`; listen for the event with
    * {@link addEventListener} instead.
    * @internal
+   *
    */
   updateMissingFonts(missingFonts: WorkerFontQueries | undefined): void {
     if (!missingFonts) return;
@@ -1242,6 +1397,7 @@ export class PdfDocument {
    * Reserved for internal use only. Sends a raw worker command on behalf of this
    * document, rejecting once it is disposed.
    * @internal
+   *
    */
   sendCommand: WorkerCommunicator['sendCommand'] = (command, parameters, transfer) => {
     if (this._isDisposed) {
@@ -1256,6 +1412,7 @@ export class PdfDocument {
    * Queues a render on the worker's render queue (shared by every document the
    * engine opened, since the worker is the contended resource).
    * @internal
+   *
    */
   enqueueRender<T>(send: () => Promise<T>, token?: PdfPageRenderCancellationToken): Promise<T | null> {
     if (this._isDisposed) return Promise.resolve(null);
@@ -1266,6 +1423,9 @@ export class PdfDocument {
    * Closes the document and releases its native handles (and the form
    * environment). Idempotent; after disposal all page operations resolve to
    * `null`/empty or reject. Runs the `onDispose` hook supplied at open time.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async dispose(): Promise<void> {
     if (this._isDisposed) return;
@@ -1299,6 +1459,10 @@ export class PdfDocument {
   /**
    * True if `other` is a {@link PdfDocument} backed by the same native handle.
    * Note this compares handles, not document contents.
+   *
+   * @param other - The other value (unknown).
+   * @returns Whether the condition is satisfied.
+   *
    */
   isIdenticalDocumentHandle(other: unknown): boolean {
     return other instanceof PdfDocument && other.docHandle === this.docHandle;
@@ -1308,6 +1472,9 @@ export class PdfDocument {
    * Loads the logical document outline as a tree of {@link PdfOutlineNode}.
    * Returns the staged replacement when present; otherwise reads the physical
    * PDF outline from the worker.
+   *
+   * @returns The resolved Promise.
+   *
    */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     if (this.pendingOutline !== undefined) return cloneOutline(this.pendingOutline);
@@ -1320,6 +1487,9 @@ export class PdfDocument {
    * object mutation occurs until {@link materialize} or in-place
    * {@link encodePdf}. {@link createMaterializedCopy} applies the staged
    * outline only to the returned document and leaves this document pending.
+   *
+   * @param outline - The outline value.
+   *
    */
   setOutline(outline: readonly PdfOutlineNode[]): void {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1403,6 +1573,7 @@ export class PdfDocument {
    * Recursively converts a wire outline node to the public {@link PdfOutlineNode},
    * mapping physical page indices onto the current arrangement.
    * @internal
+   *
    */
   private outlineNodeFromWorker(node: WorkerOutlineNode): PdfOutlineNode {
     return {
@@ -1415,6 +1586,11 @@ export class PdfDocument {
   /**
    * Loads remaining pages in chunks of roughly `loadUnitDurationMs` worth of work.
    * `onPageLoadProgress` can return `false` to stop loading further pages.
+   *
+   * @param onPageLoadProgress - The callback invoked when the corresponding event occurs.
+   * @param loadUnitDurationMs - The loadUnitDurationMs value (number).
+   * @returns The resolved Promise.
+   *
    */
   async loadPagesProgressively(
     onPageLoadProgress?: (loadedPageCount: number, totalPageCount: number) => boolean | Promise<boolean>,
@@ -1449,7 +1625,13 @@ export class PdfDocument {
     });
   }
 
-  /** Reloads page metadata (e.g. after document modification). */
+  /**
+   * Reloads page metadata (e.g. after document modification).
+   *
+   * @param pageNumbersToReload - The pageNumbersToReload value (number[]).
+   * @returns The resulting Promise.
+   *
+   */
   async reloadPages(pageNumbersToReload?: number[]): Promise<void> {
     if (this._isDisposed) return;
     await this.synchronized(async () => {
@@ -1473,6 +1655,7 @@ export class PdfDocument {
    * position, and {@link setPages} may have made the two disagree — so each slot
    * is matched by its source page and re-based, preserving proxy overrides.
    * @internal
+   *
    */
   private replacePages(updated: PdfPage[]): void {
     if (updated.length === 0) return;
@@ -1498,6 +1681,7 @@ export class PdfDocument {
    * resizing the array. Not wrapped in {@link synchronized} — call from within a
    * synchronized block.
    * @internal
+   *
    */
   private async refreshAllPages(before: readonly PdfPageArrangementEntry[]): Promise<void> {
     const identities = this._pages.map((page) => page.id);
@@ -1537,6 +1721,7 @@ export class PdfDocument {
    * {@link loadOutline} or a raw worker operation). A no-op when the arrangement
    * is unmodified. After the rewrite the pages are reloaded and
    * `pageStatusChanged` fires.
+   *
    */
   private async materializePageArrangement(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1575,6 +1760,9 @@ export class PdfDocument {
    * physical PDF. In-place {@link encodePdf} calls this automatically.
    * {@link createMaterializedCopy} instead materializes only its returned
    * independent document.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async materialize(): Promise<void> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
@@ -1609,6 +1797,10 @@ export class PdfDocument {
    * outline, and Link-annotation edits. In-place encoding writes them into this
    * document with {@link materialize} first; copy and compact encoding
    * materialize only a temporary document.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async encodePdf(options: PdfEncodeOptions = {}): Promise<Uint8Array> {
     const mode = options.mode ?? 'in-place';
@@ -1649,6 +1841,10 @@ export class PdfDocument {
    * {@link materialize} first (or use in-place {@link encodePdf}) before
    * interpreting affected page-tree dictionaries, page references, outlines,
    * annotations, or other catalog data.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async getCatalogObject(
     options: { includeRawStreamData?: boolean } = {},
@@ -1670,6 +1866,11 @@ export class PdfDocument {
    * and can disagree with that graph. Call {@link materialize} first (or use
    * in-place {@link encodePdf}) before reading affected objects or retaining
    * object numbers for later edits.
+   *
+   * @param objectNumber - The object number.
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async getRawObject(
     objectNumber: number,
@@ -1752,6 +1953,11 @@ export class PdfDocument {
    * // The engine cannot infer which viewer caches the raw edit affects.
    * await viewer.refreshDocument();
    * ```
+   *
+   * @param edit - The edit value.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async editRawObjects(
     edit: (editor: PdfRawObjectEditor) => void | Promise<void>,
@@ -1841,6 +2047,10 @@ export class PdfDocument {
    * document-level outlines, metadata, name trees, signatures, or AcroForm
    * configuration. Pending logical page, outline, and Link edits are still
    * applied to the returned document.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async createMaterializedCopy(
     options: PdfMaterializedCopyOptions = {},
@@ -1917,6 +2127,9 @@ export class PdfDocument {
    * group — merge into one field). Returns an empty array for documents without
    * a form. Reflects live values, including ones changed by
    * {@link setFormFieldValue} or interactive editing.
+   *
+   * @returns The resolved Promise.
+   *
    */
   async loadFormFields(): Promise<PdfFormField[]> {
     if (this._isDisposed || !this.formHandle) return [];
@@ -1943,7 +2156,13 @@ export class PdfDocument {
     return fields;
   }
 
-  /** Returns the current value of the named field, or `undefined` if it is not found. */
+  /**
+   * Returns the current value of the named field, or `undefined` if it is not found.
+   *
+   * @param name - The name to look up.
+   * @returns The resolved Promise.
+   *
+   */
   async getFormFieldValue(name: string): Promise<string | undefined> {
     const fields = await this.loadFormFields();
     return fields.find((f) => f.name === name)?.value;
@@ -1957,6 +2176,12 @@ export class PdfDocument {
    * recomputed afterwards. Fires one `formFieldsChanged` event using the
    * supplied mutation origin (`api` by default). The interpretation of `value`
    * depends on the field type — see {@link PdfFormFieldValue}.
+   *
+   * @param name - The name to look up.
+   * @param value - The value to use.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async setFormFieldValue(
     name: string,
@@ -1970,6 +2195,11 @@ export class PdfDocument {
    * Applies several field values as one form transaction, runs calculations
    * once, and emits one `formFieldsChanged` event containing the complete
    * direct + calculated before/after diff.
+   *
+   * @param values - The values to use.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async setFormFieldValues(
     values: Readonly<Record<string, PdfFormFieldValue>>,
@@ -2055,6 +2285,10 @@ export class PdfDocument {
    * needed. If the same physical source page is placed more than once, its
    * shared annotations appear once per placement. Returns `[]` for a disposed
    * document.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async loadAnnotations(options: PdfLoadAnnotationsOptions = {}): Promise<PdfAnnotationObject[]> {
     if (this._isDisposed) return [];
@@ -2070,6 +2304,10 @@ export class PdfDocument {
    * {@link PdfPage.loadHighlights} for one page. Each result includes its
    * 1-based arrangement page number; imported and duplicate placements follow
    * the same semantics as {@link loadAnnotations}.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async loadHighlights(options: PdfLoadHighlightsOptions = {}): Promise<PdfHighlightObject[]> {
     const annotations = await this.loadAnnotations({ subtype: 'highlight' });
@@ -2234,6 +2472,9 @@ export class PdfDocument {
    * source page placed more than once is exported once, using its first
    * arrangement page number, because all placements share the same stable ids
    * and annotation state.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async exportAnnotations(): Promise<PdfAnnotationSnapshot> {
     const annotations = await this.loadUniqueSourceAnnotations();
@@ -2252,6 +2493,11 @@ export class PdfDocument {
    * `annotationsChanged` notification batch. The PDFium mutations are
    * sequential, not transactional: a later failure can leave earlier changes
    * applied.
+   *
+   * @param snapshot - The current immutable session snapshot.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async restoreAnnotations(snapshot: PdfAnnotationSnapshot, options: PdfRestoreAnnotationsOptions = {}): Promise<void> {
     if (snapshot.version !== 1) throw new Error(`Unsupported annotation snapshot version: ${String(snapshot.version)}`);
@@ -2295,6 +2541,11 @@ export class PdfDocument {
    * a notification batch, not a rollback transaction: a later failure can
    * leave earlier PDFium mutations applied. Use page methods for independent
    * local CRUD on one page.
+   *
+   * @param changes - The changes to apply.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async applyAnnotationChanges(changes: readonly PdfAnnotationChange[], options: PdfAnnotationMutationOptions = {}): Promise<void> {
     const applied: PdfAnnotationChange[] = [];
@@ -2369,6 +2620,7 @@ export class PdfDocument {
    * Loads each physical page once, using its first arrangement placement for
    * the snapshot page number. Duplicate placements share annotation state and
    * must not produce duplicate stable ids in export/restore bookkeeping.
+   *
    */
   private async loadUniqueSourceAnnotations(): Promise<PdfAnnotationObject[]> {
     const seen = new Set<string>();
@@ -2401,6 +2653,7 @@ export class PdfDocument {
    * Notifies every open arrangement that currently places one physical source
    * page. This keeps both the source document's viewer and all borrowing
    * document viewers current after page-scoped CRUD.
+   *
    */
   private emitAnnotationSourceChange(
     sourcePageIndex: number,
@@ -2445,6 +2698,7 @@ export class PdfDocument {
    * writes are dispatched to that page's owning document, so arrangements may
    * freely mix pages imported from other open documents.
    * @internal
+   *
    */
   private pageForAnnotation(pageNumber: number): PdfPage {
     const page = this._pages[pageNumber - 1];
@@ -2457,6 +2711,7 @@ export class PdfDocument {
    * the typed command). No calculation or event — the primitive shared by
    * {@link setFormFieldValue} and {@link runFormCalculations}.
    * @internal
+   *
    */
   private async sendSetFormFieldValue(name: string, value: PdfFormFieldValue): Promise<void> {
     let sourcePageIndex = this.formFieldSourceIndex.get(name);
@@ -2483,6 +2738,7 @@ export class PdfDocument {
   /**
    * Loads (once) and caches the document's parsed `AFSimple_Calculate` specs.
    * @internal
+   *
    */
   private async ensureCalcSpecs(): Promise<{ name: string; spec: FormCalcSpec }[]> {
     if (this.calcSpecs) return this.calcSpecs;
@@ -2503,6 +2759,7 @@ export class PdfDocument {
    * current field values and writes back the ones that changed. A JS-free stand-in
    * for the calculate actions this PDFium build cannot run.
    * @internal
+   *
    */
   private async runFormCalculations(): Promise<void> {
     const specs = await this.ensureCalcSpecs();
@@ -2533,6 +2790,7 @@ export class PdfDocument {
    * Reserved for internal use only (the viewer). Opens `page` for interactive
    * form editing so pointer/keyboard events can be routed to it. Idempotent.
    * @internal
+   *
    */
   async formOpenPage(page: PdfPage): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
@@ -2547,6 +2805,7 @@ export class PdfDocument {
   /**
    * Reserved for internal use only (the viewer). Closes an interactive form page.
    * @internal
+   *
    */
   async formClosePage(page: PdfPage): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
@@ -2562,6 +2821,7 @@ export class PdfDocument {
    * are in the page's bounding-box-relative PDF coordinates (same space as
    * {@link PdfFormField.rects}), y-up.
    * @internal
+   *
    */
   async formPointerEvent(
     page: PdfPage,
@@ -2586,6 +2846,7 @@ export class PdfDocument {
   /**
    * Reserved for internal use only (the viewer). Forwards a keyboard event.
    * @internal
+   *
    */
   async formKeyEvent(
     page: PdfPage,
@@ -2607,6 +2868,7 @@ export class PdfDocument {
   /**
    * Reserved for internal use only (the viewer). Clears the form keyboard focus.
    * @internal
+   *
    */
   async formKillFocus(): Promise<void> {
     if (this._isDisposed || !this.formHandle) return;
@@ -2617,6 +2879,7 @@ export class PdfDocument {
    * Serializes `action` against previously scheduled page-loading work so that
    * {@link loadPagesProgressively} and {@link reloadPages} never overlap.
    * @internal
+   *
    */
   private synchronized<T>(action: () => Promise<T>): Promise<T> {
     const run = this.loadLock.then(action);
@@ -2630,6 +2893,7 @@ export class PdfDocument {
   /**
    * Builds {@link PdfPermissions} from wire fields, or `null` for unencrypted docs.
    * @internal
+   *
    */
   private static parsePermissions(wire: WorkerDocument): PdfPermissions | null {
     if (wire.permissions >= 0 && wire.securityHandlerRevision >= 0) {
@@ -2644,6 +2908,7 @@ export class PdfDocument {
  * page number and/or rotation for an existing page without touching the
  * underlying PDF. Built internally while arranging or rotating pages.
  * @internal
+ *
  */
 export interface PdfPageProxySpec {
   readonly basePage: PdfPage;
@@ -2663,6 +2928,7 @@ export interface PdfPageProxySpec {
  * *proxy* page that changes the effective rotation while sharing the physical
  * page. {@link PdfDocument.setPages} similarly assigns placement and page
  * numbers from array order, which is what makes rearrangement free.
+ *
  */
 export class PdfPage {
   /** @internal */
@@ -2711,11 +2977,13 @@ export class PdfPage {
    *
    * For an imported page this differs from {@link sourceDocument}, which owns
    * the physical PDF page and its annotations and form widgets.
+   *
    */
   readonly document: PdfDocument;
   /**
    * Opaque logical-page identity. Placement and rotation proxies retain it;
    * {@link duplicate} creates a distinct identity without copying PDF data.
+   *
    */
   readonly id: PdfPageId;
   /** 1-based page number — the position in {@link PdfDocument.pages}, not in the PDF. */
@@ -2766,6 +3034,10 @@ export class PdfPage {
   /**
    * Whether `other` draws the same physical page of the same PDF, regardless of
    * page number or rotation. Useful for keying caches by content.
+   *
+   * @param other - The other value (PdfPage).
+   * @returns Whether the condition is satisfied.
+   *
    */
   hasSameSource(other: PdfPage): boolean {
     return other.sourceDocument.docHandle === this.sourceDocument.docHandle
@@ -2775,6 +3047,7 @@ export class PdfPage {
   /**
    * Identity of the physical page, independent of where it sits in the document.
    * Two pages with the same key produce the same text and links.
+   *
    */
   get sourceKey(): string {
     return `${this.sourceDocument.docHandle}:${this.sourcePageIndex}`;
@@ -2783,6 +3056,7 @@ export class PdfPage {
   /**
    * Identity of what {@link render} draws — {@link sourceKey} plus rotation.
    * Cache bitmaps under this and moving a page around costs nothing.
+   *
    */
   get renderKey(): string {
     return `${this.sourceKey}:${this.rotation}`;
@@ -2833,6 +3107,9 @@ export class PdfPage {
    *
    * The two destinations now follow separate placements, while both pages
    * continue to use the same underlying PDF page data.
+   *
+   * @returns The resulting PdfPage.
+   *
    */
   duplicate(): PdfPage {
     return new PdfPage(this.sourceDocument, {
@@ -2851,6 +3128,10 @@ export class PdfPage {
    * An ID-based destination is ambiguous when the same page identity occurs in
    * multiple arrangement slots. Use {@link duplicate} when destinations must
    * distinguish repeated placements; see that method for examples and details.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting PdfDest.
+   *
    */
   dest(options: PdfDestOptions): PdfDest {
     const common = { command: options.command, params: [...options.params] };
@@ -2885,6 +3166,10 @@ export class PdfPage {
    * const page = doc.pages[2]!;
    * doc.setPage(3, page.rotatedTo(90));
    * ```
+   *
+   * @param rotation - The clockwise page rotation, in 90-degree steps.
+   * @returns The resulting PdfPage.
+   *
    */
   rotatedTo(rotation: PdfPageRotation): PdfPage {
     if (rotation === this.rotation) return this;
@@ -2909,6 +3194,10 @@ export class PdfPage {
    * ```ts
    * doc.setPage(1, doc.pages[0]!.rotatedBy(90));
    * ```
+   *
+   * @param delta - The amount of change to apply.
+   * @returns The resulting PdfPage.
+   *
    */
   rotatedBy(delta: PdfPageRotation): PdfPage {
     return this.rotatedTo(pdfPageRotationFromIndex((this.rotation + delta) / 90));
@@ -2925,6 +3214,9 @@ export class PdfPage {
    * ```ts
    * doc.setPage(1, doc.pages[0]!.rotatedCW90());
    * ```
+   *
+   * @returns The resulting PdfPage.
+   *
    */
   rotatedCW90(): PdfPage {
     return this.rotatedBy(90);
@@ -2941,6 +3233,9 @@ export class PdfPage {
    * ```ts
    * doc.setPage(1, doc.pages[0]!.rotatedCCW90());
    * ```
+   *
+   * @returns The resulting PdfPage.
+   *
    */
   rotatedCCW90(): PdfPage {
     return this.rotatedBy(270);
@@ -2959,6 +3254,9 @@ export class PdfPage {
    * );
    * doc.setPages(pages);
    * ```
+   *
+   * @returns The resulting PdfPage.
+   *
    */
   rotated180(): PdfPage {
     return this.rotatedBy(180);
@@ -2968,6 +3266,7 @@ export class PdfPage {
    * Reserved for internal use only. Re-points this page at a freshly loaded
    * `base` (same physical page, new metadata) while keeping any proxy overrides.
    * @internal
+   *
    */
   rebasedOn(base: PdfPage): PdfPage {
     if (this.basePage === null) return new PdfPage(base.sourceDocument, base.toWorkerInfo(), this.id);
@@ -2984,6 +3283,7 @@ export class PdfPage {
    * Reserved for internal use only. This page as a source slot for
    * {@link PdfDocument.materialize}.
    * @internal
+   *
    */
   toAssembleSource(): PdfAssembleSource {
     return {
@@ -3007,6 +3307,10 @@ export class PdfPage {
    * Renders are queued (one in the worker at a time by default) rather than all
    * posted at once, so a render that is no longer wanted can be dropped before
    * it starts — see {@link createCancellationToken}.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The rendered Promise.
+   *
    */
   async render(options: PdfPageRenderOptions = {}): Promise<PdfImage | null> {
     if (this.sourceDocument.isDisposed) return null;
@@ -3053,6 +3357,9 @@ export class PdfPage {
    * scrolledAway.then(() => token.cancel());
    * const image = await page.render({ fullWidth, fullHeight, cancellationToken: token });
    * ```
+   *
+   * @returns The resulting PdfPageRenderCancellationToken.
+   *
    */
   createCancellationToken(): PdfPageRenderCancellationToken {
     return new PdfPageRenderCancellationToken();
@@ -3062,6 +3369,9 @@ export class PdfPage {
    * Loads the full text of the page with one bounding rect per UTF-16 code unit
    * (in page coordinates). Returns `null` if the document is disposed or the
    * page is not yet loaded (progressive loading).
+   *
+   * @returns The resolved Promise.
+   *
    */
   async loadText(): Promise<PdfPageRawText | null> {
     if (this.sourceDocument.isDisposed || !this.isLoaded) return null;
@@ -3081,6 +3391,10 @@ export class PdfPage {
    * `enableAutoLinkDetection` is true (the default), URL-like text detected in
    * the page content. Pending annotation-CRUD changes are returned instead of
    * physical Link annotations while retaining transient detected URLs.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async loadLinks(options: { enableAutoLinkDetection?: boolean } = {}): Promise<PdfLink[]> {
     const loaded = await this.loadLinksFromWorker(options);
@@ -3128,6 +3442,7 @@ export class PdfPage {
    * Stages the editable Link annotations on this logical page. Other annotation
    * subtypes and unsupported Link actions are preserved when
    * {@link PdfDocument.materialize} writes the pending change.
+   *
    */
   /** @internal Stages the complete Link list used by ordinary annotation CRUD. */
   stageLinkAnnotations(links: readonly PdfLinkSpec[]): void {
@@ -3222,6 +3537,9 @@ export class PdfPage {
    * fully-qualified name. Rects are in PDF page coordinates (bounding-box
    * relative, like {@link loadLinks}). Returns an empty array if the document is
    * disposed, has no form, or the page is not yet loaded.
+   *
+   * @returns The resolved Promise.
+   *
    */
   async loadFormFields(): Promise<PdfFormField[]> {
     if (this.sourceDocument.isDisposed || !this.isLoaded || !this.sourceDocument.formHandle) return [];
@@ -3238,6 +3556,10 @@ export class PdfPage {
    * but not widgets/popups), with rects and geometry in
    * bounding-box-relative page coordinates (like {@link loadLinks}). Returns an
    * empty array if the document is disposed or the page is not yet loaded.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async loadAnnotations(options: PdfLoadAnnotationsOptions = {}): Promise<PdfAnnotationObject[]> {
     if (this.sourceDocument.isDisposed || !this.isLoaded) return [];
@@ -3263,6 +3585,10 @@ export class PdfPage {
    * {@link PdfDocument.loadHighlights}, this performs no document-wide scan.
    * With `includeText`, only this page's text is loaded and intersected with the
    * highlight quadpoints.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async loadHighlights(options: PdfLoadHighlightsOptions = {}): Promise<PdfHighlightObject[]> {
     const annotations = await this.loadAnnotations({ subtype: 'highlight' });
@@ -3295,6 +3621,11 @@ export class PdfPage {
    * `annotationsChanged` event is emitted from the source document and every
    * open arrangement that places that source page. Duplicate placements share
    * annotation state and all of their page numbers are reported as affected.
+   *
+   * @param spec - The spec value (PdfAnnotationSpec).
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async addAnnotation(
     spec: PdfAnnotationSpec,
@@ -3315,6 +3646,11 @@ export class PdfPage {
    *   `@<index>` fallback; use
    *   that fallback only with the unchanged result from the most recent
    *   `loadAnnotations()` call because page mutations can change the index.
+   *
+   * @param spec - The spec value (PdfAnnotationSpec).
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async updateAnnotation(
     id: string,
@@ -3336,6 +3672,10 @@ export class PdfPage {
    *   page-local `@<index>` fallback instead. Such a fallback is positional,
    *   so use it before any other annotation is added, removed, or replaced on
    *   this page; otherwise load the annotations again and use the new id.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async removeAnnotation(id: string, options: PdfAnnotationMutationOptions = {}): Promise<boolean> {
     return this.document.removeAnnotationForPage(this, id, options);
@@ -3461,6 +3801,7 @@ export class PdfPage {
   /**
    * @internal Converts an annotation spec (bbox-relative page coords) to the wire
    * form (raw page coords) the worker's create/replace commands expect.
+   *
    */
   annotationSpecToWorker(spec: PdfAnnotationSpec): WorkerAnnotationSpec {
     return {
@@ -3573,6 +3914,7 @@ export class PdfPage {
    * Converts a wire rect (raw page coordinates) to a {@link PdfRect} relative to
    * the page's bounding-box origin ({@link bbLeft} / {@link bbBottom}).
    * @internal
+   *
    */
   private rectFromWorker(r: WorkerRect): PdfRect {
     return {
@@ -3587,6 +3929,7 @@ export class PdfPage {
    * Reserved for internal use only. Converts a wire rect to a bounding-box-relative
    * {@link PdfRect}; used by the form invalidate relay.
    * @internal
+   *
    */
   WorkerRectToPdf(r: WorkerRect): PdfRect {
     return this.rectFromWorker(r);
@@ -3597,6 +3940,7 @@ export class PdfPage {
    * (as used by {@link PdfFormField.rects} / {@link loadLinks}) back to raw PDF
    * page coordinates, which the form-fill `FORM_On*` input APIs expect.
    * @internal
+   *
    */
   toRawPagePoint(x: number, y: number): [number, number] {
     return [x + this.bbLeft, y + this.bbBottom];
@@ -3618,6 +3962,7 @@ function colorToWorker(c: PdfAnnotationColor): WorkerColor {
  * fully-qualified name (radio-group buttons and other same-named widgets merge),
  * converting rects to the page's bounding-box-relative coordinates.
  * @internal
+ *
  */
 function groupWorkerFormFields(WorkerFields: WorkerFormField[], page: PdfPage): PdfFormField[] {
   const byName = new Map<string, WorkerFormField[]>();
@@ -3639,6 +3984,7 @@ function groupWorkerFormFields(WorkerFields: WorkerFormField[], page: PdfPage): 
 /**
  * Builds one {@link PdfFormField} from a group of same-named wire widgets.
  * @internal
+ *
  */
 function buildFormField(group: WorkerFormField[], page: PdfPage): PdfFormField {
   const first = group[0]!;
@@ -3689,6 +4035,7 @@ function textOrientationFromWorker(
  * ID-based {@link PdfDest} for the corresponding logical page placement.
  * Returns `null` if the destination is absent or its physical page is not in
  * the arrangement (e.g. it was removed by {@link PdfDocument.setPages}).
+ *
  */
 function pdfDestFromWorker(dest: WorkerDest | null | undefined, doc: PdfDocument): PdfDest | null {
   if (!dest) return null;

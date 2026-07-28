@@ -19,6 +19,11 @@ export type ViewerSubscribe = (viewer: PdfrxViewer, onChange: () => void) => () 
  *
  * The viewer can be `null` (before {@link PdfViewerSurface} mounts, and during
  * SSR), so `getSnapshot` must handle that.
+ * @param subscribe - The subscribe value (ViewerSubscribe).
+ * @param getSnapshot - The getSnapshot value.
+ * @param isEqual - The isEqual value.
+ * @returns The current viewer snapshot state and actions.
+ *
  */
 export function useViewerSnapshot<T>(
   subscribe: ViewerSubscribe,
@@ -84,7 +89,14 @@ export function useViewerSnapshot<T>(
   return useSyncExternalStore(subscribeToStore, read, read);
 }
 
-/** Shallow object comparison, the usual `isEqual` for record-shaped snapshots. */
+/**
+ * Shallow object comparison, the usual `isEqual` for record-shaped snapshots.
+ *
+ * @param a - The a value (T).
+ * @param b - The b value (T).
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export function shallowEqual<T extends Record<string, unknown>>(a: T, b: T): boolean {
   if (Object.is(a, b)) return true;
   const keys = Object.keys(a);

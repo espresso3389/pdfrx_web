@@ -17,6 +17,7 @@ export interface PdfNavigation {
   /**
    * Navigates to a 1-based page number while preserving the current zoom mode.
    * Fit modes refit the target page; an explicit zoom preserves its factor.
+   *
    */
   goToPage: (pageNumber: number, duration?: number) => void;
   goToPreviousPage: (duration?: number) => void;
@@ -43,6 +44,8 @@ export interface PdfNavigation {
  *   </>
  * );
  * ```
+ * @returns The current pdf navigation state and actions.
+ *
  */
 export function usePdfNavigation(): PdfNavigation {
   const store = usePdfrxStore();

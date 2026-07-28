@@ -31,6 +31,9 @@ export interface PdfViewerSurfaceProps {
  *   <PdfViewerSurface style={{ flex: 1, minHeight: 0 }} />
  * </div>
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfViewerSurface({ className, style, onDragOver, onDrop }: PdfViewerSurfaceProps): ReactNode {
   const store = usePdfrxStore();

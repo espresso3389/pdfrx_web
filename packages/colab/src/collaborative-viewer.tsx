@@ -84,6 +84,9 @@ export interface CollaborativePdfViewerProps {
  * annotation, and form streams, and supplies import and collaborative export
  * UI. Hosts should import both `@pdfrx/react/styles.css` and
  * `@pdfrx/colab/styles.css` once.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function CollaborativePdfViewer({
   name,

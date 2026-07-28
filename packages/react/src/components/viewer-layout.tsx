@@ -23,6 +23,9 @@ export interface PdfViewerLayoutProps {
  * Standard responsive viewer chrome used by the ready-made viewer layouts.
  * The sidebar occupies document space on wide screens and becomes an overlay
  * drawer with a scrim below the standard 780px breakpoint.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfViewerLayout({
   className,

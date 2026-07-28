@@ -43,6 +43,11 @@ export interface CommittedFormOperation extends FormOperationRequest {
 /**
  * Validates and commits a form update against authoritative state.
  * @throws {@link FormProtocolError} for a stale revision or unknown source document.
+ * @param snapshot - The current immutable session snapshot.
+ * @param pages - The pages to process, in document order.
+ * @param request - The request value (FormOperationRequest).
+ * @returns The updated result.
+ *
  */
 export function commitFormOperation(
   snapshot: FormSessionSnapshot,
@@ -66,6 +71,10 @@ export function commitFormOperation(
 /**
  * Applies the next committed form event to a client-side snapshot.
  * @throws {@link FormProtocolError} when a revision is skipped or replayed.
+ * @param snapshot - The current immutable session snapshot.
+ * @param committed - The committed value (CommittedFormOperation).
+ * @returns The resulting FormSessionSnapshot.
+ *
  */
 export function applyCommittedFormOperation(
   snapshot: FormSessionSnapshot,
@@ -83,7 +92,13 @@ export function applyCommittedFormOperation(
 
 /** Protocol validation error carrying a machine-readable relay error code. */
 export class FormProtocolError extends Error {
-  /** Creates a form protocol failure with a relay-safe error code. */
+  /**
+   * Creates a form protocol failure with a relay-safe error code.
+   *
+   * @param code - The machine-readable error code.
+   * @param message - The human-readable error message.
+   *
+   */
   constructor(readonly code: string, message: string) {
     super(message);
     this.name = 'FormProtocolError';

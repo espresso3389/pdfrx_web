@@ -11,6 +11,8 @@ import { usePdfrxStore } from '../context.js';
  * rebuilt per document. Comparing `viewer.document` identity is not enough on
  * its own, because the reopen produces a genuinely different document that
  * shows the same file.
+ * @returns The current document generation state and actions.
+ *
  */
 export function useDocumentGeneration(): number {
   const store = usePdfrxStore();
@@ -26,6 +28,8 @@ export function useDocumentGeneration(): number {
  * document, so {@link useDocumentGeneration} does not move. Anything keyed by
  * page number — a thumbnail strip, an outline's destinations, a page counter —
  * has to be rebuilt on this instead.
+ * @returns The current pdf pages revision state and actions.
+ *
  */
 export function usePdfPagesRevision(): number {
   const store = usePdfrxStore();
@@ -41,6 +45,8 @@ export type PdfPageChangeListener = (event: PdfDocumentEventMap['pagesRearranged
  *
  * Remote adapters should ignore events whose `origin` is `remote`, `restore`,
  * `history`, or `materialize` to avoid echoing applied or internal changes.
+ * @param listener - The callback to invoke when the value changes.
+ *
  */
 export function usePdfPageChanges(listener: PdfPageChangeListener): void {
   const viewer = usePdfrxViewer();

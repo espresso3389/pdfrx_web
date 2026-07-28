@@ -3,7 +3,13 @@ import type { PdfDocument, PdfImageDecoder, PdfPasswordProvider, PdfrxEngine } f
 /** Image extensions used to classify typeless `File`s (e.g. from some drag sources). */
 const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|bmp|avif|apng|ico|svg|heic|heif)$/i;
 
-/** Whether a `File` looks like an image the runtime can decode (by MIME type, or extension when typeless). */
+/**
+ * Whether a `File` looks like an image the runtime can decode (by MIME type, or extension when typeless).
+ *
+ * @param file - The file value (File).
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true;
   return file.type === '' && IMAGE_EXTENSION.test(file.name);
@@ -14,6 +20,7 @@ export function isImageFile(file: File): boolean {
  * expose HEIC files as a file item with an empty MIME type and do not expose
  * the file name until `drop`, so an empty type must be admitted for later
  * classification by {@link isImageFile}.
+ *
  */
 export function dragMayContainImage(
   items: ArrayLike<Pick<DataTransferItem, 'kind' | 'type'>>,
@@ -26,12 +33,24 @@ export function dragMayContainImage(
   );
 }
 
-/** Whether a `File` looks like a PDF (by MIME type or `.pdf` extension). */
+/**
+ * Whether a `File` looks like a PDF (by MIME type or `.pdf` extension).
+ *
+ * @param file - The file value (File).
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export function isPdfFile(file: File): boolean {
   return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 }
 
-/** True when the byte stream contains the `%PDF-` signature near its start (within 1 KB). */
+/**
+ * True when the byte stream contains the `%PDF-` signature near its start (within 1 KB).
+ *
+ * @param bytes - The binary data to process.
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export function looksLikePdf(bytes: Uint8Array): boolean {
   const limit = Math.min(bytes.length - 5, 1024);
   for (let i = 0; i <= limit; i++) {
@@ -52,6 +71,11 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
  * Converts encoded image bytes into a one-page PDF (one page showing the image),
  * returning the PDF bytes. The temporary document is disposed before returning,
  * so the result is a standalone PDF that can be opened by any engine.
+ * @param engine - The engine value (PdfrxEngine).
+ * @param bytes - The binary data to process.
+ * @param imageDecoder - The imageDecoder value (PdfImageDecoder).
+ * @returns The resulting Promise.
+ *
  */
 export async function imageBytesToPdf(
   engine: PdfrxEngine,
@@ -77,6 +101,11 @@ export async function imageBytesToPdf(
  *
  * `passwordProvider` is consulted when the file is an encrypted PDF; images
  * never need it.
+ * @param engine - The engine value (PdfrxEngine).
+ * @param file - The file value (File).
+ * @param options - Options that customize the operation.
+ * @returns The resolved Promise.
+ *
  */
 export async function openFileAsDocument(
   engine: PdfrxEngine,

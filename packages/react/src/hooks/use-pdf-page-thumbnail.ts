@@ -11,6 +11,7 @@ export interface PdfPageThumbnail {
    * It is owned by the provider's shared cache and may be shown in several
    * places at once, so **do not mutate or reparent it** — draw it into your own
    * canvas (see {@link PdfThumbnailList} for the pattern).
+   *
    */
   canvas: HTMLCanvasElement | null;
   isLoading: boolean;
@@ -26,6 +27,8 @@ export interface PdfPageThumbnail {
  *
  * @param pageNumber - 1-based page number, or `null` to render nothing.
  * @param width - Thumbnail width in CSS pixels. Rendered at device pixel ratio.
+ * @returns The current pdf page thumbnail state and actions.
+ *
  */
 export function usePdfPageThumbnail(pageNumber: number | null, width = 120): PdfPageThumbnail {
   const store = usePdfrxStore();

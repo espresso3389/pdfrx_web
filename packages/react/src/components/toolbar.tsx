@@ -14,6 +14,7 @@ export interface PdfToolbarProps {
   /**
    * Which end of the bar the sidebar toggle sits on. Defaults to `'start'`;
    * pair it with a right-hand sidebar by passing `'end'`.
+   *
    */
   sidebarTogglePosition?: 'start' | 'end';
   /** Show the page number / total box. Defaults to `true`. */
@@ -53,6 +54,9 @@ export interface PdfToolbarProps {
  *   <button onClick={download}>Download</button>
  * </PdfToolbar>
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfToolbar({
   className,

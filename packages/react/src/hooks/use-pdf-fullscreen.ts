@@ -5,12 +5,20 @@ import { usePdfrxStore } from '../context.js';
 export interface PdfFullscreen {
   readonly isFullscreen: boolean;
   readonly isSupported: boolean;
+  /** @returns A promise that resolves after entering fullscreen, or immediately when unsupported. */
   enter(): Promise<void>;
+  /** @returns A promise that resolves after leaving fullscreen. */
   exit(): Promise<void>;
+  /** @returns A promise that resolves after the fullscreen state has been toggled. */
   toggle(): Promise<void>;
 }
 
-/** Controls browser fullscreen, targeting the complete `.pdfrx-app` when present. */
+/**
+ * Controls browser fullscreen, targeting the complete `.pdfrx-app` when present.
+ *
+ * @returns The current pdf fullscreen state and actions.
+ *
+ */
 export function usePdfFullscreen(): PdfFullscreen {
   const store = usePdfrxStore();
   const [isFullscreen, setIsFullscreen] = useState(false);

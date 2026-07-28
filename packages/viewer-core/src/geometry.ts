@@ -11,6 +11,7 @@
  *
  * All types are plain JSON-serializable objects so that test vectors can be
  * shared across implementations.
+ *
  */
 
 /** A 2D point/vector in view/document space (y-down). */
@@ -52,6 +53,7 @@ export interface PdfRect {
  *
  * `width`/`height` are the *visual* (already rotation-applied) page size in
  * points. `rotation` is the page's own rotation in 90-degree steps (0-3).
+ *
  */
 export interface PageGeometry {
   width: number;
@@ -63,7 +65,16 @@ export interface PageGeometry {
 // Rect (y-down) helpers
 // ---------------------------------------------------------------------------
 
-/** Construct a {@link Rect} from left/top plus width/height. */
+/**
+ * Construct a {@link Rect} from left/top plus width/height.
+ *
+ * @param left - The left coordinate.
+ * @param top - The top coordinate.
+ * @param width - The width.
+ * @param height - The height.
+ * @returns The resulting Rect.
+ *
+ */
 export const rectFromLTWH = (left: number, top: number, width: number, height: number): Rect => ({
   left,
   top,
@@ -71,7 +82,15 @@ export const rectFromLTWH = (left: number, top: number, width: number, height: n
   bottom: top + height,
 });
 
-/** Construct a {@link Rect} centered on `center` with the given size. */
+/**
+ * Construct a {@link Rect} centered on `center` with the given size.
+ *
+ * @param center - The center point.
+ * @param width - The width.
+ * @param height - The height.
+ * @returns The resulting Rect.
+ *
+ */
 export const rectFromCenter = (center: Offset, width: number, height: number): Rect => ({
   left: center.x - width / 2,
   top: center.y - height / 2,
@@ -79,28 +98,81 @@ export const rectFromCenter = (center: Offset, width: number, height: number): R
   bottom: center.y + height / 2,
 });
 
-/** Width of the rect (`right - left`). */
+/**
+ * Width of the rect (`right - left`).
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const rectWidth = (r: Rect): number => r.right - r.left;
-/** Height of the rect (`bottom - top`; y-down). */
+/**
+ * Height of the rect (`bottom - top`; y-down).
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const rectHeight = (r: Rect): number => r.bottom - r.top;
-/** Size (width/height) of the rect. */
+/**
+ * Size (width/height) of the rect.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting Size.
+ *
+ */
 export const rectSize = (r: Rect): Size => ({ width: rectWidth(r), height: rectHeight(r) });
-/** Center point of the rect. */
+/**
+ * Center point of the rect.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting Offset.
+ *
+ */
 export const rectCenter = (r: Rect): Offset => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
 
-/** Whether `p` lies inside `r`; left/top inclusive, right/bottom exclusive. */
+/**
+ * Whether `p` lies inside `r`; left/top inclusive, right/bottom exclusive.
+ *
+ * @param r - The rectangle to process.
+ * @param p - The point to process.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const rectContains = (r: Rect, p: Offset): boolean =>
   p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom;
 
-/** Whether `other` is fully contained within `r`. */
+/**
+ * Whether `other` is fully contained within `r`.
+ *
+ * @param r - The rectangle to process.
+ * @param other - The other value (Rect).
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const rectContainsRect = (r: Rect, other: Rect): boolean =>
   rectContains(r, { x: other.left, y: other.top }) && rectContains(r, { x: other.right, y: other.bottom });
 
-/** Whether `a` and `b` intersect with positive area. */
+/**
+ * Whether `a` and `b` intersect with positive area.
+ *
+ * @param a - The first rectangle.
+ * @param b - The second rectangle.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const rectOverlaps = (a: Rect, b: Rect): boolean =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
-/** Shift the rect by `(dx, dy)`. */
+/**
+ * Shift the rect by `(dx, dy)`.
+ *
+ * @param r - The rectangle to process.
+ * @param dx - The horizontal offset.
+ * @param dy - The vertical offset.
+ * @returns The resulting Rect.
+ *
+ */
 export const rectTranslate = (r: Rect, dx: number, dy: number): Rect => ({
   left: r.left + dx,
   top: r.top + dy,
@@ -108,7 +180,15 @@ export const rectTranslate = (r: Rect, dx: number, dy: number): Rect => ({
   bottom: r.bottom + dy,
 });
 
-/** Grow (or shrink, if negative) the rect on every side by `dx`/`dy`. */
+/**
+ * Grow (or shrink, if negative) the rect on every side by `dx`/`dy`.
+ *
+ * @param r - The rectangle to process.
+ * @param dx - The horizontal offset.
+ * @param dy - The vertical offset.
+ * @returns The resulting Rect.
+ *
+ */
 export const rectInflate = (r: Rect, dx: number, dy = dx): Rect => ({
   left: r.left - dx,
   top: r.top - dy,
@@ -116,7 +196,14 @@ export const rectInflate = (r: Rect, dx: number, dy = dx): Rect => ({
   bottom: r.bottom + dy,
 });
 
-/** Intersection of `a` and `b`; may be empty (see {@link rectIsEmpty}). */
+/**
+ * Intersection of `a` and `b`; may be empty (see {@link rectIsEmpty}).
+ *
+ * @param a - The first rectangle.
+ * @param b - The second rectangle.
+ * @returns The resulting Rect.
+ *
+ */
 export const rectIntersect = (a: Rect, b: Rect): Rect => ({
   left: Math.max(a.left, b.left),
   top: Math.max(a.top, b.top),
@@ -124,23 +211,60 @@ export const rectIntersect = (a: Rect, b: Rect): Rect => ({
   bottom: Math.min(a.bottom, b.bottom),
 });
 
-/** Whether the rect has non-positive width or height. */
+/**
+ * Whether the rect has non-positive width or height.
+ *
+ * @param r - The rectangle to process.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const rectIsEmpty = (r: Rect): boolean => r.left >= r.right || r.top >= r.bottom;
 
 // ---------------------------------------------------------------------------
 // PdfRect (y-up) helpers
 // ---------------------------------------------------------------------------
 
-/** Whether the PDF rect has non-positive width or height (`top <= bottom` since y-up). */
+/**
+ * Whether the PDF rect has non-positive width or height (`top <= bottom` since y-up).
+ *
+ * @param r - The rectangle to process.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const pdfRectIsEmpty = (r: PdfRect): boolean => r.left >= r.right || r.top <= r.bottom;
-/** Width of the PDF rect (`right - left`). */
+/**
+ * Width of the PDF rect (`right - left`).
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const pdfRectWidth = (r: PdfRect): number => r.right - r.left;
-/** Height of the PDF rect (`top - bottom`; y-up). */
+/**
+ * Height of the PDF rect (`top - bottom`; y-up).
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const pdfRectHeight = (r: PdfRect): number => r.top - r.bottom;
-/** Center point of the PDF rect. */
+/**
+ * Center point of the PDF rect.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfPoint.
+ *
+ */
 export const pdfRectCenter = (r: PdfRect): PdfPoint => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
 
-/** Smallest PDF rect enclosing both `a` and `b`. */
+/**
+ * Smallest PDF rect enclosing both `a` and `b`.
+ *
+ * @param a - The first PDF-space rectangle.
+ * @param b - The second PDF-space rectangle.
+ * @returns The resulting PdfRect.
+ *
+ */
 export const pdfRectMerge = (a: PdfRect, b: PdfRect): PdfRect => ({
   left: Math.min(a.left, b.left),
   top: Math.max(a.top, b.top),
@@ -148,17 +272,41 @@ export const pdfRectMerge = (a: PdfRect, b: PdfRect): PdfRect => ({
   bottom: Math.min(a.bottom, b.bottom),
 });
 
-/** Whether `(x, y)` lies inside `r`, expanded by `margin` on every side. */
+/**
+ * Whether `(x, y)` lies inside `r`, expanded by `margin` on every side.
+ *
+ * @param r - The rectangle to process.
+ * @param x - The horizontal coordinate.
+ * @param y - The vertical coordinate.
+ * @param margin - The additional margin.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const pdfRectContainsXy = (r: PdfRect, x: number, y: number, margin = 0): boolean =>
   x >= r.left - margin && x <= r.right + margin && y >= r.bottom - margin && y <= r.top + margin;
 
-/** Whether `p` lies inside `r`, expanded by `margin`. */
+/**
+ * Whether `p` lies inside `r`, expanded by `margin`.
+ *
+ * @param r - The rectangle to process.
+ * @param p - The point to process.
+ * @param margin - The additional margin.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const pdfRectContainsPoint = (r: PdfRect, p: PdfPoint, margin = 0): boolean =>
   pdfRectContainsXy(r, p.x, p.y, margin);
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
-/** Squared distance from `p` to the nearest point of `r`; 0 when inside. */
+/**
+ * Squared distance from `p` to the nearest point of `r`; 0 when inside.
+ *
+ * @param r - The rectangle to process.
+ * @param p - The point to process.
+ * @returns The converted number.
+ *
+ */
 export const pdfRectDistanceSquaredTo = (r: PdfRect, p: PdfPoint): number => {
   if (pdfRectContainsPoint(r, p)) return 0;
   const dx = clamp(p.x, r.left, r.right) - p.x;
@@ -166,11 +314,26 @@ export const pdfRectDistanceSquaredTo = (r: PdfRect, p: PdfPoint): number => {
   return dx * dx + dy * dy;
 };
 
-/** Whether `a` and `b` overlap with positive area (y-up variant). */
+/**
+ * Whether `a` and `b` overlap with positive area (y-up variant).
+ *
+ * @param a - The first PDF-space rectangle.
+ * @param b - The second PDF-space rectangle.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const pdfRectOverlaps = (a: PdfRect, b: PdfRect): boolean =>
   a.left < b.right && a.right > b.left && a.top > b.bottom && a.bottom < b.top;
 
-/** Grow (or shrink) the PDF rect on every side; `dx` widens, `dy` raises the top / lowers the bottom. */
+/**
+ * Grow (or shrink) the PDF rect on every side; `dx` widens, `dy` raises the top / lowers the bottom.
+ *
+ * @param r - The rectangle to process.
+ * @param dx - The horizontal offset.
+ * @param dy - The vertical offset.
+ * @returns The resulting PdfRect.
+ *
+ */
 export const pdfRectInflate = (r: PdfRect, dx: number, dy: number): PdfRect => ({
   left: r.left - dx,
   top: r.top + dy,
@@ -178,7 +341,15 @@ export const pdfRectInflate = (r: PdfRect, dx: number, dy: number): PdfRect => (
   bottom: r.bottom - dy,
 });
 
-/** Shift the PDF rect by `(dx, dy)`. */
+/**
+ * Shift the PDF rect by `(dx, dy)`.
+ *
+ * @param r - The rectangle to process.
+ * @param dx - The horizontal offset.
+ * @param dy - The vertical offset.
+ * @returns The resulting PdfRect.
+ *
+ */
 export const pdfRectTranslate = (r: PdfRect, dx: number, dy: number): PdfRect => ({
   left: r.left + dx,
   top: r.top + dy,
@@ -186,7 +357,15 @@ export const pdfRectTranslate = (r: PdfRect, dx: number, dy: number): PdfRect =>
   bottom: r.bottom + dy,
 });
 
-/** Bounding rect over `rects[start..end)`. Throws if the range is empty. */
+/**
+ * Bounding rect over `rects[start..end)`. Throws if the range is empty.
+ *
+ * @param rects - The rects value.
+ * @param start - The inclusive start index.
+ * @param end - The exclusive end index.
+ * @returns The resulting PdfRect.
+ *
+ */
 export function pdfRectBoundingRect(rects: readonly PdfRect[], start = 0, end = rects.length): PdfRect {
   let left = Infinity;
   let top = -Infinity;
@@ -217,6 +396,11 @@ const rawPageSize = (page: PageGeometry): { width: number; height: number } => {
  * Rotate a PDF rect by `rotation` 90-degree steps within `page`. `rotation`
  * is masked to 0-3; the page's raw (unrotated) dimensions are derived from its
  * visual size.
+ * @param r - The rectangle to process.
+ * @param rotation - The clockwise page rotation, in 90-degree steps.
+ * @param page - The page to process.
+ * @returns The resulting PdfRect.
+ *
  */
 export function pdfRectRotate(r: PdfRect, rotation: number, page: PageGeometry): PdfRect {
   const { width, height } = rawPageSize(page);
@@ -232,7 +416,15 @@ export function pdfRectRotate(r: PdfRect, rotation: number, page: PageGeometry):
   }
 }
 
-/** Inverse of {@link pdfRectRotate}. */
+/**
+ * Inverse of {@link pdfRectRotate}.
+ *
+ * @param r - The rectangle to process.
+ * @param rotation - The clockwise page rotation, in 90-degree steps.
+ * @param page - The page to process.
+ * @returns The resulting PdfRect.
+ *
+ */
 export function pdfRectRotateReverse(r: PdfRect, rotation: number, page: PageGeometry): PdfRect {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -247,7 +439,15 @@ export function pdfRectRotateReverse(r: PdfRect, rotation: number, page: PageGeo
   }
 }
 
-/** Rotate a PDF point by `rotation` 90-degree steps within `page`. */
+/**
+ * Rotate a PDF point by `rotation` 90-degree steps within `page`.
+ *
+ * @param p - The point to process.
+ * @param rotation - The clockwise page rotation, in 90-degree steps.
+ * @param page - The page to process.
+ * @returns The resulting PdfPoint.
+ *
+ */
 export function pdfPointRotate(p: PdfPoint, rotation: number, page: PageGeometry): PdfPoint {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -262,7 +462,15 @@ export function pdfPointRotate(p: PdfPoint, rotation: number, page: PageGeometry
   }
 }
 
-/** Inverse of {@link pdfPointRotate}. */
+/**
+ * Inverse of {@link pdfPointRotate}.
+ *
+ * @param p - The point to process.
+ * @param rotation - The clockwise page rotation, in 90-degree steps.
+ * @param page - The page to process.
+ * @returns The resulting PdfPoint.
+ *
+ */
 export function pdfPointRotateReverse(p: PdfPoint, rotation: number, page: PageGeometry): PdfPoint {
   const { width, height } = rawPageSize(page);
   switch (rotation & 3) {
@@ -291,7 +499,14 @@ export interface PageConversionOptions {
   rotation?: number;
 }
 
-/** Convert a PDF rect to y-down page-local coordinates. */
+/**
+ * Convert a PDF rect to y-down page-local coordinates.
+ *
+ * @param r - The rectangle to process.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The converted Rect.
+ *
+ */
 export function pdfRectToRect(r: PdfRect, { page, scaledPageSize, rotation }: PageConversionOptions): Rect {
   const rotated = pdfRectRotate(r, rotation ?? page.rotation, page);
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
@@ -303,13 +518,28 @@ export function pdfRectToRect(r: PdfRect, { page, scaledPageSize, rotation }: Pa
   };
 }
 
-/** Convert a PDF rect to document coordinates using the page's laid-out rect. */
+/**
+ * Convert a PDF rect to document coordinates using the page's laid-out rect.
+ *
+ * @param r - The rectangle to process.
+ * @param page - The page to process.
+ * @param pageRect - The page bounds in document coordinates.
+ * @returns The converted Rect.
+ *
+ */
 export function pdfRectToRectInDocument(r: PdfRect, page: PageGeometry, pageRect: Rect): Rect {
   const local = pdfRectToRect(r, { page, scaledPageSize: rectSize(pageRect) });
   return rectTranslate(local, pageRect.left, pageRect.top);
 }
 
-/** Convert a y-down page-local rect back to PDF page space. */
+/**
+ * Convert a y-down page-local rect back to PDF page space.
+ *
+ * @param rect - The rectangle to process.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The converted PdfRect.
+ *
+ */
 export function rectToPdfRect(rect: Rect, { page, scaledPageSize, rotation }: PageConversionOptions): PdfRect {
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
   return pdfRectRotateReverse(
@@ -324,14 +554,29 @@ export function rectToPdfRect(rect: Rect, { page, scaledPageSize, rotation }: Pa
   );
 }
 
-/** Convert a PDF point to y-down page-local coordinates. */
+/**
+ * Convert a PDF point to y-down page-local coordinates.
+ *
+ * @param p - The point to process.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The converted Offset.
+ *
+ */
 export function pdfPointToOffset(p: PdfPoint, { page, scaledPageSize, rotation }: PageConversionOptions): Offset {
   const rotated = pdfPointRotate(p, rotation ?? page.rotation, page);
   const scale = scaledPageSize === undefined ? 1.0 : scaledPageSize.height / page.height;
   return { x: rotated.x * scale, y: (page.height - rotated.y) * scale };
 }
 
-/** Convert a PDF point to document coordinates using the page's laid-out rect. */
+/**
+ * Convert a PDF point to document coordinates using the page's laid-out rect.
+ *
+ * @param p - The point to process.
+ * @param page - The page to process.
+ * @param pageRect - The page bounds in document coordinates.
+ * @returns The converted Offset.
+ *
+ */
 export function pdfPointToOffsetInDocument(p: PdfPoint, page: PageGeometry, pageRect: Rect): Offset {
   const rotated = pdfPointRotate(p, page.rotation, page);
   const scale = rectHeight(pageRect) / page.height;
@@ -341,7 +586,14 @@ export function pdfPointToOffsetInDocument(p: PdfPoint, page: PageGeometry, page
   };
 }
 
-/** Convert a y-down page-local point back to PDF page space. */
+/**
+ * Convert a y-down page-local point back to PDF page space.
+ *
+ * @param o - The o value (Offset).
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The converted PdfPoint.
+ *
+ */
 export function offsetToPdfPoint(o: Offset, { page, scaledPageSize, rotation }: PageConversionOptions): PdfPoint {
   const scale = scaledPageSize === undefined ? 1.0 : page.height / scaledPageSize.height;
   return pdfPointRotateReverse(
@@ -351,7 +603,14 @@ export function offsetToPdfPoint(o: Offset, { page, scaledPageSize, rotation }: 
   );
 }
 
-/** Convert a y-down page-local displacement into a PDF-space displacement, including page rotation. */
+/**
+ * Convert a y-down page-local displacement into a PDF-space displacement, including page rotation.
+ *
+ * @param delta - The amount of change to apply.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PdfPoint.
+ *
+ */
 export function offsetDeltaToPdfDelta(delta: Offset, options: PageConversionOptions): PdfPoint {
   const origin = offsetToPdfPoint({ x: 0, y: 0 }, options);
   const endpoint = offsetToPdfPoint(delta, options);
@@ -361,6 +620,11 @@ export function offsetDeltaToPdfDelta(delta: Offset, options: PageConversionOpti
 /**
  * Convert a document-space point to PDF page space using the page's laid-out
  * rect. Inverse of {@link pdfPointToOffsetInDocument}.
+ * @param o - The o value (Offset).
+ * @param page - The page to process.
+ * @param pageRect - The page bounds in document coordinates.
+ * @returns The converted PdfPoint.
+ *
  */
 export function offsetToPdfPointInDocument(o: Offset, page: PageGeometry, pageRect: Rect): PdfPoint {
   const scale = page.height / rectHeight(pageRect);

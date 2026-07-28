@@ -4,6 +4,7 @@
  * Everything here is pure: pointer geometry in, selection state out. The
  * caller (the viewer shell) owns pointer capture, page-text loading, and
  * painting.
+ *
  */
 
 import {
@@ -34,15 +35,35 @@ export interface SelectionPoint {
   index: number;
 }
 
-/** Whether the point references an existing character on its page. */
+/**
+ * Whether the point references an existing character on its page.
+ *
+ * @param p - The point to process.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const selectionPointIsValid = (p: SelectionPoint): boolean =>
   p.index >= 0 && p.index < p.text.charRects.length;
 
-/** Whether `a <= b`, ordered by (pageNumber, index). */
+/**
+ * Whether `a <= b`, ordered by (pageNumber, index).
+ *
+ * @param a - The a value (SelectionPoint).
+ * @param b - The b value (SelectionPoint).
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const selectionPointLE = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index <= b.index;
 
-/** Whether `a < b`, strict ordering by (pageNumber, index). */
+/**
+ * Whether `a < b`, strict ordering by (pageNumber, index).
+ *
+ * @param a - The a value (SelectionPoint).
+ * @param b - The b value (SelectionPoint).
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const selectionPointLT = (a: SelectionPoint, b: SelectionPoint): boolean =>
   a.text.pageNumber !== b.text.pageNumber ? a.text.pageNumber < b.text.pageNumber : a.index < b.index;
 
@@ -59,7 +80,13 @@ export interface SelectionAnchor {
   index: number;
 }
 
-/** The apex of the anchor's rect, used for handle placement. */
+/**
+ * The apex of the anchor's rect, used for handle placement.
+ *
+ * @param anchor - The anchor value (SelectionAnchor).
+ * @returns The resulting Offset.
+ *
+ */
 export function anchorPoint(anchor: SelectionAnchor): Offset {
   const { rect, direction, type } = anchor;
   switch (direction) {
@@ -76,6 +103,7 @@ export function anchorPoint(anchor: SelectionAnchor): Offset {
  * What a page contributes to selection geometry: its geometry, laid-out rect,
  * and (if already loaded) its structured text. Pages whose text is not loaded
  * yet simply cannot be hit.
+ *
  */
 export interface SelectablePage {
   page: PageGeometry;
@@ -87,6 +115,11 @@ export interface SelectablePage {
  * Find the character nearest to a document position. Exact hits win;
  * otherwise the closest character within `hitTestMargin` (document units) is
  * used.
+ * @param point - The point to process.
+ * @param pages - The pages to process, in document order.
+ * @param hitTestMargin - The hitTestMargin value (number).
+ * @returns The resolved SelectionPoint or `null`.
+ *
  */
 export function findTextAndIndexForPoint(
   point: Offset,
@@ -132,6 +165,11 @@ export type PageGeometryResolver = (pageNumber: number) => { page: PageGeometry;
 /**
  * Compute the A/B anchors for the current selection ends. Handles both
  * same-page and cross-page selections.
+ * @param selA - The selA value (SelectionPoint).
+ * @param selB - The selB value (SelectionPoint).
+ * @param resolvePage - The resolvePage value (PageGeometryResolver).
+ * @returns The resulting SelectionAnchors.
+ *
  */
 export function computeSelectionAnchors(
   selA: SelectionPoint,
@@ -195,6 +233,10 @@ export interface WordSelection {
 
 /**
  * Select the fragment (word) under the given document position, if any.
+ * @param point - The point to process.
+ * @param pages - The pages to process, in document order.
+ * @returns The resulting WordSelection or `null`.
+ *
  */
 export function selectWordAt(point: Offset, pages: readonly SelectablePage[]): WordSelection | null {
   for (const { page, pageRect, text } of pages) {
@@ -228,6 +270,11 @@ export function selectWordAt(point: Offset, pages: readonly SelectablePage[]): W
  *
  * `getText` resolves loaded page texts by 1-based page number; unloaded pages
  * between the endpoints are skipped.
+ * @param selA - The selA value (SelectionPoint).
+ * @param selB - The selB value (SelectionPoint).
+ * @param getText - The getText value.
+ * @returns The resolved [].
+ *
  */
 export function getSelectedRanges(
   selA: SelectionPoint,
@@ -254,7 +301,13 @@ export function getSelectedRanges(
   return ranges;
 }
 
-/** Compose the plain text of the given ranges (for clipboard). */
+/**
+ * Compose the plain text of the given ranges (for clipboard).
+ *
+ * @param ranges - The ranges value.
+ * @returns The resulting string.
+ *
+ */
 export function composeSelectedText(ranges: readonly { pageText: PdfPageText; start: number; end: number }[]): string {
   return ranges.map((r) => r.pageText.fullText.substring(r.start, r.end)).join('\n');
 }

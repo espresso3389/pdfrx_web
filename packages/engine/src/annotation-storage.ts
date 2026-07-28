@@ -2,14 +2,26 @@ import type { PdfAnnotationSnapshot } from './types.js';
 
 const BYTES_TAG = 'pdfrx:bytes';
 
-/** Serializes an annotation snapshot to JSON, including FreeText fallback image bytes. */
+/**
+ * Serializes an annotation snapshot to JSON, including FreeText fallback image bytes.
+ *
+ * @param snapshot - The current immutable session snapshot.
+ * @returns The resulting string.
+ *
+ */
 export function serializeAnnotationSnapshot(snapshot: PdfAnnotationSnapshot): string {
   return JSON.stringify(snapshot, (_key, value: unknown) =>
     value instanceof Uint8Array ? { [BYTES_TAG]: bytesToBase64(value) } : value,
   );
 }
 
-/** Parses JSON produced by {@link serializeAnnotationSnapshot}. */
+/**
+ * Parses JSON produced by {@link serializeAnnotationSnapshot}.
+ *
+ * @param json - The JSON value to parse.
+ * @returns The resulting PdfAnnotationSnapshot.
+ *
+ */
 export function deserializeAnnotationSnapshot(json: string): PdfAnnotationSnapshot {
   const value = JSON.parse(json, (_key, item: unknown) => {
     if (isBytesEnvelope(item)) return base64ToBytes(item[BYTES_TAG]);

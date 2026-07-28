@@ -36,6 +36,7 @@ const HTMLElementBase: typeof HTMLElement =
  *   definePdfrxViewerElement();
  * </script>
  * ```
+ *
  */
 export class PdfrxViewerElement extends HTMLElementBase {
   static observedAttributes = ['src'];
@@ -88,7 +89,14 @@ export class PdfrxViewerElement extends HTMLElementBase {
     this.#viewer = null;
   }
 
-  /** Reloads the document when the observed `src` attribute changes to a new value. */
+  /**
+   * Reloads the document when the observed `src` attribute changes to a new value.
+   *
+   * @param name - The name to look up.
+   * @param oldValue - The oldValue value (string or ).
+   * @param newValue - The newValue value (string or ).
+   *
+   */
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (name === 'src' && this.#viewer && newValue && newValue !== oldValue) {
       void this.#load(newValue);
@@ -117,6 +125,7 @@ export class PdfrxViewerElement extends HTMLElementBase {
  * definePdfrxViewerElement();
  * // then: <pdfrx-viewer src="doc.pdf" wasm-modules-url="pdfium/"></pdfrx-viewer>
  * ```
+ *
  */
 export function definePdfrxViewerElement(tagName = 'pdfrx-viewer'): void {
   if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {

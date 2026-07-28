@@ -5,6 +5,7 @@ import { defaultPdfrxStrings, type PdfrxStrings } from './strings.js';
  * fallback for any string a translation omits, and for any locale not listed
  * here. Chinese is split by script: `zh-Hans` (Simplified), `zh-Hant`
  * (Traditional).
+ *
  */
 export type PdfrxLocale = 'en' | 'ja' | 'zh-Hans' | 'zh-Hant' | 'fr' | 'de';
 
@@ -470,6 +471,7 @@ const de: Partial<PdfrxStrings> = {
  * Every built-in language as a complete {@link PdfrxStrings}. Each is the
  * translation merged over English, so a key a translation happens to miss still
  * renders in English rather than blank.
+ *
  */
 export const builtinPdfrxStrings: Record<PdfrxLocale, PdfrxStrings> = {
   en: defaultPdfrxStrings,
@@ -515,6 +517,8 @@ function browserLocales(): readonly string[] {
  * @param requested - One or more BCP-47 tags in priority order (e.g. `'ja'`,
  *   `['fr-CA', 'fr', 'en']`). Pass `undefined` to auto-detect from the browser
  *   (`navigator.languages`).
+ * @returns The resolved PdfrxStrings.
+ *
  */
 export function resolvePdfrxStrings(requested: string | readonly string[] | undefined): PdfrxStrings {
   const tags = requested === undefined ? browserLocales() : typeof requested === 'string' ? [requested] : requested;

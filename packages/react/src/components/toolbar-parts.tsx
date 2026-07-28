@@ -12,7 +12,13 @@ export interface PdfControlProps {
   style?: CSSProperties;
 }
 
-/** A "page / total" button that opens page-number and slider navigation. */
+/**
+ * A "page / total" button that opens page-number and slider navigation.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNode {
   const { currentPageNumber, pageCount, goToPage } = usePdfNavigation();
   const [open, setOpen] = useState(false);
@@ -117,7 +123,13 @@ export function PdfPageIndicator({ className, style }: PdfControlProps): ReactNo
   );
 }
 
-/** Zoom out / current percentage / zoom in, plus fit-page and fit-width buttons. */
+/**
+ * Zoom out / current percentage / zoom in, plus fit-page and fit-width buttons.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfZoomControls({ className, style }: PdfControlProps): ReactNode {
   const { zoom, zoomMode, zoomIn, zoomOut, canZoomIn, canZoomOut, fitToPage, fitToWidth } = usePdfZoom();
   const strings = usePdfrxStrings();
@@ -156,7 +168,13 @@ export function PdfZoomControls({ className, style }: PdfControlProps): ReactNod
   );
 }
 
-/** A print button that disables itself while pages are being rasterized. */
+/**
+ * A print button that disables itself while pages are being rasterized.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfPrintButton({ className, style }: PdfControlProps): ReactNode {
   const { print, isPrinting, isSupported, isAllowed } = usePdfPrint();
   const { pageCount } = usePdfDocument();
@@ -179,6 +197,9 @@ export function PdfPrintButton({ className, style }: PdfControlProps): ReactNode
  * A thin progress bar across the top while a document downloads. Renders
  * nothing when idle, and becomes indeterminate when the server sends no
  * `Content-Length`.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfLoadingBar({ className, style }: PdfControlProps): ReactNode {
   const { isLoading, progress } = usePdfDocument();

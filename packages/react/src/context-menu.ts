@@ -29,6 +29,7 @@ export interface PdfContextMenuHelpers {
  * the viewer and the active strings, so you can reuse {@link buildDefaultContextMenu}
  * and add your own items. Return the menu element (the viewer positions and
  * dismisses it) or `null`/`undefined` for no menu.
+ *
  */
 export type PdfReactContextMenuBuilder = (
   context: ContextMenuContext,
@@ -46,6 +47,11 @@ export type PdfReactContextMenuBuilder = (
  *
  * Apps that want different items can pass their own `contextMenuBuilder` prop
  * instead (it wins over this default).
+ * @param viewer - The viewer value (PdfrxViewer).
+ * @param strings - The strings value (PdfrxStrings).
+ * @param context - The context value (ContextMenuContext).
+ * @returns The resulting HTMLElement.
+ *
  */
 export function buildDefaultContextMenu(
   viewer: PdfrxViewer,

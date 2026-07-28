@@ -9,6 +9,7 @@ import {
  * Strict-revision page-arrangement protocol shared by collaboration clients
  * and authoritative relays.
  * @packageDocumentation
+ *
  */
 
 /** Persisted or transferred authoritative page state. */
@@ -48,6 +49,7 @@ export class PageProtocolError extends Error {
   /**
    * @param code Stable category suitable for relay error envelopes.
    * @param message Human-readable diagnostic text.
+   *
    */
   constructor(
     readonly code: PageProtocolErrorCode,
@@ -75,6 +77,8 @@ const assertRequest = (request: PageOperationRequest): void => {
  * Validates revision and placement invariants in an authoritative snapshot.
  * @throws {@link PageProtocolError} for an invalid revision.
  * @throws `PageArrangementError` when placement identities or sources are invalid.
+ * @param snapshot - The current immutable session snapshot.
+ *
  */
 export function validatePageSessionSnapshot(snapshot: PageSessionSnapshot): void {
   assertRevision(snapshot.revision, 'revision');
@@ -87,6 +91,9 @@ export function validatePageSessionSnapshot(snapshot: PageSessionSnapshot): void
  *
  * @returns The next immutable snapshot and the corresponding sequenced event.
  * @throws {@link PageProtocolError} when the request is malformed or stale.
+ * @param snapshot - The current immutable session snapshot.
+ * @param request - The request value (PageOperationRequest).
+ *
  */
 export function commitPageOperation(
   snapshot: PageSessionSnapshot,
@@ -111,6 +118,10 @@ export function commitPageOperation(
 /**
  * Applies the next relay event on a client or while replaying an operation log.
  * @throws {@link PageProtocolError} if the event does not immediately follow the snapshot.
+ * @param snapshot - The current immutable session snapshot.
+ * @param committed - The committed value (CommittedPageOperation).
+ * @returns The resulting PageSessionSnapshot.
+ *
  */
 export function applyCommittedPageOperation(
   snapshot: PageSessionSnapshot,

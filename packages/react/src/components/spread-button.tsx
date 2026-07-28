@@ -5,7 +5,12 @@ import { usePdfrxStrings } from '../strings.js';
 import { shallowEqual, useViewerSnapshot } from '../hooks/use-viewer-snapshot.js';
 import { IconSpread } from './icons.js';
 
-/** Cycles single-page, paired, and cover-first book layouts. */
+/**
+ * Cycles single-page, paired, and cover-first book layouts.
+ *
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfSpreadButton(): ReactNode {
   const store = usePdfrxStore();
   const strings = usePdfrxStrings();

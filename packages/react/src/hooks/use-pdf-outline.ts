@@ -26,6 +26,8 @@ export interface PdfOutlineState {
  * if (isLoading) return <p>Loading…</p>;
  * return outline?.map((n) => <button key={n.title} onClick={() => goToDest(n.dest)}>{n.title}</button>);
  * ```
+ * @returns The current pdf outline state and actions.
+ *
  */
 export function usePdfOutline(): PdfOutlineState {
   const viewer = usePdfrxViewer();

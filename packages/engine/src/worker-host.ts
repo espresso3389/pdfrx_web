@@ -5,6 +5,7 @@ export interface PdfWorkerUrls {
   /**
    * Absolute URL of `pdfium.wasm`. The worker script reads it from the global
    * `pdfiumWasmUrl`, which the bootstrap must define before running the script.
+   *
    */
   wasmUrl: string;
 }
@@ -12,8 +13,15 @@ export interface PdfWorkerUrls {
 /**
  * The part of the Web Worker API this engine uses. A browser `Worker` satisfies
  * it as is; on hosts without one (Node) the engine wraps their equivalent.
+ *
  */
 export interface PdfWorkerLike {
+  /**
+   * Sends a protocol message to the worker.
+   *
+   * @param message - The structured-cloneable message.
+   * @param transfer - Transferable objects whose ownership moves to the worker.
+   */
   postMessage(message: unknown, transfer: Transferable[]): void;
   terminate(): void;
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -33,6 +41,7 @@ const host = globalThis as HostGlobals;
  * Whether the host is a browser (or a browser-like worker scope), which decides
  * both how relative URLs resolve and how the worker is started.
  * @internal
+ *
  */
 function isBrowser(): boolean {
   return typeof host.document?.baseURI === 'string';
@@ -47,6 +56,7 @@ function isBrowser(): boolean {
  * rewritten `import.meta.url` to point at the bundle by then, so callers there
  * say where they put them.
  * @internal
+ *
  */
 export function defaultWasmModulesUrl(): string {
   if (isBrowser()) {
@@ -61,6 +71,7 @@ export function defaultWasmModulesUrl(): string {
  * What relative URLs resolve against when the caller does not say: the document
  * base URL in a browser, the current directory on a server runtime.
  * @internal
+ *
  */
 export function defaultBaseUrl(): string {
   const base = host.document?.baseURI;
@@ -78,6 +89,7 @@ export function defaultBaseUrl(): string {
  * browser, a module worker on Bun/Deno (no `importScripts` there), or a
  * `node:worker_threads` worker on Node.
  * @internal
+ *
  */
 export function createDefaultWorker(urls: PdfWorkerUrls): PdfWorkerLike | Promise<PdfWorkerLike> {
   if (typeof host.Worker === 'function') {
@@ -91,6 +103,7 @@ export function createDefaultWorker(urls: PdfWorkerUrls): PdfWorkerLike | Promis
  * script. Going through a blob sidesteps the same-origin restriction on the
  * `Worker` constructor, so the assets may live on any origin.
  * @internal
+ *
  */
 function createClassicWorker({ workerUrl, wasmUrl }: PdfWorkerUrls): PdfWorkerLike {
   const bootstrap = `const pdfiumWasmUrl=${JSON.stringify(wasmUrl)};importScripts(${JSON.stringify(workerUrl)});`;
@@ -107,6 +120,7 @@ function createClassicWorker({ workerUrl, wasmUrl }: PdfWorkerUrls): PdfWorkerLi
  * bootstrap fetches the classic worker script and evaluates it. The blob URL is
  * not revoked because the worker starts asynchronously there.
  * @internal
+ *
  */
 function createModuleWorker({ workerUrl, wasmUrl }: PdfWorkerUrls): PdfWorkerLike {
   const bootstrap = `
@@ -124,6 +138,7 @@ globalThis.pdfiumWasmUrl = ${JSON.stringify(wasmUrl)};
  * to the classic worker script, and teaches `fetch` about `file:` URLs, which
  * Node's own refuses and the wasm is commonly loaded from.
  * @internal
+ *
  */
 const NODE_BOOTSTRAP = `
 import { parentPort, workerData } from 'node:worker_threads';
@@ -164,6 +179,7 @@ for (const data of queued) globalThis.onmessage({ data });
  * assembled at runtime to keep bundlers targeting the browser from trying to
  * resolve it.
  * @internal
+ *
  */
 async function createNodeWorker(urls: PdfWorkerUrls): Promise<PdfWorkerLike> {
   const specifier = 'node:worker' + '_threads';

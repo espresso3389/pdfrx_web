@@ -37,6 +37,8 @@ export interface PdfSelection {
  * if (isEmpty) return null;
  * return <button onClick={() => void copy()}>Copy “{text.slice(0, 20)}…”</button>;
  * ```
+ * @returns The current pdf selection state and actions.
+ *
  */
 export function usePdfSelection(): PdfSelection {
   const store = usePdfrxStore();

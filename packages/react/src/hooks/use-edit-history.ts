@@ -15,6 +15,8 @@ export interface PdfEditHistory {
  * Accesses the viewer's single chronological annotation/form/page-edit history.
  * Call the returned `clearHistory` before intentionally materializing the live
  * pending document edits with `PdfDocument.materialize()` or `encodePdf()`.
+ * @returns The current edit history state and actions.
+ *
  */
 export function useEditHistory(): PdfEditHistory {
   const viewer = usePdfrxViewer();

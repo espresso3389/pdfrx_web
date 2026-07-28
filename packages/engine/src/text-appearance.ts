@@ -12,12 +12,32 @@ export interface PdfEmojiImage {
 
 /** Loads an encoded emoji asset for one complete grapheme cluster. */
 export interface PdfEmojiAssetSource {
+  /**
+   * Loads the encoded image bytes for a grapheme.
+   *
+   * @param grapheme - The complete Unicode grapheme cluster to load.
+   * @param signal - An optional abort signal for cancelling the load.
+   * @returns The encoded image bytes, or `null` when no asset is available.
+   */
   load(grapheme: string, signal?: AbortSignal): Promise<Uint8Array | null>;
 }
 
 /** Cache shared by downloadable text-appearance assets. */
 export interface PdfTextAssetCache {
+  /**
+   * Reads an asset without exposing the cache's mutable backing storage.
+   *
+   * @param key - The stable asset key.
+   * @returns A copy of the cached bytes, or `null` on a cache miss.
+   */
   get(key: string): Promise<Uint8Array | null>;
+  /**
+   * Stores a copy of an asset.
+   *
+   * @param key - The stable asset key.
+   * @param data - The bytes to cache.
+   * @returns A promise that resolves after the write completes.
+   */
   put(key: string, data: Uint8Array): Promise<void>;
 }
 
@@ -55,6 +75,7 @@ export interface PdfFreeTextAppearanceOptions {
    * Server integrations should pass the document language, the signed-in
    * user's locale, or a parsed `Accept-Language` preference. The first
    * applicable `ja`, `ko`, or `zh` hint wins.
+   *
    */
   language?: string | readonly string[];
   services?: PdfTextAppearanceServices;
@@ -67,6 +88,7 @@ export interface PdfNotoEmojiSourceOptions {
    * Directory containing Noto's `emoji_u<codepoints>.png` files.
    * Defaults to a version-pinned jsDelivr URL; point this at a local mirror for
    * offline or restricted environments.
+   *
    */
   baseUrl?: string;
   cache?: PdfTextAssetCache;
@@ -92,10 +114,12 @@ export const defaultNotoEmojiPngBaseUrl =
 export class PdfMemoryTextAssetCache implements PdfTextAssetCache {
   readonly #entries = new Map<string, Uint8Array>();
 
+  /** @inheritdoc */
   async get(key: string): Promise<Uint8Array | null> {
     return this.#entries.get(key)?.slice() ?? null;
   }
 
+  /** @inheritdoc */
   async put(key: string, data: Uint8Array): Promise<void> {
     this.#entries.set(key, data.slice());
   }
@@ -106,10 +130,16 @@ export class PdfIndexedDbTextAssetCache implements PdfTextAssetCache {
   readonly #databaseName: string;
   #database: Promise<IDBDatabase> | null = null;
 
+  /**
+   * Creates a cache backed by a browser IndexedDB database.
+   *
+   * @param databaseName - The IndexedDB database name. Defaults to `pdfrx.text-assets`.
+   */
   constructor(databaseName = 'pdfrx.text-assets') {
     this.#databaseName = databaseName;
   }
 
+  /** @inheritdoc */
   async get(key: string): Promise<Uint8Array | null> {
     const database = await this.#open();
     return new Promise((resolve, reject) => {
@@ -122,6 +152,7 @@ export class PdfIndexedDbTextAssetCache implements PdfTextAssetCache {
     });
   }
 
+  /** @inheritdoc */
   async put(key: string, data: Uint8Array): Promise<void> {
     const database = await this.#open();
     await new Promise<void>((resolve, reject) => {
@@ -190,6 +221,9 @@ function emojiCodePoints(grapheme: string, keepVariationSelector: boolean): stri
  *
  * Assets are requested lazily, one grapheme at a time, and are not distributed
  * with `@pdfrx/engine`. The URL is pinned to one Noto Emoji revision.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PdfEmojiAssetSource.
+ *
  */
 export function createNotoEmojiPngSource(options: PdfNotoEmojiSourceOptions = {}): PdfEmojiAssetSource {
   const configuredBaseUrl = (options.baseUrl ?? defaultNotoEmojiPngBaseUrl).replace(/\/?$/, '/');
@@ -292,6 +326,9 @@ function renderNativeEmoji(grapheme: string, fontSize: number, family: string, s
  * Browsers first use an explicitly available native color-emoji family.
  * Otherwise (including headless server runtimes), a version-pinned Noto Emoji
  * PNG is downloaded and decoded without a DOM or native image dependency.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PdfEmojiRenderer.
+ *
  */
 export function createDefaultEmojiRenderer(options: PdfDefaultEmojiRendererOptions = {}): PdfEmojiRenderer {
   const source = options.source ?? createNotoEmojiPngSource(options);
@@ -334,7 +371,13 @@ function approximateTextWidth(text: string, fontSize: number): number {
   }, 0);
 }
 
-/** Creates a Canvas-backed text measurer when a DOM is available. */
+/**
+ * Creates a Canvas-backed text measurer when a DOM is available.
+ *
+ * @param fontFamily - The fontFamily value (string).
+ * @returns The resulting PdfTextMeasureProvider.
+ *
+ */
 export function createCanvasTextMeasureProvider(fontFamily = 'Arial, sans-serif'): PdfTextMeasureProvider {
   if (typeof document === 'undefined') return (text, fontSize) => approximateTextWidth(text, fontSize);
   const canvas = document.createElement('canvas');
@@ -458,6 +501,10 @@ function resolveCjkKinds(kinds: FreeTextRunKind[], languages: readonly string[])
  *
  * For provider and deployment examples, read the
  * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
+ * @param spec - The spec value (PdfAnnotationSpec).
+ * @param options - Options that customize the operation.
+ * @returns The resulting Promise.
+ *
  */
 export async function prepareFreeTextAppearance(
   spec: PdfAnnotationSpec,
@@ -545,7 +592,13 @@ function paeth(a: number, b: number, c: number): number {
   return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
-/** Decodes the 8-bit, non-interlaced RGB/RGBA PNGs used by Noto Emoji. */
+/**
+ * Decodes the 8-bit, non-interlaced RGB/RGBA PNGs used by Noto Emoji.
+ *
+ * @param data - The input data.
+ * @returns The resulting Promise.
+ *
+ */
 export async function decodeRgbaPng(data: Uint8Array): Promise<{ width: number; height: number; pixels: Uint8Array }> {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   if (data.length < 33 || signature.some((value, index) => data[index] !== value)) throw new Error('Invalid PNG');

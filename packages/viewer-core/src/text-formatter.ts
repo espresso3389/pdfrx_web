@@ -4,6 +4,7 @@
  * Takes the raw page text from the engine (`fullText` + one rect per char)
  * and produces a `PdfPageText` with direction-aware fragments (words, spaces,
  * line breaks), which is what the selection logic operates on.
+ *
  */
 
 import { pdfRectBoundingRect, pdfRectCenter, pdfRectIsEmpty, type PdfRect } from './geometry.js';
@@ -13,6 +14,7 @@ import type { PdfPageText, PdfPageTextFragment, PdfTextDirection } from './text.
  * Raw per-page text as returned by the engine, before flow analysis: the
  * concatenated character stream plus one rect (PDF page coordinates) per
  * UTF-16 code unit. Input to {@link formatText}.
+ *
  */
 export interface RawPageText {
   fullText: string;
@@ -24,6 +26,7 @@ export interface RawPageText {
  * Maximum extent of a combined space rect, as a ratio to the line height
  * (or the line width for vertical text). The rationale: text extraction emits
  * zero-width spaces for large gaps, e.g. table columns.
+ *
  */
 const MAX_SPACE_EXTENT_TO_LINE_HEIGHT_RATIO = 1.5;
 
@@ -54,7 +57,14 @@ const centerDiff = (from: PdfRect, to: PdfRect): Vec2 => {
   return { x: b.x - a.x, y: b.y - a.y };
 };
 
-/** Analyze raw page text into a {@link PdfPageText} with direction-aware fragments. */
+/**
+ * Analyze raw page text into a {@link PdfPageText} with direction-aware fragments.
+ *
+ * @param raw - The raw value (RawPageText).
+ * @param pageNumber - The 1-based page number.
+ * @returns The resulting PdfPageText.
+ *
+ */
 export function formatText(raw: RawPageText, pageNumber: number): PdfPageText {
   const preprocessed = removeVirtualNewLines(raw);
   const inputFullText = preprocessed.fullText;
@@ -291,6 +301,9 @@ export function formatText(raw: RawPageText, pageNumber: number): PdfPageText {
 /**
  * Post-processing that removes "virtual" line feeds which some producers
  * (e.g. Microsoft Word) insert between the characters of vertical text runs.
+ * @param input - The input value (RawPageText).
+ * @returns The resulting RawPageText.
+ *
  */
 export function removeVirtualNewLines(input: RawPageText): RawPageText {
   let fullText = '';

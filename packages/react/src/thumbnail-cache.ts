@@ -14,6 +14,7 @@ import type { PdfrxViewer } from '@pdfrx/viewer';
  * The cache is per-document: `renderKey` embeds the document handle, and handles
  * are recycled after a document is disposed, so it is cleared whenever the
  * viewer's document instance changes.
+ *
  */
 export class ThumbnailCache {
   #document: PdfDocument | null = null;
@@ -23,6 +24,12 @@ export class ThumbnailCache {
   /**
    * Returns the thumbnail for `pageNumber`, rendering it if necessary.
    * Concurrent requests for the same key share one render.
+   *
+   * @param viewer - The viewer value (PdfrxViewer).
+   * @param pageNumber - The 1-based page number.
+   * @param width - The width.
+   * @returns The resolved Promise.
+   *
    */
   async get(viewer: PdfrxViewer, pageNumber: number, width: number): Promise<HTMLCanvasElement | null> {
     const document = viewer.document;
@@ -60,7 +67,12 @@ export class ThumbnailCache {
     }
   }
 
-  /** Drops bitmaps no live page refers to any more (e.g. after a rotation). */
+  /**
+   * Drops bitmaps no live page refers to any more (e.g. after a rotation).
+   *
+   * @param viewer - The viewer value (PdfrxViewer).
+   *
+   */
   prune(viewer: PdfrxViewer): void {
     const live = new Set((viewer.document?.pages ?? []).map((p) => p.renderKey));
     for (const key of [...this.#canvases.keys()]) {
@@ -68,7 +80,12 @@ export class ThumbnailCache {
     }
   }
 
-  /** Empties the cache and rebinds it to `document`. */
+  /**
+   * Empties the cache and rebinds it to `document`.
+   *
+   * @param document - The PDF document to process.
+   *
+   */
   reset(document: PdfDocument | null = null): void {
     this.#document = document;
     this.#canvases.clear();

@@ -10,7 +10,13 @@ export interface PdfFullscreenButtonProps {
   style?: CSSProperties;
 }
 
-/** Standard button for entering and exiting browser fullscreen. */
+/**
+ * Standard button for entering and exiting browser fullscreen.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfFullscreenButton({ className, style }: PdfFullscreenButtonProps): ReactNode {
   const { isFullscreen, isSupported, toggle } = usePdfFullscreen();
   const strings = usePdfrxStrings();

@@ -36,6 +36,7 @@ export type PdfrxViewerFeature =
 /**
  * `false` hides a standard feature entry point. Print, spread, capture, and
  * marquee zoom are opt-in and require `true`; the other groups default on.
+ *
  */
 export type PdfrxViewerFeatures = Partial<Record<PdfrxViewerFeature, boolean>>;
 
@@ -59,11 +60,13 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
   /**
    * Which side the sidebar sits on. Defaults to `'left'`. On a narrow screen
    * the drawer slides in from this side too.
+   *
    */
   sidebarSide?: 'left' | 'right';
   /**
    * Add an "open file" button. PDFs open directly; images (PNG, JPEG, GIF,
    * WebP, …) are converted to a one-page PDF and shown. Defaults to `false`.
+   *
    */
   enableFileOpen?: boolean;
   /**
@@ -71,6 +74,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * serializes the edited document, drop-to-insert on the thumbnail strip (drop
    * a PDF or image between two pages to insert its pages there), and
    * drag-to-reorder of thumbnails. Defaults to `false`.
+   *
    */
   enablePageEditing?: boolean;
   /** Show the toolbar's "open file" button. Defaults to {@link enableFileOpen}. */
@@ -79,6 +83,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * Show the toolbar's download button. Works with or without
    * {@link enablePageEditing} (it serializes whatever the document currently
    * is). Defaults to {@link enablePageEditing}.
+   *
    */
   showDownloadButton?: boolean;
   /**
@@ -89,12 +94,14 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * images dropped onto a page are centered at the drop point. Both paths use
    * the same bounded size and fit oversized images within the page. Requires the viewer's
    * `interactiveAnnotations` (on by default). Defaults to `true`.
+   *
    */
   enableAnnotations?: boolean;
   /**
    * Declaratively controls standard feature groups. Print, spread, capture,
    * and marquee zoom default off; other omitted entries default on. PDF
    * permission flags are applied afterwards.
+   *
    */
   features?: PdfrxViewerFeatures;
   /** Extra toolbar controls, placed after the built-in ones. */
@@ -103,6 +110,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
    * Renders a controller inside the app's viewer provider. Call
    * `context.renderChrome()` with only the editing operations and slots the
    * host needs to replace; omitted behavior keeps the standard implementation.
+   *
    */
   renderContent?: (context: PdfrxViewerAppRenderContext) => ReactNode;
 }
@@ -112,6 +120,7 @@ export interface PdfrxViewerAppProps extends PdfrxProviderProps {
  *
  * Hosts can replace selected editing operations while retaining the built-in
  * responsive layout and controls.
+ *
  */
 export interface PdfrxViewerAppOverrides {
   /**
@@ -123,6 +132,7 @@ export interface PdfrxViewerAppOverrides {
    * const { open } = usePdfDocument();
    * return renderChrome({ openFile: (file) => open(file) });
    * ```
+   *
    */
   readonly openFile?: (file: File) => void | Promise<void>;
   /**
@@ -165,6 +175,7 @@ export interface PdfrxViewerAppOverrides {
    *
    * return renderChrome({ insertFiles });
    * ```
+   *
    */
   readonly insertFiles?: (files: File[], index: number) => void | Promise<void>;
   /**
@@ -187,6 +198,7 @@ export interface PdfrxViewerAppOverrides {
    * };
    * return renderChrome({ movePage });
    * ```
+   *
    */
   readonly movePage?: (fromPageNumber: number, toIndex: number) => void;
   /**
@@ -202,6 +214,7 @@ export interface PdfrxViewerAppOverrides {
    * };
    * return renderChrome({ rotatePage });
    * ```
+   *
    */
   readonly rotatePage?: (pageNumber: number, delta: PdfPageRotationDelta) => void;
   /**
@@ -218,6 +231,7 @@ export interface PdfrxViewerAppOverrides {
    * };
    * return renderChrome({ deletePage });
    * ```
+   *
    */
   readonly deletePage?: (pageNumber: number) => void;
   /**
@@ -232,6 +246,7 @@ export interface PdfrxViewerAppOverrides {
    *   encode: (document) => document.encodePdf({ mode: 'copy' }),
    * });
    * ```
+   *
    */
   readonly encode?: (document: PdfDocument) => Promise<Uint8Array>;
   /** Receives an error thrown while preparing or starting a PDF download. */
@@ -239,12 +254,14 @@ export interface PdfrxViewerAppOverrides {
   /**
    * Compact host UI rendered below the standard toolbar, annotation toolbar,
    * and built-in error banner, but above the sidebar/surface row.
+   *
    */
   readonly beforeBody?: ReactNode;
   /**
    * Disables host-sensitive editing entry points without hiding the document.
    * This covers open, page actions and drops, history buttons, download,
    * annotation entry, and image drops.
+   *
    */
   readonly editingDisabled?: boolean;
 }
@@ -254,6 +271,7 @@ export interface PdfrxViewerAppRenderContext {
   /**
    * Renders the complete standard viewer chrome with optional behavior
    * overrides. Call this exactly once from the controller's rendered output.
+   *
    */
   readonly renderChrome: (overrides?: PdfrxViewerAppOverrides) => ReactNode;
 }
@@ -280,6 +298,9 @@ const NARROW_BREAKPOINT = 780;
  *
  * <PdfrxViewerApp src="/manual.pdf" wasmModulesUrl="/pdfium/" style={{ height: '100vh' }} enableFileOpen />
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfrxViewerApp({
   className,
@@ -358,6 +379,7 @@ function PdfrxViewerAppHost({
 /**
  * The chrome, rendered inside the provider so it can use the hooks. Split out
  * only because a component cannot consume a context it renders itself.
+ *
  */
 function PdfrxViewerAppChrome({
   className,

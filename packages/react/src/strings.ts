@@ -16,6 +16,7 @@ import { createContext, useContext } from 'react';
  * };
  * <PdfrxViewerApp src="/manual.pdf" strings={ja} />
  * ```
+ *
  */
 export interface PdfrxStrings {
   // Toolbar
@@ -138,6 +139,7 @@ export interface PdfrxStrings {
    * Message shown by the built-in `window.prompt` password provider when a
    * document is encrypted (used by {@link PdfrxViewerApp} unless the app supplies
    * its own `passwordProvider`).
+   *
    */
   enterPassword: string;
   /** Error banner text; receives the error message. */
@@ -253,6 +255,8 @@ export const PdfrxStringsContext = createContext<PdfrxStrings>(defaultPdfrxStrin
 /**
  * The active {@link PdfrxStrings}. Read by every built-in component; use it in
  * your own components too so they translate alongside the rest.
+ * @returns The current pdfrx strings state and actions.
+ *
  */
 export function usePdfrxStrings(): PdfrxStrings {
   return useContext(PdfrxStringsContext);

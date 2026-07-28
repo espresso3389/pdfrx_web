@@ -6,6 +6,7 @@ const IMAGE_DECODE_TIMEOUT_MS = 5_000;
  * Already-decoded image pixels. Provide these directly when the runtime cannot
  * decode the format on its own (e.g. Node, which has no `createImageBitmap`),
  * or to skip decoding when you already hold raw pixels.
+ *
  */
 export interface PdfRawImage {
   /** Tightly packed pixels, `width * height * 4` bytes. */
@@ -22,6 +23,7 @@ export interface PdfRawImage {
  * One image handed to {@link PdfrxEngine.createFromImages}. Either encoded bytes
  * (a `Blob`, `Uint8Array`, or `ArrayBuffer`) that get decoded, or a
  * {@link PdfRawImage} of pixels that are used as-is.
+ *
  */
 export type PdfImageSource = Blob | Uint8Array | ArrayBuffer | PdfRawImage;
 
@@ -29,6 +31,7 @@ export type PdfImageSource = Blob | Uint8Array | ArrayBuffer | PdfRawImage;
  * Decodes encoded image bytes to {@link PdfRawImage} pixels. Supply one via
  * {@link PdfCreateFromImagesOptions.decode} on runtimes without a built-in
  * decoder (JPEG never needs one — PDFium decodes it natively).
+ *
  */
 export type PdfImageDecoderResult = PdfRawImage | Blob | Uint8Array | ArrayBuffer;
 
@@ -62,6 +65,7 @@ export type PdfImageDecoderResult = PdfRawImage | Blob | Uint8Array | ArrayBuffe
  *
  * <PdfrxViewerApp imageDecoder={decodeImage} enableFileOpen enablePageEditing />
  * ```
+ *
  */
 export type PdfImageDecoder = (
   bytes: Uint8Array,
@@ -76,23 +80,32 @@ export interface PdfCreateFromImagesOptions {
    * Pixels-per-inch used to convert an image's pixel size into the page size in
    * points. Default `72` (1 pixel = 1 point). Ignored for any image whose page
    * size is fixed by {@link pageSize}.
+   *
    */
   dpi?: number;
   /**
    * Fixed page size in points (1/72 inch) applied to every page; the image is
    * scaled to fill it. When omitted, each page is sized from its own image via
    * {@link dpi}.
+   *
    */
   pageSize?: { width: number; height: number };
   /**
    * Decoder for non-JPEG formats. Falls back to `createImageBitmap` +
    * `OffscreenCanvas` when available (browsers, workers, Deno, Bun) and, failing
    * that, throws — so pass this (or pre-decoded {@link PdfRawImage}s) on Node.
+   *
    */
   decode?: PdfImageDecoder;
 }
 
-/** True for a byte stream that begins with the JPEG SOI marker. */
+/**
+ * True for a byte stream that begins with the JPEG SOI marker.
+ *
+ * @param bytes - The binary data to process.
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export function isJpeg(bytes: Uint8Array): boolean {
   return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
@@ -101,6 +114,9 @@ export function isJpeg(bytes: Uint8Array): boolean {
  * Reads a JPEG's pixel dimensions from its `SOFn` marker without decoding the
  * image, so JPEG pages can be sized without a pixel decoder. Throws if the bytes
  * are not a JPEG whose size can be found.
+ * @param bytes - The binary data to process.
+ * @returns The updated result.
+ *
  */
 export function readJpegSize(bytes: Uint8Array): { width: number; height: number } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -133,7 +149,12 @@ export function readJpegSize(bytes: Uint8Array): { width: number; height: number
   throw new Error('Could not read JPEG dimensions');
 }
 
-/** Whether the current runtime can decode encoded images without a user-supplied decoder. */
+/**
+ * Whether the current runtime can decode encoded images without a user-supplied decoder.
+ *
+ * @returns Whether the condition is satisfied.
+ *
+ */
 export function canDecodeImages(): boolean {
   return typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function';
 }
@@ -159,6 +180,7 @@ async function decodeWithCanvas(bytes: Uint8Array, mimeType?: string): Promise<P
  * Some browser decoders leave `createImageBitmap()` pending indefinitely for
  * unsupported formats instead of rejecting it. Bound the wait so callers get a
  * useful import error rather than an operation that appears to be ignored.
+ *
  */
 function createImageBitmapWithTimeout(blob: Blob): Promise<ImageBitmap> {
   return new Promise((resolve, reject) => {
@@ -292,6 +314,7 @@ async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImages
  * Converts every {@link PdfImageSource} into wire pages and gathers the
  * `ArrayBuffer`s to transfer to the worker. Decoding (when needed) happens here,
  * on the calling thread.
+ *
  */
 export async function imageSourcesToWorkerPages(
   images: PdfImageSource[],

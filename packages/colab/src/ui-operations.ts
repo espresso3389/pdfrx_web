@@ -4,7 +4,14 @@ import type {
   PagePlacementRotation,
 } from '@pdfrx/viewer-core';
 
-/** Creates an absolute rotation command from a relative clockwise delta. */
+/**
+ * Creates an absolute rotation command from a relative clockwise delta.
+ *
+ * @param page - The page to process.
+ * @param delta - The amount of change to apply.
+ * @returns The resulting PagePlacementOperation.
+ *
+ */
 export function rotatePlacement(
   page: PagePlacement,
   delta: 90 | 180 | 270,
@@ -16,7 +23,14 @@ export function rotatePlacement(
   };
 }
 
-/** Inserts an independently addressable copy immediately after the source placement. */
+/**
+ * Inserts an independently addressable copy immediately after the source placement.
+ *
+ * @param page - The page to process.
+ * @param placementId - The stable placement identifier.
+ * @returns The resulting PagePlacementOperation.
+ *
+ */
 export function duplicatePlacement(page: PagePlacement, placementId: string): PagePlacementOperation {
   if (placementId.length === 0) throw new Error('placementId must not be empty');
   return {
@@ -29,6 +43,11 @@ export function duplicatePlacement(page: PagePlacement, placementId: string): Pa
 /**
  * Converts the thumbnail list's `(fromPageNumber, toIndex)` drop coordinates
  * into a stable placement-ID move. Returns `null` for an unchanged position.
+ * @param pages - The pages to process, in document order.
+ * @param fromPageNumber - The from page number.
+ * @param toIndex - The 0-based to index.
+ * @returns The resulting page operation, or `null` when no move is needed.
+ *
  */
 export function movePlacementToIndex(
   pages: readonly PagePlacement[],
@@ -50,7 +69,13 @@ export function movePlacementToIndex(
   return { type: 'page.move', placementId: moved.placementId, after };
 }
 
-/** Returns a compact human-readable operation label for an activity log. */
+/**
+ * Returns a compact human-readable operation label for an activity log.
+ *
+ * @param operation - The operation to apply.
+ * @returns The resulting string.
+ *
+ */
 export function describePageOperation(operation: PagePlacementOperation): string {
   switch (operation.type) {
     case 'page.replace': return `文書を置換 (${operation.pages.length}ページ)`;

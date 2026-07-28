@@ -205,6 +205,9 @@ const parseFormRequest = (value: unknown): FormOperationRequest => {
 /**
  * Parses and validates one untrusted client WebSocket payload.
  * @throws `Error` for malformed JSON, envelopes, or operations.
+ * @param json - The JSON value to parse.
+ * @returns The resulting ClientRelayMessage.
+ *
  */
 export function parseClientRelayMessage(json: string): ClientRelayMessage {
   const value: unknown = JSON.parse(json);
@@ -258,6 +261,9 @@ export function parseClientRelayMessage(json: string): ClientRelayMessage {
 /**
  * Parses and validates one untrusted relay payload before changing client state.
  * @throws `Error` for malformed JSON, snapshots, commits, or errors.
+ * @param json - The JSON value to parse.
+ * @returns The resulting ServerRelayMessage.
+ *
  */
 export function parseServerRelayMessage(json: string): ServerRelayMessage {
   const value: unknown = JSON.parse(json);

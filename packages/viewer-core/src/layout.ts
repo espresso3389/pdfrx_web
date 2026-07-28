@@ -1,5 +1,6 @@
 /**
  * Page layout — the page-rect computation for a document.
+ *
  */
 
 import { rectContains, rectFromLTWH, type Offset, type PageGeometry, type Rect, type Size } from './geometry.js';
@@ -27,6 +28,11 @@ export type SpreadMode = 'odd' | 'even';
  * `odd` pairs pages `[1, 2], [3, 4]`; `even` leaves the cover alone and then
  * pairs `[2, 3], [4, 5]`. Rows are centered and their pages are aligned at the
  * top, which keeps differently sized pages predictable.
+ * @param pages - The pages to process, in document order.
+ * @param mode - The mode value (SpreadMode).
+ * @param options - Options that customize the operation.
+ * @returns The resulting PageLayout.
+ *
  */
 export function layoutPagesSpread(
   pages: readonly PageGeometry[],
@@ -70,7 +76,14 @@ export function layoutPagesSpread(
   };
 }
 
-/** Default vertical layout: pages stacked top-to-bottom, centered horizontally. */
+/**
+ * Default vertical layout: pages stacked top-to-bottom, centered horizontally.
+ *
+ * @param pages - The pages to process, in document order.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PageLayout.
+ *
+ */
 export function layoutPagesVertical(pages: readonly PageGeometry[], options: LayoutPagesOptions = {}): PageLayout {
   const margin = options.margin ?? 8;
   const width = pages.reduce((w, p) => Math.max(w, p.width), 0) + margin * 2;
@@ -85,7 +98,14 @@ export function layoutPagesVertical(pages: readonly PageGeometry[], options: Lay
   return { pageLayouts, documentSize: { width, height: y } };
 }
 
-/** Horizontal variant: pages side-by-side, centered vertically. */
+/**
+ * Horizontal variant: pages side-by-side, centered vertically.
+ *
+ * @param pages - The pages to process, in document order.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PageLayout.
+ *
+ */
 export function layoutPagesHorizontal(pages: readonly PageGeometry[], options: LayoutPagesOptions = {}): PageLayout {
   const margin = options.margin ?? 8;
   const height = pages.reduce((h, p) => Math.max(h, p.height), 0) + margin * 2;
@@ -100,7 +120,14 @@ export function layoutPagesHorizontal(pages: readonly PageGeometry[], options: L
   return { pageLayouts, documentSize: { width: x, height } };
 }
 
-/** Find the page (0-based index) whose laid-out rect contains the document position. */
+/**
+ * Find the page (0-based index) whose laid-out rect contains the document position.
+ *
+ * @param layout - The layout value (PageLayout).
+ * @param point - The point to process.
+ * @returns The resolved number or `null`.
+ *
+ */
 export function findPageIndexAt(layout: PageLayout, point: Offset): number | null {
   for (let i = 0; i < layout.pageLayouts.length; i++) {
     if (rectContains(layout.pageLayouts[i]!, point)) return i;

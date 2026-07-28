@@ -46,6 +46,8 @@ export interface PdfDocumentState {
  * if (isLoading) return <progress value={progress?.bytesReceived} max={progress?.bytesTotal ?? undefined} />;
  * return <p>{pageCount} pages</p>;
  * ```
+ * @returns The current pdf document state and actions.
+ *
  */
 export function usePdfDocument(): PdfDocumentState {
   const store = usePdfrxStore();

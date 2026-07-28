@@ -19,6 +19,8 @@ import { usePdfrxStore } from '../context.js';
  * const viewer = usePdfrxViewer();
  * const onClick = () => viewer?.selectAll();
  * ```
+ * @returns The current pdfrx viewer state and actions.
+ *
  */
 export function usePdfrxViewer(): PdfrxViewer | null {
   const store = usePdfrxStore();

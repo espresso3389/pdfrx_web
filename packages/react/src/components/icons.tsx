@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
  * colour themes the icons too.
  *
  * @internal
+ *
  */
 function Icon({ children, label }: { children: ReactNode; label?: string }): ReactNode {
   return (
@@ -119,7 +120,12 @@ export const IconTextSize = (): ReactNode => (
   </Icon>
 );
 
-/** @internal */
+/**
+ * @internal
+ *
+ * @returns The resulting ReactNode.
+ *
+ */
 export const IconOpenFile = (): ReactNode => (
   <Icon>
     <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
@@ -142,7 +148,12 @@ export const IconSave = (): ReactNode => (
   </Icon>
 );
 
-/** @internal Annotate toggle: a freehand scribble. */
+/**
+ * @internal Annotate toggle: a freehand scribble.
+ *
+ * @returns The resulting ReactNode.
+ *
+ */
 export const IconAnnotate = (): ReactNode => (
   <Icon>
     <path d="M3 16C5 7 7.5 6 9.5 9c2 3 1.5 8 4 8s2-9 4.5-9c2 0 2.5 4 3 6" />

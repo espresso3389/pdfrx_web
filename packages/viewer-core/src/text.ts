@@ -3,6 +3,7 @@
  *
  * `PdfPageText` is a plain object; accessors are functions taking the owning
  * objects explicitly, so everything stays JSON-serializable for test vectors.
+ *
  */
 
 import { pdfRectBoundingRect, type PdfRect } from './geometry.js';
@@ -11,12 +12,14 @@ import { pdfRectBoundingRect, type PdfRect } from './geometry.js';
  * Reading direction of a text fragment/line. `vrtl` is vertical
  * right-to-left (CJK vertical writing); `unknown` when it cannot be inferred
  * (e.g. a single-character line).
+ *
  */
 export type PdfTextDirection = 'ltr' | 'rtl' | 'vrtl' | 'unknown';
 
 /**
  * A contiguous run of characters sharing one reading direction — a word, a
  * space, or a line break.
+ *
  */
 export interface PdfPageTextFragment {
   /** Fragment's start index on `PdfPageText.fullText`. */
@@ -31,6 +34,7 @@ export interface PdfPageTextFragment {
 /**
  * The formatted, selection-ready text of a single page. Char rects are in PDF
  * page coordinates (points, y-up).
+ *
  */
 export interface PdfPageText {
   /** 1-based page number. */
@@ -43,20 +47,44 @@ export interface PdfPageText {
   fragments: PdfPageTextFragment[];
 }
 
-/** Exclusive end index of `f` on `fullText` (`index + length`). */
+/**
+ * Exclusive end index of `f` on `fullText` (`index + length`).
+ *
+ * @param f - The text fragment to process.
+ * @returns The resulting number.
+ *
+ */
 export const fragmentEnd = (f: PdfPageTextFragment): number => f.index + f.length;
 
-/** The substring of `text.fullText` covered by fragment `f`. */
+/**
+ * The substring of `text.fullText` covered by fragment `f`.
+ *
+ * @param text - The text to process.
+ * @param f - The text fragment to process.
+ * @returns The resulting string.
+ *
+ */
 export const fragmentText = (text: PdfPageText, f: PdfPageTextFragment): string =>
   text.fullText.substring(f.index, f.index + f.length);
 
-/** The per-character rects covered by fragment `f`. */
+/**
+ * The per-character rects covered by fragment `f`.
+ *
+ * @param text - The text to process.
+ * @param f - The text fragment to process.
+ * @returns The resulting PdfRect[].
+ *
+ */
 export const fragmentCharRects = (text: PdfPageText, f: PdfPageTextFragment): PdfRect[] =>
   text.charRects.slice(f.index, f.index + f.length);
 
 /**
  * Binary search for the fragment containing `textIndex`. Returns -1 when out
  * of range and `fragments.length` when `textIndex === fullText.length`.
+ * @param text - The text to process.
+ * @param textIndex - The 0-based text index.
+ * @returns The resolved number.
+ *
  */
 export function getFragmentIndexForTextIndex(text: PdfPageText, textIndex: number): number {
   const fragments = text.fragments;
@@ -85,7 +113,14 @@ export function getFragmentIndexForTextIndex(text: PdfPageText, textIndex: numbe
   return index;
 }
 
-/** The fragment containing `textIndex`, or `null` when out of range. See {@link getFragmentIndexForTextIndex}. */
+/**
+ * The fragment containing `textIndex`, or `null` when out of range. See {@link getFragmentIndexForTextIndex}.
+ *
+ * @param text - The text to process.
+ * @param textIndex - The 0-based text index.
+ * @returns The resolved PdfPageTextFragment or `null`.
+ *
+ */
 export function getFragmentForTextIndex(text: PdfPageText, textIndex: number): PdfPageTextFragment | null {
   const index = getFragmentIndexForTextIndex(text, textIndex);
   if (index < 0 || index >= text.fragments.length) return null;
@@ -99,28 +134,64 @@ export interface PdfPageTextRange {
   end: number;
 }
 
-/** The substring covered by the range. */
+/**
+ * The substring covered by the range.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting string.
+ *
+ */
 export const rangeText = (r: PdfPageTextRange): string => r.pageText.fullText.substring(r.start, r.end);
 
-/** Bounding rect (PDF page coordinates) over all char rects in the range. */
+/**
+ * Bounding rect (PDF page coordinates) over all char rects in the range.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfRect.
+ *
+ */
 export const rangeBounds = (r: PdfPageTextRange): PdfRect =>
   pdfRectBoundingRect(r.pageText.charRects, r.start, r.end);
 
-/** Index of the fragment containing the range's first character. */
+/**
+ * Index of the fragment containing the range's first character.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const rangeFirstFragmentIndex = (r: PdfPageTextRange): number =>
   getFragmentIndexForTextIndex(r.pageText, r.start);
 
-/** Index of the fragment containing the range's last character (`end - 1`). */
+/**
+ * Index of the fragment containing the range's last character (`end - 1`).
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting number.
+ *
+ */
 export const rangeLastFragmentIndex = (r: PdfPageTextRange): number =>
   getFragmentIndexForTextIndex(r.pageText, r.end - 1);
 
-/** The fragment containing the range's first character, or `null` if out of range. */
+/**
+ * The fragment containing the range's first character, or `null` if out of range.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfPageTextFragment or `null`.
+ *
+ */
 export const rangeFirstFragment = (r: PdfPageTextRange): PdfPageTextFragment | null => {
   const i = rangeFirstFragmentIndex(r);
   return i < 0 || i >= r.pageText.fragments.length ? null : r.pageText.fragments[i]!;
 };
 
-/** The fragment containing the range's last character, or `null` if out of range. */
+/**
+ * The fragment containing the range's last character, or `null` if out of range.
+ *
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfPageTextFragment or `null`.
+ *
+ */
 export const rangeLastFragment = (r: PdfPageTextRange): PdfPageTextFragment | null => {
   const i = rangeLastFragmentIndex(r);
   return i < 0 || i >= r.pageText.fragments.length ? null : r.pageText.fragments[i]!;
@@ -128,6 +199,11 @@ export const rangeLastFragment = (r: PdfPageTextRange): PdfPageTextFragment | nu
 
 /**
  * Build a range from two *inclusive* character indices in either order.
+ * @param text - The text to process.
+ * @param a - The a value (number).
+ * @param b - The b value (number).
+ * @returns The resolved PdfPageTextRange.
+ *
  */
 export function getRangeFromAB(text: PdfPageText, a: number, b: number): PdfPageTextRange {
   const min = a < b ? a : b;
@@ -152,6 +228,9 @@ export interface PdfTextFragmentBoundingRect {
 
 /**
  * The per-fragment rects used to paint the selection highlight.
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfTextFragmentBoundingRect[].
+ *
  */
 export function enumerateFragmentBoundingRects(r: PdfPageTextRange): PdfTextFragmentBoundingRect[] {
   const result: PdfTextFragmentBoundingRect[] = [];
@@ -191,6 +270,9 @@ export interface PdfTextLineBoundingRect {
  * joins consecutive fragments whose cross-axis extents overlap, while explicit
  * line breaks and horizontal/vertical orientation changes always start a new
  * rectangle.
+ * @param r - The rectangle to process.
+ * @returns The resulting PdfTextLineBoundingRect[].
+ *
  */
 export function enumerateLineBoundingRects(r: PdfPageTextRange): PdfTextLineBoundingRect[] {
   const result: PdfTextLineBoundingRect[] = [];
@@ -237,7 +319,15 @@ export function enumerateLineBoundingRects(r: PdfPageTextRange): PdfTextLineBoun
   return result;
 }
 
-/** Find all matches of a pattern on the page. */
+/**
+ * Find all matches of a pattern on the page.
+ *
+ * @param text - The text to process.
+ * @param pattern - The text or regular expression to match.
+ * @param options - Options that customize the operation.
+ * @returns The resulting PdfPageTextRange[].
+ *
+ */
 export function allMatches(
   text: PdfPageText,
   pattern: string | RegExp,

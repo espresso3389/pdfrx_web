@@ -31,6 +31,8 @@ export interface PdfAnnotationsState {
  * await add(1, { subtype: 'square', rect: { left: 50, top: 700, right: 200, bottom: 640 },
  *                color: { r: 220, g: 30, b: 30, a: 255 }, borderWidth: 2 });
  * ```
+ * @returns The current annotations state and actions.
+ *
  */
 export function useAnnotations(): PdfAnnotationsState {
   const viewer = usePdfrxViewer();

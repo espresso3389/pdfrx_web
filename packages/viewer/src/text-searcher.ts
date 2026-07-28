@@ -4,6 +4,7 @@
  * Progressively searches page texts, tracks the current match, and asks the
  * viewer to navigate/highlight. Create via `PdfrxViewer.createTextSearcher()`
  * so the viewer paints the match highlights.
+ *
  */
 
 import {
@@ -17,6 +18,7 @@ import type { PdfrxViewer } from './viewer.js';
 /**
  * A single search hit, flattened to the fields the viewer needs to highlight
  * and navigate to a match.
+ *
  */
 export interface SearchMatch {
   /** 1-based page the match is on. */
@@ -59,6 +61,7 @@ interface SearchCondition {
  * searcher.startTextSearch('invoice');   // debounced; highlights + jumps to the first match
  * await searcher.goToNextMatch();
  * ```
+ *
  */
 export class PdfTextSearcher {
   /** @internal — use {@link PdfrxViewer.createTextSearcher}. */
@@ -109,6 +112,7 @@ export class PdfTextSearcher {
   /**
    * The 1-based page number currently being scanned, or `null` before a search
    * starts. Reaches the last page once scanning completes.
+   *
    */
   get searchingPageNumber(): number | null {
     return this._searchingPageNumber;
@@ -124,6 +128,9 @@ export class PdfTextSearcher {
    * progress). Fires on the same events that repaint the viewer highlights.
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addListener(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -150,6 +157,9 @@ export class PdfTextSearcher {
    * is a no-op, and an empty pattern resets the search.
    *
    * @param pattern - Literal string or `RegExp` to search for.
+   *
+   * @param options - Options that customize the operation.
+   *
    */
   startTextSearch(pattern: string | RegExp, options: StartTextSearchOptions = {}): void {
     this.cancelTextSearch();
@@ -186,6 +196,7 @@ export class PdfTextSearcher {
    * Releases the searcher: cancels any pending search and drops listeners.
    * Called automatically when the owning viewer creates a new searcher or is
    * disposed. Like {@link resetTextSearch} but does not notify listeners.
+   *
    */
   dispose(): void {
     this.listeners.clear();
@@ -210,6 +221,7 @@ export class PdfTextSearcher {
    * Matches are keyed by page number, so every one of them is stale; the pattern
    * is kept and re-scanned rather than silently pointing at the wrong pages.
    * The view is not moved, since the user was editing pages, not searching.
+   *
    */
   onPagesRearranged(): void {
     const condition = this.lastSearchCondition;
@@ -280,6 +292,10 @@ export class PdfTextSearcher {
    * The `[start, end)` slice of {@link matches} that belongs to a page (1-based),
    * or `null` if the page has not been scanned yet. Used by the viewer to paint
    * per-page highlights.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @returns The resolved  or `null`.
+   *
    */
   getMatchesRangeForPage(pageNumber: number): { start: number; end: number } | null {
     if (this.matchesPageStartIndices.length < pageNumber) return null;
@@ -296,6 +312,7 @@ export class PdfTextSearcher {
    * selection, wraps to the last match.
    *
    * @returns The new current index, or `-1` if already at the first match.
+   *
    */
   async goToPrevMatch(): Promise<number> {
     if (this._currentIndex === null) {
@@ -312,6 +329,7 @@ export class PdfTextSearcher {
    * starts at the first match.
    *
    * @returns The new current index, or `-1` if already at the last match.
+   *
    */
   async goToNextMatch(): Promise<number> {
     if (this._currentIndex === null) {
@@ -328,6 +346,9 @@ export class PdfTextSearcher {
    * view (via {@link PdfrxViewer.ensureVisiblePageRect}).
    *
    * @returns `index`, or `-1` if it is out of range.
+   *
+   * @param index - The 0-based index.
+   *
    */
   async goToMatchOfIndex(index: number): Promise<number> {
     if (index < 0 || index >= this._matches.length) return -1;

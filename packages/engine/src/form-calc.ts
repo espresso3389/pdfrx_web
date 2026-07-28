@@ -4,6 +4,7 @@
  * `pdfium.wasm` has no JS engine, so calculate actions (`/AA/C`) are read but
  * never run; this recomputes the common cases on the client instead. Arbitrary
  * custom field JavaScript is intentionally not supported.
+ *
  */
 
 /** Reduction operation of an `AFSimple_Calculate` action. */
@@ -26,6 +27,9 @@ const isOp = (s: string): s is FormCalcOp =>
  * Parses a calculate-action JavaScript source into a {@link FormCalcSpec}, or
  * returns `null` when it is not a recognized `AFSimple_Calculate` call (custom
  * scripts are left untouched).
+ * @param js - The js value (string or  or undefined).
+ * @returns The resulting FormCalcSpec or `null`.
+ *
  */
 export function parseCalcAction(js: string | null | undefined): FormCalcSpec | null {
   if (!js) return null;
@@ -45,6 +49,9 @@ export function parseCalcAction(js: string | null | undefined): FormCalcSpec | n
  * Parses a form-field display value to a number, stripping thousands
  * separators, currency symbols and other non-numeric decoration. Returns `null`
  * for blank or unparseable values.
+ * @param value - The value to use.
+ * @returns The resulting number or `null`.
+ *
  */
 export function parseFieldNumber(value: string | null | undefined): number | null {
   if (value == null) return null;
@@ -65,6 +72,10 @@ function formatResult(n: number): string {
  * unparseable operands are skipped (a `SUM` of no operands is `0`; the other
  * operations return `null` when there is nothing to combine, leaving the field
  * unchanged). Returns the computed value as a plain number string, or `null`.
+ * @param spec - The spec value (FormCalcSpec).
+ * @param values - The values to use.
+ * @returns The resulting string or `null`.
+ *
  */
 export function evaluateCalc(spec: FormCalcSpec, values: ReadonlyMap<string, string>): string | null {
   const nums: number[] = [];

@@ -8,6 +8,7 @@
  * - `xZoomed`/`yZoomed` are the translation applied *after* zoom; i.e. the
  *   view-space position of the document origin.
  * - Document coordinates are unzoomed, y-down, spanning the laid-out document.
+ *
  */
 
 import {
@@ -23,6 +24,7 @@ import {
 
 /**
  * The view state: uniform scale + translation.
+ *
  */
 export interface ViewTransform {
   /** Uniform scale factor (view pixels per document unit). */
@@ -44,11 +46,24 @@ export interface EdgeInsets {
 /** All-zero {@link EdgeInsets}. */
 export const edgeInsetsZero: EdgeInsets = { left: 0, top: 0, right: 0, bottom: 0 };
 
-/** Whether any side of `e` is infinite (marks an unbounded/free-panning axis). */
+/**
+ * Whether any side of `e` is infinite (marks an unbounded/free-panning axis).
+ *
+ * @param e - The edge insets to process.
+ * @returns Whether the documented condition is satisfied.
+ *
+ */
 export const edgeInsetsContainsInfinite = (e: EdgeInsets): boolean =>
   !isFinite(e.left) || !isFinite(e.top) || !isFinite(e.right) || !isFinite(e.bottom);
 
-/** Component-wise sum of two {@link EdgeInsets}. */
+/**
+ * Component-wise sum of two {@link EdgeInsets}.
+ *
+ * @param a - The a value (EdgeInsets).
+ * @param b - The b value (EdgeInsets).
+ * @returns The resulting EdgeInsets.
+ *
+ */
 export const edgeInsetsAdd = (a: EdgeInsets, b: EdgeInsets): EdgeInsets => ({
   left: a.left + b.left,
   top: a.top + b.top,
@@ -56,13 +71,27 @@ export const edgeInsetsAdd = (a: EdgeInsets, b: EdgeInsets): EdgeInsets => ({
   bottom: a.bottom + b.bottom,
 });
 
-/** Grow a size by the horizontal/vertical insets. */
+/**
+ * Grow a size by the horizontal/vertical insets.
+ *
+ * @param e - The edge insets to process.
+ * @param size - The size value (Size).
+ * @returns The resulting Size.
+ *
+ */
 export const edgeInsetsInflateSize = (e: EdgeInsets, size: Size): Size => ({
   width: size.width + e.left + e.right,
   height: size.height + e.top + e.bottom,
 });
 
-/** Grow a rect outward by the insets. */
+/**
+ * Grow a rect outward by the insets.
+ *
+ * @param e - The edge insets to process.
+ * @param r - The rectangle to process.
+ * @returns The resulting Rect.
+ *
+ */
 export const edgeInsetsInflateRect = (e: EdgeInsets, r: Rect): Rect => ({
   left: r.left - e.left,
   top: r.top - e.top,
@@ -70,7 +99,14 @@ export const edgeInsetsInflateRect = (e: EdgeInsets, r: Rect): Rect => ({
   bottom: r.bottom + e.bottom,
 });
 
-/** Grow a rect outward by the insets, treating infinite components as 0. */
+/**
+ * Grow a rect outward by the insets, treating infinite components as 0.
+ *
+ * @param e - The edge insets to process.
+ * @param r - The rectangle to process.
+ * @returns The resulting Rect.
+ *
+ */
 export const edgeInsetsInflateRectIfFinite = (e: EdgeInsets, r: Rect): Rect => ({
   left: r.left - (isFinite(e.left) ? e.left : 0),
   top: r.top - (isFinite(e.top) ? e.top : 0),
@@ -82,18 +118,45 @@ export const edgeInsetsInflateRectIfFinite = (e: EdgeInsets, r: Rect): Rect => (
 // ViewTransform accessors
 // ---------------------------------------------------------------------------
 
-/** Document-space x of the view origin (top-left). */
+/**
+ * Document-space x of the view origin (top-left).
+ *
+ * @param t - The view transform to process.
+ * @returns The resulting number.
+ *
+ */
 export const transformX = (t: ViewTransform): number => t.xZoomed / t.zoom;
-/** Document-space y of the view origin (top-left). */
+/**
+ * Document-space y of the view origin (top-left).
+ *
+ * @param t - The view transform to process.
+ * @returns The resulting number.
+ *
+ */
 export const transformY = (t: ViewTransform): number => t.yZoomed / t.zoom;
 
-/** Document position currently shown at the view center. */
+/**
+ * Document position currently shown at the view center.
+ *
+ * @param t - The view transform to process.
+ * @param viewSize - The viewport size.
+ * @returns The resulting Offset.
+ *
+ */
 export const calcPosition = (t: ViewTransform, viewSize: Size): Offset => ({
   x: (viewSize.width / 2 - t.xZoomed) / t.zoom,
   y: (viewSize.height / 2 - t.yZoomed) / t.zoom,
 });
 
-/** Document-space rectangle currently visible in the view. */
+/**
+ * Document-space rectangle currently visible in the view.
+ *
+ * @param t - The view transform to process.
+ * @param viewSize - The viewport size.
+ * @param margin - The additional margin.
+ * @returns The resulting Rect.
+ *
+ */
 export const calcVisibleRect = (t: ViewTransform, viewSize: Size, margin = 0): Rect =>
   rectFromCenter(
     calcPosition(t, viewSize),
@@ -101,19 +164,40 @@ export const calcVisibleRect = (t: ViewTransform, viewSize: Size, margin = 0): R
     (viewSize.height - margin * 2) / t.zoom,
   );
 
-/** View (local) position -> document position. */
+/**
+ * View (local) position -> document position.
+ *
+ * @param t - The view transform to process.
+ * @param local - The local value (Offset).
+ * @returns The converted Offset.
+ *
+ */
 export const viewToDocument = (t: ViewTransform, local: Offset): Offset => ({
   x: (local.x - t.xZoomed) / t.zoom,
   y: (local.y - t.yZoomed) / t.zoom,
 });
 
-/** Document position -> view (local) position. */
+/**
+ * Document position -> view (local) position.
+ *
+ * @param t - The view transform to process.
+ * @param doc - The doc value (Offset).
+ * @returns The converted Offset.
+ *
+ */
 export const documentToView = (t: ViewTransform, doc: Offset): Offset => ({
   x: doc.x * t.zoom + t.xZoomed,
   y: doc.y * t.zoom + t.yZoomed,
 });
 
-/** Document rect -> view rect. */
+/**
+ * Document rect -> view rect.
+ *
+ * @param t - The view transform to process.
+ * @param r - The rectangle to process.
+ * @returns The resulting Rect.
+ *
+ */
 export const documentRectToView = (t: ViewTransform, r: Rect): Rect => ({
   left: r.left * t.zoom + t.xZoomed,
   top: r.top * t.zoom + t.yZoomed,
@@ -121,7 +205,13 @@ export const documentRectToView = (t: ViewTransform, r: Rect): Rect => ({
   bottom: r.bottom * t.zoom + t.yZoomed,
 });
 
-/** Canvas 2D `setTransform(a, b, c, d, e, f)` arguments for this transform. */
+/**
+ * Canvas 2D `setTransform(a, b, c, d, e, f)` arguments for this transform.
+ *
+ * @param t - The view transform to process.
+ * @returns The converted value.
+ *
+ */
 export const toCanvasTransform = (t: ViewTransform): [number, number, number, number, number, number] => [
   t.zoom,
   0,
@@ -135,14 +225,30 @@ export const toCanvasTransform = (t: ViewTransform): [number, number, number, nu
 // Transform construction
 // ---------------------------------------------------------------------------
 
-/** Center the given document position at the given zoom. */
+/**
+ * Center the given document position at the given zoom.
+ *
+ * @param position - The position value (Offset).
+ * @param zoom - The zoom factor.
+ * @param viewSize - The viewport size.
+ * @returns The resulting ViewTransform.
+ *
+ */
 export const calcTransformFor = (position: Offset, zoom: number, viewSize: Size): ViewTransform => ({
   zoom,
   xZoomed: -position.x * zoom + viewSize.width / 2,
   yZoomed: -position.y * zoom + viewSize.height / 2,
 });
 
-/** Fit the given document rect into the view. */
+/**
+ * Fit the given document rect into the view.
+ *
+ * @param rect - The rectangle to process.
+ * @param viewSize - The viewport size.
+ * @param options - Options that customize the operation.
+ * @returns The resulting ViewTransform.
+ *
+ */
 export function calcTransformForRect(
   rect: Rect,
   viewSize: Size,
@@ -174,7 +280,15 @@ export type PdfPageAnchor =
   | 'bottomRight'
   | 'all';
 
-/** The sub-rectangle of `rect` that should be brought into view. */
+/**
+ * The sub-rectangle of `rect` that should be brought into view.
+ *
+ * @param rect - The rectangle to process.
+ * @param anchor - The anchor value (PdfPageAnchor).
+ * @param visibleSize - The visibleSize value (Size).
+ * @returns The resulting Rect.
+ *
+ */
 export function calcRectForArea(rect: Rect, anchor: PdfPageAnchor, visibleSize: Size): Rect {
   const w = Math.min(rectWidth(rect), visibleSize.width);
   const h = Math.min(rectHeight(rect), visibleSize.height);
@@ -217,6 +331,7 @@ export function calcRectForArea(rect: Rect, anchor: PdfPageAnchor, visibleSize: 
 
 /**
  * How underflow (document smaller than view) is distributed to each side.
+ *
  */
 const splitBoundaryExtra = (extra: number, leadingRatio: number): [number, number] => [
   extra * leadingRatio,
@@ -260,6 +375,13 @@ const verticalLeadingRatio = (anchor: PdfPageAnchor | undefined): number => {
 /**
  * Expands the configured boundary margin so that a document smaller than the
  * view is aligned per `underflowAnchor`.
+ * @param viewSize - The viewport size.
+ * @param zoom - The zoom factor.
+ * @param documentSize - The laid-out document size.
+ * @param boundaryMargin - The boundaryMargin value (EdgeInsets).
+ * @param underflowAnchor - The underflowAnchor value (PdfPageAnchor).
+ * @returns The resulting EdgeInsets.
+ *
  */
 export function adjustBoundaryMargins(
   viewSize: Size,
@@ -284,6 +406,12 @@ export function adjustBoundaryMargins(
 /**
  * The document-space offset by which the visible rect exceeds the allowed
  * boundary. Zero when fully inside.
+ * @param t - The view transform to process.
+ * @param viewSize - The viewport size.
+ * @param documentSize - The laid-out document size.
+ * @param adjustedBoundaryMargins - The adjustedBoundaryMargins value (EdgeInsets).
+ * @returns The resulting Offset.
+ *
  */
 export function calcOverscroll(
   t: ViewTransform,
@@ -324,6 +452,12 @@ export function calcOverscroll(
  * Translate the candidate transform back inside the allowed boundary.
  * Overscroll is expressed in document coordinates and applied to the scaled
  * space, i.e. `xZoomed -= zoom * dx`.
+ * @param candidate - The candidate value (ViewTransform).
+ * @param viewSize - The viewport size.
+ * @param documentSize - The laid-out document size.
+ * @param adjustedBoundaryMargins - The adjustedBoundaryMargins value (EdgeInsets).
+ * @returns The resulting ViewTransform.
+ *
  */
 export function clampToBoundary(
   candidate: ViewTransform,

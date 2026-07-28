@@ -35,6 +35,12 @@ export type PageArrangementErrorCode =
 
 /** Validation failure produced while applying a page-arrangement command. */
 export class PageArrangementError extends Error {
+  /**
+   * Creates a page-arrangement validation failure.
+   *
+   * @param code - The stable failure category.
+   * @param message - The human-readable error message.
+   */
   constructor(
     readonly code: PageArrangementErrorCode,
     message: string,
@@ -64,7 +70,12 @@ const assertPlacement = (page: PagePlacement): void => {
   }
 };
 
-/** Validates placement fields and uniqueness without changing the arrangement. */
+/**
+ * Validates placement fields and uniqueness without changing the arrangement.
+ *
+ * @param pages - The pages to process, in document order.
+ *
+ */
 export function validatePagePlacements(pages: readonly PagePlacement[]): void {
   const ids = new Set<string>();
   for (const page of pages) {
@@ -95,6 +106,11 @@ const placementIndex = (pages: readonly PagePlacement[], placementId: string): n
  * Applies one page command and returns a new arrangement. Inputs are never
  * mutated. An operation that already has its requested result returns the
  * original array, which lets stores avoid a redundant notification.
+ * @param pages - The pages to process, in document order.
+ * @param operation - The operation to apply.
+ * @param options - Options that customize the operation.
+ * @returns The updated result.
+ *
  */
 export function applyPagePlacementOperation(
   pages: readonly PagePlacement[],
@@ -162,7 +178,15 @@ export function applyPagePlacementOperation(
   }
 }
 
-/** Applies a committed command sequence in order; the original array remains unchanged if one fails. */
+/**
+ * Applies a committed command sequence in order; the original array remains unchanged if one fails.
+ *
+ * @param pages - The pages to process, in document order.
+ * @param operations - The operations value.
+ * @param options - Options that customize the operation.
+ * @returns The updated result.
+ *
+ */
 export function applyPagePlacementOperations(
   pages: readonly PagePlacement[],
   operations: readonly PagePlacementOperation[],

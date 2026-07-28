@@ -5,6 +5,7 @@
  * the DOM canvas, the pointer state machine, and the render loop. Text
  * selection is painted on the canvas — there is deliberately no DOM text
  * layer.
+ *
  */
 
 import {
@@ -128,12 +129,14 @@ export interface PdfrxViewerOptions {
    * {@link engineOptions} and disposes it on {@link PdfrxViewer.dispose}. Pass a
    * shared engine to open several viewers against one worker; then the caller
    * owns its lifetime.
+   *
    */
   engine?: PdfrxEngine;
   /**
    * Options for the engine created when {@link engine} is not supplied. Its
    * `wasmModulesUrl` must point at a directory containing `pdfium_worker.js` and
    * `pdfium.wasm`. Defaults to `{ wasmModulesUrl: 'pdfium/' }`.
+   *
    */
   engineOptions?: PdfrxEngineOptions;
   /** Margin around/between pages in document units. Default: 8. */
@@ -144,12 +147,14 @@ export interface PdfrxViewerOptions {
    * mouse wheel scrolls sideways through the pages. Ignored when
    * {@link layoutPages} is set. Can also be changed at runtime with
    * {@link PdfrxViewer.setLayoutDirection}.
+   *
    */
   layoutDirection?: LayoutDirection;
   /**
    * Built-in two-page book layout. `'odd'` pairs pages 1–2, 3–4; `'even'`
    * leaves page 1 alone and pairs 2–3, 4–5. Default: `'none'`.
    * Ignored when {@link layoutPages} is set.
+   *
    */
   spreadMode?: ViewerSpreadMode;
   /**
@@ -158,6 +163,7 @@ export interface PdfrxViewerOptions {
    * coordinates, y-down) and the total document size. When set, it fully
    * replaces the built-in vertical/horizontal layouts (so {@link layoutDirection}
    * is ignored). See {@link LayoutPagesFn}.
+   *
    */
   layoutPages?: LayoutPagesFn;
   /** Background color of the viewer. Default: '#808080'. */
@@ -170,6 +176,7 @@ export interface PdfrxViewerOptions {
    * page backgrounds while keeping dark text dark. Use `'normal'` to restore
    * conventional alpha overlay painting, for example on predominantly dark
    * pages.
+   *
    */
   textHighlightBlendMode?: 'multiply' | 'normal';
   /** Selection handle color (touch). Default: '#2196f3'. */
@@ -179,6 +186,7 @@ export interface PdfrxViewerOptions {
   /**
    * Fill style for the active (current) search-match highlight. Default:
    * 'rgba(255, 152, 0, 0.5)'.
+   *
    */
   activeMatchTextColor?: string;
   /** Maximum zoom. Default: 8. */
@@ -188,6 +196,7 @@ export interface PdfrxViewerOptions {
    * `min(`{@link PdfrxViewer.coverScale}`, `{@link PdfrxViewer.fitPageScale}`)`
    * for the current page, so you can never zoom out past
    * seeing a whole page. Set an explicit number to override that behavior.
+   *
    */
   minZoom?: number;
   /**
@@ -200,17 +209,20 @@ export interface PdfrxViewerOptions {
    * - `'page'` (default) — the whole first page fits within the viewport.
    * - `'width'` — the first page's width fills the viewport (top-aligned).
    * - `'height'` — the first page's height fills the viewport.
+   *
    */
   initialFit?: FitMode;
   /**
    * Drop shadow drawn behind every page (in screen space, so it looks the same
    * at any zoom). Defaults to a soft shadow; pass `null` to remove it. See
    * {@link PageDropShadow}.
+   *
    */
   pageDropShadow?: PageDropShadow | null;
   /**
    * Border drawn around every page (in screen space). Off by default; set a
    * {@link PageBorder} to enable it.
+   *
    */
   pageBorder?: PageBorder | null;
   /**
@@ -218,12 +230,14 @@ export interface PdfrxViewerOptions {
    * filled — useful for custom shadows or backdrops that extend outside the
    * page. Each callback receives the canvas already transformed to document
    * coordinates and the page's document-space rect.
+   *
    */
   pageBackgroundPaintCallbacks?: PagePaintCallback[];
   /**
    * Custom painters invoked **on top of** each page's rendered content — useful
    * for watermarks, page numbers, or custom borders. Same coordinate space as
    * {@link pageBackgroundPaintCallbacks}.
+   *
    */
   pagePaintCallbacks?: PagePaintCallback[];
   /**
@@ -237,6 +251,7 @@ export interface PdfrxViewerOptions {
    * `pointerEvents: 'auto'` to make it interactive. Built lazily per visible
    * page — cheap for large documents. Call {@link PdfrxViewer.refreshOverlays}
    * to rebuild after external state changes.
+   *
    */
   pageOverlaysBuilder?: PageOverlaysBuilder;
   /**
@@ -245,12 +260,14 @@ export interface PdfrxViewerOptions {
    *
    * @see [Missing-font fallback](https://github.com/espresso3389/pdfrx_web/blob/master/docs/FONT-FALLBACK.md)
    *   — how the default resolver picks substitutes, and how to customize it.
+   *
    */
   fontResolver?: FontResolver | null;
   /**
    * Overrides environment-dependent FreeText measurement, font resolution, or
    * emoji rendering. The viewer supplies browser defaults and delegates the
    * shared grapheme/language/layout logic to `@pdfrx/engine`.
+   *
    */
   textAppearanceServices?: PdfTextAppearanceServices;
   /**
@@ -258,6 +275,7 @@ export interface PdfrxViewerOptions {
    * Accepts BCP-47 tags in priority order. When omitted, the browser's
    * `navigator.languages` is used. Explicit kana/Hangul still take precedence.
    * The resolved font runs are persisted with the annotation.
+   *
    */
   freeTextLanguage?: string | readonly string[];
   /**
@@ -265,6 +283,7 @@ export interface PdfrxViewerOptions {
    * make it clickable in viewing interactions. Detected links are transient:
    * they are not returned by annotation APIs and cannot be edited, persisted,
    * synchronized, or exported. Default: `true`.
+   *
    */
   autoLinkDetection?: boolean;
   /**
@@ -274,6 +293,7 @@ export interface PdfrxViewerOptions {
    * {@link PdfLink.target} to decide, and call
    * {@link PdfrxViewer.goToDest} / `window.open` yourself to keep parts of the
    * default. Omit it to keep the built-in behavior.
+   *
    */
   onLinkTap?: LinkTapHandler;
   /**
@@ -282,6 +302,7 @@ export interface PdfrxViewerOptions {
    * position and dismiss, or `null`/`undefined` for no menu. This is the hook
    * for localizing or fully customizing the menu — the viewer itself carries no
    * translation machinery. See {@link ContextMenuBuilder}.
+   *
    */
   contextMenuBuilder?: ContextMenuBuilder;
   /**
@@ -289,28 +310,33 @@ export interface PdfrxViewerOptions {
    * (`goToPage`, `goToDest`, `fitTo*`, `setZoom`, `zoomUp`/`zoomDown`,
    * `zoomToggle`). `0` (the default) means jump instantly. Each of those methods
    * also takes a per-call `duration` that overrides this.
+   *
    */
   animationDuration?: number;
   /**
    * Multiplicative step between zoom stops for {@link PdfrxViewer.zoomUp} /
    * {@link PdfrxViewer.zoomDown} (and ctrl/cmd +/-). Stops are `factor^k`, so
    * repeated up/down lands on the same grid. Default: `√2`.
+   *
    */
   zoomStepFactor?: number;
   /**
    * How far {@link PdfrxViewer.zoomToggle} (and double-tap, when enabled) zooms
    * in, as a multiple of the fit-page scale. Default: `3`.
+   *
    */
   doubleTapZoomFactor?: number;
   /**
    * Enables touch **double-tap** to zoom in/out at the tapped point (animated
    * with {@link animationDuration} or a 250 ms default). On by default.
+   *
    */
   doubleTapToZoom?: boolean;
   /**
    * Make a **mouse double-click** zoom (via {@link PdfrxViewer.zoomToggle})
    * instead of selecting the word under the cursor. Off by default (double-click
    * selects a word, the common text-viewer behavior).
+   *
    */
   doubleClickToZoom?: boolean;
   /**
@@ -318,6 +344,7 @@ export interface PdfrxViewerOptions {
    * In annotation mode, primary drag instead manipulates an object/anchor or
    * marquee-selects from empty page space.
    * Default: `true`.
+   *
    */
   panEnabled?: boolean;
   /**
@@ -325,12 +352,14 @@ export interface PdfrxViewerOptions {
    * `'free'` (default) pans in both; `'horizontal'` / `'vertical'` lock to that
    * axis; `'aligned'` locks each pan gesture to whichever axis it starts moving
    * along. Wheel/keyboard scrolling and programmatic navigation are unaffected.
+   *
    */
   panAxis?: PanAxis;
   /**
    * Enables gesture zoom (pinch and ctrl/cmd + wheel). When disabled, a
    * two-finger gesture can still pan if {@link panEnabled} is enabled.
    * Programmatic zoom is unaffected. Default: `true`.
+   *
    */
   zoomEnabled?: boolean;
   /** Enables mouse-wheel / trackpad scrolling. Default: `true`. */
@@ -343,11 +372,13 @@ export interface PdfrxViewerOptions {
    * the owning source PDF and reflected when that document is encoded. Exporting
    * one virtual arrangement made from several source PDFs requires an
    * application-level AcroForm catalog merge. Default: `true`.
+   *
    */
   interactiveForms?: boolean;
   /**
    * Respect the PDF permission flags in standard viewer interactions.
    * Default: `true`. These flags are advisory, not cryptographic security.
+   *
    */
   enforceDocumentPermissions?: boolean;
   /** Application overrides applied before PDF permission flags. */
@@ -359,11 +390,13 @@ export interface PdfrxViewerOptions {
    * widgets but not annotations (they come from the overlay), so per-edit updates
    * never re-render the page — no flicker. Edits are written back to the PDF and
    * reflected by `PdfDocument.encodePdf`. Default: `true`.
+   *
    */
   interactiveAnnotations?: boolean;
   /**
    * Text shown by annotation text-editing UI. Defaults to
    * `{ text: 'Text', note: 'Note' }`; localized UI wrappers can override it.
+   *
    */
   annotationEditorPlaceholders?: {
     text?: string;
@@ -372,11 +405,13 @@ export interface PdfrxViewerOptions {
   /**
    * Extra scrollable margin, in document units, added around the document so it
    * can be panned past its edges. Default: `0` (edges are hard boundaries).
+   *
    */
   boundaryMargin?: number;
   /**
    * Called when a gesture (pan/pinch/select/handle-drag) begins. Pair with
    * {@link onInteractionEnd} to e.g. pause other work while the user interacts.
+   *
    */
   onInteractionStart?: () => void;
   /** Called when the current gesture ends and the viewer returns to idle. */
@@ -385,17 +420,20 @@ export interface PdfrxViewerOptions {
    * Called once a document has loaded and the viewer is laid out and ready to
    * interact with (after the initial fit). Fires again whenever a new document
    * is opened.
+   *
    */
   onViewerReady?: () => void;
   /**
    * Called when the viewport size changes (element resize), with the new size in
    * CSS pixels. Not called for the initial layout.
+   *
    */
   onViewSizeChanged?: (viewSize: Size) => void;
   /**
    * Called for discrete pointer gestures — single tap, double-tap, long-press,
    * and secondary (right/two-finger) tap — with the type and view-space point.
    * Fires in addition to the viewer's own handling (selection, links, zoom).
+   *
    */
   onGeneralTap?: (event: PdfViewerTapEvent) => void;
   /**
@@ -404,6 +442,7 @@ export interface PdfrxViewerOptions {
    * layer sits above the canvas and is click-through unless a child sets
    * `pointerEvents: 'auto'`. Rebuilt on resize and document change; call
    * {@link PdfrxViewer.refreshViewerOverlays} to rebuild on demand.
+   *
    */
   viewerOverlayBuilder?: ViewerOverlayBuilder;
   /**
@@ -412,6 +451,7 @@ export interface PdfrxViewerOptions {
    * `false` to draw your own from {@link PdfrxViewer.isLoading} /
    * {@link PdfrxViewer.addLoadingChangeListener} — the previous document is
    * hidden either way. Default: `true`.
+   *
    */
   loadingIndicator?: boolean;
   /** Color of the built-in loading indicator. Default: `'rgba(255, 255, 255, 0.85)'`. */
@@ -443,12 +483,14 @@ export interface PdfViewerRefreshPagesOptions {
    * Also ask PDFium to recreate page objects and reload page size, rotation,
    * bounding-box and load-state metadata. Enable this after editing page
    * dictionaries or page-tree structure.
+   *
    */
   reloadMetadata?: boolean;
   /**
    * Cache categories to discard. Default: all categories. Choose a subset when
    * the raw edit's effects are known—for example `['render']` after changing
    * only a page content stream.
+   *
    */
   content?: readonly PdfViewerPageContent[];
 }
@@ -462,6 +504,7 @@ export interface PdfViewerRefreshEvent {
 /**
  * Constrains drag-panning to an axis (see {@link PdfrxViewerOptions.panAxis}).
  * `'aligned'` locks each gesture to the axis it first moves along.
+ *
  */
 export type PanAxis = 'free' | 'horizontal' | 'vertical' | 'aligned';
 
@@ -480,12 +523,14 @@ export interface PdfViewerTapEvent {
  * Builds viewport-fixed DOM overlays (see
  * {@link PdfrxViewerOptions.viewerOverlayBuilder}). Return one element, an array,
  * or `null`/`undefined` for none. Position elements in view-space (CSS pixels).
+ *
  */
 export type ViewerOverlayBuilder = (info: { viewSize: Size }) => HTMLElement | HTMLElement[] | null | undefined;
 
 /**
  * Handles a link activation (see {@link PdfrxViewerOptions.onLinkTap}). Receives
  * the tapped {@link PdfLink}; return value is ignored.
+ *
  */
 export type LinkTapHandler = (link: PdfLink) => void;
 
@@ -510,6 +555,7 @@ export interface ContextMenuContext {
  * {@link PdfrxViewer.copySelection} / {@link PdfrxViewer.selectAll} etc. and then
  * {@link ContextMenuContext.close}. Supplying this replaces the built-in menu
  * entirely — the mechanism through which an app localizes or customizes it.
+ *
  */
 export type ContextMenuBuilder = (context: ContextMenuContext) => HTMLElement | null | undefined;
 
@@ -519,6 +565,7 @@ export type ContextMenuBuilder = (context: ContextMenuContext) => HTMLElement | 
  * - `'page'` — fit the entire page (both width and height are contained).
  * - `'width'` — the page width fills the viewport width.
  * - `'height'` — the page height fills the viewport height.
+ *
  */
 export type FitMode = 'page' | 'width' | 'height';
 
@@ -528,6 +575,7 @@ export type FitMode = 'page' | 'width' | 'height';
  * A number is an explicit zoom factor (`1` = one PDF point per CSS pixel).
  * `'page'` and `'width'` are responsive modes: their effective {@link PdfrxViewer.zoom}
  * is recomputed when the viewport size changes.
+ *
  */
 export type ZoomMode = number | 'page' | 'width';
 
@@ -535,6 +583,7 @@ export type ZoomMode = number | 'page' | 'width';
  * Drop shadow drawn behind each page. All
  * lengths are in CSS pixels and are **not** scaled by zoom, so the shadow keeps
  * a constant on-screen appearance.
+ *
  */
 export interface PageDropShadow {
   /** Shadow color. Default: `'rgba(0, 0, 0, 0.5)'`. */
@@ -564,6 +613,7 @@ export interface PageBorder {
  * @param ctx - The 2D context, transformed to document space.
  * @param pageRect - The page's rectangle in document coordinates.
  * @param page - The {@link PdfPage} being painted (for size, rotation, number).
+ *
  */
 export type PagePaintCallback = (ctx: CanvasRenderingContext2D, pageRect: Rect, page: PdfPage) => void;
 
@@ -577,6 +627,7 @@ export interface PageOverlayInfo {
    * The overlay coordinate space: the page size in PDF points. Position overlay
    * elements within `[0, width] × [0, height]` (top-left origin); the viewer
    * scales the whole layer by the current zoom.
+   *
    */
   pageSize: Size;
 }
@@ -586,6 +637,7 @@ export interface PageOverlayInfo {
  * Return one element, an array of elements, or `null`/`undefined` for none. The
  * elements are positioned in page-point coordinates and follow the page as it
  * pans and zooms.
+ *
  */
 export type PageOverlaysBuilder = (info: PageOverlayInfo) => HTMLElement | HTMLElement[] | null | undefined;
 
@@ -629,12 +681,14 @@ export interface PdfPageArea {
  * {@link PageLayout}: each page's rect in document coordinates (y-down) and the
  * total document size. `@pdfrx/viewer-core` exports `layoutPagesVertical` /
  * `layoutPagesHorizontal` as ready-made implementations and building blocks.
+ *
  */
 export type LayoutPagesFn = (pages: readonly PageGeometry[], options: { margin: number }) => PageLayout;
 
 /**
  * One end of a text selection: a page and a character index into that page's
  * text (`fullText`). Both selection ends are inclusive.
+ *
  */
 export interface PdfTextSelectionPoint {
   /** 1-based page number. */
@@ -649,6 +703,7 @@ export interface PdfTextSelectionPoint {
  * no text and touches no page geometry. Resolve the actual text and rectangles
  * on demand via {@link PdfTextSelection.getSelectedTextRanges} /
  * {@link PdfTextSelection.getSelectedText}.
+ *
  */
 export interface PdfTextSelectionRange {
   readonly start: PdfTextSelectionPoint;
@@ -668,6 +723,7 @@ export interface PdfSelectedTextRange {
   /**
    * Bounding rectangle over the whole range, in **PDF page coordinates**
    * (points, origin bottom-left, y-up).
+   *
    */
   readonly bounds: PdfRect;
   /** One bounding rectangle per character in the range, in PDF page coordinates. */
@@ -685,6 +741,7 @@ export interface PdfSelectedTextRange {
  * and may need to load the text of pages between the endpoints — is deferred to
  * the explicit async {@link getSelectedText} / {@link getSelectedTextRanges}
  * methods.
+ *
  */
 export interface PdfTextSelection {
   /** True when nothing is selected. */
@@ -693,6 +750,7 @@ export interface PdfTextSelection {
    * The selection endpoints (`start` precedes `end`), or `null` when
    * {@link isEmpty}. Cheap: derived from internal state without touching page
    * text.
+   *
    */
   readonly range: PdfTextSelectionRange | null;
   /**
@@ -700,11 +758,17 @@ export interface PdfTextSelection {
    * range's {@link PdfSelectedTextRange.bounds | bounds} give the selected
    * text's location in PDF page coordinates). Loads the text of fully-covered
    * intermediate pages as needed, hence async. Returns `[]` when {@link isEmpty}.
+   *
+   * @returns The resolved Promise.
+   *
    */
   getSelectedTextRanges(): Promise<PdfSelectedTextRange[]>;
   /**
    * Resolves the full selected text across pages in reading order (empty string
    * when {@link isEmpty}). See {@link getSelectedTextRanges} for why it is async.
+   *
+   * @returns The resolved Promise.
+   *
    */
   getSelectedText(): Promise<string>;
 }
@@ -715,12 +779,14 @@ export interface PdfTextSelection {
  * range changes and when it is cleared; it does not fire while a drag hovers
  * over the same character. The passed {@link PdfTextSelection} is a snapshot of
  * the state at that moment.
+ *
  */
 export type SelectionChangeListener = (selection: PdfTextSelection) => void;
 
 /**
  * The result of hit-testing a view-space point against the laid-out pages
  * (see {@link PdfrxViewer.getPageHitTestResult}).
+ *
  */
 export interface PdfPageHitTestResult {
   /** 1-based number of the page under the point. */
@@ -730,6 +796,7 @@ export interface PdfPageHitTestResult {
   /**
    * The hit location in **PDF page coordinates** (points, origin bottom-left,
    * y-up), relative to the page.
+   *
    */
   readonly pdfPoint: PdfPoint;
 }
@@ -738,6 +805,7 @@ export interface PdfPageHitTestResult {
  * Called when the current page changes (see
  * {@link PdfrxViewer.addPageChangeListener}). The argument is the new 1-based
  * current page number, or `null` when no document is shown.
+ *
  */
 export type PageChangeListener = (pageNumber: number | null) => void;
 
@@ -772,6 +840,7 @@ type InteractionMode =
  * One page's form-control overlay: a point-space container (transformed to
  * follow the page) plus a per-field reconciler that refreshes a control's
  * displayed value in place when the underlying field changes.
+ *
  */
 interface FormPageOverlay {
   container: HTMLDivElement;
@@ -782,6 +851,7 @@ interface FormPageOverlay {
 /**
  * One page's annotation overlay: a point-space `<svg>` (transformed to follow
  * the page) that paints the page's annotations and hosts editing.
+ *
  */
 interface AnnotationPageOverlay {
   pageNumber: number;
@@ -831,6 +901,7 @@ interface AnnotationSnapResult {
  * annotation spec in each state, or `null` for "does not exist". Applying a
  * state = remove (null) or create/replace by id (spec), which uniformly covers
  * create / delete / edit.
+ *
  */
 interface AnnotationCommand {
   pageNumber: number;
@@ -873,6 +944,7 @@ export type AnnotationLinkRequestHandler = (
  * the effective object-interaction mode. Alt/Option temporarily inverts viewing
  * and annotation modes without changing the selected tool.
  * @internal
+ *
  */
 export const annotationObjectInteractionEnabled = (
   annotationMode: boolean,
@@ -883,6 +955,7 @@ export const annotationObjectInteractionEnabled = (
  * Cmd/Ctrl makes an empty-space gesture additive only in effective
  * annotation-object mode.
  * @internal
+ *
  */
 export const preserveAnnotationSelectionOnEmptySpace = (
   annotationObjectMode: boolean,
@@ -910,6 +983,7 @@ export const annotationTextCompositionKey = (
  * Keys the viewer deliberately takes back from an armed, not-yet-visible text
  * editor. Everything else stays native so platform IME toggles keep working.
  * @internal
+ *
  */
 export const forwardArmedEditorKeyToViewer = (
   key: string,
@@ -1118,6 +1192,7 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
  * same decision or hidden review-history annotations become visible.
  *
  * @internal
+ *
  */
 export function annotationVisibleInViewer(
   annotation: Pick<PdfAnnotationObject, 'flags' | 'subtype'>,
@@ -1156,6 +1231,7 @@ function inkSpecRect(strokes: PdfAnnotationPoint[][]): PdfRect {
 /**
  * A displayable annotation object built by overlaying a spec's rect/color/
  * geometry onto a base annotation — used to live-render a drag preview.
+ *
  */
 function syntheticAnnotation(base: PdfAnnotationObject, spec: PdfAnnotationSpec): PdfAnnotationObject {
   const rect = spec.rect ?? base.rect;
@@ -1371,6 +1447,7 @@ function scaleAnnotationSpec(a: PdfAnnotationObject, oldBox: PdfRect, newBox: Pd
  * The eight bounding-box handles (corners + edge midpoints) that scale a shape.
  * A handle may cross the opposite edge freely (the box is normalized, not
  * ordering-locked); a 1pt floor just avoids a degenerate box.
+ *
  */
 function boundingBoxAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
   const b = annotationBounds(a);
@@ -1419,6 +1496,7 @@ function annotationLineSegments(a: PdfAnnotationObject): readonly (readonly [Pdf
  * CSS transforms.
  *
  * @internal
+ *
  */
 export function clientPointToPagePx(
   rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
@@ -1439,6 +1517,7 @@ export function clientPointToPagePx(
  * it can always be selected and dragged back.
  *
  * @internal
+ *
  */
 export function constrainAnnotationTranslation(box: Rect, delta: Offset, pageSize: Size): Offset {
   const clampAxis = (start: number, end: number, span: number, value: number): number => {
@@ -1513,6 +1592,7 @@ const EFFECTIVELY_INVISIBLE_ALPHA = 0.05 * 255;
  * remain visible independently of the annotation dictionary's paint colors.
  *
  * @internal
+ *
  */
 export function annotationIsEffectivelyInvisible(a: PdfAnnotationObject): boolean {
   if (a.subtype === 'link') return true;
@@ -1543,6 +1623,7 @@ export function annotationIsEffectivelyInvisible(a: PdfAnnotationObject): boolea
  * - polygons/polylines keep per-vertex handles;
  * - freehand pen, rectangle, ellipse and other area shapes expose the eight
  *   bounding-box handles and drag = uniform scale.
+ *
  */
 function annotationAnchors(a: PdfAnnotationObject): AnnotationAnchor[] {
   // A Text annotation is a fixed-size note icon. Its associated popup/editor
@@ -1851,6 +1932,7 @@ export function isPdfPrintingSupported(
  * // ...later
  * viewer.dispose();
  * ```
+ *
  */
 export class PdfrxViewer {
   /**
@@ -1858,6 +1940,7 @@ export class PdfrxViewer {
    *   `position: relative` if statically positioned so overlays (context menu)
    *   can anchor to it. Size the viewer by sizing this element.
    * @param options - See {@link PdfrxViewerOptions}.
+   *
    */
   constructor(container: HTMLElement, options: PdfrxViewerOptions = {}) {
     this.container = container;
@@ -1992,6 +2075,7 @@ export class PdfrxViewer {
    * First-generation pixels for image stamps. PDFium may read an appearance
    * back at its current display size, so reusing that readback on every resize
    * would progressively resample the image.
+   *
    */
   private readonly annotationImageSources = new Map<
     string,
@@ -2071,6 +2155,7 @@ export class PdfrxViewer {
    * Bumped whenever page positions stop meaning what they meant (new document,
    * rearrangement). Text and links are cached by position, so a load that was
    * in flight across the change must not write its result back.
+   *
    */
   private arrangementGeneration = 0;
   /** Captured before viewer-owned page mutations, since document events fire after the page array changes. */
@@ -2090,6 +2175,7 @@ export class PdfrxViewer {
    * {@link coverScale} (fit the whole document's bounding box) and the current
    * page's {@link fitPageScale} (the complete row in spread mode), computed
    * dynamically so the active page or spread can remain fully visible.
+   *
    */
   private get minZoom(): number {
     if (this.options.minZoom !== undefined) return this.options.minZoom;
@@ -2166,6 +2252,11 @@ export class PdfrxViewer {
    * (relative URLs resolve against `document.baseURI`). The source is retained
    * so the viewer can transparently reopen it after registering missing-font
    * fallbacks. For password-protected PDFs, supply a provider via `options`.
+   *
+   * @param url - The URL to use.
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async openUrl(url: string | URL, options: PdfOpenUrlOptions = {}): Promise<void> {
     return await this.whileLoading(async () => {
@@ -2188,6 +2279,11 @@ export class PdfrxViewer {
    * Opens a document from in-memory bytes and displays it, replacing any current
    * document. The viewer keeps its own source copy for the missing-font reopen
    * (see {@link openUrl}); the supplied buffer is consumed by the engine.
+   *
+   * @param data - The input data.
+   * @param options - Options that customize the operation.
+   * @returns The resolved Promise.
+   *
    */
   async openData(data: Uint8Array | ArrayBuffer, options: PdfOpenDataOptions = {}): Promise<void> {
     return await this.whileLoading(async () => {
@@ -2206,6 +2302,7 @@ export class PdfrxViewer {
    * Whether a document is currently opening. While this is true the previous
    * document is not painted — parsing a large PDF takes seconds, and leaving
    * the old one on screen makes the viewer look stuck.
+   *
    */
   get isLoading(): boolean {
     return this.loadingCount > 0;
@@ -2214,6 +2311,7 @@ export class PdfrxViewer {
   /**
    * Download progress of the document being opened, or `null` when nothing is
    * loading or the source reports no byte counts (e.g. {@link openData}).
+   *
    */
   get loadingProgress(): PdfLoadingProgress | null {
     return this.loadingProgressValue;
@@ -2225,6 +2323,9 @@ export class PdfrxViewer {
    * controls while a document opens.
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addLoadingChangeListener(listener: () => void): () => void {
     this.loadingChangeListeners.add(listener);
@@ -2235,6 +2336,7 @@ export class PdfrxViewer {
    * @internal
    * Marks the viewer as loading for the duration of `open`, hiding the previous
    * document and dropping its queued renders so the worker is free to parse.
+   *
    */
   private async whileLoading(open: () => Promise<void>): Promise<void> {
     this.loadingCount++;
@@ -2280,6 +2382,9 @@ export class PdfrxViewer {
    * including the automatic reopen after missing-font registration.
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addDocumentChangeListener(listener: () => void): () => void {
     this.documentChangeListeners.add(listener);
@@ -2290,6 +2395,10 @@ export class PdfrxViewer {
    * Registers a listener for explicit {@link refreshPages} and
    * {@link refreshDocument} operations. Document replacement is reported
    * separately by {@link addDocumentChangeListener}.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
    */
   addRefreshListener(listener: (event: PdfViewerRefreshEvent) => void): () => void {
     this.refreshListeners.add(listener);
@@ -2328,6 +2437,9 @@ export class PdfrxViewer {
    * the same character).
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addSelectionChangeListener(listener: SelectionChangeListener): () => void {
     this.selectionChangeListeners.add(listener);
@@ -2341,6 +2453,9 @@ export class PdfrxViewer {
    * deduplicated: it fires only when the value actually changes.
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addPageChangeListener(listener: PageChangeListener): () => void {
     this.pageChangeListeners.add(listener);
@@ -2357,6 +2472,9 @@ export class PdfrxViewer {
    * deduplicated, so it fires at most once per frame and never for a no-op.
    *
    * @returns An unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   *
    */
   addTransformChangeListener(listener: () => void): () => void {
     this.transformChangeListeners.add(listener);
@@ -2372,6 +2490,10 @@ export class PdfrxViewer {
    * Converts a **view-space** point (CSS pixels relative to the viewer canvas's
    * top-left) to **document space** (the unzoomed coordinate space of the whole
    * laid-out document).
+   *
+   * @param viewPoint - The viewPoint value (Offset).
+   * @returns The converted Offset.
+   *
    */
   viewToDocumentPoint(viewPoint: Offset): Offset {
     return viewToDocument(this.transform, viewPoint);
@@ -2381,6 +2503,10 @@ export class PdfrxViewer {
    * Converts a **document-space** point to a **view-space** point (CSS pixels
    * relative to the viewer canvas's top-left). Inverse of
    * {@link viewToDocumentPoint}.
+   *
+   * @param docPoint - The docPoint value (Offset).
+   * @returns The converted Offset.
+   *
    */
   documentToViewPoint(docPoint: Offset): Offset {
     return documentToView(this.transform, docPoint);
@@ -2393,6 +2519,9 @@ export class PdfrxViewer {
    * @returns The page under the point and the hit location in PDF page
    *   coordinates, or `null` if the point is not over any page (in the margin or
    *   background).
+   *
+   * @param viewPoint - The viewPoint value (Offset).
+   *
    */
   getPageHitTestResult(viewPoint: Offset): PdfPageHitTestResult | null {
     if (!this.layout || !this.doc) return null;
@@ -2418,6 +2547,7 @@ export class PdfrxViewer {
    * worker — e.g. to convert an image to a PDF, or to import pages from a dropped
    * file into {@link document} (cross-document page import only works within one
    * engine). Shared if an {@link PdfrxViewerOptions.engine} was supplied.
+   *
    */
   get engine(): PdfrxEngine {
     return this.#engine;
@@ -2431,6 +2561,7 @@ export class PdfrxViewer {
   /**
    * The current view transform (uniform zoom + pan). Document→view mapping used
    * throughout the viewer.
+   *
    */
   get currentTransform(): ViewTransform {
     return this.transform;
@@ -2445,6 +2576,9 @@ export class PdfrxViewer {
    * Switches the page-layout direction at runtime, re-laying out the document
    * and refitting the view. No-op if unchanged or if a custom
    * {@link PdfrxViewerOptions.layoutPages} is in effect (which always wins).
+   *
+   * @param direction - The direction value (LayoutDirection).
+   *
    */
   setLayoutDirection(direction: LayoutDirection): void {
     if (direction === this.layoutDirectionValue || this.options.layoutPages) return;
@@ -2462,6 +2596,9 @@ export class PdfrxViewer {
   /**
    * Switches between continuous single-page layout and the two book pairings.
    * Re-lays out and refits the current document.
+   *
+   * @param mode - The mode value (ViewerSpreadMode).
+   *
    */
   setSpreadMode(mode: ViewerSpreadMode): void {
     if (mode === this.spreadModeValue || this.options.layoutPages) return;
@@ -2475,6 +2612,7 @@ export class PdfrxViewer {
    * The plain text of the current selection (empty string when nothing is
    * selected). Only pages whose text has already loaded contribute; text is
    * composed across pages in reading order.
+   *
    */
   get selectedText(): string {
     if (!this.selA || !this.selB) return '';
@@ -2496,7 +2634,12 @@ export class PdfrxViewer {
     this.invalidate();
   }
 
-  /** Select all text of all pages (loads page texts as needed). */
+  /**
+   * Select all text of all pages (loads page texts as needed).
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async selectAll(): Promise<void> {
     if (!this.doc) return;
     for (let n = 1; n <= this.doc.pages.length; n++) this.ensureText(n);
@@ -2524,6 +2667,10 @@ export class PdfrxViewer {
    * to each page's character range. Returns `true` if a selection was set, or
    * `false` if it could not be (e.g. no document, or the endpoint pages have no
    * selectable text).
+   *
+   * @param range - The range value (PdfTextSelectionRange or ).
+   * @returns The resulting Promise.
+   *
    */
   async setTextSelection(range: PdfTextSelectionRange | null): Promise<boolean> {
     if (!range) {
@@ -2553,6 +2700,10 @@ export class PdfrxViewer {
    * Selects the word at a **view-space** point (CSS pixels relative to the
    * canvas), like a double-click. The point's page text must already be loaded
    * (it is for visible pages). Returns `true` if a word was selected.
+   *
+   * @param viewPoint - The viewPoint value (Offset).
+   * @returns Whether the documented condition is satisfied.
+   *
    */
   selectWordAtPoint(viewPoint: Offset): boolean {
     const word = selectWordAt(viewToDocument(this.transform, viewPoint), this.selectablePages());
@@ -2569,6 +2720,7 @@ export class PdfrxViewer {
    * with no encryption/permissions allows copying, and an encrypted document
    * allows it unless its permissions explicitly forbid it
    * (`PdfPermissions.allowsCopying` is `false`).
+   *
    */
   get isCopyAllowed(): boolean {
     return this.resolvePermission('copying', this.doc?.permissions?.allowsCopying);
@@ -2601,6 +2753,7 @@ export class PdfrxViewer {
   /**
    * Re-evaluates permission-dependent overlays and listeners after changing
    * `enforceDocumentPermissions` or `permissionOverrides` at runtime.
+   *
    */
   refreshPermissionPolicy(): void {
     if (!this.isAnnotationEditingAllowed && this.annotationMode) this.setAnnotationMode(false);
@@ -2618,6 +2771,7 @@ export class PdfrxViewer {
    *
    * @returns `true` if there was text to copy (and the write was attempted),
    *   `false` if the selection was empty or the document forbids copying.
+   *
    */
   async copySelection(): Promise<boolean> {
     if (!this.isCopyAllowed) return false;
@@ -2634,6 +2788,9 @@ export class PdfrxViewer {
    *
    * @param duration - Animation duration in ms (defaults to
    *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
+   *
+   * @param pageNumber - The 1-based page number.
+   *
    */
   goToPage(pageNumber: number, duration?: number): void {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return;
@@ -2665,6 +2822,7 @@ export class PdfrxViewer {
   /**
    * The active zoom mode. Numeric values are explicit zoom factors; `'page'`
    * and `'width'` remain active across viewport resizes.
+   *
    */
   get zoomMode(): ZoomMode {
     return typeof this.zoomModeValue === 'number' ? this.transform.zoom : this.zoomModeValue;
@@ -2676,6 +2834,7 @@ export class PdfrxViewer {
    * viewH / docH)`. In the default vertical layout this is effectively the
    * fit-document-width scale — you cannot zoom out past it and still fill the
    * viewport horizontally. Returns `1` before a document is laid out.
+   *
    */
   get coverScale(): number {
     if (!this.layout || this.viewSize.width <= 0 || this.viewSize.height <= 0) return 1;
@@ -2691,6 +2850,10 @@ export class PdfrxViewer {
    * containing that page. Defaults to the current page.
    *
    * The effective minimum zoom is `min(coverScale, fitPageScale)`.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @returns The resulting number or `null`.
+   *
    */
   fitPageScale(pageNumber?: number): number | null {
     return this.pageFitScale(pageNumber ?? this.currentPageNumber ?? 1);
@@ -2765,6 +2928,9 @@ export class PdfrxViewer {
    *
    * @param duration - Animation duration in ms (defaults to
    *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
+   *
+   * @param pageNumber - The 1-based page number.
+   *
    */
   fitToPage(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'page');
@@ -2778,6 +2944,10 @@ export class PdfrxViewer {
    * Scale a page so its width fills the viewport, aligning its top to the
    * viewport. In odd/even spread mode, fits the complete row containing the
    * page instead. Defaults to the current page.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param duration - The animation duration in milliseconds.
+   *
    */
   fitToWidth(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'width');
@@ -2790,6 +2960,10 @@ export class PdfrxViewer {
   /**
    * Scale a page so its height fills the viewport, centered horizontally.
    * Defaults to the current page. This is the "Fit Height" action.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param duration - The animation duration in milliseconds.
+   *
    */
   fitToHeight(pageNumber?: number, duration?: number): void {
     const t = this.fitTransform(pageNumber ?? this.currentPageNumber ?? 1, 'height');
@@ -2823,6 +2997,9 @@ export class PdfrxViewer {
    *
    * @param duration - Animation duration in ms (defaults to
    *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
+   *
+   * @param dest - The dest value (PdfDest or ).
+   *
    */
   goToDest(dest: PdfDest | null, duration?: number): void {
     if (!dest) return;
@@ -2907,6 +3084,11 @@ export class PdfrxViewer {
   /**
    * Bring a rectangle (PDF page coordinates on the given page) into view,
    * keeping the current zoom. No-op when already visible.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param rect - The rectangle to process.
+   * @param margin - The additional margin.
+   *
    */
   ensureVisiblePageRect(pageNumber: number, rect: PdfRect, margin = 0): void {
     if (!this.layout) return;
@@ -2919,7 +3101,14 @@ export class PdfrxViewer {
     this.setTransform(calcTransformFor(rectCenter(docRect), this.transform.zoom, this.viewSize));
   }
 
-  /** Zooms and pans so a PDF-page rectangle fills the viewport. */
+  /**
+   * Zooms and pans so a PDF-page rectangle fills the viewport.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param rect - The rectangle to process.
+   * @param duration - The animation duration in milliseconds.
+   *
+   */
   zoomToPageArea(pageNumber: number, rect: PdfRect, duration?: number): void {
     if (!this.layout) return;
     const page = this.pageGeoms[pageNumber - 1];
@@ -2937,6 +3126,12 @@ export class PdfrxViewer {
   /**
    * Renders a rectangular PDF-page region and encodes it as a browser image.
    * The rectangle uses normal PDF coordinates (points, origin bottom-left).
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param rect - The rectangle to process.
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async capturePageArea(
     pageNumber: number,
@@ -2983,6 +3178,9 @@ export class PdfrxViewer {
   /**
    * Lets the user drag a rectangular page area. Escape or a pointer release
    * outside the starting page cancels. Only one selection can run at a time.
+   *
+   * @returns The resulting Promise.
+   *
    */
   selectPageArea(): Promise<PdfPageArea | null> {
     if (!this.doc || this.areaSelectionCancel) return Promise.resolve(null);
@@ -3064,7 +3262,13 @@ export class PdfrxViewer {
     });
   }
 
-  /** Loads (and caches) the structured text of a page. */
+  /**
+   * Loads (and caches) the structured text of a page.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @returns The resolved Promise.
+   *
+   */
   async loadPageText(pageNumber: number): Promise<PdfPageText | null> {
     this.ensureText(pageNumber);
     const t = this.pageTexts.get(pageNumber);
@@ -3072,18 +3276,35 @@ export class PdfrxViewer {
     return t instanceof Promise ? await t : t;
   }
 
-  /** Document outline (bookmarks). */
+  /**
+   * Document outline (bookmarks).
+   *
+   * @returns The resolved Promise.
+   *
+   */
   async loadOutline(): Promise<PdfOutlineNode[]> {
     return (await this.doc?.loadOutline()) ?? [];
   }
 
-  /** Stages the supplied immutable tree as the document's logical outline. */
+  /**
+   * Stages the supplied immutable tree as the document's logical outline.
+   *
+   * @param outline - The outline value.
+   *
+   */
   setOutline(outline: readonly PdfOutlineNode[]): void {
     if (!this.doc) return;
     this.doc.setOutline(outline);
   }
 
-  /** Render a page thumbnail at the given CSS width. */
+  /**
+   * Render a page thumbnail at the given CSS width.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param width - The width.
+   * @returns The rendered Promise.
+   *
+   */
   async renderPageThumbnail(pageNumber: number, width = 120): Promise<ImageBitmap | null> {
     const page = this.doc?.pages[pageNumber - 1];
     if (!page) return null;
@@ -3108,7 +3329,11 @@ export class PdfrxViewer {
    * For document-level structures or an unknown impact, use
    * {@link refreshDocument}; if PDFium itself must be reconstructed, use
    * {@link reloadDocument}.
-  */
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
+   */
   async refreshPages(options: PdfViewerRefreshPagesOptions = {}): Promise<void> {
     await this.refreshPagesInternal(options, 'pages');
   }
@@ -3179,6 +3404,9 @@ export class PdfrxViewer {
    * This calls `PdfDocument.reloadPages()` to recreate page metadata, but it
    * does not reconstruct the native PDFium document. Use {@link reloadDocument}
    * for that stronger boundary.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async refreshDocument(): Promise<void> {
     await this.refreshPagesInternal({ reloadMetadata: true }, 'document', true);
@@ -3193,6 +3421,9 @@ export class PdfrxViewer {
    * This is the most reliable refresh after arbitrary raw edits, but it copies
    * and reparses the whole PDF, so its time and peak-memory costs grow with
    * document size. Zoom and viewport are retained where the new layout allows.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async reloadDocument(): Promise<void> {
     const doc = this.doc;
@@ -3207,6 +3438,9 @@ export class PdfrxViewer {
   /**
    * Creates a text searcher whose matches are highlighted by this viewer.
    * The previous searcher (if any) is disposed.
+   *
+   * @returns The resulting PdfTextSearcher.
+   *
    */
   createTextSearcher(): PdfTextSearcher {
     this.searcher?.dispose();
@@ -3224,6 +3458,10 @@ export class PdfrxViewer {
    *
    * @throws On iOS/iPadOS, where WebKit cannot reliably isolate the rendered
    * PDF pages from the surrounding viewer UI in print preview.
+   *
+   * @param options - Options that customize the operation.
+   * @returns The resulting Promise.
+   *
    */
   async print(options: { dpi?: number } = {}): Promise<void> {
     if (!this.isPrintAllowed) throw new Error('Printing is not permitted by this PDF');
@@ -3283,6 +3521,7 @@ export class PdfrxViewer {
    *   center of the viewport.
    * @param duration - Animation duration in ms (defaults to
    *   {@link PdfrxViewerOptions.animationDuration}); `0` jumps instantly.
+   *
    */
   setZoom(zoom: number, viewCenter?: Offset, duration?: number): void {
     const center = viewCenter ?? { x: this.viewSize.width / 2, y: this.viewSize.height / 2 };
@@ -3293,6 +3532,10 @@ export class PdfrxViewer {
   /**
    * Switches between an explicit zoom factor, fit-page, and fit-width mode.
    * Fit modes are responsive and are recalculated on viewport resize.
+   *
+   * @param mode - The mode value (ZoomMode).
+   * @param duration - The animation duration in milliseconds.
+   *
    */
   setZoomMode(mode: ZoomMode, duration?: number): void {
     if (mode === 'page') {
@@ -3307,12 +3550,22 @@ export class PdfrxViewer {
   /**
    * Zooms **in** to the next zoom stop (`factor^k`, see
    * {@link PdfrxViewerOptions.zoomStepFactor}), keeping `viewCenter` fixed.
+   *
+   * @param viewCenter - The viewCenter value (Offset).
+   * @param duration - The animation duration in milliseconds.
+   *
    */
   zoomUp(viewCenter?: Offset, duration?: number): void {
     this.setZoom(this.getNextZoom(), viewCenter, duration);
   }
 
-  /** Zooms **out** to the previous zoom stop. See {@link zoomUp}. */
+  /**
+   * Zooms **out** to the previous zoom stop. See {@link zoomUp}.
+   *
+   * @param viewCenter - The viewCenter value (Offset).
+   * @param duration - The animation duration in milliseconds.
+   *
+   */
   zoomDown(viewCenter?: Offset, duration?: number): void {
     this.setZoom(this.getPreviousZoom(), viewCenter, duration);
   }
@@ -3322,6 +3575,10 @@ export class PdfrxViewer {
    * ({@link PdfrxViewerOptions.doubleTapZoomFactor}× fit), centered on
    * `viewPoint`. This is what touch double-tap and (optionally) mouse
    * double-click invoke.
+   *
+   * @param viewPoint - The viewPoint value (Offset).
+   * @param duration - The animation duration in milliseconds.
+   *
    */
   zoomToggle(viewPoint?: Offset, duration?: number): void {
     const fit = this.pageFitScale(this.currentPageNumber ?? 1) ?? this.transform.zoom;
@@ -3330,14 +3587,26 @@ export class PdfrxViewer {
     this.setZoom(atFit ? zoomedIn : fit, viewPoint, duration);
   }
 
-  /** The next zoom stop above `zoom` on the `factor^k` grid, clamped. */
+  /**
+   * The next zoom stop above `zoom` on the `factor^k` grid, clamped.
+   *
+   * @param zoom - The zoom factor.
+   * @returns The resolved number.
+   *
+   */
   getNextZoom(zoom = this.transform.zoom): number {
     const f = this.zoomStepFactor;
     const k = Math.floor(Math.log(zoom) / Math.log(f) + 1e-6) + 1;
     return this.clampZoom(Math.pow(f, k));
   }
 
-  /** The previous zoom stop below `zoom` on the `factor^k` grid, clamped. */
+  /**
+   * The previous zoom stop below `zoom` on the `factor^k` grid, clamped.
+   *
+   * @param zoom - The zoom factor.
+   * @returns The resolved number.
+   *
+   */
   getPreviousZoom(zoom = this.transform.zoom): number {
     const f = this.zoomStepFactor;
     const k = Math.ceil(Math.log(zoom) / Math.log(f) - 1e-6) - 1;
@@ -3363,6 +3632,7 @@ export class PdfrxViewer {
    * render cache, and document, and removes the canvas. If the viewer created
    * its own engine (no {@link PdfrxViewerOptions.engine} was passed), the
    * rendering worker is shut down too. Idempotent.
+   *
    */
   dispose(): void {
     this.areaSelectionCancel?.();
@@ -3489,6 +3759,7 @@ export class PdfrxViewer {
   /**
    * Page metadata changed (progressive loading, reload). Page sizes may now be
    * known, so the layout is rebuilt; nothing else is invalidated.
+   *
    */
   private onPageStatusChanged(): void {
     if (!this.doc) return;
@@ -3504,6 +3775,7 @@ export class PdfrxViewer {
    * Anything keyed by page position is dropped; rendered page bitmaps are not,
    * because {@link PageRenderCache} keys them by content — which is what makes
    * reordering and rotating in a GUI instant.
+   *
    */
   private onPagesRearranged(event: PdfDocumentEventMap['pagesRearranged']): void {
     if (!this.doc) return;
@@ -3687,6 +3959,7 @@ export class PdfrxViewer {
    * Moves to `target`, animating over `duration` ms (or jumping when `duration`
    * <= 0). The target is boundary-clamped; intermediate frames interpolate the
    * affine transform with an ease-out curve.
+   *
    */
   private navigateTo(target: ViewTransform, duration: number): void {
     const to = this.clamp(target);
@@ -3959,6 +4232,7 @@ export class PdfrxViewer {
   /**
    * Builds a {@link PdfTextSelection} snapshot of the current selection. The
    * snapshot captures the endpoints; text/geometry are resolved on demand.
+   *
    */
   private buildSelection(): PdfTextSelection {
     const a = this.selA;
@@ -3989,6 +4263,7 @@ export class PdfrxViewer {
   /**
    * Resolves a selection (given its raw endpoints) into per-page ranges with
    * text and geometry, loading the text of intermediate pages as needed.
+   *
    */
   private async resolveSelectedRanges(a: SelectionPoint, b: SelectionPoint): Promise<PdfSelectedTextRange[]> {
     const firstPage = Math.min(a.text.pageNumber, b.text.pageNumber);
@@ -4074,6 +4349,7 @@ export class PdfrxViewer {
   /**
    * Move the active selection end to the character nearest the given view
    * position (used by both text-drag and handle-drag).
+   *
    */
   private updateSelectionToViewPoint(local: Offset): void {
     if (this.mode.kind !== 'select' && this.mode.kind !== 'dragHandle') return;
@@ -4564,6 +4840,7 @@ export class PdfrxViewer {
    * Records a touch tap and reports whether it completes a double-tap (two taps
    * close in time and space). Returns false — and does not arm — when
    * {@link PdfrxViewerOptions.doubleTapToZoom} is disabled.
+   *
    */
   private consumeDoubleTap(local: Offset, time: number): boolean {
     if (this.options.doubleTapToZoom === false) {
@@ -5165,6 +5442,7 @@ export class PdfrxViewer {
    * still owns focus. The canvas handler covers normal viewer focus; this
    * window-level fallback also consumes the shortcut when there are no
    * annotations, so the browser never selects surrounding UI text instead.
+   *
    */
   private readonly onAnnotationSelectAllShortcut = (event: KeyboardEvent): void => {
     if (
@@ -5213,6 +5491,7 @@ export class PdfrxViewer {
    * Scroll the view content; positive dy scrolls down (like arrow-down). Returns
    * whether it acted (false when {@link PdfrxViewerOptions.scrollByArrowKey} is
    * disabled).
+   *
    */
   private scrollByKey(dx: number, dy: number): boolean {
     if (this.options.scrollByArrowKey === false) return false;
@@ -5408,6 +5687,7 @@ export class PdfrxViewer {
    * Repaints synchronously, cancelling any scheduled paint. Used when a blank
    * frame would be visible otherwise — notably right after resizing the canvas,
    * which clears its bitmap (see {@link onResize}).
+   *
    */
   private paintNow(): void {
     if (this.disposed) return;
@@ -5442,6 +5722,7 @@ export class PdfrxViewer {
   /**
    * Draws the built-in loading indicator: a rotating arc, plus a progress bar
    * once the byte counts are known. Keeps repainting itself while loading.
+   *
    */
   private paintLoading(ctx: CanvasRenderingContext2D, dpr: number): void {
     if (this.options.loadingIndicator !== false) {
@@ -5598,6 +5879,7 @@ export class PdfrxViewer {
   /**
    * Rebuilds all page overlays from {@link PdfrxViewerOptions.pageOverlaysBuilder}.
    * Call this after the state your builder depends on has changed.
+   *
    */
   refreshOverlays(): void {
     this.overlayContainers.clear();
@@ -5609,6 +5891,9 @@ export class PdfrxViewer {
    * Sets (or clears with `null`) the page overlays builder and rebuilds
    * overlays. Convenience for callers that construct the viewer without the
    * {@link PdfrxViewerOptions.pageOverlaysBuilder} option (e.g. the custom element).
+   *
+   * @param builder - The builder value (PageOverlaysBuilder or ).
+   *
    */
   setPageOverlaysBuilder(builder: PageOverlaysBuilder | null): void {
     this.options.pageOverlaysBuilder = builder ?? undefined;
@@ -5619,6 +5904,7 @@ export class PdfrxViewer {
    * Rebuilds the viewport-fixed overlays from
    * {@link PdfrxViewerOptions.viewerOverlayBuilder}. Called automatically on
    * resize and document change; call this after your builder's inputs change.
+   *
    */
   refreshViewerOverlays(): void {
     this.buildViewerOverlays();
@@ -5628,6 +5914,9 @@ export class PdfrxViewer {
    * Sets (or clears with `null`) the viewport-fixed overlay builder and rebuilds
    * it. Convenience for callers that construct the viewer without the
    * {@link PdfrxViewerOptions.viewerOverlayBuilder} option.
+   *
+   * @param builder - The builder value (ViewerOverlayBuilder or ).
+   *
    */
   setViewerOverlayBuilder(builder: ViewerOverlayBuilder | null): void {
     this.options.viewerOverlayBuilder = builder ?? undefined;
@@ -5719,6 +6008,7 @@ export class PdfrxViewer {
   /**
    * Positions/builds the per-page form-control overlays to follow the view
    * transform. Mirrors {@link updateOverlays}; called from the paint loop.
+   *
    */
   private updateFormOverlays(): void {
     if (
@@ -5790,6 +6080,7 @@ export class PdfrxViewer {
    * Read-only fields render as *disabled* controls (so calculated totals still
    * display and reconcile); unnamed, push-button and signature fields get no
    * control — the canvas renders them.
+   *
    */
   private buildFormControls(
     doc: PdfDocument,
@@ -6036,6 +6327,7 @@ export class PdfrxViewer {
    * The annotation-rendering mode for canvas renders. When the overlay is on,
    * the canvas draws form widgets but not annotations (`formsOnly`), so they are
    * not painted twice; otherwise the engine default is kept.
+   *
    */
   private canvasAnnotationRenderingMode(): PdfAnnotationRenderingMode | undefined {
     return this.annotationsEnabled() ? 'formsOnly' : undefined;
@@ -6068,6 +6360,7 @@ export class PdfrxViewer {
    * transform. Mirrors {@link updateFormOverlays}; called from the paint loop.
    * A surface is built for every visible page (even with no annotations) so a
    * drawing tool always has somewhere to draw.
+   *
    */
   private updateAnnotationOverlays(): void {
     if (!this.annotationsEnabled() || !this.layout || !this.doc) {
@@ -6408,6 +6701,7 @@ export class PdfrxViewer {
    * Builds the SVG element for one annotation in the overlay's point-space
    * (page-local px == PDF points, y-down). Returns null for subtypes we do not
    * paint.
+   *
    */
   private buildAnnotationShape(
     a: PdfAnnotationObject,
@@ -6821,7 +7115,12 @@ export class PdfrxViewer {
   // Annotation editing (drawing tools, selection, move, delete).
   // -------------------------------------------------------------------------
 
-  /** Selects a drawing tool, or `null` for plain object selection in annotation mode. */
+  /**
+   * Selects a drawing tool, or `null` for plain object selection in annotation mode.
+   *
+   * @param tool - The tool value (AnnotationTool or ).
+   *
+   */
   setAnnotationTool(tool: AnnotationTool | null): void {
     if (tool && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
     if (tool) this.setAnnotationMode(true);
@@ -6829,7 +7128,12 @@ export class PdfrxViewer {
     this.updateAnnotationTool(tool);
   }
 
-  /** The active drawing tool, or null. */
+  /**
+   * The active drawing tool, or null.
+   *
+   * @returns The resolved AnnotationTool or `null`.
+   *
+   */
   getAnnotationTool(): AnnotationTool | null {
     return this.annotationTool;
   }
@@ -6838,6 +7142,9 @@ export class PdfrxViewer {
    * Switches between normal viewing/text selection and annotation-object
    * interaction. In annotation mode, left-dragging empty page space performs
    * marquee selection. Alt/Option temporarily inverts the effective mode.
+   *
+   * @param enabled - The enabled value (boolean).
+   *
    */
   setAnnotationMode(enabled: boolean): void {
     if (enabled && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
@@ -6852,12 +7159,23 @@ export class PdfrxViewer {
     this.invalidate();
   }
 
-  /** Whether persistent annotation-object interaction is enabled. */
+  /**
+   * Whether persistent annotation-object interaction is enabled.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   isAnnotationMode(): boolean {
     return this.annotationMode;
   }
 
-  /** Subscribes to persistent annotation-tool changes. */
+  /**
+   * Subscribes to persistent annotation-tool changes.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   addAnnotationToolChangeListener(listener: (tool: AnnotationTool | null) => void): () => void {
     this.annotationToolChangeListeners.add(listener);
     return () => this.annotationToolChangeListeners.delete(listener);
@@ -6901,7 +7219,13 @@ export class PdfrxViewer {
     }
   }
 
-  /** Whether annotation object interaction is available. */
+  /**
+   * Whether annotation object interaction is available.
+   *
+   * @param altOrOptionHeld - The altOrOptionHeld value (boolean).
+   * @returns Whether the condition is satisfied.
+   *
+   */
   isAnnotationSelectMode(altOrOptionHeld = this.annotationModeModifierHeld): boolean {
     return this.annotationsEditable() && annotationObjectInteractionEnabled(
       this.annotationMode,
@@ -6915,12 +7239,22 @@ export class PdfrxViewer {
     return this.annotationTool;
   }
 
-  /** Updates the style applied to newly drawn annotations. */
+  /**
+   * Updates the style applied to newly drawn annotations.
+   *
+   * @param style - The style value (Partial).
+   *
+   */
   setAnnotationStyle(style: Partial<AnnotationStyle>): void {
     this.annotationStyle = { ...this.annotationStyle, ...style };
   }
 
-  /** The current annotation drawing style. */
+  /**
+   * The current annotation drawing style.
+   *
+   * @returns The resolved AnnotationStyle.
+   *
+   */
   getAnnotationStyle(): AnnotationStyle {
     return { ...this.annotationStyle };
   }
@@ -6986,6 +7320,11 @@ export class PdfrxViewer {
    * Applies drawing and text style changes to every currently selected annotation
    * as one undoable step. No-op when nothing is selected. Use alongside
    * {@link setAnnotationStyle} (which only affects newly drawn annotations).
+   *
+   * @param style - The style value (Partial).
+   * @param historyMergeKey - The historyMergeKey value (string).
+   * @returns The resulting Promise.
+   *
    */
   async applyStyleToSelection(style: Partial<AnnotationStyle>, historyMergeKey?: string): Promise<void> {
     this.clearSelectionStylePreview();
@@ -7114,18 +7453,33 @@ export class PdfrxViewer {
     await pending;
   }
 
-  /** The id of the first selected annotation, or null. */
+  /**
+   * The id of the first selected annotation, or null.
+   *
+   * @returns The resolved string or `null`.
+   *
+   */
   getSelectedAnnotationId(): string | null {
     for (const id of this.selectedAnnotationIds) return id;
     return null;
   }
 
-  /** The ids of all currently selected annotations. */
+  /**
+   * The ids of all currently selected annotations.
+   *
+   * @returns The resolved string[].
+   *
+   */
   getSelectedAnnotationIds(): string[] {
     return [...this.selectedAnnotationIds];
   }
 
-  /** Snapshots of all currently selected annotations that are loaded in the viewer. */
+  /**
+   * Snapshots of all currently selected annotations that are loaded in the viewer.
+   *
+   * @returns The resolved PdfAnnotationObject[].
+   *
+   */
   getSelectedAnnotations(): PdfAnnotationObject[] {
     return [...this.selectedAnnotationIds]
       .map((id) => this.annotationSnapshots.get(id)?.annotation ?? this.locateAnnotation(id)?.annotation)
@@ -7135,6 +7489,9 @@ export class PdfrxViewer {
   /**
    * Client-viewport bounds of the current annotation-object selection,
    * including its visible anchor handles.
+   *
+   * @returns The resolved DOMRectReadOnly or `null`.
+   *
    */
   getSelectedAnnotationClientRect(): DOMRectReadOnly | null {
     if (this.selectedAnnotationIds.size === 0) return null;
@@ -7156,18 +7513,34 @@ export class PdfrxViewer {
       : null;
   }
 
-  /** Subscribes to annotation-object selection changes. */
+  /**
+   * Subscribes to annotation-object selection changes.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   addAnnotationSelectionChangeListener(listener: () => void): () => void {
     this.annotationSelectionChangeListeners.add(listener);
     return () => this.annotationSelectionChangeListeners.delete(listener);
   }
 
-  /** Installs the UI used to request a target for new or existing Link annotations. */
+  /**
+   * Installs the UI used to request a target for new or existing Link annotations.
+   *
+   * @param handler - The handler value (AnnotationLinkRequestHandler or ).
+   *
+   */
   setAnnotationLinkRequestHandler(handler: AnnotationLinkRequestHandler | null): void {
     this.annotationLinkRequestHandler = handler;
   }
 
-  /** Opens the configured target editor for the single selected Link annotation. */
+  /**
+   * Opens the configured target editor for the single selected Link annotation.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async editSelectedAnnotationLink(): Promise<void> {
     if (!this.annotationLinkRequestHandler || this.selectedAnnotationIds.size !== 1) return;
     const id = this.getSelectedAnnotationId();
@@ -7187,12 +7560,22 @@ export class PdfrxViewer {
     this.recordAnnotationCommand({ pageNumber: located.pageNumber, id, before, after });
   }
 
-  /** Selects (highlights) a single annotation by id, or clears with `null`. */
+  /**
+   * Selects (highlights) a single annotation by id, or clears with `null`.
+   *
+   * @param id - The id value (string or ).
+   *
+   */
   setSelectedAnnotation(id: string | null): void {
     this.setSelectedAnnotations(id ? [id] : []);
   }
 
-  /** Replaces the selection with `ids` and redraws anchor handles. */
+  /**
+   * Replaces the selection with `ids` and redraws anchor handles.
+   *
+   * @param ids - The ids value (Iterable).
+   *
+   */
   setSelectedAnnotations(ids: Iterable<string>): void {
     const next = new Set(ids);
     if (next.size === this.selectedAnnotationIds.size && [...next].every((id) => this.selectedAnnotationIds.has(id))) {
@@ -7219,6 +7602,10 @@ export class PdfrxViewer {
   /**
    * Selects every annotation on one page. Defaults to the page occupying the
    * largest visible area, matching {@link currentPageNumber}.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @returns The resulting Promise.
+   *
    */
   async selectAllAnnotationsOnPage(pageNumber: number | null = this.currentPageNumber): Promise<boolean> {
     if (!this.doc || pageNumber === null || pageNumber < 1 || pageNumber > this.doc.pages.length) return false;
@@ -7239,6 +7626,11 @@ export class PdfrxViewer {
    * order. A selection contained on one page normally returns one id; a
    * selection spanning pages can return one id per page. Returns an empty
    * array when there is no current selection or no markup geometry is created.
+   *
+   * @param subtype - The subtype value (TextMarkupAnnotationSubtype).
+   * @param color - The color value (string).
+   * @param opacity - The opacity value (number).
+   *
    */
   async addTextMarkupToSelection(
     subtype: TextMarkupAnnotationSubtype,
@@ -7280,6 +7672,10 @@ export class PdfrxViewer {
    *
    * @returns The created Highlight annotation ids in selected-page order, or
    * an empty array when nothing is created.
+   *
+   * @param color - The color value (string).
+   * @param opacity - The opacity value (number).
+   *
    */
   async highlightSelection(
     color: string = this.annotationStyle.color,
@@ -7288,12 +7684,22 @@ export class PdfrxViewer {
     return this.addTextMarkupToSelection('highlight', color, opacity);
   }
 
-  /** Whether the current selection can be converted to a text-markup annotation. */
+  /**
+   * Whether the current selection can be converted to a text-markup annotation.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canAddTextMarkupToSelection(): boolean {
     return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
   }
 
-  /** Whether the current text selection can be highlighted (has a selection + annotations on). */
+  /**
+   * Whether the current text selection can be highlighted (has a selection + annotations on).
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canHighlightSelection(): boolean {
     return this.canAddTextMarkupToSelection();
   }
@@ -7302,6 +7708,9 @@ export class PdfrxViewer {
    * Adds Link annotations over the current text selection. The configured
    * annotation-link request handler is opened once, then the chosen target is
    * applied to each selected visual line as one undoable step.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async addLinkToSelection(): Promise<void> {
     if (!this.doc || !this.selA || !this.selB || !this.annotationLinkRequestHandler) return;
@@ -7337,12 +7746,22 @@ export class PdfrxViewer {
     this.setSelectedAnnotations(ids);
   }
 
-  /** Whether the current text selection can be converted to Link annotations. */
+  /**
+   * Whether the current text selection can be converted to Link annotations.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canAddLinkToSelection(): boolean {
     return this.canHighlightSelection() && this.annotationLinkRequestHandler !== null;
   }
 
-  /** Copies the selected annotations to the viewer-local object clipboard. */
+  /**
+   * Copies the selected annotations to the viewer-local object clipboard.
+   *
+   * @returns Whether the documented condition is satisfied.
+   *
+   */
   copySelectedAnnotations(): boolean {
     const entries = [...this.selectedAnnotationIds]
       .map((id) => this.locateAnnotation(id))
@@ -7355,7 +7774,12 @@ export class PdfrxViewer {
     return true;
   }
 
-  /** Cuts the selected annotations as one undoable delete operation. */
+  /**
+   * Cuts the selected annotations as one undoable delete operation.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async cutSelectedAnnotations(): Promise<boolean> {
     if (!this.copySelectedAnnotations()) return false;
     this.annotationClipboardWasCut = true;
@@ -7367,6 +7791,9 @@ export class PdfrxViewer {
    * Pastes the object clipboard and selects the newly created annotations.
    * Copy/paste offsets each generation by 10pt; the first paste after a cut
    * retains the original position. A multi-object paste is one undo step.
+   *
+   * @returns The resulting Promise.
+   *
    */
   async pasteAnnotations(): Promise<boolean> {
     if (!this.doc || this.annotationClipboard.length === 0) return false;
@@ -7398,7 +7825,12 @@ export class PdfrxViewer {
     return pasted;
   }
 
-  /** Removes every selected annotation as one undoable step. */
+  /**
+   * Removes every selected annotation as one undoable step.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async deleteSelectedAnnotation(): Promise<void> {
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
     const targets = [...this.selectedAnnotationIds]
@@ -7420,6 +7852,7 @@ export class PdfrxViewer {
    * Removes a successfully deleted annotation from the current SVG immediately.
    * The normal annotation reload still reconciles the complete page afterward,
    * but must not leave the old invisible hit target active in the meantime.
+   *
    */
   private removeAnnotationFromOverlay(pageNumber: number, id: string): void {
     const overlay = this.annotationOverlays.get(pageNumber);
@@ -7482,6 +7915,7 @@ export class PdfrxViewer {
    * Viewer-owned edits use `origin: 'user'` and keep their richer gesture
    * grouping; replay/remote/restore changes deliberately stay out of local
    * history.
+   *
    */
   private recordDirectAnnotationMutation(event: PdfDocumentEventMap['annotationsChanged']): void {
     if (event.origin !== 'api') return;
@@ -7511,7 +7945,13 @@ export class PdfrxViewer {
     }
   }
 
-  /** Subscribes to changes in the common annotation/form/page-edit history. */
+  /**
+   * Subscribes to changes in the common annotation/form/page-edit history.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   addHistoryChangeListener(listener: () => void): () => void {
     this.historyChangeListeners.add(listener);
     return () => this.historyChangeListeners.delete(listener);
@@ -7525,17 +7965,32 @@ export class PdfrxViewer {
     this.notifyHistoryChanged();
   }
 
-  /** Whether an annotation, form, or page edit can be undone. */
+  /**
+   * Whether an annotation, form, or page edit can be undone.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canUndo(): boolean {
     return this.options.editing?.history !== false && this.historyIndex > 0;
   }
 
-  /** Whether an undone annotation, form, or page edit can be redone. */
+  /**
+   * Whether an undone annotation, form, or page edit can be redone.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canRedo(): boolean {
     return this.options.editing?.history !== false && this.historyIndex < this.history.length;
   }
 
-  /** Undoes the latest annotation, form, or page edit. */
+  /**
+   * Undoes the latest annotation, form, or page edit.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async undo(): Promise<void> {
     if (!this.canUndo()) return;
     const entry = this.history[--this.historyIndex]!;
@@ -7554,7 +8009,12 @@ export class PdfrxViewer {
     this.notifyHistoryChanged();
   }
 
-  /** Redoes the next undone annotation, form, or page edit. */
+  /**
+   * Redoes the next undone annotation, form, or page edit.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async redo(): Promise<void> {
     if (!this.canRedo()) return;
     const entry = this.history[this.historyIndex++]!;
@@ -7570,7 +8030,13 @@ export class PdfrxViewer {
     this.notifyHistoryChanged();
   }
 
-  /** Replaces the page arrangement and records it as one undoable edit. */
+  /**
+   * Replaces the page arrangement and records it as one undoable edit.
+   *
+   * @param pages - The pages to process, in document order.
+   * @param options - Options that customize the operation.
+   *
+   */
   setPages(pages: readonly PdfPage[], options: PdfrxPageMutationOptions = {}): void {
     if (!this.isDocumentAssemblyAllowed) return;
     if (!this.doc) return;
@@ -7592,7 +8058,14 @@ export class PdfrxViewer {
     this.annotationHistoryMergeKey = null;
   }
 
-  /** Replaces one page slot and records it as one undoable edit. */
+  /**
+   * Replaces one page slot and records it as one undoable edit.
+   *
+   * @param pageNumber - The 1-based page number.
+   * @param page - The page to process.
+   * @param options - Options that customize the operation.
+   *
+   */
   setPage(pageNumber: number, page: PdfPage, options: PdfrxPageMutationOptions = {}): void {
     if (!this.doc) return;
     if (pageNumber < 1 || pageNumber > this.doc.pages.length) {
@@ -7617,6 +8090,7 @@ export class PdfrxViewer {
   /**
    * Drives the document to a target annotation state without touching the
    * history: `null` removes the annotation, a spec creates/replaces it by id.
+   *
    */
   private async applyAnnotationState(pageNumber: number, id: string, spec: PdfAnnotationSpec | null): Promise<void> {
     if (!this.doc) return;
@@ -7675,6 +8149,7 @@ export class PdfrxViewer {
    * keyboard-first devices. Touch-first devices require an explicit edit
    * gesture instead, otherwise selecting an annotation summons the software
    * keyboard while the editor is still invisible.
+   *
    */
   private armSelectedTextAnnotationEditor(
     attempt = 0,
@@ -7727,6 +8202,7 @@ export class PdfrxViewer {
    * Draws the selection's draggable anchor handles (the sole indication of
    * selection): a single annotation gets its own shape handles; a multi-selection
    * gets one group bounding box that moves/scales every member together.
+   *
    */
   private refreshAnnotationSelection(overlay: AnnotationPageOverlay): void {
     overlay.anchorLayer.replaceChildren();
@@ -7810,6 +8286,7 @@ export class PdfrxViewer {
   /**
    * Draws a single blue guide box with eight handles around a multi-selection;
    * dragging a handle scales every member, dragging the box body moves them all.
+   *
    */
   private renderGroupSelection(overlay: AnnotationPageOverlay, sel: PdfAnnotationObject[]): void {
     const zoom = this.transform.zoom;
@@ -8005,6 +8482,7 @@ export class PdfrxViewer {
    * Moves the existing anchor circles (and the bounding-box guide) to match
    * `annotation` in place — used during a live resize so every handle follows,
    * not just the dragged one. Does not rebuild the DOM (preserves pointer capture).
+   *
    */
   private updateAnchorPositions(overlay: AnnotationPageOverlay, annotation: PdfAnnotationObject): void {
     const opts = { page: overlay.pageGeom, scaledPageSize: overlay.pageSize };
@@ -8417,6 +8895,10 @@ export class PdfrxViewer {
    * before it is written to this viewer's document. In particular, FreeText
    * font registrations live in one engine worker and therefore must be repeated
    * independently by every collaboration participant.
+   *
+   * @param spec - The spec value (PdfAnnotationSpec).
+   * @returns The resulting Promise.
+   *
    */
   async prepareAnnotationAppearance(spec: PdfAnnotationSpec): Promise<void> {
     if (spec.subtype === 'freeText') await this.prepareFreeTextAppearance(spec);
@@ -8434,7 +8916,12 @@ export class PdfrxViewer {
       });
   }
 
-  /** Commits an open Text/FreeText editor and waits until its PDF write finishes. */
+  /**
+   * Commits an open Text/FreeText editor and waits until its PDF write finishes.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async flushAnnotationTextEdit(): Promise<void> {
     const editor = this.annotationOverlayRoot.querySelector<HTMLTextAreaElement>(
       '.pdfrx-annotation-text-editor textarea',
@@ -9117,7 +9604,12 @@ export class PdfrxViewer {
     await pending;
   }
 
-  /** Whether Ctrl/Cmd+D can repeat the immediately preceding drag duplication. */
+  /**
+   * Whether Ctrl/Cmd+D can repeat the immediately preceding drag duplication.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
   canRepeatAnnotationDuplicate(): boolean {
     const repeat = this.annotationDuplicateRepeat;
     return (
@@ -9127,7 +9619,12 @@ export class PdfrxViewer {
     );
   }
 
-  /** Repeats the last modifier-drag duplication using the same displacement. */
+  /**
+   * Repeats the last modifier-drag duplication using the same displacement.
+   *
+   * @returns The resulting Promise.
+   *
+   */
   async repeatAnnotationDuplicate(): Promise<boolean> {
     if (!this.annotationDuplicateRepeat) return false;
     let duplicated = false;
@@ -9639,6 +10136,7 @@ export class PdfrxViewer {
    * shadow keeps a constant on-screen size at any zoom. The filled rectangles
    * are later covered exactly by the opaque page background, leaving only the
    * shadow (outside each page) visible.
+   *
    */
   private paintPageShadows(dpr: number, t: ViewTransform, visible: Rect): void {
     const s = this.resolvedPageDropShadow;
@@ -9695,6 +10193,7 @@ export class PdfrxViewer {
    * Draws pages and the selection highlight in document coordinates.
    * The ctx transform (document -> device) must already be set; this is
    * shared by the main view pass and the magnifier lens.
+   *
    */
   private paintDocContent(visible: Rect): void {
     const ctx = this.ctx;
@@ -9907,6 +10406,7 @@ export class PdfrxViewer {
  * `document.execCommand('copy')`, which still works inside a user gesture.
  *
  * Call this synchronously from a user gesture (a click/tap handler).
+ *
  */
 async function writeTextToClipboard(text: string): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
@@ -9921,6 +10421,7 @@ async function writeTextToClipboard(text: string): Promise<void> {
  * Clipboard API): select the text in a detached, off-screen `<textarea>` and
  * `execCommand('copy')`. Handles iOS Safari, which ignores `textarea.select()`
  * and needs an explicit range.
+ *
  */
 function legacyCopyText(text: string): void {
   const textarea = document.createElement('textarea');

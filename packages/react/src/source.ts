@@ -16,6 +16,7 @@ import type { PdfOpenDataOptions, PdfOpenUrlOptions } from '@pdfrx/engine';
  * <PdfrxProvider src={{ url: '/secret.pdf', passwordProvider: () => prompt('password') }} />
  * <PdfrxProvider src={{ data: bytes, sourceName: 'upload.pdf' }} />
  * ```
+ *
  */
 export type PdfSource =
   | string
@@ -34,7 +35,13 @@ export type NormalizedPdfSource =
   | { kind: 'url'; url: string | URL; options: PdfOpenUrlOptions }
   | { kind: 'data'; data: Uint8Array | ArrayBuffer | File | Blob; options: PdfOpenDataOptions };
 
-/** Narrows a {@link PdfSource} to {@link NormalizedPdfSource}, or `null` for no document. */
+/**
+ * Narrows a {@link PdfSource} to {@link NormalizedPdfSource}, or `null` for no document.
+ *
+ * @param src - The src value (PdfSource).
+ * @returns The resulting NormalizedPdfSource or null.
+ *
+ */
 export function normalizeSource(src: PdfSource): NormalizedPdfSource | null {
   if (src == null) return null;
   if (typeof src === 'string' || src instanceof URL) return { kind: 'url', url: src, options: {} };
@@ -59,6 +66,7 @@ export function normalizeSource(src: PdfSource): NormalizedPdfSource | null {
  * A cheap identity for a source, so a re-render with an equivalent `src` prop
  * does not reopen the document. Byte arrays and blobs fall back to reference
  * identity (hashing them would be worse than reopening).
+ *
  */
 export function sourceKey(src: NormalizedPdfSource | null): unknown {
   if (!src) return null;

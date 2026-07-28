@@ -11,7 +11,13 @@ export interface PdfCaptureAreaButtonProps {
   onCapture?: (blob: Blob) => void | Promise<void>;
 }
 
-/** Selects and renders a rectangular page area. Escape cancels the selection. */
+/**
+ * Selects and renders a rectangular page area. Escape cancels the selection.
+ *
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfCaptureAreaButton({ options, onCapture }: PdfCaptureAreaButtonProps): ReactNode {
   const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();
@@ -44,7 +50,12 @@ export function PdfCaptureAreaButton({ options, onCapture }: PdfCaptureAreaButto
   );
 }
 
-/** Selects a rectangular page area and zooms it to the viewport. */
+/**
+ * Selects a rectangular page area and zooms it to the viewport.
+ *
+ * @returns The resulting ReactNode.
+ *
+ */
 export function PdfMarqueeZoomButton(): ReactNode {
   const viewer = usePdfrxViewer();
   const strings = usePdfrxStrings();

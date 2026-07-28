@@ -37,6 +37,8 @@ function isPrintingSupported(): boolean {
  * const { print, isPrinting } = usePdfPrint();
  * return <button onClick={() => void print()} disabled={isPrinting}>Print</button>;
  * ```
+ * @returns The current pdf print state and actions.
+ *
  */
 export function usePdfPrint(): PdfPrint {
   const store = usePdfrxStore();

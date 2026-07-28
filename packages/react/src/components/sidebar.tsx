@@ -37,6 +37,9 @@ export interface PdfSidebarProps {
  * ```tsx
  * <PdfSidebar style={{ width: 200 }} defaultTab="outline" />
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfSidebar({
   className,

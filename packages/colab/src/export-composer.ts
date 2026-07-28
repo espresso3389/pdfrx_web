@@ -21,6 +21,8 @@ export interface MappedOutlineNode {
  * @param rootDocument Document currently owned by the viewer.
  * @param placements Final authoritative virtual-page order.
  * @param sources Registry containing every referenced source document.
+ * @returns The resulting Promise.
+ *
  */
 export async function encodeCollaborativePdf(
   rootDocument: PdfDocument,

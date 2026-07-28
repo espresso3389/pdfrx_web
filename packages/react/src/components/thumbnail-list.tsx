@@ -27,6 +27,7 @@ export interface PdfThumbnailListProps {
   /**
    * Extra controls drawn over each thumbnail on hover — rotate, delete, whatever
    * the app supports. Clicks inside are kept from navigating.
+   *
    */
   renderPageActions?: (pageNumber: number) => ReactNode;
   /**
@@ -36,6 +37,7 @@ export interface PdfThumbnailListProps {
    * thumbnails. An insertion line follows the cursor while dragging.
    *
    * Uses HTML5 file drag & drop, which browsers do not raise for touch.
+   *
    */
   onInsertFiles?: (files: File[], index: number) => void;
   /**
@@ -45,6 +47,7 @@ export interface PdfThumbnailListProps {
    *
    * Pointer-based, so it works with both mouse and touch: a mouse drag starts on
    * movement, a touch drag on a short long-press (a plain swipe still scrolls).
+   *
    */
   onMovePage?: (fromPageNumber: number, toIndex: number) => void;
 }
@@ -85,6 +88,7 @@ function dragHasFiles(e: DragEvent): boolean {
 /**
  * Finds the insertion point nearest `clientY`: the index to insert at, and the
  * y-offset (relative to the strip) to draw the indicator line.
+ *
  */
 function computeDropTarget(container: HTMLElement, clientY: number): DropTarget {
   const items = Array.from(container.querySelectorAll<HTMLElement>('.pdfrx-thumb-item'));
@@ -123,6 +127,9 @@ function findScrollParent(el: HTMLElement): HTMLElement | null {
  *   renderPageActions={(page) => <button onClick={() => rotate(page)}>⟳</button>}
  * />
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfThumbnailList({
   className,
@@ -437,6 +444,7 @@ interface PdfThumbnailItemProps {
 /**
  * One thumbnail. Kept separate so each page gets its own
  * {@link usePdfPageThumbnail} and only the visible ones render.
+ *
  */
 function PdfThumbnailItem({
   pageNumber,
@@ -495,6 +503,7 @@ function PdfThumbnailItem({
  * Reports whether an element is at or near the scroll viewport, so a long
  * document does not render every thumbnail on load. The margin renders a screen
  * ahead, which is enough for the render to finish before the user gets there.
+ *
  */
 function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
   const [isNear, setIsNear] = useState(false);

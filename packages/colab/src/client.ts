@@ -27,11 +27,22 @@ import {
 export interface CollaborationWebSocket {
   /** Native WebSocket ready-state value. */
   readonly readyState: number;
-  /** Sends one serialized relay message. */
+  /**
+   * Sends one serialized relay message.
+   *
+   * @param data - The input data.
+   *
+   */
   send(data: string): void;
   /** Begins a normal socket close. */
   close(): void;
-  /** Registers a browser-compatible socket event listener. */
+  /**
+   * Registers a browser-compatible socket event listener.
+   *
+   * @param type - The type value ( or  or  or ).
+   * @param listener - The callback to invoke when the value changes.
+   *
+   */
   addEventListener(type: 'open' | 'close' | 'error' | 'message', listener: (event: Event | MessageEvent) => void): void;
 }
 
@@ -61,6 +72,7 @@ export interface CollaborationJoinOptions {
  * root-level HTTP source path from the relay URL. Applications can inject a
  * credentialed fetch, a ticket-bearing socket factory, or a reverse-proxy
  * specific source URL without coupling the package to one auth provider.
+ *
  */
 export interface CollaborationTransport {
   /** Creates the relay socket; useful for short-lived connection tickets or polyfills. */
@@ -95,7 +107,15 @@ export type CollaborationConnectionStateListener = (state: CollaborationConnecti
 /** Receives the number of participants currently connected to the session. */
 export type CollaborationPresenceListener = (connectedCount: number) => void;
 
-/** Converts a relay WebSocket endpoint into its session source HTTP endpoint. */
+/**
+ * Converts a relay WebSocket endpoint into its session source HTTP endpoint.
+ *
+ * @param relayUrl - The relayUrl value (string).
+ * @param sessionId - The collaboration session identifier.
+ * @param documentId - The stable document identifier.
+ * @returns The resulting string.
+ *
+ */
 export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: string): string {
   const url = new URL(relayUrl);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
@@ -105,7 +125,16 @@ export function relaySourceUrl(relayUrl: string, sessionId: string, documentId: 
   return url.toString();
 }
 
-/** Fetches one immutable source using optional host transport hooks. */
+/**
+ * Fetches one immutable source using optional host transport hooks.
+ *
+ * @param relayUrl - The relayUrl value (string).
+ * @param sessionId - The collaboration session identifier.
+ * @param documentId - The stable document identifier.
+ * @param transport - The HTTP transport implementation to use.
+ * @returns The resulting Promise.
+ *
+ */
 export function fetchRelaySource(
   relayUrl: string,
   sessionId: string,
@@ -119,6 +148,13 @@ export function fetchRelaySource(
 /**
  * Uploads one immutable PDF source to the reference relay's HTTP endpoint.
  * @throws `Error` when the relay rejects or cannot store the source.
+ * @param relayUrl - The relayUrl value (string).
+ * @param sessionId - The collaboration session identifier.
+ * @param documentId - The stable document identifier.
+ * @param bytes - The binary data to process.
+ * @param transport - The HTTP transport implementation to use.
+ * @returns The resulting Promise.
+ *
  */
 export async function uploadRelaySource(
   relayUrl: string,
@@ -138,7 +174,17 @@ export async function uploadRelaySource(
 }
 
 /** Uploads immutable non-PDF bytes through the relay's out-of-band source store. */
-/** @internal */
+/**
+ * @internal
+ *
+ * @param relayUrl - The relayUrl value (string).
+ * @param sessionId - The collaboration session identifier.
+ * @param assetId - The stable asset identifier.
+ * @param bytes - The binary data to process.
+ * @param transport - The HTTP transport implementation to use.
+ * @returns The resulting Promise.
+ *
+ */
 export async function uploadRelayAsset(
   relayUrl: string,
   sessionId: string,
@@ -183,6 +229,7 @@ export class RelayOperationError extends Error {
    * @param code Machine-readable error category supplied by the relay.
    * @param message Human-readable relay diagnostic.
    * @param currentRevision Relay revision included for stale-operation recovery.
+   *
    */
   constructor(
     readonly code: string,
@@ -200,6 +247,7 @@ export class RelayOperationError extends Error {
  * Page, annotation, and form operations have independent queues and revision
  * streams. Each stream sends one local operation at a time and resolves its
  * promise only after the relay broadcasts the authoritative commit.
+ *
  */
 export class PageCollaborationClient {
   readonly #listeners = new Set<PageSessionListener>();
@@ -252,52 +300,100 @@ export class PageCollaborationClient {
     return this.#formSnapshot;
   }
 
-  /** Subscribes to page snapshots. The listener is called after subsequent commits. */
+  /**
+   * Subscribes to page snapshots. The listener is called after subsequent commits.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribe(listener: PageSessionListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  /** Subscribes to annotation state and immediately emits an existing snapshot. */
+  /**
+   * Subscribes to annotation state and immediately emits an existing snapshot.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeAnnotations(listener: AnnotationSessionListener): () => void {
     this.#annotationListeners.add(listener);
     if (this.#annotationSnapshot) listener(this.#annotationSnapshot);
     return () => this.#annotationListeners.delete(listener);
   }
 
-  /** @internal Subscribes to transient annotation drag previews. */
+  /**
+   * @internal Subscribes to transient annotation drag previews.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeAnnotationPreviews(listener: AnnotationPreviewListener): () => void {
     this.#annotationPreviewListeners.add(listener);
     return () => this.#annotationPreviewListeners.delete(listener);
   }
 
-  /** Subscribes to form state and immediately emits an existing snapshot. */
+  /**
+   * Subscribes to form state and immediately emits an existing snapshot.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeForms(listener: FormSessionListener): () => void {
     this.#formListeners.add(listener);
     if (this.#formSnapshot) listener(this.#formSnapshot);
     return () => this.#formListeners.delete(listener);
   }
 
-  /** Subscribes to requests from participants waiting for admission. */
+  /**
+   * Subscribes to requests from participants waiting for admission.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeJoinRequests(listener: CollaborationJoinRequestListener): () => void {
     this.#joinRequestListeners.add(listener);
     return () => this.#joinRequestListeners.delete(listener);
   }
 
-  /** Subscribes to approved, rejected, or cancelled join-request resolutions. */
+  /**
+   * Subscribes to approved, rejected, or cancelled join-request resolutions.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeJoinRequestResolutions(listener: CollaborationJoinResolutionListener): () => void {
     this.#joinResolutionListeners.add(listener);
     return () => this.#joinResolutionListeners.delete(listener);
   }
 
-  /** Subscribes to relay connection lifecycle changes. */
+  /**
+   * Subscribes to relay connection lifecycle changes.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribeConnectionState(listener: CollaborationConnectionStateListener): () => void {
     this.#connectionStateListeners.add(listener);
     listener(this.#connectionState);
     return () => this.#connectionStateListeners.delete(listener);
   }
 
-  /** Subscribes to the current connected-participant count. */
+  /**
+   * Subscribes to the current connected-participant count.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribePresence(listener: CollaborationPresenceListener): () => void {
     this.#presenceListeners.add(listener);
     return () => this.#presenceListeners.delete(listener);
@@ -307,6 +403,11 @@ export class PageCollaborationClient {
    * Opens the relay socket and joins `sessionId`.
    * @returns The initial authoritative page snapshot.
    * @throws `Error` if already connected, the session is invalid, or joining fails.
+   *
+   * @param url - The URL to use.
+   * @param sessionId - The collaboration session identifier.
+   * @param options - Options that customize the operation.
+   *
    */
   connect(url: string, sessionId: string, options: CollaborationJoinOptions = {}): Promise<PageSessionSnapshot> {
     if (this.#socket) throw new Error('Client is already connected');
@@ -468,7 +569,13 @@ export class PageCollaborationClient {
     });
   }
 
-  /** Queues a page operation and resolves after its authoritative commit. */
+  /**
+   * Queues a page operation and resolves after its authoritative commit.
+   *
+   * @param operation - The operation to apply.
+   * @returns The resulting Promise.
+   *
+   */
   submit(operation: PagePlacementOperation): Promise<CommittedPageOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -479,7 +586,13 @@ export class PageCollaborationClient {
     });
   }
 
-  /** Queues an annotation mutation and resolves after its authoritative commit. */
+  /**
+   * Queues an annotation mutation and resolves after its authoritative commit.
+   *
+   * @param change - The change to apply.
+   * @returns The resulting Promise.
+   *
+   */
   submitAnnotation(change: SharedAnnotationChange): Promise<CommittedAnnotationOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -490,7 +603,12 @@ export class PageCollaborationClient {
     });
   }
 
-  /** @internal Broadcasts a non-persistent annotation drag preview without a revision. */
+  /**
+   * @internal Broadcasts a non-persistent annotation drag preview without a revision.
+   *
+   * @param changes - The changes to apply.
+   *
+   */
   sendAnnotationPreview(changes: AnnotationPreview['changes']): void {
     if (!this.#socket || !this.#sessionId || changes.length === 0) return;
     this.#send({
@@ -500,7 +618,13 @@ export class PageCollaborationClient {
     });
   }
 
-  /** Queues a source-scoped form value and resolves after its authoritative commit. */
+  /**
+   * Queues a source-scoped form value and resolves after its authoritative commit.
+   *
+   * @param change - The change to apply.
+   * @returns The resulting Promise.
+   *
+   */
   submitForm(change: SharedFormFieldChange): Promise<CommittedFormOperation> {
     if (!this.#socket || !this.#sessionId) return Promise.reject(new Error('Client is not connected'));
     const operationId = this.createOperationId();
@@ -511,14 +635,24 @@ export class PageCollaborationClient {
     });
   }
 
-  /** Approves one pending participant using the current admitted connection. */
+  /**
+   * Approves one pending participant using the current admitted connection.
+   *
+   * @param requestId - The join request identifier.
+   *
+   */
   approveJoin(requestId: string): void {
     if (!this.#socket || !this.#sessionId) throw new Error('Client is not connected');
     if (requestId.length === 0) throw new Error('requestId must not be empty');
     this.#send({ type: 'session.approve', sessionId: this.#sessionId, requestId });
   }
 
-  /** Rejects one pending participant using the current admitted connection. */
+  /**
+   * Rejects one pending participant using the current admitted connection.
+   *
+   * @param requestId - The join request identifier.
+   *
+   */
   rejectJoin(requestId: string): void {
     if (!this.#socket || !this.#sessionId) throw new Error('Client is not connected');
     if (requestId.length === 0) throw new Error('requestId must not be empty');

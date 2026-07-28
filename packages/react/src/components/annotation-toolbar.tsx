@@ -44,6 +44,7 @@ export interface PdfAnnotationToolbarProps {
   /**
    * Whether this toolbar currently enables annotation-object interaction.
    * Defaults to `true`; collapsible hosts should pass their visible/open state.
+   *
    */
   modeActive?: boolean;
   /** Preset colors offered in the color picker. */
@@ -51,6 +52,7 @@ export interface PdfAnnotationToolbarProps {
   /**
    * When provided, a close (✕) button is shown. The toolbar clears any active
    * drawing tool when it unmounts, so hosts can just hide it.
+   *
    */
   onClose?: () => void;
 }
@@ -466,6 +468,9 @@ const TOOL_ICON: Record<AnnotationTool, () => ReactNode> = {
  * {@link PdfrxProvider} ancestor and the viewer's `interactiveAnnotations`
  * option (on by default). Import `@pdfrx/react/styles.css` for the default
  * look, or style the `pdfrx-annot-*` class names yourself.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfAnnotationToolbar({
   className,

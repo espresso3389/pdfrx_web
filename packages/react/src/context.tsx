@@ -16,11 +16,13 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * {@link PdfSource} for the byte-array, `File` and options-carrying forms.
    * Changing it opens the new document; an equivalent value is ignored, so an
    * inline literal is safe.
+   *
    */
   src?: PdfSource;
   /**
    * Shorthand for `engineOptions.wasmModulesUrl` — the directory holding
    * `pdfium_worker.js` and `pdfium.wasm`. Defaults to `'pdfium/'`.
+   *
    */
   wasmModulesUrl?: string;
   /** Called when opening `src` fails. The error is also available from `usePdfDocument()`. */
@@ -39,6 +41,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * ```tsx
    * <PdfrxProvider src="/secret.pdf" passwordProvider={() => prompt('Password:')} />
    * ```
+   *
    */
   passwordProvider?: PdfPasswordProvider;
   /**
@@ -50,6 +53,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * JPEG/PNG or decoded RGBA8888/BGRA8888 pixels here.
    * Return JPEG/PNG/etc. encoded data or decoded RGBA/BGRA pixels.
    * See {@link PdfImageDecoder} for a HEIC example.
+   *
    */
   imageDecoder?: PdfImageDecoder;
   /**
@@ -58,6 +62,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * Traditional Chinese, French, German), with English as the fallback. Omit it
    * to auto-detect from the browser (`navigator.languages`). See
    * {@link resolvePdfrxStrings}.
+   *
    */
   locale?: string | readonly string[];
   /**
@@ -65,6 +70,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * labels, or supplying a language the package doesn't ship (set `locale` to it
    * and provide the strings here; anything omitted falls back to English). See
    * {@link PdfrxStrings}. Pass a stable (module-level or memoized) object.
+   *
    */
   strings?: Partial<PdfrxStrings>;
   /**
@@ -72,6 +78,7 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
    * active strings alongside the event context, so you can reuse
    * {@link buildDefaultContextMenu} and add your own items. Omit it for the
    * built-in localized Copy / Select All menu. See {@link PdfReactContextMenuBuilder}.
+   *
    */
   contextMenuBuilder?: PdfReactContextMenuBuilder;
   children?: ReactNode;
@@ -100,6 +107,9 @@ export interface PdfrxProviderProps extends Omit<PdfrxViewerOptions, 'contextMen
  *   </div>
  * </PdfrxProvider>
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfrxProvider({
   src,
@@ -176,6 +186,8 @@ export function PdfrxProvider({
  * The {@link PdfrxViewerStore} for the nearest {@link PdfrxProvider}.
  *
  * @throws If called outside a `PdfrxProvider`.
+ * @returns The current pdfrx store state and actions.
+ *
  */
 export function usePdfrxStore(): PdfrxViewerStore {
   const store = useContext(StoreContext);
@@ -183,7 +195,12 @@ export function usePdfrxStore(): PdfrxViewerStore {
   return store;
 }
 
-/** Like {@link usePdfrxStore}, but returns `null` outside a provider instead of throwing. */
+/**
+ * Like {@link usePdfrxStore}, but returns `null` outside a provider instead of throwing.
+ *
+ * @returns The current optional pdfrx store state and actions.
+ *
+ */
 export function useOptionalPdfrxStore(): PdfrxViewerStore | null {
   return useContext(StoreContext);
 }

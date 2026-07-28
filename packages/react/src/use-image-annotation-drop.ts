@@ -26,6 +26,9 @@ export interface ImageAnnotationDropHandlers {
  * and creates a stamp annotation centered at the drop point. Annotation change
  * listeners observe the resulting mutation normally, allowing applications to
  * attach their own persistence or other post-processing.
+ * @param options - Options that customize the operation.
+ * @returns The current image annotation drop state and actions.
+ *
  */
 export function useImageAnnotationDrop(
   options: UseImageAnnotationDropOptions = {},

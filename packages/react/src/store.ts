@@ -24,6 +24,7 @@ import { ThumbnailCache } from './thumbnail-cache.js';
  *
  * Instances are created by `PdfrxProvider`; you normally reach one through
  * `usePdfrxStore()` rather than constructing it.
+ *
  */
 export class PdfrxViewerStore {
   #viewer: PdfrxViewer | null = null;
@@ -34,6 +35,7 @@ export class PdfrxViewerStore {
    * disposed synchronously, every dev-mode mount would boot (and throw away) a
    * whole pdfium worker + WASM instance. Deferring by a microtask lets the
    * immediate remount reclaim the same viewer.
+   *
    */
   #pendingDispose: PdfrxViewer | null = null;
   #listeners = new Set<() => void>();
@@ -42,6 +44,7 @@ export class PdfrxViewerStore {
    * The options object handed to the viewer. The viewer reads most fields live
    * on every use, so mutating this in place is how prop changes take effect
    * without recreating the viewer (and its worker).
+   *
    */
   #options: PdfrxViewerOptions = {};
 
@@ -53,6 +56,7 @@ export class PdfrxViewerStore {
    * The builder handed to the viewer. It reads {@link #strings} and
    * {@link #viewer} at menu-show time (so both stay current) and dispatches to
    * the app's builder if one was provided, otherwise to the localized default.
+   *
    */
   #contextMenuBuilder = (context: ContextMenuContext): HTMLElement | null | undefined => {
     const viewer = this.#viewer;
@@ -72,6 +76,7 @@ export class PdfrxViewerStore {
    * Default password provider applied to every built-in open (the `src` prop,
    * the file-open button and page insertion) whose source does not
    * carry its own. Set from the `passwordProvider` prop by `PdfrxProvider`.
+   *
    */
   #passwordProvider: PdfPasswordProvider | undefined;
   #imageDecoder: PdfImageDecoder | undefined;
@@ -80,6 +85,7 @@ export class PdfrxViewerStore {
    * unset — `PdfrxViewerApp` registers a localized `window.prompt` here so
    * encrypted documents prompt out of the box, while bare `PdfrxProvider` stays
    * opt-in.
+   *
    */
   #fallbackPasswordProvider: PdfPasswordProvider | undefined;
   /** Bumped per open, so a superseded open cannot report its result. */
@@ -100,6 +106,7 @@ export class PdfrxViewerStore {
    * The one searcher for this viewer. `createTextSearcher()` disposes whatever
    * came before it and only the newest one is painted, so the store owns it
    * rather than letting each `usePdfSearch()` call make its own.
+   *
    */
   #searcher: PdfTextSearcher | null = null;
   #searchQuery = '';
@@ -108,7 +115,13 @@ export class PdfrxViewerStore {
   // Subscription
   // ---------------------------------------------------------------------------
 
-  /** Subscribes to viewer/error/document changes. Returns an unsubscribe function. */
+  /**
+   * Subscribes to viewer/error/document changes. Returns an unsubscribe function.
+   *
+   * @param listener - The callback to invoke when the value changes.
+   * @returns A function that removes the listener.
+   *
+   */
   subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
     return () => {
@@ -141,7 +154,13 @@ export class PdfrxViewerStore {
     return this.#errorFileName;
   }
 
-  /** Shows an error from a built-in import action in the viewer app's error banner. */
+  /**
+   * Shows an error from a built-in import action in the viewer app's error banner.
+   *
+   * @param error - The error value (unknown).
+   * @param fileName - The fileName value (string).
+   *
+   */
   reportImportError(error: unknown, fileName: string): void {
     this.#error = error;
     this.#errorKind = 'import';
@@ -152,6 +171,7 @@ export class PdfrxViewerStore {
   /**
    * Clears {@link error} (e.g. when the user dismisses the error banner). A
    * no-op when there is no error. The next open attempt also clears it.
+   *
    */
   clearError(): void {
     if (this.#error === null) return;
@@ -170,8 +190,14 @@ export class PdfrxViewerStore {
     return this.#pagesRevision;
   }
 
-  /** Stable snapshot getters, bound for `useSyncExternalStore`. */
+  /**
+   * Stable snapshot getters, bound for `useSyncExternalStore`.
+   *
+   * @returns The resolved PdfrxViewer or null.
+   *
+   */
   getViewer = (): PdfrxViewer | null => this.#viewer;
+  /** @returns The latest viewer error, or `null` when no error is active. */
   getError = (): unknown => this.#error;
 
   #notify(): void {
@@ -192,6 +218,9 @@ export class PdfrxViewerStore {
    * Creates the viewer inside `element`. Called by {@link PdfViewerSurface} on
    * mount. Re-attaching the same element (StrictMode's remount) reuses the
    * existing viewer instead of rebuilding the worker.
+   *
+   * @param element - The element value (HTMLElement).
+   *
    */
   attach(element: HTMLElement): void {
     if (this.#pendingDispose && this.#element === element) {
@@ -242,6 +271,7 @@ export class PdfrxViewerStore {
    * Watches the current document for page edits. `setPages`/`setPage` renumber
    * pages without producing a new document, so nothing else would tell a
    * thumbnail strip or an outline that its page numbers just moved.
+   *
    */
   #bindPagesRearranged(): void {
     this.#unsubscribePagesRearranged?.();
@@ -285,6 +315,9 @@ export class PdfrxViewerStore {
    * take effect immediately; `engine`, `engineOptions` and `initialFit` are only
    * consulted at construction, so changing those requires remounting the
    * provider.
+   *
+   * @param options - Options that customize the operation.
+   *
    */
   updateOptions(options: PdfrxViewerOptions): void {
     const previous = { ...this.#options };
@@ -319,6 +352,9 @@ export class PdfrxViewerStore {
    * Sets the strings the default context menu is built from. Called by the
    * provider; the menu reads the latest value when it opens, so no viewer
    * rebuild is needed.
+   *
+   * @param strings - The strings value (PdfrxStrings).
+   *
    */
   setStrings(strings: PdfrxStrings): void {
     this.#strings = strings;
@@ -327,6 +363,9 @@ export class PdfrxViewerStore {
   /**
    * Sets the app's context-menu builder (or `null` for the localized default).
    * Read at menu-show time, so no viewer rebuild is needed.
+   *
+   * @param builder - The builder value (PdfReactContextMenuBuilder or null or undefined).
+   *
    */
   setContextMenuBuilder(builder: PdfReactContextMenuBuilder | null | undefined): void {
     this.#userContextMenuBuilder = builder ?? null;
@@ -346,7 +385,9 @@ export class PdfrxViewerStore {
     return this.#searchQuery;
   }
 
+  /** @returns The text searcher for the attached viewer, or `null` before attachment. */
   getSearcher = (): PdfTextSearcher | null => this.#searcher;
+  /** @returns The current text-search query. */
   getSearchQuery = (): string => this.#searchQuery;
 
   /**
@@ -354,6 +395,10 @@ export class PdfrxViewerStore {
    *
    * `startTextSearch` ignores a pattern identical to the last one, so re-running
    * the same query needs `resetTextSearch()` first — `force` does that for you.
+   *
+   * @param query - The query value (string).
+   * @param options - Options that customize the operation.
+   *
    */
   setSearchQuery(query: string, options?: StartTextSearchOptions & { force?: boolean }): void {
     if (query === this.#searchQuery && !options?.force) return;
@@ -375,12 +420,18 @@ export class PdfrxViewerStore {
    * batteries-included fallback when none was supplied. Used by every built-in
    * open path and read by callers that open outside the store (e.g. importing
    * pages into the current document).
+   *
    */
   get passwordProvider(): PdfPasswordProvider | undefined {
     return this.#passwordProvider ?? this.#fallbackPasswordProvider;
   }
 
-  /** Sets the app-supplied default password provider (from the `passwordProvider` prop). */
+  /**
+   * Sets the app-supplied default password provider (from the `passwordProvider` prop).
+   *
+   * @param provider - The provider value (PdfPasswordProvider or undefined).
+   *
+   */
   setPasswordProvider(provider: PdfPasswordProvider | undefined): void {
     this.#passwordProvider = provider;
   }
@@ -390,12 +441,22 @@ export class PdfrxViewerStore {
     return this.#imageDecoder;
   }
 
-  /** Sets the app-supplied image decoder (from the `imageDecoder` prop). */
+  /**
+   * Sets the app-supplied image decoder (from the `imageDecoder` prop).
+   *
+   * @param decoder - The decoder value (PdfImageDecoder or undefined).
+   *
+   */
   setImageDecoder(decoder: PdfImageDecoder | undefined): void {
     this.#imageDecoder = decoder;
   }
 
-  /** Sets the fallback used only when no app password provider was supplied. */
+  /**
+   * Sets the fallback used only when no app password provider was supplied.
+   *
+   * @param provider - The provider value (PdfPasswordProvider or undefined).
+   *
+   */
   setFallbackPasswordProvider(provider: PdfPasswordProvider | undefined): void {
     this.#fallbackPasswordProvider = provider;
   }
@@ -404,6 +465,9 @@ export class PdfrxViewerStore {
    * Declares which document should be shown. A no-op when the source is
    * equivalent to the current one, so passing an inline `src` string on every
    * render does not reopen the document.
+   *
+   * @param src - The src value (PdfSource).
+   *
    */
   setSource(src: PdfSource): void {
     const normalized = normalizeSource(src);
@@ -417,6 +481,10 @@ export class PdfrxViewerStore {
   /**
    * Opens a document imperatively, bypassing the `src` prop. Rejects with the
    * open error (which is also recorded on {@link error}).
+   *
+   * @param src - The src value (PdfSource).
+   * @returns The resolved Promise.
+   *
    */
   async open(src: PdfSource): Promise<void> {
     const normalized = normalizeSource(src);

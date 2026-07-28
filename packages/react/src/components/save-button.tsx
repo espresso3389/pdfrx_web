@@ -21,6 +21,9 @@ export interface PdfSaveButtonProps {
  * Serializes a temporary copy of the current document — including any
  * annotation, form, and page edits — and downloads it as a PDF without materializing
  * the live document's page arrangement or invalidating its editing history.
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfSaveButton({ className, style, fileName, children, encode }: PdfSaveButtonProps): ReactNode {
   const viewer = usePdfrxViewer();

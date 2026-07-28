@@ -30,6 +30,9 @@ export interface PdfOutlineTreeProps {
  * ```tsx
  * <PdfOutlineTree defaultExpandedDepth={2} onNavigate={() => setDrawerOpen(false)} />
  * ```
+ * @param __namedParameters - The destructured component props or operation options.
+ * @returns The resulting ReactNode.
+ *
  */
 export function PdfOutlineTree({
   className,
