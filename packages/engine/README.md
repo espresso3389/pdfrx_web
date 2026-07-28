@@ -37,7 +37,7 @@ npm install @pdfrx/engine
 import { PdfrxEngine } from '@pdfrx/engine';
 
 const engine = new PdfrxEngine({
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.23.0/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.23.1/assets/',
 });
 const document = await engine.openUrl('/manual.pdf');
 const page = document.pages[0];

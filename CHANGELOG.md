@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-07-29
+
+### Changed
+
+- Made the text-selection Markup command open its subtype-and-color submenu
+  directly instead of reapplying the previously selected markup style.
+- Split the React annotation-toolbar guide into a dedicated illustrated topic
+  document and added screenshots to the documentation.
+
+### Fixed
+
+- Kept raster image annotations visible when their pages are reordered.
+
 ## [0.23.0] - 2026-07-29
 
 ### Added
@@ -809,7 +822,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.3...v0.23.0
 [0.22.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.2...v0.22.3
 [0.22.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.1...v0.22.2
