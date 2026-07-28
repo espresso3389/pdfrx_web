@@ -30,7 +30,6 @@ that would otherwise obscure each package's quick start.
 - [Text, language, and emoji appearance](TEXT-APPEARANCE.md): Unicode and
   grapheme handling, mixed-script FreeText, cross-runtime emoji fallback,
   caching, offline assets, and custom renderers.
-- [Feature parity](FEATURE-PARITY.md): implementation status relative to pdfrx.
 
 ## Generated API documentation
 

@@ -545,9 +545,9 @@ subscribe to the exact events with `usePdfPageChanges()`.
   PDFium geometry setter for `Line`/`Polygon`).
 - Scroll physics beyond exponential-decay fling (no platform-specific curves).
 
-For the full list of features that upstream [pdfrx](https://github.com/espresso3389/pdfrx)
-has but this port does not yet — and which are deliberately out of scope — see
-[FEATURE-PARITY.md](FEATURE-PARITY.md).
+This list records limitations of the current packages themselves. The project
+does not maintain feature-by-feature parity with another viewer as a design
+goal.
 
 ## Collaborative applications
 
