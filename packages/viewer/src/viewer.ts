@@ -861,6 +861,8 @@ interface AnnotationDuplicateRepeat {
 
 /** An annotation editing tool selected via {@link PdfrxViewer.setAnnotationTool}. */
 export type AnnotationTool = 'ink' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'note' | 'link';
+/** Text-markup subtypes that can be created from the current text selection. */
+export type TextMarkupAnnotationSubtype = 'highlight' | 'underline' | 'squiggly' | 'strikeout';
 export type AnnotationLinkRequestHandler = (
   current: PdfLinkTarget | null,
   anchor: DOMRectReadOnly,
@@ -7226,19 +7228,28 @@ export class PdfrxViewer {
   }
 
   /**
-   * Highlights the current text selection: adds a `Highlight` markup annotation
-   * per page from the selected text's line rectangles (quadpoints), as one
-   * undoable step, then clears the text selection. No-op without a selection.
-   * `color` defaults to the current annotation drawing color.
+   * Adds text-markup annotations for the current text selection. One annotation
+   * containing the selected visual-line quadpoints is created per page, as one
+   * undoable step, then the selection is cleared. No-op without a selection.
+   *
+   * This is the common implementation for Highlight, Underline, Squiggly, and
+   * StrikeOut. `color` and `opacity` default to the current annotation style.
+   *
+   * @returns The ids of the annotations created by this call, in selected-page
+   * order. A selection contained on one page normally returns one id; a
+   * selection spanning pages can return one id per page. Returns an empty
+   * array when there is no current selection or no markup geometry is created.
    */
-  async highlightSelection(
+  async addTextMarkupToSelection(
+    subtype: TextMarkupAnnotationSubtype,
     color: string = this.annotationStyle.color,
     opacity: number = this.annotationStyle.opacity,
-  ): Promise<void> {
-    if (!this.doc || !this.selA || !this.selB) return;
+  ): Promise<string[]> {
+    if (!this.doc || !this.selA || !this.selB) return [];
     const rgba = cssColorToRgba(color, opacity);
     const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
     const group: AnnotationCommand[] = [];
+    const ids: string[] = [];
     for (const range of ranges) {
       const quads: PdfAnnotationQuad[] = [];
       for (const fr of enumerateLineBoundingRects({ pageText: range.pageText, start: range.start, end: range.end })) {
@@ -7253,17 +7264,38 @@ export class PdfrxViewer {
       if (quads.length === 0) continue;
       const pageNumber = range.pageText.pageNumber;
       const rect = bboxOfPoints(quads.flatMap((q) => [q.topLeft, q.topRight, q.bottomLeft, q.bottomRight]));
-      const spec: PdfAnnotationSpec = { subtype: 'highlight', rect, color: rgba, geometry: { kind: 'markup', quads } };
+      const spec: PdfAnnotationSpec = { subtype, rect, color: rgba, geometry: { kind: 'markup', quads } };
       const id = await this.annotationPage(pageNumber).addAnnotation(spec, this.annotationMutationOptions());
+      ids.push(id);
       group.push({ pageNumber, id, before: null, after: spec });
     }
     this.recordAnnotationCommandGroup(group);
     this.clearSelection();
+    return ids;
+  }
+
+  /**
+   * Highlights the current text selection. Compatibility shorthand for
+   * `addTextMarkupToSelection('highlight', color, opacity)`.
+   *
+   * @returns The created Highlight annotation ids in selected-page order, or
+   * an empty array when nothing is created.
+   */
+  async highlightSelection(
+    color: string = this.annotationStyle.color,
+    opacity: number = this.annotationStyle.opacity,
+  ): Promise<string[]> {
+    return this.addTextMarkupToSelection('highlight', color, opacity);
+  }
+
+  /** Whether the current selection can be converted to a text-markup annotation. */
+  canAddTextMarkupToSelection(): boolean {
+    return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
   }
 
   /** Whether the current text selection can be highlighted (has a selection + annotations on). */
   canHighlightSelection(): boolean {
-    return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
+    return this.canAddTextMarkupToSelection();
   }
 
   /**
