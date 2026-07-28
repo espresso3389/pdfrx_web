@@ -599,10 +599,25 @@ function CustomPrintButton() {
 
 ## Context menu
 
-The right-click / long-press menu (Copy / Select All / Highlight / Add link) is
-themed and localized out of the box. Highlight opens a color palette when text
-can be converted to a markup annotation. Add link opens the standard link-target
-editor and converts each selected visual line into a Link annotation. It uses
+The right-click / long-press menu (Copy / Select All / Markup / Add link) is
+themed and localized out of the box. Markup is a split action: its main button
+reapplies the most recently used markup style for that viewer, while its arrow
+opens a matrix whose rows are Highlight, Underline, Squiggly, and StrikeOut and
+whose columns are colors. Hovering a cell (or focusing it with the keyboard)
+previews that exact subtype and color over the current selection without
+changing the PDF; clicking the cell commits it.
+
+Highlight uses the pastel
+[`TEXT_HIGHLIGHT_COLORS`](https://espresso3389.github.io/pdfrx_web/variables/_pdfrx_react.TEXT_HIGHLIGHT_COLORS.html)
+at
+[`TEXT_HIGHLIGHT_OPACITY`](https://espresso3389.github.io/pdfrx_web/variables/_pdfrx_react.TEXT_HIGHLIGHT_OPACITY.html).
+Underline, Squiggly, and StrikeOut use the darker
+[`TEXT_MARKUP_LINE_COLORS`](https://espresso3389.github.io/pdfrx_web/variables/_pdfrx_react.TEXT_MARKUP_LINE_COLORS.html)
+at full opacity so the strokes remain legible. These exported constants let
+custom menus use the same defaults.
+
+Add link opens the standard link-target editor and converts each selected visual
+line into a Link annotation. It uses
 [`PdfrxViewer.addLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addlinktoselection-1),
 gated by
 [`canAddLinkToSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#canaddlinktoselection-1).
@@ -617,7 +632,7 @@ import { PdfrxViewerApp, buildDefaultContextMenu } from '@pdfrx/react';
 <PdfrxViewerApp
   src="/manual.pdf"
   contextMenuBuilder={(context, { viewer, strings }) => {
-    // Start from the default localized Copy / Select All / Highlight / Add link menu…
+    // Start from the default localized Copy / Select All / Markup / Add link menu…
     const menu = buildDefaultContextMenu(viewer, strings, context);
 
     // …then add your own item (reuse the built-in classes for the styling).

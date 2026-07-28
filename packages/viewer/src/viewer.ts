@@ -298,10 +298,10 @@ export interface PdfrxViewerOptions {
   onLinkTap?: LinkTapHandler;
   /**
    * Replaces the built-in right-click / long-press context menu (which offers
-   * Copy and Select All in English). Return a menu element the viewer will
-   * position and dismiss, or `null`/`undefined` for no menu. This is the hook
-   * for localizing or fully customizing the menu — the viewer itself carries no
-   * translation machinery. See {@link ContextMenuBuilder}.
+   * Copy, Highlight, Add link, and Select All in English). Return a menu element
+   * the viewer will position and dismiss, or `null`/`undefined` for no menu.
+   * This is the hook for localizing or fully customizing the menu — the viewer
+   * itself carries no translation machinery. See {@link ContextMenuBuilder}.
    *
    */
   contextMenuBuilder?: ContextMenuBuilder;
@@ -7798,7 +7798,15 @@ export class PdfrxViewer {
 
   /**
    * Temporarily previews a text-markup style over the current selection without
-   * creating or changing a PDF annotation.
+   * creating or changing a PDF annotation or entering undo history. Call this
+   * when a picker candidate is hovered or focused, and call
+   * {@link clearTextMarkupSelectionPreview} when it is left or the picker
+   * closes. The preview remains until cleared or the context menu is dismissed.
+   *
+   * @param subtype - Markup geometry to paint.
+   * @param color - CSS color used for the temporary fill or stroke.
+   * @param opacity - Preview opacity. Defaults to `0.5` for Highlight and `1`
+   *   for line-based subtypes.
    */
   previewTextMarkupSelection(
     subtype: TextMarkupAnnotationSubtype,
@@ -7809,7 +7817,10 @@ export class PdfrxViewer {
     this.invalidate();
   }
 
-  /** Clears the temporary text-markup preview, restoring the normal selection paint. */
+  /**
+   * Clears a preview installed by {@link previewTextMarkupSelection}, restoring
+   * the normal selection paint. This does not modify the selection or PDF.
+   */
   clearTextMarkupSelectionPreview(): void {
     if (!this.textMarkupSelectionPreview) return;
     this.textMarkupSelectionPreview = null;

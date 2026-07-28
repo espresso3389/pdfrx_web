@@ -408,15 +408,23 @@ away-from-object direction where possible. Both levels are clamped back into
 the viewport when neither side can fit, and remain above the viewer.
 
 **Text-selection annotations** are not drawing tools. The user selects text and
-picks *Highlight* or *Add link* from the right-click context menu.
+picks *Markup* or *Add link* from the right-click context menu. React's Markup
+split action opens a subtype-by-color matrix and remembers the last committed
+choice per viewer. Hover/focus calls `previewTextMarkupSelection()` to repaint
+the selection non-destructively; closing or leaving the candidate calls
+`clearTextMarkupSelectionPreview()`, while clicking commits through
+`addTextMarkupToSelection()`. Highlight previews use translucent pastel fills;
+the three line subtypes use opaque, higher-contrast strokes. The Canvas preview
+and committed SVG overlay share the squiggle-point generator so the preview and
+stored annotation use the same wave geometry.
 `PdfrxViewer.addTextMarkupToSelection(subtype, color?, opacity?)` turns the
 selection into per-line quadpoints (`getSelectedRanges` +
 `enumerateFragmentBoundingRects`, the same geometry that paints the selection)
 and adds one Highlight, Underline, Squiggly, or StrikeOut markup annotation per
 page as a single undo group. Both it and `highlightSelection(color?)` return the
 created annotation ids in page order (or an empty array when nothing was
-created). `highlightSelection()` remains the Highlight shorthand used by the
-standard menu; `canAddTextMarkupToSelection()` is the common capability check
+created). `highlightSelection()` remains the built-in viewer's Highlight
+shorthand; `canAddTextMarkupToSelection()` is the common capability check
 and `canHighlightSelection()` is its compatibility alias.
 `addLinkToSelection()` resolves one target through the installed
 `AnnotationLinkRequestHandler`, creates one rectangular Link annotation per

@@ -1,10 +1,16 @@
 import type { ContextMenuContext, PdfrxViewer, TextMarkupAnnotationSubtype } from '@pdfrx/viewer';
 import type { PdfrxStrings } from './strings.js';
 
-/** Fixed opacity used when the text-markup menu creates a Highlight annotation. */
+/**
+ * Opacity used by the default context menu for Highlight previews and commits.
+ * Line-based text markup uses full opacity instead.
+ */
 export const TEXT_HIGHLIGHT_OPACITY = 0.5;
 
-/** Text-markup colors, intentionally independent of annotation-toolbar style. */
+/**
+ * Pastel colors used by the default context menu's Highlight row.
+ * They are intentionally independent of the annotation-toolbar style.
+ */
 export const TEXT_HIGHLIGHT_COLORS = [
   '#ffeb3b',
   '#8bc34a',
@@ -14,7 +20,10 @@ export const TEXT_HIGHLIGHT_COLORS = [
   '#ce93d8',
 ] as const;
 
-/** Opaque, higher-contrast colors used by Underline, Squiggly, and StrikeOut. */
+/**
+ * Higher-contrast colors used at full opacity by the default context menu's
+ * Underline, Squiggly, and StrikeOut rows.
+ */
 export const TEXT_MARKUP_LINE_COLORS = [
   '#c49000',
   '#388e3c',
@@ -64,6 +73,13 @@ export type PdfReactContextMenuBuilder = (
  * menu's placement and dismissal. The labels come from the active
  * {@link PdfrxStrings}; the look is themeable through the `pdfrx-context-menu`
  * classes in `styles.css`.
+ *
+ * Markup is a split action. Its primary button reapplies the viewer's last
+ * committed subtype and color; its submenu is a subtype-by-color matrix.
+ * Hovering or focusing a cell previews it without mutating the PDF, and
+ * clicking commits it. Highlight uses {@link TEXT_HIGHLIGHT_COLORS} and
+ * {@link TEXT_HIGHLIGHT_OPACITY}; line subtypes use
+ * {@link TEXT_MARKUP_LINE_COLORS} at full opacity.
  *
  * Apps that want different items can pass their own `contextMenuBuilder` prop
  * instead (it wins over this default).
