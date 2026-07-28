@@ -13,6 +13,7 @@ import {
   forwardArmedEditorKeyToViewer,
   pointToSegmentDistance,
   preserveAnnotationSelectionOnEmptySpace,
+  remapAnnotationImageSources,
   isPdfPrintingSupported,
   resizeBoxByHandle,
   segmentIntersectsRect,
@@ -55,6 +56,43 @@ describe('annotationSnapshotKey', () => {
       annotationSnapshotKey(9, '@0'),
       annotationSnapshotKey(9, '@1'),
     ])).toHaveLength(3);
+  });
+});
+
+describe('remapAnnotationImageSources', () => {
+  it('keeps original stamp pixels with their logical pages after reordering', () => {
+    const a = { id: 'page-a' };
+    const b = { id: 'page-b' };
+    const pixels = { width: 1, height: 1, pixels: new Uint8Array([1, 2, 3, 4]) };
+
+    const remapped = remapAnnotationImageSources(
+      new Map([[annotationSnapshotKey(1, 'stamp'), pixels]]),
+      [a, b],
+      [b, a],
+    );
+
+    expect(remapped.get(annotationSnapshotKey(2, 'stamp'))).toBe(pixels);
+    expect(remapped.has(annotationSnapshotKey(1, 'stamp'))).toBe(false);
+  });
+
+  it('drops removed pages and supplies every placement of a reused logical page', () => {
+    const kept = { id: 'kept' };
+    const removed = { id: 'removed' };
+    const keptSource = { pixels: 'kept' };
+    const removedSource = { pixels: 'removed' };
+
+    const remapped = remapAnnotationImageSources(
+      new Map([
+        [annotationSnapshotKey(1, 'kept-stamp'), keptSource],
+        [annotationSnapshotKey(2, 'removed-stamp'), removedSource],
+      ]),
+      [kept, removed],
+      [kept, kept],
+    );
+
+    expect(remapped.get(annotationSnapshotKey(1, 'kept-stamp'))).toBe(keptSource);
+    expect(remapped.get(annotationSnapshotKey(2, 'kept-stamp'))).toBe(keptSource);
+    expect([...remapped.values()]).not.toContain(removedSource);
   });
 });
 

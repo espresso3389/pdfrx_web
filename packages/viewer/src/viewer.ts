@@ -955,6 +955,31 @@ export const annotationObjectInteractionEnabled = (
 export const annotationSnapshotKey = (pageNumber: number, id: string): string =>
   `${pageNumber}\0${id}`;
 
+/**
+ * Moves page-position-keyed image sources along with their logical pages.
+ * Image stamps need this original payload because PDFium may omit raster
+ * readback after their appearance has been transformed.
+ * @internal
+ */
+export const remapAnnotationImageSources = <T>(
+  sources: ReadonlyMap<string, T>,
+  beforePages: readonly { readonly id: unknown }[],
+  afterPages: readonly { readonly id: unknown }[],
+): Map<string, T> => {
+  const remapped = new Map<string, T>();
+  for (const [key, source] of sources) {
+    const separator = key.indexOf('\0');
+    const oldPageNumber = Number(key.slice(0, separator));
+    const annotationId = key.slice(separator + 1);
+    const pageId = beforePages[oldPageNumber - 1]?.id;
+    if (separator < 0 || pageId === undefined) continue;
+    afterPages.forEach((page, index) => {
+      if (page.id === pageId) remapped.set(annotationSnapshotKey(index + 1, annotationId), source);
+    });
+  }
+  return remapped;
+};
+
 /** @internal Builds one zoom-stable triangular squiggle from a baseline toward the text. */
 export const textMarkupSquigglePoints = (
   start: Offset,
@@ -3839,7 +3864,13 @@ export class PdfrxViewer {
     this.syncFormDocumentListeners();
     this.pageAnnotations.clear();
     this.annotationSnapshots.clear();
+    const remappedImageSources = remapAnnotationImageSources(
+      this.annotationImageSources,
+      beforePages,
+      afterPages,
+    );
     this.annotationImageSources.clear();
+    for (const [key, source] of remappedImageSources) this.annotationImageSources.set(key, source);
     this.clearAnnotationOverlays();
     this.hoveredLink = null;
     this.clearSelection();
