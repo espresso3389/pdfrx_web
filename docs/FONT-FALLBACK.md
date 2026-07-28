@@ -139,6 +139,46 @@ option:
 [`googleFontsResolver`], [`FontResolver`], and [`FontResolution`] are re-exported
 from `@pdfrx/viewer` (see [`index.ts`](../packages/viewer/src/index.ts)).
 
+## Troubleshooting cached substitutions
+
+Registered substitutes persist in the origin's IndexedDB database
+`pdfrx.fonts`, keyed by the face name requested by the PDF. A cache hit is
+supplied directly to PDFium, so it does not emit a new `missingFonts` query and
+the current `fontResolver` is not called for that face.
+
+This matters after changing a custom resolver or upgrading from a release whose
+font classification selected a different substitute. Typical symptoms are:
+
+- a serif and sans-serif face rendering with the same style;
+- resolver logging or breakpoints not running for a previously seen face; or
+- a new resolver continuing to use an older font file.
+
+Clear the registered fonts and reopen the document before comparing resolver
+results:
+
+```ts
+import { PdfrxEngine } from '@pdfrx/engine';
+import { PdfrxViewer } from '@pdfrx/viewer';
+
+const engine = new PdfrxEngine({ wasmModulesUrl: '/pdfium/' });
+await engine.clearAllFontData();
+
+const viewer = new PdfrxViewer(container, { engine });
+await viewer.openUrl('/manual.pdf');
+```
+
+If the application does not retain its engine instance, delete the
+`pdfrx.fonts` IndexedDB database in the browser's developer tools, then reload
+the page. `clearAllFontData()` clears both the active worker mapper and the
+persistent database, but an already-open PDF may retain resolved fonts in its
+own caches; close and reopen it after clearing.
+
+The built-in cache has an internal database version. Releases that change the
+built-in fallback mapping bump that version and discard incompatible cached
+records automatically. Applications that change a custom resolver at runtime
+should still clear the cache explicitly because the engine cannot infer the
+application's resolver version.
+
 ## Licensing
 
 The substitute fonts are downloaded at runtime from Google Fonts and are not

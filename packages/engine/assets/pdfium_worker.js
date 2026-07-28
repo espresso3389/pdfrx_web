@@ -2373,6 +2373,11 @@ const fontNamesToIgnore = {
   ZapfDingbats: true,
 };
 
+// Increment when persisted font mappings are no longer compatible with the
+// current resolver or mapper behavior. An upgrade clears the old face-keyed
+// records so changed fallback classification can run again.
+const PDF_FONT_CACHE_DATABASE_VERSION = 2;
+
 class PdfFontPersistentCache {
   static instance = new PdfFontPersistentCache();
 
@@ -2389,11 +2394,13 @@ class PdfFontPersistentCache {
       return this.dbPromise;
     }
     this.dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 1);
-      request.onupgradeneeded = () => {
+      const request = indexedDB.open(this.dbName, PDF_FONT_CACHE_DATABASE_VERSION);
+      request.onupgradeneeded = (event) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(this.storeName)) {
           db.createObjectStore(this.storeName, { keyPath: 'face' });
+        } else if (event.oldVersion < PDF_FONT_CACHE_DATABASE_VERSION) {
+          request.transaction.objectStore(this.storeName).clear();
         }
       };
       request.onsuccess = () => resolve(request.result);
