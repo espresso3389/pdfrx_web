@@ -1,6 +1,11 @@
 import type { ContextMenuContext, PdfrxViewer } from '@pdfrx/viewer';
 import { describe, expect, it, vi } from 'vitest';
-import { buildDefaultContextMenu, TEXT_HIGHLIGHT_COLORS, TEXT_HIGHLIGHT_OPACITY } from './context-menu.js';
+import {
+  buildDefaultContextMenu,
+  TEXT_HIGHLIGHT_COLORS,
+  TEXT_HIGHLIGHT_OPACITY,
+  TEXT_MARKUP_LINE_COLORS,
+} from './context-menu.js';
 import { defaultPdfrxStrings } from './strings.js';
 
 const context = (close = vi.fn(), pointerType: 'mouse' | 'touch' = 'mouse'): ContextMenuContext => ({
@@ -25,6 +30,38 @@ const viewerWithMarkup = (
 } as unknown as PdfrxViewer);
 
 describe('buildDefaultContextMenu', () => {
+  it('uses pastel translucent highlights and opaque high-contrast line colors', () => {
+    expect(TEXT_MARKUP_LINE_COLORS).toHaveLength(TEXT_HIGHLIGHT_COLORS.length);
+    expect(TEXT_MARKUP_LINE_COLORS).not.toEqual(TEXT_HIGHLIGHT_COLORS);
+
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
+    const menu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(),
+    );
+    menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
+    menu.querySelector<HTMLButtonElement>(
+      `[aria-label="${defaultPdfrxStrings.highlight} ${TEXT_HIGHLIGHT_COLORS[0]}"]`,
+    )!.click();
+    expect(addTextMarkupToSelection).toHaveBeenLastCalledWith(
+      'highlight', TEXT_HIGHLIGHT_COLORS[0], TEXT_HIGHLIGHT_OPACITY,
+    );
+
+    const nextMenu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(),
+    );
+    nextMenu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
+    nextMenu.querySelector<HTMLButtonElement>(
+      `[aria-label="${defaultPdfrxStrings.underline} ${TEXT_MARKUP_LINE_COLORS[0]}"]`,
+    )!.click();
+    expect(addTextMarkupToSelection).toHaveBeenLastCalledWith(
+      'underline', TEXT_MARKUP_LINE_COLORS[0], 1,
+    );
+  });
+
   it('places a split markup action above add-link', () => {
     const menu = buildDefaultContextMenu(viewerWithMarkup(), defaultPdfrxStrings, context());
     expect([...menu.querySelectorAll<HTMLButtonElement>(':scope > button, :scope > div button')]
@@ -77,7 +114,7 @@ describe('buildDefaultContextMenu', () => {
     choices[2 * TEXT_HIGHLIGHT_COLORS.length + 3]!.click();
     expect(addTextMarkupToSelection).toHaveBeenCalledWith(
       'squiggly',
-      TEXT_HIGHLIGHT_COLORS[3],
+      TEXT_MARKUP_LINE_COLORS[3],
       1,
     );
     expect(close).toHaveBeenCalledOnce();
@@ -94,7 +131,7 @@ describe('buildDefaultContextMenu', () => {
     choice.dispatchEvent(new MouseEvent('mouseenter'));
     expect(viewer.previewTextMarkupSelection).toHaveBeenCalledWith(
       'strikeout',
-      TEXT_HIGHLIGHT_COLORS[2],
+      TEXT_MARKUP_LINE_COLORS[2],
       1,
     );
     choice.dispatchEvent(new MouseEvent('mouseleave'));
@@ -114,7 +151,7 @@ describe('buildDefaultContextMenu', () => {
     second.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.click();
     expect(addTextMarkupToSelection).toHaveBeenLastCalledWith(
       'underline',
-      TEXT_HIGHLIGHT_COLORS[3],
+      TEXT_MARKUP_LINE_COLORS[3],
       1,
     );
   });

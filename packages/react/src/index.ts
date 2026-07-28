@@ -62,6 +62,7 @@ export {
   buildDefaultContextMenu,
   TEXT_HIGHLIGHT_COLORS,
   TEXT_HIGHLIGHT_OPACITY,
+  TEXT_MARKUP_LINE_COLORS,
   type PdfReactContextMenuBuilder,
   type PdfContextMenuHelpers,
 } from './context-menu.js';

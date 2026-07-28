@@ -14,6 +14,16 @@ export const TEXT_HIGHLIGHT_COLORS = [
   '#ce93d8',
 ] as const;
 
+/** Opaque, higher-contrast colors used by Underline, Squiggly, and StrikeOut. */
+export const TEXT_MARKUP_LINE_COLORS = [
+  '#c49000',
+  '#388e3c',
+  '#0288d1',
+  '#d32f2f',
+  '#ef6c00',
+  '#7b1fa2',
+] as const;
+
 const DEFAULT_TEXT_MARKUP = {
   subtype: 'highlight' as TextMarkupAnnotationSubtype,
   color: TEXT_HIGHLIGHT_COLORS[0],
@@ -150,7 +160,8 @@ export function buildDefaultContextMenu(
           rowLabel.className = 'pdfrx-text-markup-row-label';
           rowLabel.textContent = label;
           matrix.appendChild(rowLabel);
-          for (const color of TEXT_HIGHLIGHT_COLORS) {
+          const colors = subtype === 'highlight' ? TEXT_HIGHLIGHT_COLORS : TEXT_MARKUP_LINE_COLORS;
+          for (const color of colors) {
             const choice = document.createElement('button');
             choice.type = 'button';
             choice.className = `pdfrx-text-markup-choice pdfrx-text-markup-${subtype}`;
