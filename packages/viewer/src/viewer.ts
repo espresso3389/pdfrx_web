@@ -951,6 +951,10 @@ export const annotationObjectInteractionEnabled = (
   altOrOptionHeld: boolean,
 ): boolean => annotationMode !== altOrOptionHeld;
 
+/** @internal Page-scoped key for annotation ids, which may only be unique within a page. */
+export const annotationSnapshotKey = (pageNumber: number, id: string): string =>
+  `${pageNumber}\0${id}`;
+
 /**
  * Cmd/Ctrl makes an empty-space gesture additive only in effective
  * annotation-object mode.
@@ -2069,6 +2073,8 @@ export class PdfrxViewer {
   private annotationReloadGeneration = 0;
   /** Last known objects by id; survives the brief gap while SVG overlays rebuild. */
   private readonly annotationSnapshots = new Map<string, { pageNumber: number; annotation: PdfAnnotationObject }>();
+  /** Page disambiguation for page-local fallback ids such as `@0`. */
+  private readonly selectedAnnotationPages = new Map<string, number>();
   /** Open Note popup. Its dimensions are presentation state and never written to the PDF. */
   private annotationNotePopup: AnnotationNotePopup | null = null;
   /**
@@ -5044,7 +5050,7 @@ export class PdfrxViewer {
       this.hideContextMenu();
       const annotation = annotationLongPress.overlay.annotations.get(annotationLongPress.id);
       if (annotation) {
-        this.setSelectedAnnotation(annotationLongPress.id);
+        this.setSelectedAnnotationOnPage(annotationLongPress.overlay.pageNumber, annotationLongPress.id);
         this.trackAnnotationTextEdit(
           this.editTextAnnotation(annotationLongPress.overlay, annotation),
         );
@@ -5310,7 +5316,7 @@ export class PdfrxViewer {
     }
     event.preventDefault();
     event.stopImmediatePropagation();
-    this.setSelectedAnnotation(hit.id);
+    this.setSelectedAnnotationOnPage(hit.overlay.pageNumber, hit.id);
     this.trackAnnotationTextEdit(this.editTextAnnotation(hit.overlay, annotation));
   };
 
@@ -6601,8 +6607,8 @@ export class PdfrxViewer {
     pageGeom: PageGeometry,
     pageRect: Rect,
   ): AnnotationPageOverlay {
-    for (const [id, snapshot] of this.annotationSnapshots) {
-      if (snapshot.pageNumber === pageNumber) this.annotationSnapshots.delete(id);
+    for (const [key, snapshot] of this.annotationSnapshots) {
+      if (snapshot.pageNumber === pageNumber) this.annotationSnapshots.delete(key);
     }
     const pageSize: Size = { width: rectWidth(pageRect), height: rectHeight(pageRect) };
     const container = document.createElement('div');
@@ -6647,7 +6653,7 @@ export class PdfrxViewer {
         // supplied by the mutation event in that case.
         if (source) a = { ...loadedAnnotation, appearanceImage: source };
       }
-      this.annotationSnapshots.set(a.id, { pageNumber, annotation: a });
+      this.annotationSnapshots.set(annotationSnapshotKey(pageNumber, a.id), { pageNumber, annotation: a });
       const el = this.buildAnnotationShape(a, pageGeom, pageSize);
       if (el) {
         if (a.subtype === 'highlight') {
@@ -7268,7 +7274,7 @@ export class PdfrxViewer {
   ): void {
     this.clearSelectionStylePreview();
     for (const id of this.selectedAnnotationIds) {
-      const target = this.locateAnnotation(id);
+      const target = this.locateSelectedAnnotation(id);
       if (!target) continue;
       const after = annotationToSpec(target.annotation);
       if (style.color !== undefined) {
@@ -7306,7 +7312,7 @@ export class PdfrxViewer {
   /** @internal Clears any non-persistent selection style preview. */
   clearSelectionStylePreview(): void {
     for (const id of this.annotationStylePreviewIds) {
-      const target = this.locateAnnotation(id);
+      const target = this.locateSelectedAnnotation(id);
       const overlay = target ? this.annotationOverlays.get(target.pageNumber) : undefined;
       if (target && overlay) {
         this.previewAnnotationShape(overlay, target.annotation, annotationToSpec(target.annotation));
@@ -7353,7 +7359,7 @@ export class PdfrxViewer {
           : cssColorToRgba(fillColor, opacity ?? this.annotationStyle.opacity);
     const toAlpha = (v: number): number => Math.round(Math.max(0, Math.min(1, v)) * 255);
     const targets = [...this.selectedAnnotationIds]
-      .map((id) => this.locateAnnotation(id))
+      .map((id) => this.locateSelectedAnnotation(id))
       .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null);
     const group: AnnotationCommand[] = [];
     for (const t of targets) {
@@ -7430,9 +7436,10 @@ export class PdfrxViewer {
           const after = cmd.after!;
           if (after.subtype === 'freeText') await this.prepareFreeTextAppearance(after);
           await this.annotationPage(cmd.pageNumber).updateAnnotation(cmd.id, after, this.annotationMutationOptions(after));
-          const snapshot = this.annotationSnapshots.get(cmd.id);
+          const key = annotationSnapshotKey(cmd.pageNumber, cmd.id);
+          const snapshot = this.annotationSnapshots.get(key);
           if (snapshot) {
-            this.annotationSnapshots.set(cmd.id, {
+            this.annotationSnapshots.set(key, {
               pageNumber: cmd.pageNumber,
               annotation: syntheticAnnotation(snapshot.annotation, after),
             });
@@ -7482,7 +7489,13 @@ export class PdfrxViewer {
    */
   getSelectedAnnotations(): PdfAnnotationObject[] {
     return [...this.selectedAnnotationIds]
-      .map((id) => this.annotationSnapshots.get(id)?.annotation ?? this.locateAnnotation(id)?.annotation)
+      .map((id) => {
+        const pageNumber = this.selectedAnnotationPages.get(id);
+        return pageNumber === undefined
+          ? this.locateAnnotation(id)?.annotation
+          : this.annotationSnapshots.get(annotationSnapshotKey(pageNumber, id))?.annotation
+            ?? this.locateAnnotation(id, pageNumber)?.annotation;
+      })
       .filter((annotation): annotation is PdfAnnotationObject => annotation !== undefined);
   }
 
@@ -7544,10 +7557,10 @@ export class PdfrxViewer {
   async editSelectedAnnotationLink(): Promise<void> {
     if (!this.annotationLinkRequestHandler || this.selectedAnnotationIds.size !== 1) return;
     const id = this.getSelectedAnnotationId();
-    let located = id ? this.locateAnnotation(id) : null;
+    let located = id ? this.locateSelectedAnnotation(id) : null;
     for (let attempt = 0; id && !located && attempt < 10; attempt++) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      located = this.locateAnnotation(id);
+      located = this.locateSelectedAnnotation(id);
     }
     if (!id || !located || located.annotation.subtype !== 'link' || !located.annotation.linkTarget) return;
     const anchor = this.getSelectedAnnotationClientRect();
@@ -7570,6 +7583,25 @@ export class PdfrxViewer {
     this.setSelectedAnnotations(id ? [id] : []);
   }
 
+  /** Selects an annotation while retaining its page-local identity. */
+  private setSelectedAnnotationOnPage(pageNumber: number, id: string): void {
+    if (
+      this.selectedAnnotationIds.size === 1 &&
+      this.selectedAnnotationIds.has(id) &&
+      this.selectedAnnotationPages.get(id) === pageNumber
+    ) {
+      return;
+    }
+    this.selectedAnnotationIds.clear();
+    this.selectedAnnotationPages.clear();
+    this.selectedAnnotationIds.add(id);
+    this.selectedAnnotationPages.set(id, pageNumber);
+    this.refreshAnnotationSelectionAll();
+    this.notifyAnnotationSelectionChanged();
+    queueMicrotask(() => this.armSelectedTextAnnotationEditor());
+    requestAnimationFrame(() => this.armSelectedTextAnnotationEditor());
+  }
+
   /**
    * Replaces the selection with `ids` and redraws anchor handles.
    *
@@ -7582,6 +7614,7 @@ export class PdfrxViewer {
       return;
     }
     this.selectedAnnotationIds.clear();
+    this.selectedAnnotationPages.clear();
     for (const id of next) this.selectedAnnotationIds.add(id);
     this.refreshAnnotationSelectionAll();
     this.notifyAnnotationSelectionChanged();
@@ -7764,7 +7797,7 @@ export class PdfrxViewer {
    */
   copySelectedAnnotations(): boolean {
     const entries = [...this.selectedAnnotationIds]
-      .map((id) => this.locateAnnotation(id))
+      .map((id) => this.locateSelectedAnnotation(id))
       .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null)
       .map((t) => ({ pageNumber: t.pageNumber, spec: annotationToSpec(t.annotation) }));
     if (entries.length === 0) return false;
@@ -7834,7 +7867,7 @@ export class PdfrxViewer {
   async deleteSelectedAnnotation(): Promise<void> {
     if (!this.doc || this.selectedAnnotationIds.size === 0) return;
     const targets = [...this.selectedAnnotationIds]
-      .map((id) => this.locateAnnotation(id))
+      .map((id) => this.locateSelectedAnnotation(id))
       .filter((t): t is { pageNumber: number; annotation: PdfAnnotationObject } => t !== null);
     if (targets.length === 0) return;
     this.setSelectedAnnotations([]);
@@ -7863,17 +7896,33 @@ export class PdfrxViewer {
         .querySelector<SVGGElement>(`g[data-annot-visual-id="${CSS.escape(id)}"]`)
         ?.remove();
     }
-    this.annotationSnapshots.delete(id);
+    this.annotationSnapshots.delete(annotationSnapshotKey(pageNumber, id));
     this.annotationImageSources.delete(`${pageNumber}\0${id}`);
   }
 
   /** Finds the page number and last known object of an annotation by id. */
-  private locateAnnotation(id: string): { pageNumber: number; annotation: PdfAnnotationObject } | null {
+  private locateAnnotation(
+    id: string,
+    preferredPageNumber?: number,
+  ): { pageNumber: number; annotation: PdfAnnotationObject } | null {
+    if (preferredPageNumber !== undefined) {
+      const annotation = this.annotationOverlays.get(preferredPageNumber)?.annotations.get(id);
+      if (annotation) return { pageNumber: preferredPageNumber, annotation };
+      return this.annotationSnapshots.get(annotationSnapshotKey(preferredPageNumber, id)) ?? null;
+    }
     for (const [pageNumber, overlay] of this.annotationOverlays) {
       const annotation = overlay.annotations.get(id);
       if (annotation) return { pageNumber, annotation };
     }
-    return this.annotationSnapshots.get(id) ?? null;
+    for (const snapshot of this.annotationSnapshots.values()) {
+      if (snapshot.annotation.id === id) return snapshot;
+    }
+    return null;
+  }
+
+  /** Resolves a selected id against the page on which it was selected. */
+  private locateSelectedAnnotation(id: string): { pageNumber: number; annotation: PdfAnnotationObject } | null {
+    return this.locateAnnotation(id, this.selectedAnnotationPages.get(id));
   }
 
   // -------------------------------------------------------------------------
@@ -8162,7 +8211,7 @@ export class PdfrxViewer {
     if (this.annotationOverlayRoot.querySelector('.pdfrx-annotation-text-editor')) return;
     const id = this.getSelectedAnnotationId();
     if (!id) return;
-    const located = this.locateAnnotation(id);
+    const located = this.locateSelectedAnnotation(id);
     const overlay = located ? this.annotationOverlays.get(located.pageNumber) : undefined;
     if ((!located || !overlay) && attempt < 10) {
       requestAnimationFrame(() => this.armSelectedTextAnnotationEditor(attempt + 1, expected));
@@ -8656,7 +8705,7 @@ export class PdfrxViewer {
         event.shiftKey && (event.ctrlKey || event.metaKey),
       );
     } else {
-      this.setSelectedAnnotation(id);
+      this.setSelectedAnnotationOnPage(pageNumber, id);
       this.beginMove(
         pageNumber,
         overlay,
@@ -8842,7 +8891,7 @@ export class PdfrxViewer {
     }
     this.recordAnnotationCommand({ pageNumber: s.pageNumber, id, before: null, after: spec });
     this.setAnnotationTool(null);
-    this.setSelectedAnnotation(id);
+    this.setSelectedAnnotationOnPage(s.pageNumber, id);
   }
 
   private ensureFreeTextFont(kind: number): Promise<string | null> {
@@ -9528,7 +9577,7 @@ export class PdfrxViewer {
     const nudge = async (): Promise<void> => {
       if (!this.doc || this.selectedAnnotationIds.size === 0) return;
       const targets = [...this.selectedAnnotationIds]
-        .map((id) => this.locateAnnotation(id))
+        .map((id) => this.locateSelectedAnnotation(id))
         .filter((target): target is { pageNumber: number; annotation: PdfAnnotationObject } => target !== null);
       const byPage = new Map<number, PdfAnnotationObject[]>();
       for (const target of targets) {
@@ -9568,7 +9617,10 @@ export class PdfrxViewer {
           this.previewAnnotationShape(overlay, annotation, after);
           const display = syntheticAnnotation(annotation, after);
           overlay.annotations.set(annotation.id, display);
-          this.annotationSnapshots.set(annotation.id, { pageNumber, annotation: display });
+          this.annotationSnapshots.set(
+            annotationSnapshotKey(pageNumber, annotation.id),
+            { pageNumber, annotation: display },
+          );
           await this.annotationPage(pageNumber).updateAnnotation(
             annotation.id,
             after,

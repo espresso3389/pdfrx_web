@@ -6,6 +6,7 @@ import {
   annotationTextCompositionKey,
   annotationTextEntryKey,
   annotationObjectInteractionEnabled,
+  annotationSnapshotKey,
   annotationSupportsStyleProperty,
   clientPointToPagePx,
   constrainAnnotationTranslation,
@@ -44,6 +45,17 @@ const annotationWith = (values: Partial<PdfAnnotationObject>): PdfAnnotationObje
   appearanceImage: null,
   ...values,
 } as PdfAnnotationObject);
+
+describe('annotationSnapshotKey', () => {
+  it('keeps page-local fallback annotation ids distinct across pages', () => {
+    expect(annotationSnapshotKey(8, '@0')).not.toBe(annotationSnapshotKey(9, '@0'));
+    expect(new Set([
+      annotationSnapshotKey(8, '@0'),
+      annotationSnapshotKey(9, '@0'),
+      annotationSnapshotKey(9, '@1'),
+    ])).toHaveLength(3);
+  });
+});
 
 describe('annotationIsEffectivelyInvisible', () => {
   it('includes links and shapes whose stroke and fill are transparent', () => {
