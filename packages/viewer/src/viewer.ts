@@ -9,6 +9,7 @@
 
 import {
   PdfrxEngine,
+  PdfAnnotationFlag,
   createCanvasTextMeasureProvider,
   type PdfAnnotationColor,
   type PdfAnnotationObject,
@@ -799,6 +800,13 @@ interface AnnotationPageOverlay {
   annotations: Map<string, PdfAnnotationObject>;
 }
 
+/** Viewer-only popup for reading a Text/Note annotation. */
+interface AnnotationNotePopup {
+  pageNumber: number;
+  annotationId: string;
+  element: HTMLDivElement;
+}
+
 /** A draggable control point of an annotation (endpoint / vertex / corner). */
 interface AnnotationAnchor {
   /** Current position in bounding-box-relative PDF page coordinates. */
@@ -1100,6 +1108,37 @@ function translateAnnotationSpec(a: PdfAnnotationObject, dx: number, dy: number)
     dx,
     dy,
   );
+}
+
+/**
+ * Whether an annotation participates in the interactive on-screen overlay.
+ * PDFium applies these flags to its page render; the SVG overlay must make the
+ * same decision or hidden review-history annotations become visible.
+ *
+ * @internal
+ */
+export function annotationVisibleInViewer(
+  annotation: Pick<PdfAnnotationObject, 'flags' | 'subtype'>,
+): boolean {
+  const alwaysSuppressed = PdfAnnotationFlag.invisible | PdfAnnotationFlag.hidden;
+  if ((annotation.flags & alwaysSuppressed) !== 0) return false;
+  // pdfrx FreeText deliberately carries NoView so PDFium does not paint its
+  // default appearance underneath the deterministic SVG/companion appearance.
+  return annotation.subtype === 'freeText' || (annotation.flags & PdfAnnotationFlag.noView) === 0;
+}
+
+/** Color painted by settled SVG geometry when PDFium exposes /C only through /AP. @internal */
+export function annotationAppearanceColor(
+  annotation: Pick<PdfAnnotationObject, 'color' | 'appearancePaths'>,
+): PdfAnnotationColor | null {
+  if (annotation.color) return annotation.color;
+  for (const path of annotation.appearancePaths) {
+    if (path.stroke && path.strokeColor) return path.strokeColor;
+  }
+  for (const path of annotation.appearancePaths) {
+    if (path.fillMode && path.fillColor) return path.fillColor;
+  }
+  return null;
 }
 
 /** The full spec of an existing annotation (unchanged geometry). */
@@ -1945,6 +1984,8 @@ export class PdfrxViewer {
   private annotationReloadGeneration = 0;
   /** Last known objects by id; survives the brief gap while SVG overlays rebuild. */
   private readonly annotationSnapshots = new Map<string, { pageNumber: number; annotation: PdfAnnotationObject }>();
+  /** Open Note popup. Its dimensions are presentation state and never written to the PDF. */
+  private annotationNotePopup: AnnotationNotePopup | null = null;
   /**
    * First-generation pixels for image stamps. PDFium may read an appearance
    * back at its current display size, so reusing that readback on every resize
@@ -4493,6 +4534,20 @@ export class PdfrxViewer {
   /** Tap (press without move): open a link if hit, otherwise clear the selection. */
   private handleTap(local: Offset, altOrOptionHeld = this.annotationModeModifierHeld): void {
     this.emitTap('tap', local);
+    if (!this.isAnnotationSelectMode(altOrOptionHeld)) {
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const hit = this.annotationHitAtClientPoint(
+        canvasRect.left + local.x,
+        canvasRect.top + local.y,
+        'mouse',
+      );
+      const annotation = hit?.overlay.annotations.get(hit.id);
+      if (hit && annotation?.subtype === 'text') {
+        this.toggleAnnotationNotePopup(hit.overlay, annotation);
+        return;
+      }
+      this.closeAnnotationNotePopup();
+    }
     const link = this.isAnnotationSelectMode(altOrOptionHeld)
       ? null
       : this.linkAt(viewToDocument(this.transform, local));
@@ -6015,6 +6070,7 @@ export class PdfrxViewer {
   private updateAnnotationOverlays(): void {
     if (!this.annotationsEnabled() || !this.layout || !this.doc) {
       if (this.annotationOverlays.size) this.clearAnnotationOverlays();
+      this.closeAnnotationNotePopup();
       return;
     }
     const t = this.transform;
@@ -6130,6 +6186,117 @@ export class PdfrxViewer {
         overlay.highlightContainer.style.display = 'none';
       }
     }
+    this.positionAnnotationNotePopup();
+  }
+
+  /** Opens the transient read-only popup for a Note, or closes it when already open. */
+  private toggleAnnotationNotePopup(
+    overlay: AnnotationPageOverlay,
+    annotation: PdfAnnotationObject,
+  ): void {
+    if (this.annotationNotePopup?.annotationId === annotation.id) {
+      this.closeAnnotationNotePopup();
+      return;
+    }
+    this.closeAnnotationNotePopup();
+
+    const popup = document.createElement('div');
+    popup.className = 'pdfrx-annotation-note-popup';
+    popup.dataset.annotationId = annotation.id;
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-label', annotation.author ? `Note by ${annotation.author}` : 'Note');
+    popup.style.cssText =
+      'position:absolute;box-sizing:border-box;width:280px;height:200px;min-width:140px;min-height:96px;' +
+      'max-width:calc(100% - 16px);max-height:calc(100% - 16px);overflow:hidden;' +
+      'pointer-events:auto;touch-action:none;background:#fff9c4;color:#292929;' +
+      'border:1px solid #d6c75a;border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.28);' +
+      'white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.45 system-ui,sans-serif;';
+
+    const body = document.createElement('div');
+    body.className = 'pdfrx-annotation-note-popup-content';
+    body.textContent = annotation.contents ?? '';
+    body.style.cssText =
+      'position:absolute;inset:12px;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;';
+    popup.appendChild(body);
+
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'pdfrx-annotation-note-popup-resize';
+    resizeHandle.setAttribute('role', 'separator');
+    resizeHandle.setAttribute('aria-label', 'Resize note');
+    resizeHandle.style.cssText =
+      'position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;touch-action:none;' +
+      'background:transparent;z-index:1;';
+    resizeHandle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startWidth = popup.offsetWidth;
+      const startHeight = popup.offsetHeight;
+      resizeHandle.setPointerCapture(event.pointerId);
+      const move = (moveEvent: PointerEvent): void => {
+        const maxWidth = Math.max(140, this.viewSize.width - 16);
+        const maxHeight = Math.max(96, this.viewSize.height - 16);
+        popup.style.width = `${Math.min(maxWidth, Math.max(140, startWidth + moveEvent.clientX - startX))}px`;
+        popup.style.height = `${Math.min(maxHeight, Math.max(96, startHeight + moveEvent.clientY - startY))}px`;
+        this.positionAnnotationNotePopup();
+        moveEvent.preventDefault();
+      };
+      const up = (): void => {
+        resizeHandle.removeEventListener('pointermove', move);
+        resizeHandle.removeEventListener('pointerup', up);
+        resizeHandle.removeEventListener('pointercancel', up);
+      };
+      resizeHandle.addEventListener('pointermove', move);
+      resizeHandle.addEventListener('pointerup', up);
+      resizeHandle.addEventListener('pointercancel', up);
+    });
+    popup.appendChild(resizeHandle);
+
+    this.viewerOverlayRoot.appendChild(popup);
+    this.annotationNotePopup = {
+      pageNumber: overlay.pageNumber,
+      annotationId: annotation.id,
+      element: popup,
+    };
+    this.positionAnnotationNotePopup();
+  }
+
+  /** Keeps an open Note attached to its icon while clamping it to the viewport. */
+  private positionAnnotationNotePopup(): void {
+    const current = this.annotationNotePopup;
+    if (!current || !this.layout) return;
+    const overlay = this.annotationOverlays.get(current.pageNumber);
+    const annotation = overlay?.annotations.get(current.annotationId);
+    const pageRect = this.layout.pageLayouts[current.pageNumber - 1];
+    if (!overlay || !annotation || annotation.subtype !== 'text' || !pageRect || overlay.container.style.display === 'none') {
+      this.closeAnnotationNotePopup();
+      return;
+    }
+    const bounds = this.annotationPxBounds(annotation, overlay);
+    if (!bounds) return;
+    const pageView = documentRectToView(this.transform, pageRect);
+    const iconLeft = pageView.left + bounds.left * this.transform.zoom;
+    const iconRight = pageView.left + bounds.right * this.transform.zoom;
+    const iconTop = pageView.top + bounds.top * this.transform.zoom;
+    const width = current.element.offsetWidth;
+    const height = current.element.offsetHeight;
+    const gap = 8;
+    let left = iconRight + gap;
+    if (left + width > this.viewSize.width - gap) left = iconLeft - width - gap;
+    left = Math.min(Math.max(gap, left), Math.max(gap, this.viewSize.width - width - gap));
+    const top = Math.min(
+      Math.max(gap, iconTop),
+      Math.max(gap, this.viewSize.height - height - gap),
+    );
+    current.element.style.left = `${left}px`;
+    current.element.style.top = `${top}px`;
+  }
+
+  private closeAnnotationNotePopup(): void {
+    this.annotationNotePopup?.element.remove();
+    this.annotationNotePopup = null;
   }
 
   /** Builds one page's annotation overlay (a point-space SVG) from its annotations. */
@@ -6168,6 +6335,7 @@ export class PdfrxViewer {
     highlightSvg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none;';
     const byId = new Map<string, PdfAnnotationObject>();
     for (const loadedAnnotation of annotations) {
+      if (!annotationVisibleInViewer(loadedAnnotation)) continue;
       const imageSourceKey = `${pageNumber}\0${loadedAnnotation.id}`;
       let a = loadedAnnotation;
       const cachedImageSource = this.annotationImageSources.get(imageSourceKey);
@@ -6248,7 +6416,7 @@ export class PdfrxViewer {
     const toPx = (p: { x: number; y: number }): Offset =>
       pdfPointToOffset(p, { page: pageGeom, scaledPageSize: pageSize });
     const rectPx = (): Rect => pdfRectToRect(a.rect, { page: pageGeom, scaledPageSize: pageSize });
-    const stroke = colorCss(a.color, '#000000');
+    const stroke = colorCss(annotationAppearanceColor(a), '#000000');
     const fill = colorCss(a.interiorColor, null);
     const width = Math.max(0, a.borderWidth);
     const shapeStroke = width > 0 ? stroke : 'none';
@@ -6417,36 +6585,42 @@ export class PdfrxViewer {
           ell.setAttribute('stroke-width', `${width}`);
           add(ell);
         } else if (a.subtype === 'text') {
-          if (addAppearancePaths()) break;
-          // PDFium's default Text-annotation appearance is a fixed yellow note
-          // icon anchored four points below the annotation rect's top-left. It
-          // ignores /C for the icon itself and adds a short downward tail.
+          // Do not use appearancePaths here. FPDFAnnot_GetObject exposes a
+          // Text annotation's /AP objects in appearance-local coordinates,
+          // without the annotation matrix that places them at /Rect. Treating
+          // those points as page coordinates moves unrelated Notes onto the
+          // same bottom-left location.
           const x = box.left;
-          // PDFium normalizes the loaded Text rect to the icon's painted top.
           const y = box.top;
-          const tail = document.createElementNS(SVG_NS, 'path');
-          tail.setAttribute('d', `M ${x + 4} ${y + 16} L ${x + 6} ${y + 20} L ${x + 8} ${y + 16} Z`);
-          tail.setAttribute('fill', '#ffff00');
-          tail.setAttribute('stroke', '#000');
-          tail.setAttribute('stroke-width', '1');
-          add(tail);
-          const note = document.createElementNS(SVG_NS, 'rect');
-          note.setAttribute('x', `${x + 0.5}`);
-          note.setAttribute('y', `${y + 0.5}`);
-          note.setAttribute('width', '19');
-          note.setAttribute('height', '15');
-          note.setAttribute('fill', '#ffff00');
-          note.setAttribute('stroke', '#000');
-          note.setAttribute('stroke-width', '1');
-          add(note);
-          for (const lineY of [y + 4, y + 8, y + 12]) {
+          // A compact comment tile stays recognizable at low zoom without the
+          // heavy black outline and ruled-paper motif of PDFium's fallback.
+          const tile = document.createElementNS(SVG_NS, 'rect');
+          tile.setAttribute('x', `${x + 0.5}`);
+          tile.setAttribute('y', `${y + 0.5}`);
+          tile.setAttribute('width', '19');
+          tile.setAttribute('height', '19');
+          tile.setAttribute('rx', '2.5');
+          tile.setAttribute('fill', '#ffc400');
+          add(tile);
+          const bubble = document.createElementNS(SVG_NS, 'path');
+          bubble.setAttribute(
+            'd',
+            `M ${x + 4} ${y + 4.5} H ${x + 16} Q ${x + 17} ${y + 4.5} ${x + 17} ${y + 5.5} ` +
+              `V ${y + 12.5} Q ${x + 17} ${y + 13.5} ${x + 16} ${y + 13.5} H ${x + 10} ` +
+              `L ${x + 7} ${y + 16.5} V ${y + 13.5} H ${x + 4} Q ${x + 3} ${y + 13.5} ${x + 3} ${y + 12.5} ` +
+              `V ${y + 5.5} Q ${x + 3} ${y + 4.5} ${x + 4} ${y + 4.5} Z`,
+          );
+          bubble.setAttribute('fill', '#fff');
+          add(bubble);
+          for (const [lineY, lineRight] of [[y + 8, x + 14], [y + 10.5, x + 12.5]] as const) {
             const line = document.createElementNS(SVG_NS, 'line');
-            line.setAttribute('x1', `${x + 3}`);
-            line.setAttribute('x2', `${x + 17}`);
-            line.setAttribute('y1', `${lineY + 0.5}`);
-            line.setAttribute('y2', `${lineY + 0.5}`);
-            line.setAttribute('stroke', '#000');
+            line.setAttribute('x1', `${x + 6}`);
+            line.setAttribute('x2', `${lineRight}`);
+            line.setAttribute('y1', `${lineY}`);
+            line.setAttribute('y2', `${lineY}`);
+            line.setAttribute('stroke', '#d89f00');
             line.setAttribute('stroke-width', '1');
+            line.setAttribute('stroke-linecap', 'round');
             add(line);
           }
         } else if (a.subtype === 'stamp') {
@@ -6633,6 +6807,7 @@ export class PdfrxViewer {
 
   /** Removes all annotation overlays. */
   private clearAnnotationOverlays(): void {
+    this.closeAnnotationNotePopup();
     this.annotationHighlightOverlayRoot.replaceChildren();
     this.annotationOverlayRoot.replaceChildren();
     this.annotationOverlays.clear();
@@ -6666,6 +6841,7 @@ export class PdfrxViewer {
     if (enabled && !this.annotationsEditable()) throw new Error('Annotation editing is disabled');
     if (enabled === this.annotationMode) return;
     this.annotationMode = enabled;
+    if (enabled) this.closeAnnotationNotePopup();
     if (!enabled) {
       this.updateAnnotationTool(null);
       this.setSelectedAnnotations([]);

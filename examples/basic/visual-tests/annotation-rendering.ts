@@ -334,6 +334,43 @@ async function setupTextTool(tool: 'note' | 'rectangle', strokeWidth?: number): 
   viewer.setAnnotationTool(tool);
 }
 
+async function setupReadableNote(): Promise<{ x: number; y: number }> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  await clearAnnotations();
+  const id = await doc.pages[0]!.addAnnotation({
+    subtype: 'text',
+    rect: { left: 16, top: 196, right: 40, bottom: 172 },
+    contents: 'A long Note can be opened in normal viewing mode and resized without editing the PDF.',
+  });
+  const shape = await waitForShape(id);
+  viewer.setAnnotationMode(false);
+  const rect = shape.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+async function setupAnnotationVisibilityFlags(): Promise<void> {
+  const doc = viewer.document;
+  if (!doc) throw new Error('Test PDF is not open');
+  await clearAnnotations();
+  for (const [id, left, flags] of [
+    ['visible-note', 16, 4 | 8 | 16 | 128],
+    ['visible-note-2', 176, 4 | 8 | 16 | 128],
+    ['hidden-note', 56, 2 | 4 | 8 | 16],
+    ['no-view-note', 96, 32],
+    ['invisible-note', 136, 1],
+  ] as const) {
+    await doc.pages[0]!.addAnnotation({
+      id,
+      subtype: 'text',
+      rect: { left, top: 196, right: left + 24, bottom: 172 },
+      contents: id,
+      flags,
+    });
+  }
+  viewer.setAnnotationMode(false);
+}
+
 function setTextStyle(textColor: string, fontSize: number): void {
   viewer.setAnnotationStyle({ textColor, fontSize });
 }
@@ -631,6 +668,8 @@ declare global {
       readViewTransform: typeof readViewTransform;
       readAnnotationPreviewRects: typeof readAnnotationPreviewRects;
       setupTextTool: typeof setupTextTool;
+      setupReadableNote: typeof setupReadableNote;
+      setupAnnotationVisibilityFlags: typeof setupAnnotationVisibilityFlags;
       setTextStyle: typeof setTextStyle;
       setObjectSelectMode: typeof setObjectSelectMode;
       readTextStyleRoundTrip: typeof readTextStyleRoundTrip;
@@ -668,6 +707,8 @@ window.annotationVisualTest = {
   readViewTransform,
   readAnnotationPreviewRects,
   setupTextTool,
+  setupReadableNote,
+  setupAnnotationVisibilityFlags,
   setTextStyle,
   setObjectSelectMode,
   readTextStyleRoundTrip,

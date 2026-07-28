@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   annotationIsEffectivelyInvisible,
+  annotationAppearanceColor,
+  annotationVisibleInViewer,
   annotationTextCompositionKey,
   annotationTextEntryKey,
   annotationObjectInteractionEnabled,
@@ -90,6 +92,42 @@ describe('annotationIsEffectivelyInvisible', () => {
         lineJoin: 0,
       }],
     }))).toBe(false);
+  });
+});
+
+describe('annotationVisibleInViewer', () => {
+  it('hides annotations suppressed by PDF screen-display flags', () => {
+    expect(annotationVisibleInViewer({ flags: 0, subtype: 'text' })).toBe(true);
+    expect(annotationVisibleInViewer({ flags: 4 | 8 | 16 | 128, subtype: 'text' })).toBe(true);
+    expect(annotationVisibleInViewer({ flags: 1, subtype: 'text' })).toBe(false);
+    expect(annotationVisibleInViewer({ flags: 2 | 4 | 8 | 16, subtype: 'text' })).toBe(false);
+    expect(annotationVisibleInViewer({ flags: 32, subtype: 'text' })).toBe(false);
+    expect(annotationVisibleInViewer({ flags: 32, subtype: 'freeText' })).toBe(true);
+    expect(annotationVisibleInViewer({ flags: 2 | 32, subtype: 'freeText' })).toBe(false);
+  });
+});
+
+describe('annotationAppearanceColor', () => {
+  it('falls back to an appearance-path stroke when PDFium does not expose /C', () => {
+    const red = { r: 255, g: 0, b: 0, a: 255 };
+    expect(annotationAppearanceColor(annotationWith({
+      color: null,
+      appearancePaths: [{
+        segments: [],
+        fillMode: 0,
+        fillColor: null,
+        stroke: true,
+        strokeColor: red,
+        strokeWidth: 0.69,
+        lineCap: 0,
+        lineJoin: 0,
+      }],
+    }))).toEqual(red);
+  });
+
+  it('keeps the annotation color authoritative when both sources exist', () => {
+    const primary = { r: 1, g: 2, b: 3, a: 255 };
+    expect(annotationAppearanceColor(annotationWith({ color: primary }))).toEqual(primary);
   });
 });
 

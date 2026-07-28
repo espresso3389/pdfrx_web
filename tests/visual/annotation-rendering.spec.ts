@@ -119,7 +119,9 @@ const cases: { name: string; spec: AnnotationSpec; maxMismatchRatio: number }[] 
       contents: 'Review this section',
       geometry: { kind: 'none' },
     },
-    maxMismatchRatio: 0.004,
+    // The viewer intentionally uses a cleaner comment tile than PDFium's
+    // ruled-paper fallback while retaining the same compact painted bounds.
+    maxMismatchRatio: 0.0065,
   },
   {
     name: 'free text appearance',
@@ -1316,6 +1318,95 @@ test('note and box text use inline editors instead of browser prompts', async ({
   // to double-click directly on a glyph or the thin border to edit it.
   await page.locator('g[data-annot-id] text').dblclick({ force: true });
   await expect(page.locator('.pdfrx-annotation-text-editor textarea')).toHaveValue(multilineText);
+});
+
+test('notes open, close, and resize in normal viewing mode without changing their contents', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  const notePoint = await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupReadableNote(): Promise<{ x: number; y: number }> };
+      }
+    ).annotationVisualTest.setupReadableNote(),
+  );
+
+  await page.mouse.click(notePoint.x, notePoint.y);
+  const popup = page.locator('.pdfrx-annotation-note-popup');
+  await expect(popup).toBeVisible();
+  await expect(popup.locator('.pdfrx-annotation-note-popup-content')).toContainText(
+    'opened in normal viewing mode',
+  );
+
+  await page.mouse.click(2, 2);
+  await expect(popup).toHaveCount(0);
+  await page.mouse.click(notePoint.x, notePoint.y);
+  await expect(popup).toBeVisible();
+
+  const initial = await popup.boundingBox();
+  expect(initial).not.toBeNull();
+  expect(initial!.x).toBeGreaterThanOrEqual(0);
+  expect(initial!.y).toBeGreaterThanOrEqual(0);
+  expect(initial!.x + initial!.width).toBeLessThanOrEqual(256);
+  expect(initial!.y + initial!.height).toBeLessThanOrEqual(256);
+  await expect(popup).toHaveAttribute('style', /width: 280px; height: 200px/);
+
+  const before = await popup.boundingBox();
+  const handle = page.locator('.pdfrx-annotation-note-popup-resize');
+  const handleBox = await handle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+  await expect(handle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await popup.locator('.pdfrx-annotation-note-popup-content').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const scrolledHandleBox = await handle.boundingBox();
+  expect(scrolledHandleBox).toEqual(handleBox);
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 - 70, handleBox!.y + handleBox!.height / 2 - 45);
+  await page.mouse.up();
+  const after = await popup.boundingBox();
+  expect(after!.width).toBeLessThan(before!.width - 50);
+  expect(after!.height).toBeLessThan(before!.height - 30);
+
+  expect(await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: {
+          readTextAnnotations(): Promise<{ subtype: string; contents: string | null; borderWidth: number }[]>;
+        };
+      }
+    ).annotationVisualTest.readTextAnnotations(),
+  )).toEqual([{
+    subtype: 'text',
+    contents: 'A long Note can be opened in normal viewing mode and resized without editing the PDF.',
+    borderWidth: 0,
+  }]);
+
+  await page.mouse.click(2, 2);
+  await expect(popup).toHaveCount(0);
+});
+
+test('annotation screen flags hide review-history notes from the SVG overlay', async ({ page }) => {
+  await page.goto('/visual-tests/annotation-rendering.html');
+  await page.waitForFunction(() => 'annotationVisualTest' in window);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        annotationVisualTest: { setupAnnotationVisibilityFlags(): Promise<void> };
+      }
+    ).annotationVisualTest.setupAnnotationVisibilityFlags(),
+  );
+  await expect(page.locator('g[data-annot-id="visible-note"]')).toHaveCount(1);
+  await expect(page.locator('g[data-annot-id="visible-note-2"]')).toHaveCount(1);
+  await expect(page.locator('g[data-annot-id="hidden-note"]')).toHaveCount(0);
+  await expect(page.locator('g[data-annot-id="no-view-note"]')).toHaveCount(0);
+  await expect(page.locator('g[data-annot-id="invisible-note"]')).toHaveCount(0);
+  const firstBox = await page.locator('g[data-annot-id="visible-note"]').boundingBox();
+  const secondBox = await page.locator('g[data-annot-id="visible-note-2"]').boundingBox();
+  expect(secondBox!.x - firstBox!.x).toBeGreaterThan(100);
 });
 
 test('FreeText contents survive encode and render after reopening', async ({ page }) => {

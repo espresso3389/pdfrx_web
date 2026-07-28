@@ -263,7 +263,15 @@ that placement does not determine the embedded resolution: raster inputs retain
 their decoded pixels up to a 2048-pixel longest side, and SVG inputs remain
 vector paths. Repeated image resize operations reuse the retained source pixels
 instead of progressively resampling PDFium's transformed appearance. The
-rectangle tool creates the same GUI object: placing a rectangle does not
+viewer also keeps Text/Note annotations interactive outside object-selection
+mode. In normal viewing mode, clicking a Note icon opens a read-only popup and
+clicking outside closes it. Dragging the lower-right corner enlarges or shrinks
+the reading area; its invisible resize target remains fixed while the Note body
+scrolls. Initial placement and size are clamped to the viewer viewport. That
+popup geometry is transient UI state only and is never stored in the annotation,
+undo history, or exported PDF.
+
+The rectangle tool creates the same GUI object: placing a rectangle does not
 automatically start typing, while
 double-clicking either a rectangle or FreeText annotation opens localized inline
 editing. Adding non-blank text
