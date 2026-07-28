@@ -130,6 +130,32 @@ Document mutation events report page, annotation, and form changes with origin,
 transaction, and actor metadata, allowing applications to build persistence,
 history, or synchronization without polling.
 
+### Local fonts on Node, Bun, and Deno
+
+Server runtimes can explicitly opt into local filesystem fonts:
+
+```ts
+const engine = new PdfrxEngine({
+  localFonts: {
+    systemDirectories: true,
+    directories: ['./fonts'],
+  },
+  fontCache: {
+    directory: './.cache/pdfrx-fonts',
+    persistRegisteredFonts: true,
+  },
+});
+```
+
+[`PdfrxLocalFontsOptions`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxLocalFontsOptions.html)
+controls OS and application font directories. The engine indexes internal font
+names and lazily loads missing faces.
+[`PdfrxFontCacheOptions`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfrxFontCacheOptions.html)
+caches that index and can optionally persist bytes passed to `addFontData()`.
+Persisting font bytes is disabled by default so the application can enforce its
+font licenses and data-handling policy. Deno requires matching filesystem
+permissions.
+
 ### Encode and dispose
 
 [`encodePdf()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#encodepdf)

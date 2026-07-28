@@ -20,6 +20,7 @@
  */
 
 export type { PdfWorkerLike, PdfWorkerUrls } from './worker-host.js';
+export type { PdfrxFontCacheOptions, PdfrxLocalFontsOptions } from './local-fonts.js';
 export {
   PdfDocument,
   PdfPage,

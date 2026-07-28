@@ -80,6 +80,12 @@ import {
   type PdfRect,
   type PdfResolvedDest,
 } from './types.js';
+import {
+  isServerRuntime,
+  LocalFontManager,
+  type PdfrxFontCacheOptions,
+  type PdfrxLocalFontsOptions,
+} from './local-fonts.js';
 
 let nextPdfPageIdentity = 1;
 const createPdfPageId = (): PdfPageId => `pdf-page-${nextPdfPageIdentity++}` as PdfPageId;
@@ -155,7 +161,15 @@ export function annotationObjectToSpec(annotation: PdfAnnotationObject): PdfAnno
 }
 
 /** Options for constructing a {@link PdfrxEngine}. */
-export interface PdfrxEngineOptions extends WorkerCommunicatorOptions {}
+export interface PdfrxEngineOptions extends WorkerCommunicatorOptions {
+  /**
+   * Discover and lazily register fonts from server-runtime filesystems.
+   * Omit this in browsers and to retain the previous no-filesystem behavior.
+   */
+  localFonts?: PdfrxLocalFontsOptions;
+  /** Optional disk cache for local-font metadata and explicitly registered font bytes. */
+  fontCache?: PdfrxFontCacheOptions;
+}
 
 /** Common options for the document-opening methods of {@link PdfrxEngine}. */
 export interface PdfOpenOptions {
@@ -506,6 +520,8 @@ export interface PdfPageRenderOptions {
 export class PdfrxEngine {
   private communicator: WorkerCommunicator | null = null;
   private readonly options: PdfrxEngineOptions;
+  private readonly localFontManager: LocalFontManager | null;
+  private localFontsInitialized = false;
 
   /**
    * Creates an engine whose documents share one lazily initialized worker.
@@ -514,6 +530,13 @@ export class PdfrxEngine {
    */
   constructor(options: PdfrxEngineOptions = {}) {
     this.options = options;
+    if ((options.localFonts || options.fontCache) && !isServerRuntime()) {
+      throw new Error('pdfrx: localFonts and fontCache are available only in Node, Bun, and Deno');
+    }
+    this.localFontManager =
+      options.localFonts || options.fontCache
+        ? new LocalFontManager(options.localFonts ?? { systemDirectories: false }, options.fontCache)
+        : null;
   }
 
   /**
@@ -527,6 +550,13 @@ export class PdfrxEngine {
       this.communicator = new WorkerCommunicator(this.options);
     }
     await this.communicator.ready;
+    if (this.localFontManager && !this.localFontsInitialized) {
+      this.localFontsInitialized = true;
+      for (const font of await this.localFontManager.loadRegistered()) {
+        await this.addFontDataInternal(font.face, font.data, font.resolvedFace);
+      }
+      await this.reloadFonts();
+    }
   }
 
   /**
@@ -570,6 +600,7 @@ export class PdfrxEngine {
         ? (data.buffer as ArrayBuffer)
         : data.slice().buffer;
     const buffer = options.transferData === false && canTransferInput ? sourceBuffer.slice(0) : sourceBuffer;
+    const localFontRetryData = this.localFontManager ? buffer.slice(0) : null;
     const sourceName = options.sourceName ?? `data%${buffer.byteLength}`;
     const firstAttemptByEmptyPassword = options.firstAttemptByEmptyPassword ?? true;
     let dataHandle: number | undefined;
@@ -583,7 +614,7 @@ export class PdfrxEngine {
           }
         }
 
-        const result = dataHandle === undefined
+        let result = dataHandle === undefined
           ? await this.comm.sendCommand(
               'loadDocumentFromData',
               {
@@ -602,6 +633,26 @@ export class PdfrxEngine {
           throw new Error(`Failed to open document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
         }
         dataHandle = undefined;
+        if (localFontRetryData && await this.resolveLocalFonts(result.missingFonts)) {
+          await this.comm.sendCommand('closeDocument', {
+            docHandle: result.docHandle,
+            ...(result.formHandle ? { formHandle: result.formHandle } : {}),
+            ...(result.formInfo ? { formInfo: result.formInfo } : {}),
+          });
+          const retryBuffer = localFontRetryData.slice(0);
+          result = await this.comm.sendCommand(
+            'loadDocumentFromData',
+            {
+              data: retryBuffer,
+              password,
+              useProgressiveLoading: options.useProgressiveLoading ?? false,
+            },
+            [retryBuffer],
+          );
+          if (isWorkerError(result)) {
+            throw new Error(`Failed to reopen document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
+          }
+        }
         const doc = new PdfDocument(this.comm, result, sourceName, null);
         if (!(options.useProgressiveLoading ?? false)) doc.notifyLoadComplete();
         return doc;
@@ -731,12 +782,38 @@ export class PdfrxEngine {
    */
   async addFontData(face: string, data: Uint8Array, resolvedFace?: string): Promise<void> {
     await this.init();
-    const buffer = data.slice().buffer;
+    await this.addFontDataInternal(face, data, resolvedFace);
+    await this.localFontManager?.persistRegistered(face, data, resolvedFace);
+  }
+
+  private async addFontDataInternal(face: string, data: Uint8Array, resolvedFace?: string): Promise<void> {
+    // Node's Buffer overrides Uint8Array.slice() with a shared view, so copy
+    // through a plain Uint8Array before transferring ownership to the worker.
+    const buffer = new Uint8Array(data).slice().buffer;
     await this.comm.sendCommand(
       'addFontData',
       { face, data: buffer, ...(resolvedFace !== undefined ? { resolvedFace } : {}) },
       [buffer],
     );
+  }
+
+  private async resolveLocalFonts(
+    missingFonts: import('./protocol.js').WorkerFontQueries | undefined,
+  ): Promise<boolean> {
+    if (!this.localFontManager || !missingFonts) return false;
+    let added = false;
+    for (const query of Object.values(missingFonts)) {
+      const font = await this.localFontManager.resolve({
+        face: query.face,
+        weight: query.weight,
+        italic: query.italic,
+      });
+      if (!font) continue;
+      await this.addFontDataInternal(query.face, font.data, font.resolvedFace);
+      added = true;
+    }
+    if (added) await this.reloadFonts();
+    return added;
   }
 
   /**
@@ -778,6 +855,7 @@ export class PdfrxEngine {
     onDispose: (() => void) | null,
   ): Promise<PdfDocument> {
     const firstAttemptByEmptyPassword = options.firstAttemptByEmptyPassword ?? true;
+    let localFontsRetried = false;
     for (let i = 0; ; i++) {
       let password: string | null = null;
       if (!(firstAttemptByEmptyPassword && i === 0)) {
@@ -787,10 +865,22 @@ export class PdfrxEngine {
         }
       }
 
-      const result = await open(password);
+      let result = await open(password);
       if (isWorkerError(result)) {
         if (result.errorCode === PdfErrorCode.password) continue;
         throw new Error(`Failed to open document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
+      }
+      if (!localFontsRetried && await this.resolveLocalFonts(result.missingFonts)) {
+        localFontsRetried = true;
+        await this.comm.sendCommand('closeDocument', {
+          docHandle: result.docHandle,
+          ...(result.formHandle ? { formHandle: result.formHandle } : {}),
+          ...(result.formInfo ? { formInfo: result.formInfo } : {}),
+        });
+        result = await open(password);
+        if (isWorkerError(result)) {
+          throw new Error(`Failed to reopen document ${sourceName}: ${result.errorCodeStr} (${result.errorCode})`);
+        }
       }
       const doc = new PdfDocument(this.comm, result, sourceName, onDispose);
       if (!(options.useProgressiveLoading ?? false)) {

@@ -87,12 +87,48 @@ await doc.dispose();
 engine.dispose(); // terminates the worker, which otherwise keeps the process alive
 ```
 
-Two behavioral differences are worth knowing. Font registrations do not persist,
-because that uses IndexedDB, so `addFontData` has to be called per session. And
+Two behavioral differences are worth knowing. Font registrations do not persist
+by default because IndexedDB is unavailable; use the opt-in disk cache below to
+retain them across sessions. And
 [`PdfImage.toImageData()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfImage.html#toimagedata) /
 [`toImageBitmap()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfImage.html#toimagebitmap)
 need browser globals — use
 `image.pixels` instead.
+
+### Local fonts and a server-side font cache
+
+Local filesystem access is opt-in. Pass `localFonts` to discover conventional
+font directories for the current Windows, macOS, or Linux host and optionally
+add application directories:
+
+```ts
+const engine = new PdfrxEngine({
+  localFonts: {
+    systemDirectories: true,
+    directories: ['/opt/my-service/fonts'],
+  },
+  fontCache: {
+    directory: '/var/cache/my-service/pdfrx-fonts',
+    persistRegisteredFonts: true,
+  },
+});
+```
+
+The engine recursively indexes TTF, OTF, and TTC files by their internal family,
+full, and PostScript names. When opening a document reports a missing face, only
+the best matching weight/style is loaded and the document is reopened once so
+PDFium uses the new mapping.
+
+With `fontCache.directory`, the metadata index is cached and validated against
+file size and modification time on the next process start. Set
+`persistRegisteredFonts` to copy bytes supplied to `addFontData()` into that
+cache; it defaults to false because font licenses and application security
+policies differ. OS fonts themselves are not copied.
+
+On Deno, grant read permission for the selected font directories and read/write
+permission for the cache directory. Unreadable font directories and individual
+malformed font files are skipped; a configured cache that cannot be written
+rejects initialization instead of silently disabling persistence.
 
 Two escape hatches, if the automatic setup does not fit. `wasmModulesUrl` still
 overrides where the assets are read from — needed when the package's files are

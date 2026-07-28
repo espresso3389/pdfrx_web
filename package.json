@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace=@pdfrx/engine --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer --workspace=@pdfrx/react --workspace=@pdfrx/colab --workspace=@pdfrx/example-colab",
-    "test": "npm run test --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer --workspace=@pdfrx/react --workspace=@pdfrx/colab --workspace=@pdfrx/example-colab",
+    "test": "npm run test --workspace=@pdfrx/engine --workspace=@pdfrx/viewer-core --workspace=@pdfrx/viewer --workspace=@pdfrx/react --workspace=@pdfrx/colab --workspace=@pdfrx/example-colab",
     "test:visual": "playwright test",
     "docs": "typedoc && node scripts/rewrite-docs-internal-links.mjs",
     "check:readme-api-links": "node scripts/check-readme-api-links.mjs",
