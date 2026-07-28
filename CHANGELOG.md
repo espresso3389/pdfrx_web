@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-29
+
+### Added
+
+- Added opt-in local filesystem font discovery for Node.js, Bun, and Deno,
+  including automatic Windows, macOS, and Linux font-directory detection,
+  internal font-name indexing, weight/style matching, and lazy registration of
+  missing PDF fonts.
+- Added an optional server-side disk cache for the local-font metadata index and
+  explicitly registered font bytes, with cache validation and documented Deno
+  permission requirements.
+
 ## [0.22.3] - 2026-07-29
 
 ### Changed
@@ -797,7 +809,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.3...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.3...v0.23.0
 [0.22.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.2...v0.22.3
 [0.22.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.1...v0.22.2
 [0.22.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.0...v0.22.1
