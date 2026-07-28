@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-07-29
+
+### Added
+
+- Added optional horizontal and two-page viewer layouts, fullscreen controls,
+  rectangular capture, and marquee zoom APIs and React controls.
+- Added Highlight, Underline, Squiggly, and StrikeOut creation from the current
+  text selection, including non-destructive markup preview APIs.
+- Added a localized React text-markup matrix that previews each subtype/color
+  combination on hover or keyboard focus and remembers the last applied style.
+
+### Changed
+
+- Made selection-menu line markup use opaque, higher-contrast colors while
+  retaining translucent pastel colors for Highlight.
+- Improved read-only Note popups and the visibility and rendering consistency of
+  transparent, highlighted, underlined, squiggly, and struck-out annotations.
+- Expanded TypeDoc comments for public parameters and return values across the
+  workspace.
+
+### Fixed
+
+- Fixed annotation history, overlay refresh, selection, and synchronization
+  collisions when different PDF pages contain annotations with the same
+  page-local id.
+- Kept text-markup preview and committed SVG geometry consistent, including the
+  underline baseline and squiggly wave shape.
+
 ## [0.22.1] - 2026-07-28
 
 ### Changed
@@ -757,7 +785,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.2...HEAD
+[0.22.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.1...v0.22.2
 [0.22.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.20.0...v0.21.0

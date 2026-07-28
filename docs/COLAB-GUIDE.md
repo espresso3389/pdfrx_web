@@ -230,7 +230,7 @@ served from the package CDN:
 ```tsx
 <CollaborativePdfViewer
   // ...
-wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.22.1/assets/"
+wasmModulesUrl="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.22.2/assets/"
 />
 ```
 
