@@ -3,239 +3,170 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildDefaultContextMenu, TEXT_HIGHLIGHT_COLORS, TEXT_HIGHLIGHT_OPACITY } from './context-menu.js';
 import { defaultPdfrxStrings } from './strings.js';
 
+const context = (close = vi.fn(), pointerType: 'mouse' | 'touch' = 'mouse'): ContextMenuContext => ({
+  viewPoint: { x: 0, y: 0 },
+  hasSelection: true,
+  isCopyAllowed: true,
+  pointerType,
+  close,
+});
+
+const viewerWithMarkup = (
+  addTextMarkupToSelection = vi.fn(() => Promise.resolve([])),
+): PdfrxViewer => ({
+  canAddTextMarkupToSelection: () => true,
+  canAddLinkToSelection: () => true,
+  addTextMarkupToSelection,
+  previewTextMarkupSelection: vi.fn(),
+  clearTextMarkupSelectionPreview: vi.fn(),
+  copySelection: () => Promise.resolve(true),
+  clearSelection: vi.fn(),
+  selectAll: vi.fn(),
+} as unknown as PdfrxViewer);
+
 describe('buildDefaultContextMenu', () => {
-  it('places add-link directly below highlight', () => {
-    const viewer = {
-      canHighlightSelection: () => true,
-      canAddLinkToSelection: () => true,
-    } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close: vi.fn(),
-    });
-    expect([...menu.querySelectorAll<HTMLButtonElement>(':scope > button, :scope > div > button')].map((item) => item.textContent)).toEqual([
+  it('places a split markup action above add-link', () => {
+    const menu = buildDefaultContextMenu(viewerWithMarkup(), defaultPdfrxStrings, context());
+    expect([...menu.querySelectorAll<HTMLButtonElement>(':scope > button, :scope > div button')]
+      .map((item) => item.textContent)).toEqual([
       defaultPdfrxStrings.copy,
       defaultPdfrxStrings.selectAll,
-      `${defaultPdfrxStrings.highlight}›`,
+      defaultPdfrxStrings.textMarkup,
+      '›',
       defaultPdfrxStrings.addLink,
     ]);
   });
 
-  it('adds a link from the current selection and closes the menu', () => {
-    const addLinkToSelection = vi.fn(() => Promise.resolve());
+  it('applies the default highlight from the primary split action', () => {
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
     const close = vi.fn();
-    const viewer = {
-      canHighlightSelection: () => true,
-      canAddLinkToSelection: () => true,
-      addLinkToSelection,
-    } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close,
-    });
-
-    [...menu.querySelectorAll<HTMLButtonElement>('.pdfrx-context-menu-item')]
-      .find((item) => item.textContent === defaultPdfrxStrings.addLink)!
-      .click();
-
+    const menu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(close),
+    );
+    menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.click();
+    expect(addTextMarkupToSelection).toHaveBeenCalledWith(
+      'highlight',
+      TEXT_HIGHLIGHT_COLORS[0],
+      TEXT_HIGHLIGHT_OPACITY,
+    );
     expect(close).toHaveBeenCalledOnce();
-    expect(addLinkToSelection).toHaveBeenCalledOnce();
   });
 
-  it('opens a dedicated highlight palette and applies its fixed opacity', () => {
-    const calls: string[] = [];
-    const highlightSelection = vi.fn(() => {
-      calls.push('highlight');
-      return Promise.resolve();
-    });
-    const viewer = {
-      canHighlightSelection: () => true,
-      highlightSelection,
-      copySelection: () => Promise.resolve(true),
-      clearSelection: vi.fn(),
-      selectAll: vi.fn(),
-    } as unknown as PdfrxViewer;
-    const close = vi.fn(() => calls.push('close'));
-    const context: ContextMenuContext = {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close,
-    };
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context);
+  it('offers every subtype/color combination and applies the chosen cell', () => {
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
+    const close = vi.fn();
+    const menu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(close),
+    );
     const trigger = menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
-
     trigger.click();
-    expect(highlightSelection).not.toHaveBeenCalled();
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    const swatches = menu.querySelectorAll<HTMLButtonElement>('.pdfrx-highlight-swatch');
-    expect(swatches).toHaveLength(TEXT_HIGHLIGHT_COLORS.length);
-
-    swatches[0]!.click();
+    expect([...menu.querySelectorAll<HTMLElement>('.pdfrx-text-markup-row-label')]
+      .map((item) => item.textContent)).toEqual([
+        defaultPdfrxStrings.highlight,
+        defaultPdfrxStrings.underline,
+        defaultPdfrxStrings.squiggly,
+        defaultPdfrxStrings.strikeout,
+      ]);
+    const choices = menu.querySelectorAll<HTMLButtonElement>('.pdfrx-text-markup-choice');
+    expect(choices).toHaveLength(4 * TEXT_HIGHLIGHT_COLORS.length);
+    choices[2 * TEXT_HIGHLIGHT_COLORS.length + 3]!.click();
+    expect(addTextMarkupToSelection).toHaveBeenCalledWith(
+      'squiggly',
+      TEXT_HIGHLIGHT_COLORS[3],
+      1,
+    );
     expect(close).toHaveBeenCalledOnce();
-    expect(highlightSelection).toHaveBeenCalledWith(TEXT_HIGHLIGHT_COLORS[0], TEXT_HIGHLIGHT_OPACITY);
-    expect(calls).toEqual(['highlight', 'close']);
   });
 
-  it('keeps the palette open when an Android-style touch tap focuses before clicking', () => {
-    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'touch',
-      close: vi.fn(),
-    });
-    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
-    const trigger = host.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
+  it('previews a cell on hover and clears the preview when leaving', () => {
+    const viewer = viewerWithMarkup();
+    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context());
+    menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
+    const choice = menu.querySelectorAll<HTMLButtonElement>('.pdfrx-text-markup-choice')[
+      3 * TEXT_HIGHLIGHT_COLORS.length + 2
+    ]!;
 
-    trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    expect(host.querySelector('.pdfrx-highlight-palette')).not.toBeNull();
-    trigger.click();
-
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(host.querySelectorAll('.pdfrx-highlight-swatch')).toHaveLength(TEXT_HIGHLIGHT_COLORS.length);
+    choice.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(viewer.previewTextMarkupSelection).toHaveBeenCalledWith(
+      'strikeout',
+      TEXT_HIGHLIGHT_COLORS[2],
+      1,
+    );
+    choice.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(viewer.clearTextMarkupSelectionPreview).toHaveBeenCalled();
   });
 
-  it('applies a touch-selected color before Android removes the focused palette', () => {
-    const highlightSelection = vi.fn(() => Promise.resolve());
-    const viewer = {
-      canHighlightSelection: () => true,
-      highlightSelection,
-    } as unknown as PdfrxViewer;
+  it('remembers the last subtype/color cell for the viewer', () => {
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
+    const viewer = viewerWithMarkup(addTextMarkupToSelection);
+    const first = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context());
+    first.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
+    first.querySelectorAll<HTMLButtonElement>('.pdfrx-text-markup-choice')[
+      TEXT_HIGHLIGHT_COLORS.length + 3
+    ]!.click();
+
+    const second = buildDefaultContextMenu(viewer, defaultPdfrxStrings, context());
+    second.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.click();
+    expect(addTextMarkupToSelection).toHaveBeenLastCalledWith(
+      'underline',
+      TEXT_HIGHLIGHT_COLORS[3],
+      1,
+    );
+  });
+
+  it('applies a touch-selected color before focus removes the palette', () => {
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
     const close = vi.fn();
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'touch',
-      close,
-    });
-    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
-    const trigger = host.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
+    const menu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(close, 'touch'),
+    );
+    const trigger = menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
     trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    const swatch = host.querySelector<HTMLButtonElement>('.pdfrx-highlight-swatch')!;
-
-    swatch.dispatchEvent(new PointerEvent('pointerdown', {
+    const choice = menu.querySelector<HTMLButtonElement>('.pdfrx-text-markup-choice')!;
+    choice.dispatchEvent(new PointerEvent('pointerdown', {
       bubbles: true,
       cancelable: true,
       pointerType: 'touch',
     }));
     trigger.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
-    swatch.click();
+    choice.click();
 
-    expect(highlightSelection).toHaveBeenCalledOnce();
-    expect(highlightSelection).toHaveBeenCalledWith(TEXT_HIGHLIGHT_COLORS[0], TEXT_HIGHLIGHT_OPACITY);
+    expect(addTextMarkupToSelection).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it('disables the palette when text cannot be highlighted', () => {
-    const viewer = { canHighlightSelection: () => false } as unknown as PdfrxViewer;
+  it('disables both split controls when text markup is unavailable', () => {
+    const viewer = { canAddTextMarkupToSelection: () => false } as unknown as PdfrxViewer;
     const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
+      ...context(),
       hasSelection: false,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close: vi.fn(),
     });
+    expect(menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-markup-apply')!.disabled).toBe(true);
     const trigger = menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
     expect(trigger.disabled).toBe(true);
     trigger.click();
-    expect(menu.querySelector('.pdfrx-highlight-palette')).toBeNull();
+    expect(menu.querySelector('.pdfrx-text-markup-palette')).toBeNull();
   });
 
-  it('opens on hover and closes after leaving the submenu', () => {
-    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close: vi.fn(),
-    });
-    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
-    const trigger = host.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!;
-
-    host.dispatchEvent(new MouseEvent('mouseenter'));
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(host.querySelectorAll('.pdfrx-highlight-swatch')).toHaveLength(TEXT_HIGHLIGHT_COLORS.length);
-
-    host.dispatchEvent(new MouseEvent('mouseleave', { clientX: 100, clientY: 100 }));
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(host.querySelector('.pdfrx-highlight-palette')).toBeNull();
-  });
-
-  it('keeps the palette open while the pointer crosses its surrounding grace area', () => {
-    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close: vi.fn(),
-    });
-    const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
-    host.dispatchEvent(new MouseEvent('mouseenter'));
-    const palette = host.querySelector<HTMLElement>('.pdfrx-highlight-palette')!;
-    vi.spyOn(palette, 'getBoundingClientRect').mockReturnValue({
-      left: 100,
-      right: 200,
-      top: 50,
-      bottom: 150,
-      width: 100,
-      height: 100,
-      x: 100,
-      y: 50,
-      toJSON: () => ({}),
-    });
-
-    host.dispatchEvent(new MouseEvent('mouseleave', { clientX: 96, clientY: 80 }));
-    expect(host.querySelector('.pdfrx-highlight-palette')).toBe(palette);
-
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 80 }));
-    expect(host.querySelector('.pdfrx-highlight-palette')).toBeNull();
-  });
-
-  it('keeps the highlight palette inside the viewport', () => {
-    const viewer = { canHighlightSelection: () => true } as unknown as PdfrxViewer;
-    const menu = buildDefaultContextMenu(viewer, defaultPdfrxStrings, {
-      viewPoint: { x: 0, y: 0 },
-      hasSelection: true,
-      isCopyAllowed: true,
-      pointerType: 'mouse',
-      close: vi.fn(),
-    });
+  it('keeps the markup palette inside the viewport', () => {
+    const menu = buildDefaultContextMenu(viewerWithMarkup(), defaultPdfrxStrings, context());
     const host = menu.querySelector<HTMLElement>('.pdfrx-context-menu-submenu-host')!;
     vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
-      left: 280,
-      right: 320,
-      top: 190,
-      bottom: 220,
-      width: 40,
-      height: 30,
-      x: 280,
-      y: 190,
-      toJSON: () => ({}),
+      left: 280, right: 320, top: 190, bottom: 220,
+      width: 40, height: 30, x: 280, y: 190, toJSON: () => ({}),
     });
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-      if ((this as HTMLElement).classList.contains('pdfrx-highlight-palette')) {
+      if ((this as HTMLElement).classList.contains('pdfrx-text-markup-palette')) {
         return {
-          left: 325,
-          right: 425,
-          top: 186,
-          bottom: 286,
-          width: 100,
-          height: 100,
-          x: 325,
-          y: 186,
-          toJSON: () => ({}),
+          left: 325, right: 505, top: 186, bottom: 326,
+          width: 180, height: 140, x: 325, y: 186, toJSON: () => ({}),
         };
       }
       return new DOMRect();
@@ -244,11 +175,10 @@ describe('buildDefaultContextMenu', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 240 });
 
     host.dispatchEvent(new MouseEvent('mouseenter'));
-
-    const palette = host.querySelector<HTMLElement>('.pdfrx-highlight-palette')!;
+    const palette = host.querySelector<HTMLElement>('.pdfrx-text-markup-palette')!;
     expect(palette.style.position).toBe('fixed');
-    expect(palette.style.left).toBe('175px');
-    expect(palette.style.top).toBe('136px');
+    expect(palette.style.left).toBe('95px');
+    expect(palette.style.top).toBe('96px');
     rectSpy.mockRestore();
   });
 });

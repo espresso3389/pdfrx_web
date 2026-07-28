@@ -955,6 +955,36 @@ export const annotationObjectInteractionEnabled = (
 export const annotationSnapshotKey = (pageNumber: number, id: string): string =>
   `${pageNumber}\0${id}`;
 
+/** @internal Builds one zoom-stable triangular squiggle from a baseline toward the text. */
+export const textMarkupSquigglePoints = (
+  start: Offset,
+  end: Offset,
+  towardText: Offset,
+  zoom: number,
+): Offset[] => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return [start];
+  const safeZoom = Math.max(0.01, zoom);
+  const halfWave = 2.5 / safeZoom;
+  const amplitude = 1.5 / safeZoom;
+  const towardLength = Math.hypot(towardText.x, towardText.y);
+  const nx = towardLength > 0 ? towardText.x / towardLength : dy / length;
+  const ny = towardLength > 0 ? towardText.y / towardLength : -dx / length;
+  const steps = Math.max(2, Math.ceil(length / halfWave));
+  const points: Offset[] = [start];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const offset = i === steps || i % 2 === 0 ? 0 : amplitude;
+    points.push({
+      x: lerp(start.x, end.x, t) + nx * offset,
+      y: lerp(start.y, end.y, t) + ny * offset,
+    });
+  }
+  return points;
+};
+
 /**
  * Cmd/Ctrl makes an empty-space gesture additive only in effective
  * annotation-object mode.
@@ -2227,6 +2257,11 @@ export class PdfrxViewer {
 
   private selA: SelectionPoint | null = null;
   private selB: SelectionPoint | null = null;
+  private textMarkupSelectionPreview: {
+    subtype: TextMarkupAnnotationSubtype;
+    color: string;
+    opacity: number;
+  } | null = null;
   private anchors: SelectionAnchors | null = null;
   /** Show draggable handles (touch-driven selections). */
   private showHandles = false;
@@ -5683,6 +5718,7 @@ export class PdfrxViewer {
     document.removeEventListener('pointerdown', this.onContextMenuDocumentPointerDown, true);
     this.menuEl?.remove();
     this.menuEl = null;
+    this.clearTextMarkupSelectionPreview();
   }
 
   // -------------------------------------------------------------------------
@@ -6813,21 +6849,54 @@ export class PdfrxViewer {
         break;
       }
       case 'markup': {
-        const markupStroke = a.subtype === 'underline' || a.subtype === 'strikeout';
+        const markupStroke =
+          a.subtype === 'underline' || a.subtype === 'squiggly' || a.subtype === 'strikeout';
         for (const q of g2.quads) {
           if (markupStroke) {
-            // Underline/strikeout: a line across the quad.
-            const yFrac = a.subtype === 'underline' ? 0.92 : 0.5;
-            const left = toPx({ x: lerp(q.bottomLeft.x, q.topLeft.x, 0), y: lerp(q.bottomLeft.y, q.topLeft.y, yFrac) });
-            const right = toPx({ x: q.bottomRight.x, y: lerp(q.bottomRight.y, q.topRight.y, yFrac) });
-            const ln = document.createElementNS(SVG_NS, 'line');
-            ln.setAttribute('x1', `${left.x}`);
-            ln.setAttribute('y1', `${left.y}`);
-            ln.setAttribute('x2', `${right.x}`);
-            ln.setAttribute('y2', `${right.y}`);
-            ln.setAttribute('stroke', stroke);
-            ln.setAttribute('stroke-width', `${Math.max(width, 1)}`);
-            add(ln);
+            // Text-markup lines are measured upward from the bottom edge.
+            const yFrac = a.subtype === 'strikeout' ? 0.5 : 0.08;
+            const left = toPx({
+              x: lerp(q.bottomLeft.x, q.topLeft.x, yFrac),
+              y: lerp(q.bottomLeft.y, q.topLeft.y, yFrac),
+            });
+            const right = toPx({
+              x: lerp(q.bottomRight.x, q.topRight.x, yFrac),
+              y: lerp(q.bottomRight.y, q.topRight.y, yFrac),
+            });
+            if (a.subtype === 'squiggly') {
+              const topLeft = toPx(q.topLeft);
+              const topRight = toPx(q.topRight);
+              const towardText = {
+                x: (topLeft.x + topRight.x - left.x - right.x) / 2,
+                y: (topLeft.y + topRight.y - left.y - right.y) / 2,
+              };
+              const points = textMarkupSquigglePoints(
+                left,
+                right,
+                towardText,
+                this.transform.zoom,
+              );
+              const path = document.createElementNS(SVG_NS, 'path');
+              const commands = points.map((point, index) =>
+                `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
+              );
+              path.setAttribute('d', commands.join(' '));
+              path.setAttribute('fill', 'none');
+              path.setAttribute('stroke', stroke);
+              path.setAttribute('stroke-width', `${Math.max(width, 1)}`);
+              path.setAttribute('stroke-linecap', 'round');
+              path.setAttribute('stroke-linejoin', 'round');
+              add(path);
+            } else {
+              const ln = document.createElementNS(SVG_NS, 'line');
+              ln.setAttribute('x1', `${left.x}`);
+              ln.setAttribute('y1', `${left.y}`);
+              ln.setAttribute('x2', `${right.x}`);
+              ln.setAttribute('y2', `${right.y}`);
+              ln.setAttribute('stroke', stroke);
+              ln.setAttribute('stroke-width', `${Math.max(width, 1)}`);
+              add(ln);
+            }
           } else {
             const poly = document.createElementNS(SVG_NS, 'polygon');
             poly.setAttribute(
@@ -7725,6 +7794,26 @@ export class PdfrxViewer {
    */
   canAddTextMarkupToSelection(): boolean {
     return this.options.interactiveAnnotations !== false && !!(this.selA && this.selB);
+  }
+
+  /**
+   * Temporarily previews a text-markup style over the current selection without
+   * creating or changing a PDF annotation.
+   */
+  previewTextMarkupSelection(
+    subtype: TextMarkupAnnotationSubtype,
+    color: string,
+    opacity = subtype === 'highlight' ? 0.5 : 1,
+  ): void {
+    this.textMarkupSelectionPreview = { subtype, color, opacity };
+    this.invalidate();
+  }
+
+  /** Clears the temporary text-markup preview, restoring the normal selection paint. */
+  clearTextMarkupSelectionPreview(): void {
+    if (!this.textMarkupSelectionPreview) return;
+    this.textMarkupSelectionPreview = null;
+    this.invalidate();
   }
 
   /**
@@ -10304,8 +10393,15 @@ export class PdfrxViewer {
 
     if (this.selA && this.selB) {
       ctx.save();
-      ctx.globalCompositeOperation = canvasTextHighlightBlendMode(this.options.textHighlightBlendMode);
-      ctx.fillStyle = this.options.selectionColor ?? 'rgba(33, 150, 243, 0.35)';
+      const preview = this.textMarkupSelectionPreview;
+      if (!preview || preview.subtype === 'highlight') {
+        ctx.globalCompositeOperation = canvasTextHighlightBlendMode(this.options.textHighlightBlendMode);
+      }
+      ctx.globalAlpha = preview?.opacity ?? 1;
+      ctx.fillStyle = preview?.color ?? this.options.selectionColor ?? 'rgba(33, 150, 243, 0.35)';
+      ctx.strokeStyle = preview?.color ?? '#000000';
+      const lineWidth = 1.5 / this.transform.zoom;
+      ctx.lineWidth = lineWidth;
       const ranges = getSelectedRanges(this.selA, this.selB, (n) => this.getLoadedText(n));
       for (const range of ranges) {
         const pageIndex = range.pageText.pageNumber - 1;
@@ -10317,7 +10413,32 @@ export class PdfrxViewer {
           end: range.end,
         })) {
           const r: Rect = pdfRectToRectInDocument(fr.bounds, pageGeom, pageRect);
-          ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
+          if (!preview || preview.subtype === 'highlight') {
+            ctx.fillRect(r.left, r.top, rectWidth(r), rectHeight(r));
+          } else if (preview.subtype === 'squiggly') {
+            const y = r.bottom - lineWidth;
+            const points = textMarkupSquigglePoints(
+              { x: r.left, y },
+              { x: r.right, y },
+              { x: 0, y: -1 },
+              this.transform.zoom,
+            );
+            ctx.beginPath();
+            for (let i = 0; i < points.length; i++) {
+              const point = points[i]!;
+              if (i === 0) ctx.moveTo(point.x, point.y);
+              else ctx.lineTo(point.x, point.y);
+            }
+            ctx.stroke();
+          } else {
+            const y = preview.subtype === 'underline'
+              ? r.bottom - lineWidth
+              : (r.top + r.bottom) / 2;
+            ctx.beginPath();
+            ctx.moveTo(r.left, y);
+            ctx.lineTo(r.right, y);
+            ctx.stroke();
+          }
         }
       }
       ctx.restore();

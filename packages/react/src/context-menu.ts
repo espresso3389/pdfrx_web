@@ -1,10 +1,10 @@
-import type { ContextMenuContext, PdfrxViewer } from '@pdfrx/viewer';
+import type { ContextMenuContext, PdfrxViewer, TextMarkupAnnotationSubtype } from '@pdfrx/viewer';
 import type { PdfrxStrings } from './strings.js';
 
-/** Fixed opacity used by the text-selection highlight palette. */
+/** Fixed opacity used when the text-markup menu creates a Highlight annotation. */
 export const TEXT_HIGHLIGHT_OPACITY = 0.5;
 
-/** Text-highlight colors, intentionally independent of annotation-toolbar style. */
+/** Text-markup colors, intentionally independent of annotation-toolbar style. */
 export const TEXT_HIGHLIGHT_COLORS = [
   '#ffeb3b',
   '#8bc34a',
@@ -13,6 +13,15 @@ export const TEXT_HIGHLIGHT_COLORS = [
   '#ffb74d',
   '#ce93d8',
 ] as const;
+
+const DEFAULT_TEXT_MARKUP = {
+  subtype: 'highlight' as TextMarkupAnnotationSubtype,
+  color: TEXT_HIGHLIGHT_COLORS[0],
+};
+const lastTextMarkupByViewer = new WeakMap<PdfrxViewer, {
+  subtype: TextMarkupAnnotationSubtype;
+  color: string;
+}>();
 
 /** Extra arguments `@pdfrx/react` hands a {@link PdfReactContextMenuBuilder}. */
 export interface PdfContextMenuHelpers {
@@ -37,8 +46,9 @@ export type PdfReactContextMenuBuilder = (
 ) => HTMLElement | null | undefined;
 
 /**
- * Builds the localized Copy / Select All context menu that `@pdfrx/react`
- * installs on the viewer by default (via {@link PdfrxViewerOptions.contextMenuBuilder}).
+ * Builds the localized Copy / Select All / text-markup / Add link context menu
+ * that `@pdfrx/react` installs on the viewer by default (via
+ * {@link PdfrxViewerOptions.contextMenuBuilder}).
  *
  * It is plain DOM, not React — the viewer wants an `HTMLElement` and owns the
  * menu's placement and dismissal. The labels come from the active
@@ -70,13 +80,20 @@ export function buildDefaultContextMenu(
     menu.appendChild(item);
   };
 
-  const addHighlightPalette = (): void => {
-    const enabled = viewer.canHighlightSelection();
+  const addTextMarkupMenu = (): void => {
+    const enabled = viewer.canAddTextMarkupToSelection();
     const host = document.createElement('div');
     host.className = 'pdfrx-context-menu-submenu-host';
+    const split = document.createElement('div');
+    split.className = 'pdfrx-context-menu-split';
+    const applyItem = document.createElement('button');
+    applyItem.className = 'pdfrx-context-menu-item pdfrx-context-menu-markup-apply';
+    applyItem.textContent = strings.textMarkup;
+    applyItem.disabled = !enabled;
     const item = document.createElement('button');
     item.className = 'pdfrx-context-menu-item pdfrx-context-menu-submenu-trigger';
-    item.textContent = strings.highlight;
+    item.title = strings.textMarkupOptions;
+    item.setAttribute('aria-label', strings.textMarkupOptions);
     item.disabled = !enabled;
     item.setAttribute('aria-haspopup', 'true');
     item.setAttribute('aria-expanded', 'false');
@@ -84,55 +101,103 @@ export function buildDefaultContextMenu(
     arrow.textContent = '›';
     arrow.setAttribute('aria-hidden', 'true');
     item.appendChild(arrow);
-    host.appendChild(item);
+    split.append(applyItem, item);
+    host.appendChild(split);
     if (enabled) {
       const PALETTE_HOVER_GRACE = 6;
       let trackPalettePointer: ((event: MouseEvent) => void) | null = null;
+      const current = (): { subtype: TextMarkupAnnotationSubtype; color: string } =>
+        lastTextMarkupByViewer.get(viewer) ?? DEFAULT_TEXT_MARKUP;
+      const applyMarkup = (
+        subtype: TextMarkupAnnotationSubtype = current().subtype,
+        color: string = current().color,
+      ): void => {
+        viewer.clearTextMarkupSelectionPreview();
+        lastTextMarkupByViewer.set(viewer, { subtype, color });
+        void viewer.addTextMarkupToSelection(
+          subtype,
+          color,
+          subtype === 'highlight' ? TEXT_HIGHLIGHT_OPACITY : 1,
+        );
+        context.close();
+      };
+      applyItem.addEventListener('click', () => applyMarkup());
       const closePalette = (): void => {
+        viewer.clearTextMarkupSelectionPreview();
         if (trackPalettePointer) {
           document.removeEventListener('mousemove', trackPalettePointer);
           trackPalettePointer = null;
         }
-        host.querySelector<HTMLElement>('.pdfrx-highlight-palette')?.remove();
+        host.querySelector<HTMLElement>('.pdfrx-text-markup-palette')?.remove();
         item.setAttribute('aria-expanded', 'false');
       };
       const openPalette = (): void => {
-        if (host.querySelector('.pdfrx-highlight-palette')) return;
+        if (host.querySelector('.pdfrx-text-markup-palette')) return;
         const palette = document.createElement('div');
-        palette.className = 'pdfrx-highlight-palette';
+        palette.className = 'pdfrx-text-markup-palette';
         palette.setAttribute('role', 'menu');
-        palette.setAttribute('aria-label', strings.highlight);
-        for (const color of TEXT_HIGHLIGHT_COLORS) {
-          const swatch = document.createElement('button');
-          swatch.type = 'button';
-          swatch.className = 'pdfrx-highlight-swatch';
-          swatch.style.backgroundColor = color;
-          swatch.title = color;
-          swatch.setAttribute('aria-label', `${strings.highlight} ${color}`);
-          let handledByTouchPointer = false;
-          const applyHighlight = (): void => {
-            // Capture and start processing the viewer selection before the
-            // menu is removed. Removing the clicked submenu first can let the
-            // browser's focus/default-action processing invalidate selection
-            // state in real browsers even though a synthetic click still works.
-            void viewer.highlightSelection(color, TEXT_HIGHLIGHT_OPACITY);
-            context.close();
-          };
-          swatch.addEventListener('pointerdown', (event) => {
-            if (event.pointerType !== 'touch') return;
-            // Android Chrome may move focus away from the submenu and remove it
-            // before the synthesized click arrives. Apply while the original
-            // touch target and the viewer selection are still intact.
-            event.preventDefault();
-            handledByTouchPointer = true;
-            applyHighlight();
-          });
-          swatch.addEventListener('click', () => {
-            if (handledByTouchPointer) return;
-            applyHighlight();
-          });
-          palette.appendChild(swatch);
+        palette.setAttribute('aria-label', strings.textMarkupOptions);
+        const matrix = document.createElement('div');
+        matrix.className = 'pdfrx-text-markup-matrix';
+        const markupTypes: readonly [TextMarkupAnnotationSubtype, string][] = [
+          ['highlight', strings.highlight],
+          ['underline', strings.underline],
+          ['squiggly', strings.squiggly],
+          ['strikeout', strings.strikeout],
+        ];
+        for (const [subtype, label] of markupTypes) {
+          const rowLabel = document.createElement('span');
+          rowLabel.className = 'pdfrx-text-markup-row-label';
+          rowLabel.textContent = label;
+          matrix.appendChild(rowLabel);
+          for (const color of TEXT_HIGHLIGHT_COLORS) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = `pdfrx-text-markup-choice pdfrx-text-markup-${subtype}`;
+            choice.title = `${label} ${color}`;
+            choice.setAttribute('aria-label', `${label} ${color}`);
+            choice.setAttribute('role', 'menuitem');
+            const preview = document.createElement('span');
+            preview.className = 'pdfrx-text-markup-preview';
+            preview.textContent = 'Aa';
+            if (subtype === 'highlight') {
+              preview.style.backgroundColor = color;
+            } else {
+              preview.style.textDecorationColor = color;
+            }
+            choice.appendChild(preview);
+            const previewChoice = (): void => {
+              viewer.previewTextMarkupSelection(
+                subtype,
+                color,
+                subtype === 'highlight' ? TEXT_HIGHLIGHT_OPACITY : 1,
+              );
+            };
+            choice.addEventListener('mouseenter', previewChoice);
+            choice.addEventListener('mouseleave', () => viewer.clearTextMarkupSelectionPreview());
+            choice.addEventListener('focus', previewChoice);
+            choice.addEventListener('blur', () => viewer.clearTextMarkupSelectionPreview());
+            let handledByTouchPointer = false;
+            const applyChoice = (): void => {
+              // Capture and start processing the viewer selection before the
+              // menu is removed. Removing the clicked submenu first can let the
+              // browser's focus/default-action processing invalidate selection.
+              applyMarkup(subtype, color);
+            };
+            choice.addEventListener('pointerdown', (event) => {
+              if (event.pointerType !== 'touch') return;
+              event.preventDefault();
+              handledByTouchPointer = true;
+              applyChoice();
+            });
+            choice.addEventListener('click', () => {
+              if (handledByTouchPointer) return;
+              applyChoice();
+            });
+            matrix.appendChild(choice);
+          }
         }
+        palette.appendChild(matrix);
         host.appendChild(palette);
         item.setAttribute('aria-expanded', 'true');
         // Use viewport coordinates so all four edges remain visible even when
@@ -194,7 +259,7 @@ export function buildDefaultContextMenu(
     context.close();
     void viewer.selectAll();
   });
-  addHighlightPalette();
+  addTextMarkupMenu();
   addItem(strings.addLink, viewer.canAddLinkToSelection?.() ?? false, () => {
     context.close();
     void viewer.addLinkToSelection();

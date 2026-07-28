@@ -71,6 +71,11 @@ export interface PdfrxStrings {
   // Context menu (right-click / long-press)
   copy: string;
   highlight: string;
+  textMarkup: string;
+  textMarkupOptions: string;
+  underline: string;
+  squiggly: string;
+  strikeout: string;
   /** Adds a link annotation over the selected text. */
   addLink: string;
   selectAll: string;
@@ -187,6 +192,11 @@ export const defaultPdfrxStrings: PdfrxStrings = {
 
   copy: 'Copy',
   highlight: 'Highlight',
+  textMarkup: 'Markup',
+  textMarkupOptions: 'Markup options',
+  underline: 'Underline',
+  squiggly: 'Squiggly underline',
+  strikeout: 'Strikeout',
   addLink: 'Add link',
   selectAll: 'Select All',
 

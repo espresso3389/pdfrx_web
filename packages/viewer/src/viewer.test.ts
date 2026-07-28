@@ -16,6 +16,7 @@ import {
   isPdfPrintingSupported,
   resizeBoxByHandle,
   segmentIntersectsRect,
+  textMarkupSquigglePoints,
   translateSpec,
 } from './viewer.js';
 import type { PdfAnnotationObject } from '@pdfrx/engine';
@@ -54,6 +55,34 @@ describe('annotationSnapshotKey', () => {
       annotationSnapshotKey(9, '@0'),
       annotationSnapshotKey(9, '@1'),
     ])).toHaveLength(3);
+  });
+});
+
+describe('textMarkupSquigglePoints', () => {
+  it('keeps both endpoints on the baseline and waves only toward the text', () => {
+    const points = textMarkupSquigglePoints(
+      { x: 0, y: 10 },
+      { x: 20, y: 10 },
+      { x: 0, y: -1 },
+      1,
+    );
+    expect(points[0]).toEqual({ x: 0, y: 10 });
+    expect(points.at(-1)).toEqual({ x: 20, y: 10 });
+    expect(points.some((point) => point.y < 10)).toBe(true);
+    expect(points.every((point) => point.y <= 10)).toBe(true);
+  });
+
+  it('keeps the wave amplitude stable in screen pixels across zoom levels', () => {
+    const atOne = textMarkupSquigglePoints(
+      { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 0, y: -1 }, 1,
+    );
+    const atTwo = textMarkupSquigglePoints(
+      { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 0, y: -1 }, 2,
+    );
+    const amplitudeAtOne = -Math.min(...atOne.map((point) => point.y));
+    const amplitudeAtTwoInScreenPixels = -Math.min(...atTwo.map((point) => point.y)) * 2;
+    expect(amplitudeAtOne).toBeCloseTo(1.5);
+    expect(amplitudeAtTwoInScreenPixels).toBeCloseTo(amplitudeAtOne);
   });
 });
 
