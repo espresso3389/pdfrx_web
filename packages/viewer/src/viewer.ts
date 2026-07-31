@@ -91,7 +91,7 @@ import {
   type Size,
   type ViewTransform,
 } from '@pdfrx/viewer-core';
-import { PageRenderCache } from './render-cache.js';
+import { PageRenderCache, type RenderRequestResult } from './render-cache.js';
 import { PdfTextSearcher } from './text-searcher.js';
 
 interface ArrangementViewportAnchor {
@@ -954,28 +954,6 @@ export const annotationObjectInteractionEnabled = (
   annotationMode: boolean,
   altOrOptionHeld: boolean,
 ): boolean => annotationMode !== altOrOptionHeld;
-
-/**
- * Maps the client-space portion of a viewer that is actually exposed on screen
- * back into its pre-CSS-transform view coordinate space.
- * @internal
- */
-export const exposedClientRectToViewRect = (
-  viewSize: Size,
-  containerRect: Pick<DOMRectReadOnly, 'left' | 'top' | 'right' | 'bottom' | 'width' | 'height'>,
-  exposedClientRect: Rect,
-): Rect => {
-  if (containerRect.width <= 0 || containerRect.height <= 0) {
-    return { left: 0, top: 0, right: 0, bottom: 0 };
-  }
-  const scaleX = viewSize.width / containerRect.width;
-  const scaleY = viewSize.height / containerRect.height;
-  const left = Math.max(0, Math.min(viewSize.width, (exposedClientRect.left - containerRect.left) * scaleX));
-  const top = Math.max(0, Math.min(viewSize.height, (exposedClientRect.top - containerRect.top) * scaleY));
-  const right = Math.max(left, Math.min(viewSize.width, (exposedClientRect.right - containerRect.left) * scaleX));
-  const bottom = Math.max(top, Math.min(viewSize.height, (exposedClientRect.bottom - containerRect.top) * scaleY));
-  return { left, top, right, bottom };
-};
 
 /** @internal Page-scoped key for annotation ids, which may only be unique within a page. */
 export const annotationSnapshotKey = (pageNumber: number, id: string): string =>
@@ -2037,6 +2015,56 @@ export interface ViewTransformSnapshot extends ViewTransform {
   readonly viewSize: Size;
 }
 
+/** Outcome of waiting for one immutable transform's full-quality paint. */
+export type RenderCompletionResult =
+  | { readonly status: 'completed' }
+  | {
+      readonly status: 'superseded';
+      readonly reason: 'transform' | 'viewport' | 'document' | 'pages' | 'content' | 'disposed';
+    };
+
+type RenderTransactionPhase = 'resources' | 'final-paint';
+
+/** One explicitly requested, immutable full-quality render lifecycle. */
+class RenderTransaction {
+  readonly result: Promise<RenderCompletionResult>;
+  phase: RenderTransactionPhase = 'resources';
+  settled = false;
+  private resolveResult!: (result: RenderCompletionResult) => void;
+  private rejectResult!: (reason: unknown) => void;
+
+  constructor(
+    readonly target: ViewTransform,
+    readonly viewSize: Size,
+    readonly dpr: number,
+    readonly cache: PageRenderCache,
+    readonly arrangementGeneration: number,
+  ) {
+    this.result = new Promise((resolve, reject) => {
+      this.resolveResult = resolve;
+      this.rejectResult = reject;
+    });
+  }
+
+  complete(): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolveResult({ status: 'completed' });
+  }
+
+  supersede(reason: Extract<RenderCompletionResult, { status: 'superseded' }>['reason']): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolveResult({ status: 'superseded', reason });
+  }
+
+  fail(reason: unknown): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.rejectResult(reason);
+  }
+}
+
 /** @internal Creates the serializable snapshot returned by `currentTransform`. */
 export function createViewTransformSnapshot(transform: ViewTransform, viewSize: Size): ViewTransformSnapshot {
   return { ...transform, viewSize: { ...viewSize } };
@@ -2177,8 +2205,6 @@ export class PdfrxViewer {
     window.addEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.addEventListener('keyup', this.onAnnotationModeModifierUp);
     window.addEventListener('blur', this.onAnnotationModeModifierReset);
-    document.addEventListener('scroll', this.onExternalViewportChanged, true);
-    window.addEventListener('resize', this.onExternalViewportChanged);
   }
 
   private readonly container: HTMLElement;
@@ -2345,8 +2371,8 @@ export class PdfrxViewer {
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
-  /** Promises waiting for the latest viewport to be painted at full quality. */
-  private readonly renderWaiters = new Set<() => void>();
+  /** Optional completion transactions waiting to be passed into the next paint. */
+  private readonly pendingRenderTransactions = new Set<RenderTransaction>();
   private readonly annotationToolChangeListeners = new Set<(tool: AnnotationTool | null) => void>();
   private readonly annotationSelectionChangeListeners = new Set<() => void>();
   private annotationLinkRequestHandler: AnnotationLinkRequestHandler | null = null;
@@ -2725,15 +2751,15 @@ export class PdfrxViewer {
   }
 
   /**
-   * Applies a zoom and pan together, then waits until every page region exposed
-   * through the browser viewport and clipping ancestors has been rendered at
-   * the viewer's full-quality target and painted to the canvas.
+   * Applies a zoom and pan together, then waits until every page region in the
+   * viewer's logical viewport has been rendered at the viewer's full-quality
+   * target and painted to the canvas.
    *
    * The transform is boundary-clamped in the same way as interactive panning
-   * and zooming. If the viewport changes again while the promise is pending,
-   * it follows the latest viewport rather than resolving for an obsolete
-   * frame. This makes the method suitable for restoring a saved view before a
-   * screenshot or another operation that depends on sharp pixels.
+   * and zooming. If another view change supersedes this transform while the
+   * promise is pending, it resolves with `{ status: 'superseded', reason }`
+   * rather than reporting completion for a different frame. Rendering failures
+   * are propagated as promise rejections.
    *
    * @example Restore a saved view after opening the PDF:
    * ```ts
@@ -2758,9 +2784,10 @@ export class PdfrxViewer {
    * @param sourceViewSize - Explicit viewport size in which `transform` was
    *   captured. This is only needed for legacy transforms that do not already
    *   contain the snapshot metadata returned by {@link currentTransform}.
-   * @returns A promise resolved after the full-quality frame is painted.
+   * @returns The completion report for this transform. Actual rendering
+   *   failures reject the promise.
    */
-  setViewTransform(transform: ViewTransform, sourceViewSize?: Size): Promise<void> {
+  setViewTransform(transform: ViewTransform, sourceViewSize?: Size): Promise<RenderCompletionResult> {
     const capturedViewSize = sourceViewSize ?? (transform as Partial<ViewTransformSnapshot>).viewSize;
     const adjusted = capturedViewSize
       ? scaleViewTransformToViewport(transform, capturedViewSize, this.viewSize)
@@ -2771,14 +2798,13 @@ export class PdfrxViewer {
   }
 
   /**
-   * Waits until the latest on-screen viewport is rendered at full quality and
-   * painted. Only the part of the viewer exposed through the browser viewport
-   * and clipping/scrolling ancestors is included; an oversized viewer does not
-   * wait for its off-screen page regions.
+   * Waits until the current transform's logical viewer viewport is rendered at
+   * full quality and painted. Browser-window clipping and ancestor scrolling
+   * do not change this deterministic render target.
    * Unlike {@link addTransformChangeListener}, this includes asynchronous page
-   * bitmap rendering. If the viewport changes while waiting, the promise waits
-   * for the new viewport. Resolves immediately when the viewer has been
-   * disposed or has no document/layout to render.
+   * bitmap rendering. A later view change resolves with a `superseded` result;
+   * a page-render failure rejects with that failure. Resolves
+   * immediately when called without a document/layout to render.
    *
    * @example Open a PDF at a particular page and wait for its final pixels:
    * ```ts
@@ -2788,14 +2814,21 @@ export class PdfrxViewer {
    * // Page 12's visible regions are now painted at full quality.
    * ```
    *
-   * @returns A promise resolved after the full-quality frame is painted.
+   * @returns The completion report for the captured transform. Actual
+   *   rendering failures reject the promise.
    */
-  waitForRender(): Promise<void> {
-    if (this.disposed || !this.layout || !this.doc || !this.cache) return Promise.resolve();
-    return new Promise((resolve) => {
-      this.renderWaiters.add(resolve);
-      this.invalidate();
-    });
+  waitForRender(): Promise<RenderCompletionResult> {
+    if (this.disposed) return Promise.resolve({ status: 'superseded', reason: 'disposed' });
+    if (!this.layout || !this.doc || !this.cache) return Promise.resolve({ status: 'completed' });
+    const transaction = new RenderTransaction(
+      { ...(this.anim?.to ?? this.transform) },
+      { ...this.viewSize },
+      window.devicePixelRatio || 1,
+      this.cache,
+      this.arrangementGeneration,
+    );
+    this.invalidate(transaction);
+    return transaction.result;
   }
 
   /** The current page-layout direction. See {@link setLayoutDirection}. */
@@ -3869,7 +3902,8 @@ export class PdfrxViewer {
     this.areaSelectionCancel?.();
     if (this.disposed) return;
     this.disposed = true;
-    this.resolveRenderWaiters();
+    for (const transaction of this.pendingRenderTransactions) transaction.supersede('disposed');
+    this.pendingRenderTransactions.clear();
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     if (this.paintTimer !== null) clearTimeout(this.paintTimer);
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
@@ -3899,8 +3933,6 @@ export class PdfrxViewer {
     window.removeEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.removeEventListener('keyup', this.onAnnotationModeModifierUp);
     window.removeEventListener('blur', this.onAnnotationModeModifierReset);
-    document.removeEventListener('scroll', this.onExternalViewportChanged, true);
-    window.removeEventListener('resize', this.onExternalViewportChanged);
     this.container.style.touchAction = this.previousContainerTouchAction;
     this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
@@ -5929,51 +5961,6 @@ export class PdfrxViewer {
   // Render loop
   // -------------------------------------------------------------------------
 
-  /** Rechecks an outstanding render barrier when an outer viewport moves. */
-  private readonly onExternalViewportChanged = (): void => {
-    if (this.renderWaiters.size > 0) this.invalidate();
-  };
-
-  /**
-   * Returns the document-space portion of the viewer that is genuinely exposed
-   * through the browser viewport and clipping ancestors. The normal paint pass
-   * still maintains the complete viewer canvas; only render-completion barriers
-   * use this narrower rect.
-   */
-  private exposedDocumentRect(t: ViewTransform): Rect {
-    const containerRect = this.container.getBoundingClientRect();
-    let exposed: Rect = {
-      left: Math.max(0, containerRect.left),
-      top: Math.max(0, containerRect.top),
-      right: Math.min(document.documentElement.clientWidth, containerRect.right),
-      bottom: Math.min(document.documentElement.clientHeight, containerRect.bottom),
-    };
-
-    for (let ancestor = this.container.parentElement; ancestor; ancestor = ancestor.parentElement) {
-      const style = getComputedStyle(ancestor);
-      const clipsX = style.overflowX !== 'visible';
-      const clipsY = style.overflowY !== 'visible';
-      if (!clipsX && !clipsY) continue;
-      const rect = ancestor.getBoundingClientRect();
-      if (clipsX) {
-        exposed.left = Math.max(exposed.left, rect.left);
-        exposed.right = Math.min(exposed.right, rect.right);
-      }
-      if (clipsY) {
-        exposed.top = Math.max(exposed.top, rect.top);
-        exposed.bottom = Math.min(exposed.bottom, rect.bottom);
-      }
-    }
-
-    // Normalize an empty intersection before mapping it back to view space.
-    exposed.right = Math.max(exposed.left, exposed.right);
-    exposed.bottom = Math.max(exposed.top, exposed.bottom);
-    const viewRect = exposedClientRectToViewRect(this.viewSize, containerRect, exposed);
-    const topLeft = viewToDocument(t, { x: viewRect.left, y: viewRect.top });
-    const bottomRight = viewToDocument(t, { x: viewRect.right, y: viewRect.bottom });
-    return { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y };
-  }
-
   /**
    * Repaints synchronously, cancelling any scheduled paint. Used when a blank
    * frame would be visible otherwise — notably right after resizing the canvas,
@@ -5990,15 +5977,24 @@ export class PdfrxViewer {
       clearTimeout(this.paintTimer);
       this.paintTimer = null;
     }
-    this.paint();
+    const transactions = this.takePendingRenderTransactions();
+    this.paint(transactions);
   }
 
-  private invalidate(): void {
+  private invalidate(transaction?: RenderTransaction): void {
+    if (transaction) {
+      if (this.disposed) {
+        transaction.supersede('disposed');
+        return;
+      }
+      this.pendingRenderTransactions.add(transaction);
+    }
     if (this.rafId !== null || this.paintTimer !== null || this.disposed) return;
     const run = (): void => {
       this.rafId = null;
       this.paintTimer = null;
-      this.paint();
+      const transactions = this.takePendingRenderTransactions();
+      this.paint(transactions);
     };
     // requestAnimationFrame stops firing while the document is hidden
     // (background tab, hidden iframe) — fall back to a timer there so the
@@ -6008,6 +6004,13 @@ export class PdfrxViewer {
     } else {
       this.rafId = requestAnimationFrame(run);
     }
+  }
+
+  private takePendingRenderTransactions(): readonly RenderTransaction[] | undefined {
+    if (this.pendingRenderTransactions.size === 0) return undefined;
+    const transactions = [...this.pendingRenderTransactions];
+    this.pendingRenderTransactions.clear();
+    return transactions;
   }
 
   /**
@@ -6054,7 +6057,7 @@ export class PdfrxViewer {
     this.invalidate();
   }
 
-  private paint(): void {
+  private paint(transactions?: readonly RenderTransaction[]): void {
     const ctx = this.ctx;
     const dpr = window.devicePixelRatio || 1;
     const t = this.transform;
@@ -6071,17 +6074,22 @@ export class PdfrxViewer {
     // can take seconds, and showing the old pages with no other feedback makes
     // the viewer look frozen.
     if (this.isLoading) {
+      for (const transaction of transactions ?? []) transaction.supersede('document');
       this.paintLoading(ctx, dpr);
       return;
     }
 
-    if (!this.layout || !this.doc || !this.cache) return;
+    if (!this.layout || !this.doc || !this.cache) {
+      for (const transaction of transactions ?? []) transaction.supersede('document');
+      return;
+    }
 
     const visible = calcVisibleRect(t, this.viewSize);
 
     // Cache maintenance for visible pages
     const visiblePages = new Set<number>();
     const visibleKeys = new Set<string>();
+    const renderRequests: Promise<RenderRequestResult>[] = [];
     const requiredScale = t.zoom * dpr;
     // Track the page covering the largest visible area for onPageChanged.
     let currentPage: number | null = null;
@@ -6099,14 +6107,14 @@ export class PdfrxViewer {
         currentPageArea = area;
         currentPage = pageNumber;
       }
-      this.cache.requestBase(pageNumber, requiredScale);
+      renderRequests.push(this.cache.requestBase(pageNumber, requiredScale));
       this.ensureText(pageNumber);
       this.ensureLinks(pageNumber);
       this.ensureFormFields(pageNumber);
       this.ensureAnnotations(pageNumber);
       if (requiredScale > this.cache.baseScaleCap(pageNumber) * 1.1) {
         if (!rectIsEmpty(visibleOnPage)) {
-          this.cache.schedulePatch(pageNumber, visibleOnPage, pageRect, requiredScale);
+          renderRequests.push(this.cache.schedulePatch(pageNumber, visibleOnPage, pageRect, requiredScale));
         }
       }
     }
@@ -6166,31 +6174,75 @@ export class PdfrxViewer {
     this.updateFormOverlays();
     this.updateAnnotationOverlays();
 
-    if (this.renderWaiters.size > 0) {
-      // A navigation tween can pass through an already-cached viewport. Do not
-      // report that transient frame as the requested navigation's completion.
-      let ready = this.anim === null;
-      const exposedVisible = this.exposedDocumentRect(t);
-      if (!rectIsEmpty(exposedVisible)) {
-        for (let i = 0; i < this.layout.pageLayouts.length; i++) {
-          const pageRect = this.layout.pageLayouts[i]!;
-          if (!rectOverlaps(pageRect, exposedVisible)) continue;
-          const visibleOnPage = rectIntersect(pageRect, exposedVisible);
-          if (!this.cache.isReady(i + 1, visibleOnPage, requiredScale)) {
-            ready = false;
-            break;
-          }
-        }
+    this.advanceRenderTransactions(transactions, t, dpr, renderRequests);
+  }
+
+  private advanceRenderTransactions(
+    transactions: readonly RenderTransaction[] | undefined,
+    paintedTransform: ViewTransform,
+    dpr: number,
+    renderRequests: readonly Promise<RenderRequestResult>[],
+  ): void {
+    for (const transaction of transactions ?? []) {
+      if (transaction.settled) continue;
+      if (transaction.cache !== this.cache) {
+        transaction.supersede('document');
+        continue;
       }
-      if (ready) this.resolveRenderWaiters();
+      if (transaction.arrangementGeneration !== this.arrangementGeneration) {
+        transaction.supersede('pages');
+        continue;
+      }
+      if (transaction.dpr !== dpr || transaction.viewSize.width !== this.viewSize.width ||
+        transaction.viewSize.height !== this.viewSize.height) {
+        transaction.supersede('viewport');
+        continue;
+      }
+      if (!this.transformsEqual(paintedTransform, transaction.target)) {
+        if (this.anim !== null && this.transformsEqual(this.anim.to, transaction.target)) {
+          this.invalidate(transaction);
+        } else {
+          transaction.supersede('transform');
+        }
+        continue;
+      }
+      if (transaction.phase === 'final-paint') {
+        const visible = calcVisibleRect(transaction.target, transaction.viewSize);
+        const requiredScale = transaction.target.zoom * transaction.dpr;
+        const ready = this.layout!.pageLayouts.every((pageRect, index) =>
+          !rectOverlaps(pageRect, visible) ||
+          transaction.cache.isReady(index + 1, rectIntersect(pageRect, visible), requiredScale));
+        if (ready) transaction.complete();
+        else {
+          transaction.phase = 'resources';
+          this.invalidate(transaction);
+        }
+        continue;
+      }
+      void Promise.all(renderRequests).then((results) => {
+        if (transaction.settled) return;
+        const failure = results.find(
+          (result): result is Extract<RenderRequestResult, { status: 'failed' }> => result.status === 'failed',
+        );
+        if (failure) {
+          transaction.fail(failure.error);
+          return;
+        }
+        const disposed = results.some((result) => result.status === 'cancelled' && result.reason === 'disposed');
+        if (disposed || this.disposed) {
+          transaction.supersede('disposed');
+          return;
+        }
+        transaction.phase = results.every((result) => result.status === 'completed')
+          ? 'final-paint'
+          : 'resources';
+        this.invalidate(transaction);
+      });
     }
   }
 
-  /** Resolves and clears all full-quality render waiters. */
-  private resolveRenderWaiters(): void {
-    const waiters = [...this.renderWaiters];
-    this.renderWaiters.clear();
-    for (const resolve of waiters) resolve();
+  private transformsEqual(a: ViewTransform, b: ViewTransform): boolean {
+    return a.zoom === b.zoom && a.xZoomed === b.xZoomed && a.yZoomed === b.yZoomed;
   }
 
   // -------------------------------------------------------------------------

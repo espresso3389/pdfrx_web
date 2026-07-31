@@ -147,21 +147,31 @@ Do not add a second `waitForRender()` after `setViewTransform()`; awaiting
 
 ### What completion means
 
-The promise completes only after every page region actually exposed on screen
-has reached the viewer's full-quality target and a canvas frame containing
-those bitmaps has been painted. Exposure is the intersection of the viewer with
-the browser viewport and any clipping or scrolling ancestors. A viewer element
-larger than the screen therefore does not wait for its off-screen regions; a
-fully off-screen viewer has no visible render work to wait for. At ordinary
-zoom completion means the required whole-page bitmap is available. Above the
-whole-page pixel cap it also means that an exact-scale patch covers each exposed
-page region.
+The promise captures one transform and logical viewer size. It completes only
+after every page region intersecting that deterministic viewport has reached
+the viewer's full-quality target and a canvas frame containing those exact
+bitmaps has been painted. Browser-window clipping, outer scrolling containers,
+and whether the viewer is on screen do not alter the target. At ordinary zoom
+completion means the required whole-page bitmap is available. Above the
+whole-page pixel cap it also means that an exact-scale patch covers each page
+region in the captured viewport.
 
-If the viewport changes while a render wait is pending, the promise follows the
-newest viewport. For example, if page 12 is requested and the user moves to page
-13 before page 12 finishes, the promise completes after page 13 is fully
-painted. Multiple pending waits complete together for that latest view; they do
-not report individual navigation cancellation.
+If a later navigation, zoom, resize, document replacement, or page arrangement
+change supersedes the captured target, the promise resolves with a
+`{ status: 'superseded', reason }` report. It never silently switches to the
+newer transform. A PDF rendering failure still rejects the promise, so callers
+can distinguish completion, a normal superseding operation, and an actual
+failure:
+
+```ts
+viewer.goToPage(12, 0);
+const result = await viewer.waitForRender();
+if (result.status === 'superseded') {
+  console.log(`The render target changed: ${result.reason}`);
+} else {
+  // The exact page-12 transform has been painted at full quality.
+}
+```
 
 [`addTransformChangeListener()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addtransformchangelistener)
 serves a different purpose: it observes frame-by-frame pan and zoom changes and

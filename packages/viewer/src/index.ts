@@ -56,6 +56,7 @@ export {
   type PdfViewerTapType,
   type PanAxis,
   type ViewTransformSnapshot,
+  type RenderCompletionResult,
   type ViewerOverlayBuilder,
 } from './viewer.js';
 export type {

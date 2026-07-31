@@ -29,8 +29,87 @@ interface Patch {
 /** A base render that has been queued, and the token that can drop it. */
 interface InFlight {
   scale: number;
-  token: PdfPageRenderCancellationToken;
+  task: RenderTask;
 }
+
+/** @internal Settled outcome of one concrete cache render request. */
+export type RenderRequestResult =
+  | { readonly status: 'completed' }
+  | { readonly status: 'cancelled'; readonly reason: string }
+  | { readonly status: 'failed'; readonly error: unknown };
+
+interface ScheduledTask {
+  readonly result: Promise<'elapsed' | 'cancelled'>;
+  cancel(): void;
+}
+
+interface PendingPatch {
+  visibleDocRect: Rect;
+  pageRect: Rect;
+  scale: number;
+  task: ScheduledTask;
+  result: Promise<RenderRequestResult>;
+}
+
+interface PatchInFlight {
+  visibleDocRect: Rect;
+  pageRect: Rect;
+  scale: number;
+  task: RenderTask;
+}
+
+interface RenderTask {
+  readonly token: PdfPageRenderCancellationToken;
+  readonly result: Promise<RenderRequestResult>;
+  readonly settled: boolean;
+  finish(result: RenderRequestResult): void;
+  cancel(reason: string): void;
+}
+
+const scheduleTask = (delay: number): ScheduledTask => {
+  let settle!: (result: 'elapsed' | 'cancelled') => void;
+  let settled = false;
+  const result = new Promise<'elapsed' | 'cancelled'>((resolve) => { settle = resolve; });
+  const timer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    settle('elapsed');
+  }, delay);
+  return {
+    result,
+    cancel: () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      settle('cancelled');
+    },
+  };
+};
+
+const createRenderTask = (token: PdfPageRenderCancellationToken): RenderTask => {
+  let settle!: (result: RenderRequestResult) => void;
+  let settled = false;
+  const result = new Promise<RenderRequestResult>((resolve) => { settle = resolve; });
+  return {
+    token,
+    result,
+    get settled() { return settled; },
+    finish: (outcome) => {
+      if (settled) return;
+      settled = true;
+      settle(outcome);
+    },
+    cancel: (reason) => {
+      if (settled) return;
+      settled = true;
+      token.cancel();
+      settle({ status: 'cancelled', reason });
+    },
+  };
+};
+
+const sameRect = (a: Rect, b: Rect): boolean =>
+  a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
 
 /** Pixel budget for a base (whole page) bitmap. */
 const BASE_PIXEL_BUDGET = 4 * 1024 * 1024;
@@ -69,10 +148,9 @@ export class PageRenderCache {
   private readonly base = new Map<string, BaseBitmap>();
   private readonly baseRendering = new Map<string, InFlight>(); // renderKey -> render in progress
   private readonly patches = new Map<number, Patch>();
-  private readonly patchRendering = new Map<number, PdfPageRenderCancellationToken>();
-  private patchTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Page the debounced patch timer is for, so it can be dropped when it scrolls away. */
-  private pendingPatchPage: number | null = null;
+  private readonly patchRendering = new Map<number, PatchInFlight>();
+  /** Per-page debounce keeps every deterministically visible region requestable. */
+  private readonly pendingPatches = new Map<number, PendingPatch>();
   private disposed = false;
 
   /** Render key of the page currently at `pageNumber`, or null if there is none. */
@@ -119,24 +197,30 @@ export class PageRenderCache {
   }
 
   /** @internal Ensure the base bitmap for a page approaches the required scale. */
-  requestBase(pageNumber: number, requiredScale: number): void {
-    if (this.disposed) return;
+  requestBase(pageNumber: number, requiredScale: number): Promise<RenderRequestResult> {
+    if (this.disposed) return Promise.resolve({ status: 'cancelled', reason: 'disposed' });
     const key = this.keyOf(pageNumber);
-    if (key === null) return;
+    if (key === null) return Promise.resolve({ status: 'cancelled', reason: 'page-unavailable' });
     const scale = Math.min(requiredScale, this.baseScaleCap(pageNumber));
     const cached = this.base.get(key);
-    if (cached && cached.scale >= scale / SCALE_TOLERANCE) return;
-    const rendering = this.baseRendering.get(key);
-    if (rendering && rendering.scale >= scale / SCALE_TOLERANCE) return;
+    if (cached && cached.scale >= scale / SCALE_TOLERANCE) return Promise.resolve({ status: 'completed' });
+    let rendering = this.baseRendering.get(key);
+    if (rendering?.task.settled) {
+      this.baseRendering.delete(key);
+      rendering = undefined;
+    }
+    if (rendering && rendering.scale >= scale / SCALE_TOLERANCE) return rendering.task.result;
     // A render for this page is already queued, but at too low a scale to be
     // worth waiting for: drop it rather than rendering the page twice.
-    rendering?.token.cancel();
+    rendering?.task.cancel('replaced');
 
     const page = this.doc.pages[pageNumber - 1];
-    if (!page) return;
+    if (!page) return Promise.resolve({ status: 'cancelled', reason: 'page-unavailable' });
     const token = page.createCancellationToken();
-    this.baseRendering.set(key, { scale, token });
-    void this.renderBase(pageNumber, key, scale, token);
+    const task = createRenderTask(token);
+    this.baseRendering.set(key, { scale, task });
+    void this.renderBase(pageNumber, key, scale, task);
+    return task.result;
   }
 
   /**
@@ -147,7 +231,9 @@ export class PageRenderCache {
    */
   cancelBasesExcept(keys: ReadonlySet<string>): void {
     for (const [key, inFlight] of this.baseRendering) {
-      if (!keys.has(key)) inFlight.token.cancel();
+      if (keys.has(key)) continue;
+      inFlight.task.cancel('scrolled-away');
+      this.baseRendering.delete(key);
     }
   }
 
@@ -155,33 +241,43 @@ export class PageRenderCache {
     pageNumber: number,
     key: string,
     scale: number,
-    token: PdfPageRenderCancellationToken,
+    task: RenderTask,
   ): Promise<void> {
     try {
       const page = this.doc.pages[pageNumber - 1];
       // The page may have been moved away from this slot while we waited.
-      if (!page || page.renderKey !== key) return;
+      if (!page || page.renderKey !== key) {
+        task.finish({ status: 'cancelled', reason: 'page-moved' });
+        return;
+      }
       const image = await page.render({
         fullWidth: Math.ceil(page.width * scale),
         fullHeight: Math.ceil(page.height * scale),
         annotationRenderingMode: this.annotationRenderingMode(),
-        cancellationToken: token,
+        cancellationToken: task.token,
       });
-      if (!image || this.disposed) return; // null when cancelled
+      if (!image || this.disposed || task.settled) {
+        task.finish({ status: 'cancelled', reason: this.disposed ? 'disposed' : 'cancelled' });
+        return;
+      }
       const bitmap = await image.toImageBitmap();
-      if (this.disposed) {
+      if (this.disposed || task.settled) {
         bitmap.close();
+        task.finish({ status: 'cancelled', reason: this.disposed ? 'disposed' : 'cancelled' });
         return;
       }
       this.base.get(key)?.bitmap.close();
       this.base.set(key, { scale, bitmap });
       this.onUpdate();
+      task.finish({ status: 'completed' });
     } catch (e) {
+      if (task.settled) return;
       console.error(`Failed to render page ${pageNumber}:`, e);
+      task.finish({ status: 'failed', error: e });
     } finally {
       // Only clear the slot if it is still ours; a newer, higher-scale render
       // may have replaced it while this one was cancelled.
-      if (this.baseRendering.get(key)?.token === token) this.baseRendering.delete(key);
+      if (this.baseRendering.get(key)?.task === task) this.baseRendering.delete(key);
     }
   }
 
@@ -192,8 +288,13 @@ export class PageRenderCache {
    * in document coordinates; `pageRect` is the page's layout rect; `scale` is
    * the true on-screen pixel density (zoom * devicePixelRatio).
    */
-  schedulePatch(pageNumber: number, visibleDocRect: Rect, pageRect: Rect, scale: number): void {
-    if (this.disposed) return;
+  schedulePatch(
+    pageNumber: number,
+    visibleDocRect: Rect,
+    pageRect: Rect,
+    scale: number,
+  ): Promise<RenderRequestResult> {
+    if (this.disposed) return Promise.resolve({ status: 'cancelled', reason: 'disposed' });
     const existing = this.patches.get(pageNumber);
     if (
       existing &&
@@ -203,15 +304,37 @@ export class PageRenderCache {
       existing.rect.right >= visibleDocRect.right &&
       existing.rect.bottom >= visibleDocRect.bottom
     ) {
-      return; // current patch still covers the view at this scale
+      return Promise.resolve({ status: 'completed' }); // current patch still covers the view at this scale
     }
-    if (this.patchTimer) clearTimeout(this.patchTimer);
-    this.pendingPatchPage = pageNumber;
-    this.patchTimer = setTimeout(() => {
-      this.patchTimer = null;
-      this.pendingPatchPage = null;
-      void this.renderPatch(pageNumber, visibleDocRect, pageRect, scale);
-    }, 150);
+    let rendering = this.patchRendering.get(pageNumber);
+    if (rendering?.task.settled) {
+      this.patchRendering.delete(pageNumber);
+      rendering = undefined;
+    }
+    if (rendering && rendering.scale === scale &&
+      sameRect(rendering.visibleDocRect, visibleDocRect) && sameRect(rendering.pageRect, pageRect)) {
+      return rendering.task.result;
+    }
+    const pending = this.pendingPatches.get(pageNumber);
+    if (pending && pending.scale === scale &&
+      sameRect(pending.visibleDocRect, visibleDocRect) && sameRect(pending.pageRect, pageRect)) {
+      return pending.result;
+    }
+    pending?.task.cancel();
+    const task = scheduleTask(150);
+    const result = task.result.then((scheduled): Promise<RenderRequestResult> | RenderRequestResult => {
+      if (this.pendingPatches.get(pageNumber)?.task === task) this.pendingPatches.delete(pageNumber);
+      if (scheduled === 'cancelled') return { status: 'cancelled', reason: 'debounce-cancelled' };
+      return this.requestPatch(pageNumber, visibleDocRect, pageRect, scale);
+    });
+    this.pendingPatches.set(pageNumber, {
+      visibleDocRect: { ...visibleDocRect },
+      pageRect: { ...pageRect },
+      scale,
+      task,
+      result,
+    });
+    return result;
   }
 
   /** @internal Drop and close patches for pages no longer visible. */
@@ -222,22 +345,35 @@ export class PageRenderCache {
         this.patches.delete(pageNumber);
       }
     }
-    for (const [pageNumber, token] of this.patchRendering) {
-      if (!pageNumbers.has(pageNumber)) token.cancel();
+    for (const [pageNumber, rendering] of this.patchRendering) {
+      if (pageNumbers.has(pageNumber)) continue;
+      rendering.task.cancel('scrolled-away');
+      this.patchRendering.delete(pageNumber);
     }
-    // A patch scheduled for a page that has since scrolled away is pointless.
-    if (this.patchTimer && this.pendingPatchPage !== null && !pageNumbers.has(this.pendingPatchPage)) {
-      clearTimeout(this.patchTimer);
-      this.patchTimer = null;
-      this.pendingPatchPage = null;
+    // Patches scheduled for pages that have since scrolled away are pointless.
+    for (const [pageNumber, pending] of this.pendingPatches) {
+      if (pageNumbers.has(pageNumber)) continue;
+      pending.task.cancel();
+      this.pendingPatches.delete(pageNumber);
     }
   }
 
-  private async renderPatch(pageNumber: number, visibleDocRect: Rect, pageRect: Rect, scale: number): Promise<void> {
-    if (this.disposed) return;
+  private requestPatch(
+    pageNumber: number,
+    visibleDocRect: Rect,
+    pageRect: Rect,
+    scale: number,
+  ): Promise<RenderRequestResult> {
+    if (this.disposed) return Promise.resolve({ status: 'cancelled', reason: 'disposed' });
+    const rendering = this.patchRendering.get(pageNumber);
+    if (rendering && !rendering.task.settled && rendering.scale === scale &&
+      sameRect(rendering.visibleDocRect, visibleDocRect) && sameRect(rendering.pageRect, pageRect)) {
+      return rendering.task.result;
+    }
     // A patch for this page is already queued for a view the user has since
     // moved on from; drop it and render what is on screen now.
-    this.patchRendering.get(pageNumber)?.cancel();
+    rendering?.task.cancel('replaced');
+    this.patchRendering.delete(pageNumber);
 
     // Inflate the patch a bit so small pans don't immediately invalidate it,
     // then clamp to the page and the pixel budget.
@@ -250,13 +386,35 @@ export class PageRenderCache {
     if (rectWidth(rect) * scale * (rectHeight(rect) * scale) > PATCH_PIXEL_BUDGET) {
       rect = visibleDocRect;
     }
-    if (rectWidth(rect) < 1 || rectHeight(rect) < 1) return;
+    if (rectWidth(rect) < 1 || rectHeight(rect) < 1) return Promise.resolve({ status: 'completed' });
 
     const page = this.doc.pages[pageNumber - 1];
-    if (!page) return;
+    if (!page) return Promise.resolve({ status: 'cancelled', reason: 'page-unavailable' });
     const token = page.createCancellationToken();
-    this.patchRendering.set(pageNumber, token);
+    const task = createRenderTask(token);
+    this.patchRendering.set(pageNumber, {
+      visibleDocRect: { ...visibleDocRect },
+      pageRect: { ...pageRect },
+      scale,
+      task,
+    });
+    void this.renderPatch(pageNumber, pageRect, scale, rect, task);
+    return task.result;
+  }
+
+  private async renderPatch(
+    pageNumber: number,
+    pageRect: Rect,
+    scale: number,
+    rect: Rect,
+    task: RenderTask,
+  ): Promise<void> {
     try {
+      const page = this.doc.pages[pageNumber - 1];
+      if (!page) {
+        task.finish({ status: 'cancelled', reason: 'page-unavailable' });
+        return;
+      }
       const pageScaleX = rectWidth(pageRect) / page.width;
       const fullWidth = Math.ceil(page.width * pageScaleX * scale);
       const fullHeight = Math.ceil(page.height * pageScaleX * scale);
@@ -272,12 +430,16 @@ export class PageRenderCache {
         fullWidth,
         fullHeight,
         annotationRenderingMode: this.annotationRenderingMode(),
-        cancellationToken: token,
+        cancellationToken: task.token,
       });
-      if (!image || this.disposed) return; // null when cancelled
+      if (!image || this.disposed || task.settled) {
+        task.finish({ status: 'cancelled', reason: this.disposed ? 'disposed' : 'cancelled' });
+        return;
+      }
       const bitmap = await image.toImageBitmap();
-      if (this.disposed) {
+      if (this.disposed || task.settled) {
         bitmap.close();
+        task.finish({ status: 'cancelled', reason: this.disposed ? 'disposed' : 'cancelled' });
         return;
       }
       // Snap the stored rect to the actual pixel origin used for rendering.
@@ -290,10 +452,13 @@ export class PageRenderCache {
       this.patches.get(pageNumber)?.bitmap.close();
       this.patches.set(pageNumber, { rect: snapped, scale, bitmap });
       this.onUpdate();
+      task.finish({ status: 'completed' });
     } catch (e) {
+      if (task.settled) return;
       console.error(`Failed to render patch for page ${pageNumber}:`, e);
+      task.finish({ status: 'failed', error: e });
     } finally {
-      if (this.patchRendering.get(pageNumber) === token) this.patchRendering.delete(pageNumber);
+      if (this.patchRendering.get(pageNumber)?.task === task) this.patchRendering.delete(pageNumber);
     }
   }
 
@@ -317,7 +482,7 @@ export class PageRenderCache {
     }
     // Renders queued for a page that is no longer in the document are wasted.
     for (const [key, inFlight] of this.baseRendering) {
-      if (!live.has(key)) inFlight.token.cancel();
+      if (!live.has(key)) inFlight.task.cancel('page-removed');
     }
   }
 
@@ -332,19 +497,18 @@ export class PageRenderCache {
     for (const key of keys) {
       this.base.get(key)?.bitmap.close();
       this.base.delete(key);
-      this.baseRendering.get(key)?.token.cancel();
+      this.baseRendering.get(key)?.task.cancel('page-invalidated');
       this.baseRendering.delete(key);
     }
     for (const pageNumber of pageSet) {
       this.patches.get(pageNumber)?.bitmap.close();
       this.patches.delete(pageNumber);
-      this.patchRendering.get(pageNumber)?.cancel();
+      this.patchRendering.get(pageNumber)?.task.cancel('page-invalidated');
       this.patchRendering.delete(pageNumber);
     }
-    if (this.pendingPatchPage !== null && pageSet.has(this.pendingPatchPage)) {
-      if (this.patchTimer) clearTimeout(this.patchTimer);
-      this.patchTimer = null;
-      this.pendingPatchPage = null;
+    for (const pageNumber of pageSet) {
+      this.pendingPatches.get(pageNumber)?.task.cancel();
+      this.pendingPatches.delete(pageNumber);
     }
   }
 
@@ -355,7 +519,7 @@ export class PageRenderCache {
     this.base.clear();
     this.patches.clear();
     // In-flight renders were made with the old glyphs — drop them too.
-    for (const { token } of this.baseRendering.values()) token.cancel();
+    for (const { task } of this.baseRendering.values()) task.cancel('cache-invalidated');
     this.baseRendering.clear();
     this.cancelPatchRenders();
   }
@@ -367,22 +531,21 @@ export class PageRenderCache {
    * renders for the document being replaced.
    */
   cancelAllPending(): void {
-    for (const { token } of this.baseRendering.values()) token.cancel();
+    for (const { task } of this.baseRendering.values()) task.cancel('pending-cancelled');
     this.cancelPatchRenders();
   }
 
   private cancelPatchRenders(): void {
-    for (const token of this.patchRendering.values()) token.cancel();
+    for (const rendering of this.patchRendering.values()) rendering.task.cancel('pending-cancelled');
     this.patchRendering.clear();
-    if (this.patchTimer) clearTimeout(this.patchTimer);
-    this.patchTimer = null;
-    this.pendingPatchPage = null;
+    for (const pending of this.pendingPatches.values()) pending.task.cancel();
+    this.pendingPatches.clear();
   }
 
   /** @internal Closes every cached bitmap and stops accepting new renders. */
   dispose(): void {
     this.disposed = true;
-    for (const { token } of this.baseRendering.values()) token.cancel();
+    for (const { task } of this.baseRendering.values()) task.cancel('disposed');
     this.baseRendering.clear();
     this.cancelPatchRenders();
     for (const { bitmap } of this.base.values()) bitmap.close();

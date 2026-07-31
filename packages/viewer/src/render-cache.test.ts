@@ -1,5 +1,5 @@
 import type { PdfDocument } from '@pdfrx/engine';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PageRenderCache } from './render-cache.js';
 
 const visibleRect = { left: 10, top: 20, right: 90, bottom: 80 };
@@ -42,5 +42,101 @@ describe('PageRenderCache.isReady', () => {
     expect(cache.isReady(1, visibleRect, requiredScale)).toBe(false);
     setPatch(cache, requiredScale);
     expect(cache.isReady(1, visibleRect, requiredScale)).toBe(true);
+  });
+});
+
+describe('PageRenderCache render requests', () => {
+  it('reports completion from the concrete base render promise', async () => {
+    const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const page = {
+      width: 100,
+      height: 100,
+      renderKey: 'page-1',
+      createCancellationToken: () => ({ cancel: vi.fn() }),
+      render: vi.fn(async () => ({ toImageBitmap: async () => bitmap })),
+    };
+    const cache = new PageRenderCache({ pages: [page] } as unknown as PdfDocument, () => {});
+
+    await expect(cache.requestBase(1, 2)).resolves.toEqual({ status: 'completed' });
+  });
+
+  it('reports a render failure without creating an unhandled rejected promise', async () => {
+    const failure = new Error('render failed');
+    const page = {
+      width: 100,
+      height: 100,
+      renderKey: 'page-1',
+      createCancellationToken: () => ({ cancel: vi.fn() }),
+      render: vi.fn(async () => { throw failure; }),
+    };
+    const cache = new PageRenderCache({ pages: [page] } as unknown as PdfDocument, () => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(cache.requestBase(1, 2)).resolves.toEqual({ status: 'failed', error: failure });
+    consoleError.mockRestore();
+  });
+
+  it('settles a cancelled debounce instead of leaving its promise pending', async () => {
+    vi.useFakeTimers();
+    const cache = createCache();
+    const request = cache.schedulePatch(
+      1,
+      visibleRect,
+      { left: 0, top: 0, right: 100, bottom: 100 },
+      30,
+    );
+
+    cache.cancelAllPending();
+
+    await expect(request).resolves.toEqual({ status: 'cancelled', reason: 'debounce-cancelled' });
+    vi.useRealTimers();
+  });
+
+  it('settles an in-flight render immediately when its cancellation wrapper is cancelled', async () => {
+    const page = {
+      width: 100,
+      height: 100,
+      renderKey: 'page-1',
+      createCancellationToken: () => ({ cancel: vi.fn() }),
+      render: vi.fn(() => new Promise(() => {})),
+    };
+    const cache = new PageRenderCache({ pages: [page] } as unknown as PdfDocument, () => {});
+    const request = cache.requestBase(1, 2);
+
+    cache.cancelAllPending();
+
+    await expect(request).resolves.toEqual({ status: 'cancelled', reason: 'pending-cancelled' });
+  });
+
+  it('keeps independent high-resolution region requests for visible pages', () => {
+    vi.useFakeTimers();
+    const cache = new PageRenderCache({
+      pages: [
+        { width: 100, height: 100, renderKey: 'page-1' },
+        { width: 100, height: 100, renderKey: 'page-2' },
+      ],
+    } as unknown as PdfDocument, () => {});
+
+    cache.schedulePatch(1, visibleRect, { left: 0, top: 0, right: 100, bottom: 100 }, 30);
+    cache.schedulePatch(2, visibleRect, { left: 0, top: 100, right: 100, bottom: 200 }, 30);
+
+    const internals = cache as unknown as { pendingPatches: Map<number, unknown> };
+    expect([...internals.pendingPatches.keys()]).toEqual([1, 2]);
+    cache.cancelAllPending();
+    vi.useRealTimers();
+  });
+
+  it('returns the same owned promise for an identical pending patch request', async () => {
+    vi.useFakeTimers();
+    const cache = createCache();
+    const pageRect = { left: 0, top: 0, right: 100, bottom: 100 };
+
+    const first = cache.schedulePatch(1, visibleRect, pageRect, 30);
+    const second = cache.schedulePatch(1, visibleRect, pageRect, 30);
+
+    expect(second).toBe(first);
+    cache.cancelAllPending();
+    await expect(first).resolves.toMatchObject({ status: 'cancelled' });
+    vi.useRealTimers();
   });
 });

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-08-01
+
+### Changed
+
+- Made full-quality render waits deterministic per transform: an explicit
+  transaction passed through `invalidate`/`paint` owns each visible base or
+  high-resolution patch result and the final paint, cancellation always settles
+  scheduled work, later view changes return a typed `superseded` report, and
+  rendering failures are propagated instead of leaving waits pending.
+
 ## [0.24.1] - 2026-08-01
 
 ### Added
@@ -865,7 +875,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.2...HEAD
+[0.24.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...v0.23.2
