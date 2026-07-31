@@ -10,6 +10,7 @@ import {
   annotationSupportsStyleProperty,
   clientPointToPagePx,
   constrainAnnotationTranslation,
+  exposedClientRectToViewRect,
   createViewTransformSnapshot,
   forwardArmedEditorKeyToViewer,
   pointToSegmentDistance,
@@ -106,6 +107,24 @@ describe('annotationSnapshotKey', () => {
       annotationSnapshotKey(9, '@0'),
       annotationSnapshotKey(9, '@1'),
     ])).toHaveLength(3);
+  });
+});
+
+describe('exposedClientRectToViewRect', () => {
+  it('maps a screen-clipped region through an ancestor CSS scale', () => {
+    expect(exposedClientRectToViewRect(
+      { width: 1000, height: 800 },
+      { left: 100, top: 50, right: 600, bottom: 450, width: 500, height: 400 },
+      { left: 150, top: 100, right: 400, bottom: 300 },
+    )).toEqual({ left: 100, top: 100, right: 600, bottom: 500 });
+  });
+
+  it('returns an empty view rect when the exposed client intersection is empty', () => {
+    expect(exposedClientRectToViewRect(
+      { width: 600, height: 400 },
+      { left: 1000, top: 700, right: 1600, bottom: 1100, width: 600, height: 400 },
+      { left: 1000, top: 700, right: 1000, bottom: 700 },
+    )).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
   });
 });
 

@@ -30,7 +30,8 @@ selection, links, search, forms, annotations, and page editing.
 - The viewer background accepts CSS alpha colors, including `transparent`, so
   an embedding application's surface can remain visible around PDF pages.
 - Pan and zoom can be restored together, with a Promise that completes only
-  after all visible page regions have been painted at full quality.
+  after all page regions actually exposed on screen have been painted at full
+  quality; oversized or clipped viewer regions do not delay completion.
 
 ## Install
 

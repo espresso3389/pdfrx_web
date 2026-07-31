@@ -955,6 +955,28 @@ export const annotationObjectInteractionEnabled = (
   altOrOptionHeld: boolean,
 ): boolean => annotationMode !== altOrOptionHeld;
 
+/**
+ * Maps the client-space portion of a viewer that is actually exposed on screen
+ * back into its pre-CSS-transform view coordinate space.
+ * @internal
+ */
+export const exposedClientRectToViewRect = (
+  viewSize: Size,
+  containerRect: Pick<DOMRectReadOnly, 'left' | 'top' | 'right' | 'bottom' | 'width' | 'height'>,
+  exposedClientRect: Rect,
+): Rect => {
+  if (containerRect.width <= 0 || containerRect.height <= 0) {
+    return { left: 0, top: 0, right: 0, bottom: 0 };
+  }
+  const scaleX = viewSize.width / containerRect.width;
+  const scaleY = viewSize.height / containerRect.height;
+  const left = Math.max(0, Math.min(viewSize.width, (exposedClientRect.left - containerRect.left) * scaleX));
+  const top = Math.max(0, Math.min(viewSize.height, (exposedClientRect.top - containerRect.top) * scaleY));
+  const right = Math.max(left, Math.min(viewSize.width, (exposedClientRect.right - containerRect.left) * scaleX));
+  const bottom = Math.max(top, Math.min(viewSize.height, (exposedClientRect.bottom - containerRect.top) * scaleY));
+  return { left, top, right, bottom };
+};
+
 /** @internal Page-scoped key for annotation ids, which may only be unique within a page. */
 export const annotationSnapshotKey = (pageNumber: number, id: string): string =>
   `${pageNumber}\0${id}`;
@@ -2155,6 +2177,8 @@ export class PdfrxViewer {
     window.addEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.addEventListener('keyup', this.onAnnotationModeModifierUp);
     window.addEventListener('blur', this.onAnnotationModeModifierReset);
+    document.addEventListener('scroll', this.onExternalViewportChanged, true);
+    window.addEventListener('resize', this.onExternalViewportChanged);
   }
 
   private readonly container: HTMLElement;
@@ -2701,9 +2725,9 @@ export class PdfrxViewer {
   }
 
   /**
-   * Applies a zoom and pan together, then waits until every visible page has
-   * been rendered at the viewer's full-quality target and that result has been
-   * painted to the canvas.
+   * Applies a zoom and pan together, then waits until every page region exposed
+   * through the browser viewport and clipping ancestors has been rendered at
+   * the viewer's full-quality target and painted to the canvas.
    *
    * The transform is boundary-clamped in the same way as interactive panning
    * and zooming. If the viewport changes again while the promise is pending,
@@ -2747,7 +2771,10 @@ export class PdfrxViewer {
   }
 
   /**
-   * Waits until the latest viewport is rendered at full quality and painted.
+   * Waits until the latest on-screen viewport is rendered at full quality and
+   * painted. Only the part of the viewer exposed through the browser viewport
+   * and clipping/scrolling ancestors is included; an oversized viewer does not
+   * wait for its off-screen page regions.
    * Unlike {@link addTransformChangeListener}, this includes asynchronous page
    * bitmap rendering. If the viewport changes while waiting, the promise waits
    * for the new viewport. Resolves immediately when the viewer has been
@@ -3872,6 +3899,8 @@ export class PdfrxViewer {
     window.removeEventListener('keydown', this.onAnnotationSelectAllShortcut);
     window.removeEventListener('keyup', this.onAnnotationModeModifierUp);
     window.removeEventListener('blur', this.onAnnotationModeModifierReset);
+    document.removeEventListener('scroll', this.onExternalViewportChanged, true);
+    window.removeEventListener('resize', this.onExternalViewportChanged);
     this.container.style.touchAction = this.previousContainerTouchAction;
     this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
@@ -5900,6 +5929,51 @@ export class PdfrxViewer {
   // Render loop
   // -------------------------------------------------------------------------
 
+  /** Rechecks an outstanding render barrier when an outer viewport moves. */
+  private readonly onExternalViewportChanged = (): void => {
+    if (this.renderWaiters.size > 0) this.invalidate();
+  };
+
+  /**
+   * Returns the document-space portion of the viewer that is genuinely exposed
+   * through the browser viewport and clipping ancestors. The normal paint pass
+   * still maintains the complete viewer canvas; only render-completion barriers
+   * use this narrower rect.
+   */
+  private exposedDocumentRect(t: ViewTransform): Rect {
+    const containerRect = this.container.getBoundingClientRect();
+    let exposed: Rect = {
+      left: Math.max(0, containerRect.left),
+      top: Math.max(0, containerRect.top),
+      right: Math.min(document.documentElement.clientWidth, containerRect.right),
+      bottom: Math.min(document.documentElement.clientHeight, containerRect.bottom),
+    };
+
+    for (let ancestor = this.container.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      const clipsX = style.overflowX !== 'visible';
+      const clipsY = style.overflowY !== 'visible';
+      if (!clipsX && !clipsY) continue;
+      const rect = ancestor.getBoundingClientRect();
+      if (clipsX) {
+        exposed.left = Math.max(exposed.left, rect.left);
+        exposed.right = Math.min(exposed.right, rect.right);
+      }
+      if (clipsY) {
+        exposed.top = Math.max(exposed.top, rect.top);
+        exposed.bottom = Math.min(exposed.bottom, rect.bottom);
+      }
+    }
+
+    // Normalize an empty intersection before mapping it back to view space.
+    exposed.right = Math.max(exposed.left, exposed.right);
+    exposed.bottom = Math.max(exposed.top, exposed.bottom);
+    const viewRect = exposedClientRectToViewRect(this.viewSize, containerRect, exposed);
+    const topLeft = viewToDocument(t, { x: viewRect.left, y: viewRect.top });
+    const bottomRight = viewToDocument(t, { x: viewRect.right, y: viewRect.bottom });
+    return { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y };
+  }
+
   /**
    * Repaints synchronously, cancelling any scheduled paint. Used when a blank
    * frame would be visible otherwise — notably right after resizing the canvas,
@@ -6096,13 +6170,16 @@ export class PdfrxViewer {
       // A navigation tween can pass through an already-cached viewport. Do not
       // report that transient frame as the requested navigation's completion.
       let ready = this.anim === null;
-      for (let i = 0; i < this.layout.pageLayouts.length; i++) {
-        const pageRect = this.layout.pageLayouts[i]!;
-        if (!rectOverlaps(pageRect, visible)) continue;
-        const visibleOnPage = rectIntersect(pageRect, visible);
-        if (!this.cache.isReady(i + 1, visibleOnPage, requiredScale)) {
-          ready = false;
-          break;
+      const exposedVisible = this.exposedDocumentRect(t);
+      if (!rectIsEmpty(exposedVisible)) {
+        for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+          const pageRect = this.layout.pageLayouts[i]!;
+          if (!rectOverlaps(pageRect, exposedVisible)) continue;
+          const visibleOnPage = rectIntersect(pageRect, exposedVisible);
+          if (!this.cache.isReady(i + 1, visibleOnPage, requiredScale)) {
+            ready = false;
+            break;
+          }
         }
       }
       if (ready) this.resolveRenderWaiters();

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Limited full-quality render completion waits to page regions actually exposed
+  through the browser viewport and clipping ancestors, so an oversized React
+  viewer no longer waits for off-screen content.
+
 ## [0.24.0] - 2026-08-01
 
 ### Added

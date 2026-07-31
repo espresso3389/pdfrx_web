@@ -137,10 +137,14 @@ Do not add a second `waitForRender()` after `setViewTransform()`; awaiting
 
 ### What completion means
 
-The promise completes only after every visible page has reached the viewer's
-full-quality target and a canvas frame containing those bitmaps has been
-painted. At ordinary zoom this means the required whole-page bitmap. Above the
-whole-page pixel cap it also means that an exact-scale patch covers each visible
+The promise completes only after every page region actually exposed on screen
+has reached the viewer's full-quality target and a canvas frame containing
+those bitmaps has been painted. Exposure is the intersection of the viewer with
+the browser viewport and any clipping or scrolling ancestors. A viewer element
+larger than the screen therefore does not wait for its off-screen regions; a
+fully off-screen viewer has no visible render work to wait for. At ordinary
+zoom completion means the required whole-page bitmap is available. Above the
+whole-page pixel cap it also means that an exact-scale patch covers each exposed
 page region.
 
 If the viewport changes while a render wait is pending, the promise follows the
