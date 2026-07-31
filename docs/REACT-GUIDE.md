@@ -611,11 +611,15 @@ The dark palette follows `prefers-color-scheme` by default.
   becomes invalid when another document is opened — re-read it, or key your
   state on
   [`useDocumentGeneration()`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.useDocumentGeneration.html).
-- **Options are live.** Changing `backgroundColor`, `panEnabled`,
+- **Options are live.** Changing
+  [`backgroundColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#backgroundcolor),
+  `panEnabled`,
   [`autoLinkDetection`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#autolinkdetection),
   `layoutDirection` and friends applies to the running viewer. `engine`,
   `engineOptions` and `initialFit` are read once at construction, so changing
-  those requires remounting the provider.
+  those requires remounting the provider. `backgroundColor` accepts CSS alpha
+  colors such as `rgba(...)` and `transparent`, allowing the React layout
+  behind the viewer canvas to remain visible around PDF pages.
 
 ## The pdfrx_web family
 

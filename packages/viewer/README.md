@@ -27,6 +27,8 @@ selection, links, search, forms, annotations, and page editing.
   and form permissions with optional application overrides.
 - Page-following and viewport-fixed DOM overlays support custom application UI
   without replacing canvas rendering.
+- The viewer background accepts CSS alpha colors, including `transparent`, so
+  an embedding application's surface can remain visible around PDF pages.
 
 ## Install
 
@@ -41,6 +43,8 @@ import { PdfrxViewer } from '@pdfrx/viewer';
 
 const viewer = new PdfrxViewer(document.querySelector('#viewer')!, {
   engineOptions: { wasmModulesUrl: '/pdfium/' },
+  // Optional: let the embedding application's background show through.
+  backgroundColor: 'transparent',
 });
 
 await viewer.openUrl('/manual.pdf');

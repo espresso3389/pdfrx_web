@@ -166,7 +166,11 @@ export interface PdfrxViewerOptions {
    *
    */
   layoutPages?: LayoutPagesFn;
-  /** Background color of the viewer. Default: '#808080'. */
+  /**
+   * CSS background color of the viewer. Default: `'#808080'`.
+   * Alpha colors such as `'rgba(0, 0, 0, 0.5)'` and `'transparent'` reveal
+   * the content behind the viewer.
+   */
   backgroundColor?: string;
   /** Selection highlight fill style. Default: 'rgba(33, 150, 243, 0.35)'. */
   selectionColor?: string;
@@ -5842,6 +5846,10 @@ export class PdfrxViewer {
     const t = this.transform;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // A transparent fill does not replace pixels left by the previous frame
+    // under source-over compositing. Clear first so alpha backgrounds reveal
+    // the content behind the canvas, including after a live option change.
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.fillStyle = this.options.backgroundColor ?? '#808080';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
