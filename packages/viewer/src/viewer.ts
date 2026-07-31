@@ -1968,6 +1968,58 @@ export function isPdfPrintingSupported(
   return !ios;
 }
 
+/** @internal Returns the viewer's pre-CSS-transform layout viewport size. */
+export function viewerLayoutViewportSize(
+  container: Pick<HTMLElement, 'offsetWidth' | 'offsetHeight'>,
+  entry?: Pick<ResizeObserverEntry, 'borderBoxSize'>,
+): Size {
+  const observedBorderBox = entry?.borderBoxSize[0];
+  return {
+    width: observedBorderBox?.inlineSize ?? container.offsetWidth,
+    height: observedBorderBox?.blockSize ?? container.offsetHeight,
+  };
+}
+
+/** @internal Scales a saved transform so its viewport composition is preserved. */
+export function scaleViewTransformToViewport(
+  transform: ViewTransform,
+  sourceViewSize: Size,
+  targetViewSize: Size,
+): ViewTransform {
+  if (
+    sourceViewSize.width <= 0 ||
+    sourceViewSize.height <= 0 ||
+    targetViewSize.width <= 0 ||
+    targetViewSize.height <= 0
+  ) return { ...transform };
+  const scale = Math.min(
+    targetViewSize.width / sourceViewSize.width,
+    targetViewSize.height / sourceViewSize.height,
+  );
+  const insetX = (targetViewSize.width - sourceViewSize.width * scale) / 2;
+  const insetY = (targetViewSize.height - sourceViewSize.height * scale) / 2;
+  return {
+    zoom: transform.zoom * scale,
+    xZoomed: transform.xZoomed * scale + insetX,
+    yZoomed: transform.yZoomed * scale + insetY,
+  };
+}
+
+/**
+ * A serializable view transform together with the viewport in which it was
+ * captured. Passing the snapshot back to {@link PdfrxViewer.setViewTransform}
+ * preserves the same composition when the viewer has since changed size.
+ */
+export interface ViewTransformSnapshot extends ViewTransform {
+  /** Logical viewport size at capture time. */
+  readonly viewSize: Size;
+}
+
+/** @internal Creates the serializable snapshot returned by `currentTransform`. */
+export function createViewTransformSnapshot(transform: ViewTransform, viewSize: Size): ViewTransformSnapshot {
+  return { ...transform, viewSize: { ...viewSize } };
+}
+
 /**
  * Canvas-based PDF viewer: renders pages to a `<canvas>` and drives panning,
  * zoom, text selection, links, search, and printing.
@@ -2066,7 +2118,7 @@ export class PdfrxViewer {
     this.viewerOverlayRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:3;';
     container.appendChild(this.viewerOverlayRoot);
 
-    this.resizeObserver = new ResizeObserver(() => this.onResize());
+    this.resizeObserver = new ResizeObserver((entries) => this.onResize(entries[0]));
     this.resizeObserver.observe(container);
     this.onResize();
 
@@ -2635,8 +2687,17 @@ export class PdfrxViewer {
    * throughout the viewer.
    *
    */
-  get currentTransform(): ViewTransform {
-    return this.transform;
+  get currentTransform(): ViewTransformSnapshot {
+    return createViewTransformSnapshot(this.transform, this.viewSize);
+  }
+
+  /**
+   * The current logical viewport size in pre-CSS-transform pixels. Save this
+   * together with {@link currentTransform} when a view must later be restored
+   * with the same composition into a differently sized viewer.
+   */
+  get currentViewSize(): Size {
+    return { ...this.viewSize };
   }
 
   /**
@@ -2657,12 +2718,31 @@ export class PdfrxViewer {
    * // The saved viewport is now painted at full quality.
    * ```
    *
+   * {@link currentTransform} includes its capture-time viewport size. Saving
+   * and passing that snapshot back automatically reproduces the preview's
+   * composition when the viewer size has changed. The transform is uniformly
+   * scaled and centred in the new view.
+   *
+   * @example Restore the same composition into a different viewport:
+   * ```ts
+   * const saved = viewer.currentTransform;
+   * // ...after the viewer has been resized and the document has been opened:
+   * await viewer.setViewTransform(saved);
+   * ```
+   *
    * @param transform - Uniform zoom and zoomed document offset to apply.
+   * @param sourceViewSize - Explicit viewport size in which `transform` was
+   *   captured. This is only needed for legacy transforms that do not already
+   *   contain the snapshot metadata returned by {@link currentTransform}.
    * @returns A promise resolved after the full-quality frame is painted.
    */
-  setViewTransform(transform: ViewTransform): Promise<void> {
-    this.zoomModeValue = transform.zoom;
-    this.setTransform(transform);
+  setViewTransform(transform: ViewTransform, sourceViewSize?: Size): Promise<void> {
+    const capturedViewSize = sourceViewSize ?? (transform as Partial<ViewTransformSnapshot>).viewSize;
+    const adjusted = capturedViewSize
+      ? scaleViewTransformToViewport(transform, capturedViewSize, this.viewSize)
+      : transform;
+    this.zoomModeValue = adjusted.zoom;
+    this.setTransform(adjusted);
     return this.waitForRender();
   }
 
@@ -4019,17 +4099,22 @@ export class PdfrxViewer {
     }
   }
 
-  private onResize(): void {
-    const rect = this.container.getBoundingClientRect();
+  private onResize(entry?: ResizeObserverEntry): void {
+    // getBoundingClientRect() reports the visually transformed box. That makes
+    // an ancestor's CSS scale look like a real viewer resize and changes fit,
+    // clamping, and the coordinate system used by saved ViewTransforms. The
+    // ResizeObserver border box (and offset* for the initial synchronous read)
+    // stays in the container's pre-transform CSS layout coordinate space.
+    const { width, height } = viewerLayoutViewportSize(this.container, entry);
     const dpr = window.devicePixelRatio || 1;
     const pageNumber = this.currentPageNumber ?? 1;
-    const changed = rect.width !== this.viewSize.width || rect.height !== this.viewSize.height;
-    this.viewSize = { width: rect.width, height: rect.height };
+    const changed = width !== this.viewSize.width || height !== this.viewSize.height;
+    this.viewSize = { width, height };
     // Assigning canvas.width/height clears the bitmap, so only do it when the
     // backing-store size actually changes — a sub-pixel layout shift that rounds
     // to the same size must not blank the canvas.
-    const canvasW = Math.max(1, Math.round(rect.width * dpr));
-    const canvasH = Math.max(1, Math.round(rect.height * dpr));
+    const canvasW = Math.max(1, Math.round(width * dpr));
+    const canvasH = Math.max(1, Math.round(height * dpr));
     const bitmapCleared = canvasW !== this.canvas.width || canvasH !== this.canvas.height;
     if (bitmapCleared) {
       this.canvas.width = canvasW;
@@ -4050,7 +4135,7 @@ export class PdfrxViewer {
     if (bitmapCleared) this.paintNow();
     if (changed) {
       try {
-        this.options.onViewSizeChanged?.({ width: rect.width, height: rect.height });
+        this.options.onViewSizeChanged?.({ width, height });
       } catch (e) {
         console.error('Error in onViewSizeChanged:', e);
       }

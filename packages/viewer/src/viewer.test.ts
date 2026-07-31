@@ -10,15 +10,18 @@ import {
   annotationSupportsStyleProperty,
   clientPointToPagePx,
   constrainAnnotationTranslation,
+  createViewTransformSnapshot,
   forwardArmedEditorKeyToViewer,
   pointToSegmentDistance,
   preserveAnnotationSelectionOnEmptySpace,
   remapAnnotationImageSources,
   isPdfPrintingSupported,
   resizeBoxByHandle,
+  scaleViewTransformToViewport,
   segmentIntersectsRect,
   textMarkupSquigglePoints,
   translateSpec,
+  viewerLayoutViewportSize,
 } from './viewer.js';
 import type { PdfAnnotationObject } from '@pdfrx/engine';
 
@@ -47,6 +50,53 @@ const annotationWith = (values: Partial<PdfAnnotationObject>): PdfAnnotationObje
   appearanceImage: null,
   ...values,
 } as PdfAnnotationObject);
+
+describe('viewerLayoutViewportSize', () => {
+  it('uses the pre-transform ResizeObserver border box', () => {
+    const container = { offsetWidth: 640, offsetHeight: 480 };
+    const entry = {
+      borderBoxSize: [{ inlineSize: 640.5, blockSize: 480.25 }],
+    } as unknown as Pick<ResizeObserverEntry, 'borderBoxSize'>;
+
+    expect(viewerLayoutViewportSize(container, entry)).toEqual({ width: 640.5, height: 480.25 });
+  });
+
+  it('uses transform-independent layout dimensions for the initial measurement', () => {
+    const container = { offsetWidth: 640, offsetHeight: 480 };
+
+    expect(viewerLayoutViewportSize(container)).toEqual({ width: 640, height: 480 });
+  });
+});
+
+describe('scaleViewTransformToViewport', () => {
+  it('keeps the source viewport through JSON persistence for automatic restore', () => {
+    const saved = createViewTransformSnapshot(
+      { zoom: 2, xZoomed: -120, yZoomed: 40 },
+      { width: 800, height: 600 },
+    );
+    const restored = JSON.parse(JSON.stringify(saved)) as typeof saved;
+
+    expect(restored.viewSize).toEqual({ width: 800, height: 600 });
+    expect(scaleViewTransformToViewport(restored, restored.viewSize, { width: 1200, height: 900 }))
+      .toEqual({ zoom: 3, xZoomed: -180, yZoomed: 60 });
+  });
+
+  it('preserves the preview composition across a proportional resize', () => {
+    expect(scaleViewTransformToViewport(
+      { zoom: 2, xZoomed: -120, yZoomed: 40 },
+      { width: 800, height: 600 },
+      { width: 1200, height: 900 },
+    )).toEqual({ zoom: 3, xZoomed: -180, yZoomed: 60 });
+  });
+
+  it('centres the saved composition when the target aspect ratio differs', () => {
+    expect(scaleViewTransformToViewport(
+      { zoom: 1, xZoomed: -100, yZoomed: -50 },
+      { width: 800, height: 600 },
+      { width: 1200, height: 1200 },
+    )).toEqual({ zoom: 1.5, xZoomed: -150, yZoomed: 75 });
+  });
+});
 
 describe('annotationSnapshotKey', () => {
   it('keeps page-local fallback annotation ids distinct across pages', () => {
