@@ -66,7 +66,13 @@ await viewer.waitForRender();
 Use
 [`setViewTransform(transform)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setviewtransform)
 instead when restoring an exact saved pan and zoom; it applies the transform
-and includes the full-quality render wait. See
+and includes the full-quality render wait. Save
+[`currentTransform`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currenttransform),
+which is a
+[`ViewTransformSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.ViewTransformSnapshot.html)
+containing [`currentViewSize`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currentviewsize)
+metadata, to preserve the same composition when restoring into a differently
+sized viewer. See
 [`waitForRender()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#waitforrender)
 and the [viewer guide's complete initialization scenarios](https://github.com/espresso3389/pdfrx_web/blob/master/docs/VIEWER-GUIDE.md#waiting-for-the-initial-view-to-render).
 

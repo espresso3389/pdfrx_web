@@ -44,7 +44,7 @@ As a custom element:
 
 <pdfrx-viewer
   src="/documents/manual.pdf"
-wasm-modules-url="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.24.0/assets/"
+wasm-modules-url="https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.24.1/assets/"
   style="width: 100%; height: 100vh"
 ></pdfrx-viewer>
 ```
@@ -56,7 +56,7 @@ import { PdfrxViewer } from '@pdfrx/viewer';
 
 const viewer = new PdfrxViewer(document.getElementById('container')!, {
   engineOptions: {
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.24.0/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.24.1/assets/',
   },
 });
 await viewer.openUrl('/documents/manual.pdf');
@@ -122,15 +122,25 @@ When both position and zoom are already known, use
 It applies both values together and already includes the same render wait:
 
 ```ts
+const savedTransform = viewer.currentTransform;
+
+// Later, after opening the document in this or a differently sized viewer:
 await viewer.openUrl('/documents/manual.pdf');
-await viewer.setViewTransform({
-  zoom: 2,
-  xZoomed: -320,
-  yZoomed: -640,
-});
+await viewer.setViewTransform(savedTransform);
 
 // The restored viewport is now painted at full quality.
 ```
+
+[`currentTransform`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currenttransform)
+returns a
+[`ViewTransformSnapshot`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.ViewTransformSnapshot.html)
+whose capture-time viewport metadata lets `setViewTransform()` preserve the
+same composition after a resize. The current logical viewport dimensions are
+also available through
+[`currentViewSize`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#currentviewsize).
+Legacy transforms containing only `zoom`, `xZoomed`, and `yZoomed` are still
+accepted; pass their original viewport size as the optional second argument
+when cross-size composition must be preserved.
 
 Do not add a second `waitForRender()` after `setViewTransform()`; awaiting
 `setViewTransform()` is sufficient.

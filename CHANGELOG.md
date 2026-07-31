@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-08-01
+
+### Added
+
+- Added viewport-size metadata to `currentTransform`, the `currentViewSize`
+  accessor, and the public `ViewTransformSnapshot` type for portable saved
+  views.
+
+### Changed
+
+- Made `setViewTransform()` preserve the captured composition when restoring a
+  view into a differently sized viewer, while retaining support for legacy
+  transforms with an explicit source viewport size.
+
 ### Fixed
 
 - Limited full-quality render completion waits to page regions actually exposed
@@ -851,7 +865,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...v0.23.1
