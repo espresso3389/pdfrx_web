@@ -139,4 +139,34 @@ describe('PageRenderCache render requests', () => {
     await expect(first).resolves.toMatchObject({ status: 'cancelled' });
     vi.useRealTimers();
   });
+
+  it('rounds both patch endpoints outwards so fractional visible bounds become ready', async () => {
+    vi.useFakeTimers();
+    const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const page = {
+      width: 100,
+      height: 100,
+      renderKey: 'page-1',
+      createCancellationToken: () => ({ cancel: vi.fn() }),
+      render: vi.fn(async () => ({ toImageBitmap: async () => bitmap })),
+    };
+    const cache = new PageRenderCache({ pages: [page] } as unknown as PdfDocument, () => {});
+    const pageRect = { left: 0, top: 0, right: 100, bottom: 100 };
+    const fractionalVisibleRect = { left: 0.03, top: 0.02, right: 80.01, bottom: 60.01 };
+    const scale = 30;
+    setBase(cache, cache.baseScaleCap(1));
+
+    const request = cache.schedulePatch(1, fractionalVisibleRect, pageRect, scale);
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toEqual({ status: 'completed' });
+
+    expect(page.render).toHaveBeenCalledWith(expect.objectContaining({
+      x: 0,
+      y: 0,
+      width: 2401,
+      height: 1801,
+    }));
+    expect(cache.isReady(1, fractionalVisibleRect, scale)).toBe(true);
+    vi.useRealTimers();
+  });
 });

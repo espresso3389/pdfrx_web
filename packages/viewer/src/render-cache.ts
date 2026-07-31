@@ -420,8 +420,14 @@ export class PageRenderCache {
       const fullHeight = Math.ceil(page.height * pageScaleX * scale);
       const x = Math.floor((rect.left - pageRect.left) * scale);
       const y = Math.floor((rect.top - pageRect.top) * scale);
-      const width = Math.ceil(rectWidth(rect) * scale);
-      const height = Math.ceil(rectHeight(rect) * scale);
+      // Round both endpoints outwards. Rounding the length independently can
+      // leave the right or bottom edge short by a fractional pixel when the
+      // origin is also fractional, causing isReady() to reject an otherwise
+      // completed patch forever.
+      const right = Math.ceil((rect.right - pageRect.left) * scale);
+      const bottom = Math.ceil((rect.bottom - pageRect.top) * scale);
+      const width = right - x;
+      const height = bottom - y;
       const image = await page.render({
         x,
         y,

@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/colab",
-  "version": "0.24.2",
+  "version": "0.24.3",
   "description": "Collaborative React PDF viewer components and session protocol for pdfrx",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,10 +19,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pdfrx/engine": "^0.24.2",
-    "@pdfrx/react": "^0.24.2",
-    "@pdfrx/viewer": "^0.24.2",
-    "@pdfrx/viewer-core": "^0.24.2"
+    "@pdfrx/engine": "^0.24.3",
+    "@pdfrx/react": "^0.24.3",
+    "@pdfrx/viewer": "^0.24.3",
+    "@pdfrx/viewer-core": "^0.24.3"
   },
   "peerDependencies": {
     "react": ">=18",

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-08-01
+
+### Fixed
+
+- Rounded high-resolution patch endpoints outwards so fractional transform
+  coordinates always cover the requested visible region and
+  `setViewTransform()` completes for viewers larger than the browser viewport.
+
 ## [0.24.2] - 2026-08-01
 
 ### Changed
@@ -875,7 +883,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.2...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.3...HEAD
+[0.24.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.2...v0.24.3
 [0.24.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.1...v0.24.2
 [0.24.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...v0.24.0
