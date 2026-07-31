@@ -595,6 +595,43 @@ variables is usually enough:
 
 The dark palette follows `prefers-color-scheme` by default.
 
+### Transparent embedding
+
+React's all-in-one viewer has two independent background layers:
+
+1. [`backgroundColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#backgroundcolor)
+   paints the viewer canvas around PDF pages.
+2. `.pdfrx-app` paints the React app wrapper with `var(--pdfrx-bg)`.
+
+Setting only `backgroundColor="transparent"` therefore reveals the themed
+`.pdfrx-app` background. To see the embedding application behind the complete
+viewer, make both layers transparent:
+
+```tsx
+<PdfrxViewerApp
+  src="/manual.pdf"
+  wasmModulesUrl="/pdfium/"
+  backgroundColor="transparent"
+  style={{ height: '100dvh', background: 'transparent' }}
+/>
+```
+
+With a composed viewer, pass `backgroundColor` to
+[`PdfrxProvider`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxProvider.html)
+and ensure the application-owned layout behind
+[`PdfViewerSurface`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfViewerSurface.html)
+does not paint an opaque background:
+
+```tsx
+<PdfrxProvider
+  src="/manual.pdf"
+  wasmModulesUrl="/pdfium/"
+  backgroundColor="transparent"
+>
+  <PdfViewerSurface style={{ flex: 1, minHeight: 0 }} />
+</PdfrxProvider>
+```
+
 ## Notes
 
 - **Server rendering** is safe: nothing touches the DOM until
@@ -618,8 +655,9 @@ The dark palette follows `prefers-color-scheme` by default.
   `layoutDirection` and friends applies to the running viewer. `engine`,
   `engineOptions` and `initialFit` are read once at construction, so changing
   those requires remounting the provider. `backgroundColor` accepts CSS alpha
-  colors such as `rgba(...)` and `transparent`, allowing the React layout
-  behind the viewer canvas to remain visible around PDF pages.
+  colors such as `rgba(...)` and `transparent`; see
+  [Transparent embedding](#transparent-embedding) for the additional wrapper
+  background used by `PdfrxViewerApp`.
 
 ## The pdfrx_web family
 

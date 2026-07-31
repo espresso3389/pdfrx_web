@@ -60,6 +60,27 @@ Browser printing is supported on desktop platforms. On iOS/iPadOS the standard
 print button is omitted because WebKit cannot reliably isolate PDF pages from
 the surrounding viewer UI; use the save/download action instead.
 
+### Transparent embedding
+
+The canvas background and the all-in-one app background are separate layers.
+To reveal the embedding application's background through
+[`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html),
+make both transparent:
+
+```tsx
+<PdfrxViewerApp
+  src="/manual.pdf"
+  wasmModulesUrl="/pdfium/"
+  backgroundColor="transparent"
+  style={{ height: '100dvh', background: 'transparent' }}
+/>
+```
+
+`backgroundColor="transparent"` clears the viewer canvas around PDF pages.
+The inline `background` override removes the default `var(--pdfrx-bg)` fill on
+the `.pdfrx-app` wrapper; omitting it reveals that themed wrapper background,
+not the application behind it.
+
 ## Choose an integration level
 
 - [`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html):
