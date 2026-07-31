@@ -79,6 +79,80 @@ pages and then replace the preview with a snapshot of the complete viewer UI.
 Rather than open a misleading preview, `print()` throws on those platforms.
 Applications should offer PDF download/save instead.
 
+## Waiting for the initial view to render
+
+[`openUrl()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#openurl)
+and
+[`openData()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#opendata)
+resolve after the PDF has opened and the viewer has created its layout. Page
+bitmaps are rendered separately and may still be placeholders at that point.
+If subsequent work depends on the final canvas pixels—for example, revealing
+the viewer, removing an application loading state, or taking a screenshot—set
+the initial view first and then wait for its full-quality render.
+
+### Open at an initial page
+
+Navigation methods start the view change but return `void`. Call
+[`waitForRender()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#waitforrender)
+immediately after them:
+
+```ts
+await viewer.openUrl('/documents/manual.pdf');
+
+// Use 0 to jump directly. With a non-zero duration, waitForRender() also waits
+// for the navigation animation to finish before it waits for sharp pixels.
+viewer.goToPage(12, 0);
+await viewer.waitForRender();
+
+// Safe to reveal or capture the viewer here.
+```
+
+The same pattern applies to `goToDest()`, `fitToPage()`, `fitToWidth()`,
+`fitToHeight()`, and `setZoom()`:
+
+```ts
+viewer.goToPage(12, 250);
+await viewer.waitForRender(); // animation and final high-resolution paint
+```
+
+### Restore an exact saved pan and zoom
+
+When both position and zoom are already known, use
+[`setViewTransform(transform)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setviewtransform).
+It applies both values together and already includes the same render wait:
+
+```ts
+await viewer.openUrl('/documents/manual.pdf');
+await viewer.setViewTransform({
+  zoom: 2,
+  xZoomed: -320,
+  yZoomed: -640,
+});
+
+// The restored viewport is now painted at full quality.
+```
+
+Do not add a second `waitForRender()` after `setViewTransform()`; awaiting
+`setViewTransform()` is sufficient.
+
+### What completion means
+
+The promise completes only after every visible page has reached the viewer's
+full-quality target and a canvas frame containing those bitmaps has been
+painted. At ordinary zoom this means the required whole-page bitmap. Above the
+whole-page pixel cap it also means that an exact-scale patch covers each visible
+page region.
+
+If the viewport changes while a render wait is pending, the promise follows the
+newest viewport. For example, if page 12 is requested and the user moves to page
+13 before page 12 finishes, the promise completes after page 13 is fully
+painted. Multiple pending waits complete together for that latest view; they do
+not report individual navigation cancellation.
+
+[`addTransformChangeListener()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addtransformchangelistener)
+serves a different purpose: it observes frame-by-frame pan and zoom changes and
+does not indicate that asynchronous page rendering has finished.
+
 ## API highlights
 
 Each symbol links directly to its entry in the
@@ -89,6 +163,8 @@ Each symbol links directly to its entry in the
 - [`setZoomMode(mode)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setzoommode-1) switches the persistent [`ZoomMode`](https://espresso3389.github.io/pdfrx_web/types/_pdfrx_viewer.ZoomMode.html) between an explicit factor, page fit, and width fit; read it through [`zoomMode`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoommodezoommode). [`fitToPage(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittopage) / [`fitToWidth(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittowidth) select responsive fit modes, while [`fitToHeight(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fittoheight) and [`setZoom(z, viewCenter?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setzoom) select an explicit [`zoom`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoom).
 - [`options.layoutDirection`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#layoutdirection) (`'vertical'` / `'horizontal'`) with runtime [`setLayoutDirection(dir)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setlayoutdirection), or a fully custom [`options.layoutPages`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#layoutpages) hook for facing/grid arrangements (build on the exported [`layoutPagesVertical`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_viewer.layoutPagesVertical.html) / [`layoutPagesHorizontal`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_viewer.layoutPagesHorizontal.html))
 - Navigation and zoom animate: pass a `duration` (ms) to `goToPage` / `goToDest` / `fitTo*` / `setZoom`, or set a default with [`options.animationDuration`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#animationduration). [`zoomUp()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomup) / [`zoomDown()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomdown) snap to zoom stops, and [`zoomToggle(point?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#zoomtoggle) — plus touch double-tap ([`doubleTapToZoom`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#doubletaptozoom)) — toggle between fit and a zoomed-in level
+
+- [`setViewTransform(transform)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setviewtransform) restores pan and zoom together and resolves after a full-quality paint; [`waitForRender()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#waitforrender) provides that completion barrier after `goToPage()` and the other navigation/zoom APIs. See [Waiting for the initial view to render](#waiting-for-the-initial-view-to-render) for complete load-and-initialize examples and completion semantics.
 - [`coverScale`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#coverscale) / [`fitPageScale(n?)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#fitpagescale) — the two fit scales; the minimum zoom is their smaller value (or set [`minZoom`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#minzoom)). See [`initialFit`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#initialfit) for the on-load fit mode
 - [`createTextSearcher()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#createtextsearcher) — progressive search with match highlighting; recolor the highlights with [`options.matchTextColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#matchtextcolor) / [`activeMatchTextColor`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html#activematchtextcolor)
 - [`selectedText`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectedtext) / [`selectAll()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectall) / [`copySelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#copyselection) / [`clearSelection()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#clearselection) — get notified of selection changes with [`addSelectionChangeListener(fn)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#addselectionchangelistener) (or pull the current [`selection`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selection)). The change payload carries only the cheap selection **state** (endpoints via [`range`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#range)); resolve text and per-page rectangles on demand with [`getSelectedTextRanges()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#getselectedtextranges) / [`getSelectedText()`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfTextSelection.html#getselectedtext). Set or restore a range programmatically with [`setTextSelection(range)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#settextselection) (round-trips the `range` above) and [`selectWordAtPoint(viewPoint)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#selectwordatpoint)

@@ -91,6 +91,27 @@ export class PageRenderCache {
     return this.patches.get(pageNumber);
   }
 
+  /**
+   * @internal Whether the page bitmap currently drawn for this viewport has
+   * reached the cache's full-quality target.
+   */
+  isReady(pageNumber: number, visibleDocRect: Rect, requiredScale: number): boolean {
+    const base = this.getBase(pageNumber);
+    const baseTarget = Math.min(requiredScale, this.baseScaleCap(pageNumber));
+    if (!base || base.scale < baseTarget / SCALE_TOLERANCE) return false;
+
+    // Above the whole-page pixel cap, the visible area needs an exact-scale
+    // patch. The base remains useful as an immediate placeholder underneath.
+    if (requiredScale <= this.baseScaleCap(pageNumber) * 1.1) return true;
+    const patch = this.getPatch(pageNumber);
+    return patch !== undefined &&
+      patch.scale === requiredScale &&
+      patch.rect.left <= visibleDocRect.left &&
+      patch.rect.top <= visibleDocRect.top &&
+      patch.rect.right >= visibleDocRect.right &&
+      patch.rect.bottom >= visibleDocRect.bottom;
+  }
+
   /** @internal Cap the scale so the whole page stays within the pixel budget. */
   baseScaleCap(pageNumber: number): number {
     const page = this.doc.pages[pageNumber - 1]!;

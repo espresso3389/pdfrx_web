@@ -2269,6 +2269,8 @@ export class PdfrxViewer {
   private readonly selectionChangeListeners = new Set<SelectionChangeListener>();
   private readonly pageChangeListeners = new Set<PageChangeListener>();
   private readonly transformChangeListeners = new Set<() => void>();
+  /** Promises waiting for the latest viewport to be painted at full quality. */
+  private readonly renderWaiters = new Set<() => void>();
   private readonly annotationToolChangeListeners = new Set<(tool: AnnotationTool | null) => void>();
   private readonly annotationSelectionChangeListeners = new Set<() => void>();
   private annotationLinkRequestHandler: AnnotationLinkRequestHandler | null = null;
@@ -2635,6 +2637,58 @@ export class PdfrxViewer {
    */
   get currentTransform(): ViewTransform {
     return this.transform;
+  }
+
+  /**
+   * Applies a zoom and pan together, then waits until every visible page has
+   * been rendered at the viewer's full-quality target and that result has been
+   * painted to the canvas.
+   *
+   * The transform is boundary-clamped in the same way as interactive panning
+   * and zooming. If the viewport changes again while the promise is pending,
+   * it follows the latest viewport rather than resolving for an obsolete
+   * frame. This makes the method suitable for restoring a saved view before a
+   * screenshot or another operation that depends on sharp pixels.
+   *
+   * @example Restore a saved view after opening the PDF:
+   * ```ts
+   * await viewer.openUrl('/manual.pdf');
+   * await viewer.setViewTransform(savedTransform);
+   * // The saved viewport is now painted at full quality.
+   * ```
+   *
+   * @param transform - Uniform zoom and zoomed document offset to apply.
+   * @returns A promise resolved after the full-quality frame is painted.
+   */
+  setViewTransform(transform: ViewTransform): Promise<void> {
+    this.zoomModeValue = transform.zoom;
+    this.setTransform(transform);
+    return this.waitForRender();
+  }
+
+  /**
+   * Waits until the latest viewport is rendered at full quality and painted.
+   * Unlike {@link addTransformChangeListener}, this includes asynchronous page
+   * bitmap rendering. If the viewport changes while waiting, the promise waits
+   * for the new viewport. Resolves immediately when the viewer has been
+   * disposed or has no document/layout to render.
+   *
+   * @example Open a PDF at a particular page and wait for its final pixels:
+   * ```ts
+   * await viewer.openUrl('/manual.pdf');
+   * viewer.goToPage(12, 0);
+   * await viewer.waitForRender();
+   * // Page 12's visible regions are now painted at full quality.
+   * ```
+   *
+   * @returns A promise resolved after the full-quality frame is painted.
+   */
+  waitForRender(): Promise<void> {
+    if (this.disposed || !this.layout || !this.doc || !this.cache) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.renderWaiters.add(resolve);
+      this.invalidate();
+    });
   }
 
   /** The current page-layout direction. See {@link setLayoutDirection}. */
@@ -3708,6 +3762,7 @@ export class PdfrxViewer {
     this.areaSelectionCancel?.();
     if (this.disposed) return;
     this.disposed = true;
+    this.resolveRenderWaiters();
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     if (this.paintTimer !== null) clearTimeout(this.paintTimer);
     if (this.longPressTimer) clearTimeout(this.longPressTimer);
@@ -5951,6 +6006,29 @@ export class PdfrxViewer {
     this.updateOverlays();
     this.updateFormOverlays();
     this.updateAnnotationOverlays();
+
+    if (this.renderWaiters.size > 0) {
+      // A navigation tween can pass through an already-cached viewport. Do not
+      // report that transient frame as the requested navigation's completion.
+      let ready = this.anim === null;
+      for (let i = 0; i < this.layout.pageLayouts.length; i++) {
+        const pageRect = this.layout.pageLayouts[i]!;
+        if (!rectOverlaps(pageRect, visible)) continue;
+        const visibleOnPage = rectIntersect(pageRect, visible);
+        if (!this.cache.isReady(i + 1, visibleOnPage, requiredScale)) {
+          ready = false;
+          break;
+        }
+      }
+      if (ready) this.resolveRenderWaiters();
+    }
+  }
+
+  /** Resolves and clears all full-quality render waiters. */
+  private resolveRenderWaiters(): void {
+    const waiters = [...this.renderWaiters];
+    this.renderWaiters.clear();
+    for (const resolve of waiters) resolve();
   }
 
   // -------------------------------------------------------------------------

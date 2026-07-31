@@ -29,6 +29,8 @@ selection, links, search, forms, annotations, and page editing.
   without replacing canvas rendering.
 - The viewer background accepts CSS alpha colors, including `transparent`, so
   an embedding application's surface can remain visible around PDF pages.
+- Pan and zoom can be restored together, with a Promise that completes only
+  after all visible page regions have been painted at full quality.
 
 ## Install
 
@@ -49,6 +51,23 @@ const viewer = new PdfrxViewer(document.querySelector('#viewer')!, {
 
 await viewer.openUrl('/manual.pdf');
 ```
+
+Opening parses and lays out the PDF, but page bitmaps continue rendering
+asynchronously. To open at an initial page and wait until its visible regions
+are sharp and painted:
+
+```ts
+await viewer.openUrl('/manual.pdf');
+viewer.goToPage(12, 0);
+await viewer.waitForRender();
+```
+
+Use
+[`setViewTransform(transform)`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#setviewtransform)
+instead when restoring an exact saved pan and zoom; it applies the transform
+and includes the full-quality render wait. See
+[`waitForRender()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_viewer.PdfrxViewer.html#waitforrender)
+and the [viewer guide's complete initialization scenarios](https://github.com/espresso3389/pdfrx_web/blob/master/docs/VIEWER-GUIDE.md#waiting-for-the-initial-view-to-render).
 
 ```css
 #viewer {
