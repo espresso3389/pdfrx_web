@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-07-31
+
+### Fixed
+
+- Allowed CSS alpha colors, including `transparent`, to reveal the embedding
+  application's background around PDF pages, including after live option
+  changes.
+
 ## [0.23.1] - 2026-07-29
 
 ### Changed
@@ -822,7 +830,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...HEAD
+[0.23.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.3...v0.23.0
 [0.22.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.2...v0.22.3
