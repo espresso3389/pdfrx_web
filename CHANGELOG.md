@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-01
+
+### Added
+
+- Added `setViewTransform()` and `waitForRender()` to restore an initial view
+  and wait until every visible page region has been painted at full quality,
+  including high-resolution patches and navigation animation completion.
+
+### Changed
+
+- Documented complete PDF load, initial-page or saved-transform restoration,
+  and full-quality render-wait workflows.
+- Documented how to make both the viewer canvas and the all-in-one React app
+  transparent so an embedding application's background remains visible.
+
 ## [0.23.2] - 2026-07-31
 
 ### Fixed
@@ -830,7 +845,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.22.3...v0.23.0

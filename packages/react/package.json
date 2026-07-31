@@ -1,6 +1,6 @@
 {
   "name": "@pdfrx/react",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "description": "React components and hooks for the pdfrx canvas-based PDF viewer",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,7 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pdfrx/viewer": "^0.23.2",
+    "@pdfrx/viewer": "^0.24.0",
     "svgpath": "^2.6.0"
   },
   "peerDependencies": {
