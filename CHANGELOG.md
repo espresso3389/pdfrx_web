@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-02
+
+### Changed
+
+- Restored required npm package links in the root package-selection table and
+  every package README, and added consistent `@pdfrx/engine`, `@pdfrx/viewer`,
+  and `@pdfrx/react` navigation under each package's Next steps.
+- Documented the npm-link and cross-package-navigation requirements so future
+  README reorganizations preserve these discovery paths.
+
 ## [0.25.0] - 2026-08-02
 
 ### Added
@@ -897,7 +907,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.3...v0.25.0
 [0.24.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.2...v0.24.3
 [0.24.2]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.1...v0.24.2
