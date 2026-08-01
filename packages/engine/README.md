@@ -39,7 +39,7 @@ npm install @pdfrx/engine
 import { PdfrxEngine } from '@pdfrx/engine';
 
 const engine = new PdfrxEngine({
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.24.3/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.25.0/assets/',
 });
 const document = await engine.openUrl('/manual.pdf');
 const page = document.pages[0];
@@ -63,10 +63,10 @@ above. Non-browser runtimes discover the installed assets automatically.
 
 ## API overview
 
-### Open or create a document
+### Open a document
 
 [`PdfrxEngine`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
-owns the worker and creates
+owns the worker and opens
 [`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html)
 instances:
 
@@ -76,6 +76,15 @@ instances:
 - [`openData()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#opendata)
   opens bytes supplied as an `ArrayBuffer`, typed array, or compatible binary
   source.
+
+### Create a document
+
+The same
+[`PdfrxEngine`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
+creates new
+[`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html)
+instances from an empty document, images, or declarative page contents:
+
 - [`createNew()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createnew)
   creates an empty document.
 - [`createFromImages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfromimages)
