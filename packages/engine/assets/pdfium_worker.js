@@ -2648,8 +2648,9 @@ async function clearAllFontData() {
 function assemble(params) {
   const { docHandle, pageIndices, importedPages, rotations } = params;
 
-  // If no page indices specified, no modifications needed
-  if (!pageIndices || pageIndices.length === 0) {
+  // An omitted arrangement means no work. An explicitly empty arrangement
+  // removes every physical page (including unplaced generated source pages).
+  if (!pageIndices) {
     return { modified: false };
   }
 
@@ -3047,37 +3048,23 @@ function createDocumentFromImages(params) {
   return _loadDocument(docHandle, false, () => {});
 }
 
-/** Creates a document from declarative PDF page-content objects. */
-function createDocumentFromPageContents(params) {
-  const pages = params && params.pages;
-  if (!Array.isArray(pages) || pages.length === 0) {
-    return { errorCode: -1, errorCodeStr: 'No page contents provided' };
-  }
-  const docHandle = Pdfium.wasmExports.FPDF_CreateNewDocument();
-  if (!docHandle) return { errorCode: -1, errorCodeStr: 'Failed to create PDF document' };
-  try {
-    _insertPageContents(docHandle, 0, pages);
-  } catch (e) {
-    _closeFreeTextFonts(docHandle);
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: e && e.message ? e.message : 'Failed to create page contents' };
-  }
-  return _loadDocument(docHandle, false, () => {});
-}
-
-/** Inserts declarative content pages into an existing document. */
-async function insertPageContents(params) {
+/** Creates declarative content pages at the physical end of a live document. */
+async function createPagesFromContents(params) {
   const pages = params && params.pages;
   if (!Array.isArray(pages) || pages.length === 0) throw new Error('No page contents provided');
   const pageCount = Pdfium.wasmExports.FPDF_GetPageCount(params.docHandle);
-  if (!Number.isInteger(params.pageIndex) || params.pageIndex < 0 || params.pageIndex > pageCount) {
-    throw new RangeError(`pageIndex ${params.pageIndex} out of range (0..${pageCount})`);
+  try {
+    _createPagesFromContents(params.docHandle, pageCount, pages);
+  } catch (error) {
+    const createdCount = Pdfium.wasmExports.FPDF_GetPageCount(params.docHandle) - pageCount;
+    if (createdCount > 0) _removePages(params.docHandle, pageCount, createdCount);
+    throw error;
   }
-  _insertPageContents(params.docHandle, params.pageIndex, pages);
-  return { pages: await _loadPagesInLimitedTimeAsync(params.docHandle, 0, null, null) };
+  const loaded = await _loadPagesInLimitedTimeAsync(params.docHandle, 0, null, null);
+  return { pages: loaded.slice(pageCount), pageCount: pageCount + pages.length };
 }
 
-function _insertPageContents(docHandle, pageIndex, pages) {
+function _createPagesFromContents(docHandle, pageIndex, pages) {
   for (let i = 0; i < pages.length; i++) {
     const spec = pages[i];
     if (!spec || !Number.isFinite(spec.width) || spec.width <= 0 || !Number.isFinite(spec.height) || spec.height <= 0) {
@@ -5083,8 +5070,7 @@ const functions = {
   cancelDocumentFromData,
   createNewDocument,
   createDocumentFromImages,
-  createDocumentFromPageContents,
-  insertPageContents,
+  createPagesFromContents,
   loadPagesProgressively,
   reloadPages,
   closeDocument,

@@ -491,15 +491,10 @@ export interface WorkerCommandMap {
     };
     result: WorkerDocument | WorkerError;
   };
-  /** Creates all pages and their path, text, and image objects in one worker round trip. */
-  createDocumentFromPageContents: {
-    params: { pages: WorkerPageContentSpec[] };
-    result: WorkerDocument | WorkerError;
-  };
-  /** Inserts pages and all of their objects into a live document in one round trip. */
-  insertPageContents: {
-    params: { docHandle: number; pageIndex: number; pages: WorkerPageContentSpec[] };
-    result: { pages: WorkerPageInfo[] };
+  /** Creates unplaced pages and all their objects in a live document in one round trip. */
+  createPagesFromContents: {
+    params: { docHandle: number; pages: WorkerPageContentSpec[] };
+    result: { pages: WorkerPageInfo[]; pageCount: number };
   };
   /** Loads the next chunk of pages during progressive loading, budgeted by `loadUnitDuration`. */
   loadPagesProgressively: {

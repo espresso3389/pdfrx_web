@@ -1,9 +1,8 @@
 # PDF page-content authoring
 
-`@pdfrx/engine` can create or insert complete pages made of text, raster
-images, and vector paths. Each operation sends every supplied page and object
-to the PDFium worker in one message; individual PDFium page-object handles are
-not exposed.
+`@pdfrx/engine` can create complete pages made of text, raster images, and
+vector paths. Each call sends every supplied page and object to the PDFium
+worker in one message; individual PDFium page-object handles are not exposed.
 
 ## Coordinates and paint order
 
@@ -42,16 +41,25 @@ const page: PdfPageContentSpec = {
 };
 
 const engine = new PdfrxEngine();
-const document = await engine.createFromPageContents([page]);
-
-// Zero-based insertion; document.pages.length appends.
-await engine.insertPageContents(document, 0, [page]);
+const document = await engine.createNew();
+const pages = await document.createPagesFromContents([page]);
+document.setPages(pages);
 const bytes = await document.encodePdf();
 ```
 
-`createFromPageContents()` returns a normal live `PdfDocument`; it can be
-rendered, inspected, rearranged, annotated, and encoded like an opened PDF.
-Always dispose it when finished.
+`createPagesFromContents()` returns new `PdfPage` objects without changing the
+document's logical `pages` arrangement. Use `setPages()` to place them. This
+separates the worker operation that constructs page content from the cheap,
+synchronous operation that inserts, reorders, duplicates, or discards pages:
+
+```ts
+const generated = await document.createPagesFromContents([cover, appendix]);
+document.setPages([generated[0]!, ...document.pages, generated[1]!]);
+```
+
+The document remains a normal live `PdfDocument` and can be rendered,
+inspected, annotated, and encoded like an opened PDF. Always dispose it when
+finished.
 
 ## Vector paths
 
@@ -262,10 +270,10 @@ const page: PdfPageContentSpec = {
   objects: [{ kind: 'text', runs, emojiRuns }],
 };
 
-const document = await engine.createFromPageContents([page], {
-  sourceName: 'multilingual-example',
-});
+const document = await engine.createNew({ sourceName: 'multilingual-example' });
 try {
+  const pages = await document.createPagesFromContents([page]);
+  document.setPages(pages);
   const pdfBytes = await document.encodePdf();
   // Browser example; use fs.writeFile() on Node.js.
   const downloadUrl = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
@@ -334,10 +342,21 @@ provide a reliable page-object API for applying uniform opacity to an inline
 JPEG, so JPEG content currently accepts only opacity `1`; decode it to pixels
 when another opacity is required.
 
-## Inserting into an edited document
+## Adding pages to an edited document
 
-`insertPageContents()` accepts a zero-based index from `0` through
-`document.pages.length`. It materializes pending page arrangements, outlines,
-and link edits before inserting, then refreshes the document's page objects and
-emits its normal page-change events. The insertion itself remains one worker
-round trip.
+`createPagesFromContents()` returns its pages in specification order without
+changing `document.pages`. Multiple calls can construct batches before one
+final arrangement update. Insert the returned pages wherever needed:
+
+```ts
+const generated = await document.createPagesFromContents([cover, appendix]);
+document.setPages([
+  generated[0]!,
+  ...document.pages,
+  generated[1]!,
+]);
+```
+
+Creating all supplied page objects remains one worker round trip. Calling
+`setPages()` sends no worker message; `encodePdf()` later materializes the final
+arrangement.

@@ -40,7 +40,7 @@ npm install @pdfrx/engine
 import { PdfrxEngine } from '@pdfrx/engine';
 
 const engine = new PdfrxEngine({
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.25.1/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.26.0/assets/',
 });
 const document = await engine.openUrl('/manual.pdf');
 const page = document.pages[0];
@@ -90,13 +90,12 @@ instances from an empty document, images, or declarative page contents:
   creates an empty document.
 - [`createFromImages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfromimages)
   creates one PDF page per supplied image.
-- [`createFromPageContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfrompagecontents)
-  creates complete pages from declarative
+- [`createPagesFromContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createpagesfromcontents)
+  creates complete, unplaced pages on a document from declarative
   [`PdfPageContentSpec`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfPageContentSpec.html)
-  values containing text, image, and vector-path objects;
-  [`insertPageContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#insertpagecontents)
-  inserts one or more of those pages at a zero-based position. See the
-  page-content guide below.
+  values containing text, image, and vector-path objects. Arrange the returned
+  pages with [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages).
+  See the page-content guide below.
 
 ### Render and inspect pages
 

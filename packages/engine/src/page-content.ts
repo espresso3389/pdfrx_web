@@ -157,12 +157,6 @@ export interface PdfPageContentSpec {
   objects: PdfPageContentObject[];
 }
 
-/** Options for {@link PdfrxEngine.createFromPageContents}. */
-export interface PdfCreateFromPageContentsOptions {
-  /** Identifier used in errors and caches. Default `'page-contents'`. */
-  sourceName?: string;
-}
-
 const finite = (value: number): boolean => Number.isFinite(value);
 const validMatrix = (matrix: PdfMatrix | undefined): boolean =>
   matrix === undefined || matrix.every(finite);
@@ -176,7 +170,7 @@ export function preparePageContents(pages: readonly PdfPageContentSpec[]): {
   pages: WorkerPageContentSpec[];
   transfer: Transferable[];
 } {
-  if (pages.length === 0) throw new Error('createFromPageContents requires at least one page');
+  if (pages.length === 0) throw new Error('createPagesFromContents requires at least one page');
   const buffers = new Set<ArrayBuffer>();
   pages.forEach((page, pageIndex) => {
     if (!finite(page.width) || page.width <= 0 || !finite(page.height) || page.height <= 0) {

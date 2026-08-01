@@ -51,7 +51,6 @@ export {
 export { PdfPageRenderCancellationToken } from './render-queue.js';
 export type {
   PdfColor,
-  PdfCreateFromPageContentsOptions,
   PdfEmojiRun,
   PdfImageContent,
   PdfMatrix,

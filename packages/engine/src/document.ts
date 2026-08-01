@@ -8,7 +8,6 @@ import {
 import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
   preparePageContents,
-  type PdfCreateFromPageContentsOptions,
   type PdfPageContentSpec,
 } from './page-content.js';
 import {
@@ -777,116 +776,6 @@ export class PdfrxEngine {
   }
 
   /**
-   * Creates a PDF from declarative page-content objects in one worker round trip.
-   *
-   * Coordinates and matrices use PDF page space: points, a bottom-left origin,
-   * and a y-axis pointing up. Fonts previously registered with {@link addFontData}
-   * are embedded when a text run names their face.
-   *
-   * Image and emoji buffers are transferred to the worker rather than copied,
-   * so their `ArrayBuffer`s are detached once the request is posted. Objects
-   * within each page are painted in array order.
-   *
-   * @example Create a page with a heading, vector rule, and JPEG logo
-   * ```ts
-   * const logo = await (await fetch('/logo.jpg')).arrayBuffer();
-   * const document = await engine.createFromPageContents([{
-   *   width: 595,
-   *   height: 842,
-   *   objects: [
-   *     {
-   *       kind: 'text',
-   *       runs: [{
-   *         text: 'Quarterly report',
-   *         fontFace: null,
-   *         x: 48,
-   *         y: 790,
-   *         fontSize: 24,
-   *       }],
-   *     },
-   *     {
-   *       kind: 'path',
-   *       segments: [
-   *         { op: 'moveTo', x: 48, y: 775 },
-   *         { op: 'lineTo', x: 547, y: 775 },
-   *       ],
-   *       stroke: { r: 40, g: 90, b: 160, a: 255 },
-   *       strokeWidth: 2,
-   *     },
-   *     {
-   *       kind: 'image',
-   *       source: { kind: 'jpeg', data: logo },
-   *       transform: [80, 0, 0, 40, 467, 48],
-   *     },
-   *   ],
-   * }]);
-   * const pdfBytes = await document.encodePdf();
-   * ```
-   *
-   * @param pages - One or more complete pages. An empty array is rejected.
-   * @param options - Source naming options for the returned document.
-   * @returns The newly created live document.
-   * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
-   */
-  async createFromPageContents(
-    pages: readonly PdfPageContentSpec[],
-    options: PdfCreateFromPageContentsOptions = {},
-  ): Promise<PdfDocument> {
-    await this.init();
-    const prepared = preparePageContents(pages);
-    const result = await this.comm.sendCommand(
-      'createDocumentFromPageContents',
-      { pages: prepared.pages },
-      prepared.transfer,
-    );
-    if (isWorkerError(result)) {
-      throw new Error(`Failed to create document from page contents: ${result.errorCodeStr} (${result.errorCode})`);
-    }
-    return new PdfDocument(this.comm, result, options.sourceName ?? 'page-contents', null);
-  }
-
-  /**
-   * Inserts declarative content pages into an existing document in one worker
-   * round trip. `pageIndex` is zero-based and may equal `document.pages.length`
-   * to append. Pending edits are materialized before insertion.
-   *
-   * The supplied document is updated in place and is also returned for fluent
-   * use. Existing `PdfPage` instances should be reacquired from
-   * `document.pages` after insertion because physical page indices may shift.
-   *
-   * @example Insert a generated cover, or append generated pages
-   * ```ts
-   * const cover = {
-   *   width: 595,
-   *   height: 842,
-   *   objects: [{
-   *     kind: 'text' as const,
-   *     runs: [{ text: 'Confidential', fontFace: null, x: 48, y: 760, fontSize: 30 }],
-   *   }],
-   * };
-   *
-   * await engine.insertPageContents(document, 0, [cover]);
-   * await engine.insertPageContents(document, document.pages.length, [cover]);
-   * ```
-   *
-   * @param document - Live document to modify.
-   * @param pageIndex - Zero-based insertion position, from `0` through `document.pages.length`.
-   * @param pages - One or more complete pages to insert in their supplied order.
-   * @returns The same `document` instance after its page list has been refreshed.
-   * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
-   */
-  async insertPageContents(
-    document: PdfDocument,
-    pageIndex: number,
-    pages: readonly PdfPageContentSpec[],
-  ): Promise<PdfDocument> {
-    await this.init();
-    const prepared = preparePageContents(pages);
-    await document.insertPreparedPageContents(pageIndex, prepared.pages, prepared.transfer);
-    return document;
-  }
-
-  /**
    * Registers font data used to substitute missing fonts, then re-render affected pages.
    *
    * @param face - The face value (string).
@@ -1245,38 +1134,52 @@ export class PdfDocument {
     return this._pages;
   }
 
-  /** @internal Used by {@link PdfrxEngine.insertPageContents}. */
-  async insertPreparedPageContents(
-    pageIndex: number,
-    pages: import('./protocol.js').WorkerPageContentSpec[],
-    transfer: Transferable[],
-  ): Promise<void> {
+  /**
+   * Creates page objects from declarative path, text, and image content in one
+   * worker round trip. The returned pages are not added to the document's
+   * logical {@link pages} arrangement; pass the desired final array to
+   * {@link setPages}.
+   *
+   * Coordinates and matrices use PDF page space: points, a bottom-left origin,
+   * and a y-axis pointing up. Fonts previously registered with
+   * {@link PdfrxEngine.addFontData} are embedded when a text run names their
+   * face. Image and emoji buffers are transferred to the worker and detached.
+   *
+   * @example Create and arrange a new document
+   * ```ts
+   * const document = await engine.createNew();
+   * const pages = await document.createPagesFromContents([{
+   *   width: 595,
+   *   height: 842,
+   *   objects: [{
+   *     kind: 'text',
+   *     runs: [{ text: 'Quarterly report', fontFace: null, x: 48, y: 790, fontSize: 24 }],
+   *   }],
+   * }]);
+   * document.setPages(pages);
+   * const pdfBytes = await document.encodePdf();
+   * ```
+   *
+   * Existing arranged pages remain unchanged until {@link setPages} is called,
+   * so generated pages can be inserted, reordered, or discarded synchronously.
+   * Multiple calls may accumulate source pages before one final arrangement.
+   *
+   * @param contents - One or more complete page specifications.
+   * @returns Newly created, currently unplaced pages in specification order.
+   * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
+   */
+  async createPagesFromContents(contents: readonly PdfPageContentSpec[]): Promise<PdfPage[]> {
     if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
-    await this.materialize();
-    if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > this._pages.length) {
-      throw new RangeError(`pageIndex ${pageIndex} out of range (0..${this._pages.length})`);
-    }
-    const before = this.describePageArrangement(this._pages);
-    const identities: Array<PdfPageId | undefined> = this._pages.map((page) => page.id);
-    identities.splice(pageIndex, 0, ...pages.map(() => undefined));
-    const result = await this.sendCommand('insertPageContents', {
+    const prepared = preparePageContents(contents);
+    const result = await this.sendCommand('createPagesFromContents', {
       docHandle: this.docHandle,
-      pageIndex,
-      pages,
-    }, transfer);
-    this._pages = result.pages.map((page, index) => {
-      const identity = identities[index];
-      return identity === undefined ? new PdfPage(this, page) : new PdfPage(this, page, identity);
-    });
-    this.nativePageCount = this._pages.length;
-    const pageNumbers = this._pages.map((page) => page.pageNumber);
-    this.emit('pageStatusChanged', { pageNumbers });
-    this.emit('pagesRearranged', {
-      origin: 'api',
-      before,
-      after: this.describePageArrangement(this._pages),
-      pageNumbers,
-    });
+      pages: prepared.pages,
+    }, prepared.transfer);
+    this.nativePageCount = result.pageCount;
+    // The physical PDF now contains source pages that are deliberately absent
+    // from the logical arrangement until setPages() places them.
+    this.arrangementDirty = true;
+    return result.pages.map((page) => new PdfPage(this, page));
   }
 
   /** Whether page, outline, or link edits are waiting to be {@link materialize | materialized}. */

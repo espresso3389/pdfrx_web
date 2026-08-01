@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-02
+
+### Changed
+
+- Replaced the page-content authoring entry points with
+  `PdfDocument.createPagesFromContents()`, which creates one or more unplaced
+  source pages in a single worker round trip and leaves their final insertion,
+  ordering, or omission to the synchronous `PdfDocument.setPages()` API.
+- Removed `PdfrxEngine.createFromPageContents()` and
+  `PdfrxEngine.insertPageContents()` and updated the page-content guide,
+  multilingual Unicode example, README, worker protocol, and tests for the new
+  document-centric workflow.
+
 ## [0.25.1] - 2026-08-02
 
 ### Changed
@@ -908,6 +921,7 @@ viewer for the browser, ported from the pdfrx viewer stack.
   and an MIT license.
 
 [Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...HEAD
+[0.26.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.3...v0.25.0
 [0.24.3]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.2...v0.24.3
