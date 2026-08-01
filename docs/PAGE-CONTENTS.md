@@ -49,6 +49,35 @@ await engine.insertPageContents(document, 0, [page]);
 const bytes = await document.encodePdf();
 ```
 
+`createFromPageContents()` returns a normal live `PdfDocument`; it can be
+rendered, inspected, rearranged, annotated, and encoded like an opened PDF.
+Always dispose it when finished.
+
+## Vector paths
+
+Paths use `moveTo`, `lineTo`, cubic Bézier, and close commands. Fill and stroke
+are independent, and later objects paint over earlier objects:
+
+```ts
+const badge = {
+  kind: 'path' as const,
+  segments: [
+    { op: 'moveTo' as const, x: 40, y: 40 },
+    { op: 'cubicTo' as const, x1: 40, y1: 70, x2: 100, y2: 70, x: 100, y: 40 },
+    { op: 'lineTo' as const, x: 100, y: 20 },
+    { op: 'lineTo' as const, x: 40, y: 20 },
+    { op: 'close' as const },
+  ],
+  fill: { r: 230, g: 240, b: 255, a: 255 },
+  stroke: { r: 30, g: 90, b: 180, a: 255 },
+  strokeWidth: 1.5,
+  fillRule: 'nonzero' as const,
+};
+```
+
+`transform` is the PDF affine matrix `[a, b, c, d, e, f]`, where
+`x' = a*x + c*y + e` and `y' = b*x + d*y + f`.
+
 ## Fonts and emoji
 
 A text run with `fontFace: null` uses the standard Helvetica fallback. To
@@ -56,9 +85,220 @@ embed an application font, call `engine.addFontData(face, bytes)` first and use
 the same `face` in the run. This reuses the font cache and embedding path used
 by authored FreeText appearances.
 
+```ts
+const fontBytes = new Uint8Array(await (await fetch('/fonts/Inter-Regular.ttf')).arrayBuffer());
+await engine.addFontData('Inter', fontBytes);
+
+const text = {
+  kind: 'text' as const,
+  runs: [
+    {
+      text: 'Embedded Inter',
+      fontFace: 'Inter',
+      x: 48,
+      y: 720, // text baseline
+      fontSize: 18,
+      fill: { r: 20, g: 20, b: 20, a: 255 },
+    },
+    {
+      text: 'outlined',
+      fontFace: 'Inter',
+      x: 48,
+      y: 690,
+      fontSize: 18,
+      fill: null,
+      stroke: { r: 180, g: 40, b: 40, a: 255 },
+      strokeWidth: 0.6,
+    },
+  ],
+};
+```
+
 PDF fonts do not reliably represent modern color emoji. Put rasterized RGBA
 glyphs in `emojiRuns`; their `x`, `y`, `width`, and `height` are page-space
 values. The pixel buffer is transferred to the worker.
+
+### Practical multilingual Unicode pipeline
+
+The engine's existing `prepareFreeTextAppearance()` utility already performs
+grapheme segmentation, script grouping, CJK language disambiguation, line
+wrapping, font resolution, and emoji rasterization. Although its intermediate
+shape is also used by FreeText annotations, the resulting runs can be adapted
+directly to page content; the final PDF objects are ordinary page text and
+images, not annotations.
+
+The following complete example:
+
+1. loads and registers application-owned Noto fonts once;
+2. analyzes one Unicode string containing Japanese, Chinese, Korean, Greek,
+   Cyrillic, Thai, Latin, and emoji into script-specific runs;
+3. uses a local Noto Emoji mirror rather than a runtime CDN dependency;
+4. converts the analyzed lines into `PdfTextContent`; and
+5. creates and encodes a PDF.
+
+```ts
+import {
+  PdfrxEngine,
+  createDefaultEmojiRenderer,
+  prepareFreeTextAppearance,
+  type PdfAnnotationSpec,
+  type PdfPageContentSpec,
+  type PdfTextContent,
+} from '@pdfrx/engine';
+
+const engine = new PdfrxEngine({
+  wasmModulesUrl: '/pdfium/',
+});
+
+// PDFium Windows charset numbers reported by prepareFreeTextAppearance().
+// Keep the files on your own origin and verify that their licenses permit
+// embedding. The key passed to addFontData() is also used as fontFace.
+const fontsByCharset: Record<number, { face: string; url: string }> = {
+  1:   { face: 'Noto Sans',    url: '/fonts/NotoSans-Regular.ttf' },
+  128: { face: 'Noto Sans JP', url: '/fonts/NotoSansJP-Regular.ttf' },
+  129: { face: 'Noto Sans KR', url: '/fonts/NotoSansKR-Regular.ttf' },
+  134: { face: 'Noto Sans SC', url: '/fonts/NotoSansSC-Regular.ttf' },
+  136: { face: 'Noto Sans TC', url: '/fonts/NotoSansTC-Regular.ttf' },
+  161: { face: 'Noto Sans',    url: '/fonts/NotoSans-Regular.ttf' }, // Greek
+  204: { face: 'Noto Sans',    url: '/fonts/NotoSans-Regular.ttf' }, // Cyrillic
+  222: { face: 'Noto Sans Thai', url: '/fonts/NotoSansThai-Regular.ttf' },
+};
+
+// Cache promises as well as completed registrations. Concurrent occurrences
+// of the same script must not fetch or register a font twice.
+const registeredFonts = new Map<string, Promise<string>>();
+async function registerFont(face: string, url: string): Promise<string> {
+  let pending = registeredFonts.get(face);
+  if (!pending) {
+    pending = (async () => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Font download failed: ${response.status} ${url}`);
+      await engine.addFontData(face, new Uint8Array(await response.arrayBuffer()));
+      return face;
+    })();
+    registeredFonts.set(face, pending);
+  }
+  return pending;
+}
+
+const latinFace = await registerFont('Noto Sans', '/fonts/NotoSans-Regular.ttf');
+const renderEmoji = createDefaultEmojiRenderer({
+  // Mirror the Noto Emoji PNG directory for deterministic/offline deployments.
+  baseUrl: '/emoji/noto-emoji/png/128/',
+  scale: 3,
+});
+
+const fontSize = 16;
+const lineHeight = fontSize * 1.2;
+const contentWidth = 499;
+const originX = 48;
+const firstLineTop = 790;
+const runs: PdfTextContent['runs'] = [];
+const emojiRuns: NonNullable<PdfTextContent['emojiRuns']> = [];
+const text = [
+  'English and Ελληνικά — Привет!',
+  '日本語の文章と絵文字 🚀',
+  '繁體中文文字',
+  '한국어 문장',
+  'ภาษาไทย 👨‍👩‍👧‍👦 ❤️ 🚀',
+].join('\n');
+
+const analyzed: PdfAnnotationSpec = {
+  subtype: 'freeText',
+  // The analyzer subtracts 3pt of inset on each side, hence +6 here.
+  rect: { left: 0, bottom: 0, right: contentWidth + 6, top: 10_000 },
+  contents: text,
+  fontSize,
+};
+
+await prepareFreeTextAppearance(analyzed, {
+  // Kana identifies Japanese runs and Hangul identifies Korean runs by itself.
+  // This preference selects Traditional Chinese glyph conventions for Han-only
+  // runs that do not have such local script evidence.
+  language: 'zh-Hant-TW',
+  services: {
+    resolveFont: async (charset) => {
+      const font = fontsByCharset[charset] ?? fontsByCharset[1]!;
+      return registerFont(font.face, font.url);
+    },
+    renderEmoji,
+  },
+});
+
+for (const [lineIndex, lineRuns] of (analyzed.appearanceRuns ?? []).entries()) {
+  const baselineY = firstLineTop - fontSize - lineIndex * lineHeight;
+  for (const run of lineRuns) {
+    if (run.image) {
+      const width = run.image.width / run.image.scale;
+      const height = run.image.height / run.image.scale;
+      emojiRuns.push({
+        x: originX + run.x,
+        // Emoji images are aligned to the text line's top edge.
+        y: baselineY + fontSize - height,
+        width,
+        height,
+        pixelWidth: run.image.width,
+        pixelHeight: run.image.height,
+        pixels: run.image.pixels,
+      });
+    } else if (run.text) {
+      runs.push({
+        text: run.text,
+        // Latin runs intentionally have no resolver charset; apply the
+        // registered Latin face while retaining resolved CJK/script faces.
+        fontFace: run.fontFace ?? latinFace,
+        x: originX + run.x,
+        y: baselineY,
+        fontSize,
+        fill: { r: 24, g: 24, b: 28, a: 255 },
+      });
+    }
+  }
+}
+
+const page: PdfPageContentSpec = {
+  width: 595,
+  height: 842,
+  objects: [{ kind: 'text', runs, emojiRuns }],
+};
+
+const document = await engine.createFromPageContents([page], {
+  sourceName: 'multilingual-example',
+});
+try {
+  const pdfBytes = await document.encodePdf();
+  // Browser example; use fs.writeFile() on Node.js.
+  const downloadUrl = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
+  window.open(downloadUrl, '_blank', 'noopener');
+} finally {
+  await document.dispose();
+  engine.dispose();
+}
+```
+
+`prepareFreeTextAppearance()` receives the complete string above once. It
+segments every wrapped line into grapheme clusters, classifies them by script,
+groups adjacent compatible characters, asks `resolveFont` for each resulting
+script charset, and replaces supported emoji graphemes with image runs. The
+adapter loop preserves the analyzer's x advances while translating line indices
+into PDF baselines.
+
+`language` is a preference used to resolve ambiguous Han glyph conventions; it
+does not translate the text or convert Simplified characters to Traditional
+ones. Kana on a line makes that line's Han runs Japanese, and Hangul similarly
+makes them Korean. Han-only runs without such local evidence use the supplied
+preference—in this example, `zh-Hant-TW`. If one logical text block must contain
+both Simplified and Traditional Han with their respective font conventions,
+analyze those language-bearing regions separately with `zh-Hans` and `zh-Hant`,
+then combine their positioned runs. That split is needed only at the language
+boundary; it is not necessary merely because one string contains many scripts.
+
+This utility performs script selection and grapheme-safe grouping, but it is
+not a general Unicode BiDi or OpenType shaping engine. For Arabic, Hebrew, or
+other text requiring bidirectional layout or complex shaping, shape it in the
+application with an appropriate layout engine and emit positioned glyph/image
+runs, or rasterize that portion while preserving the original text elsewhere
+when accessibility/search requirements apply.
 
 ## Images and ownership
 
@@ -66,6 +306,24 @@ JPEG data is passed directly to PDFium. Other images must be supplied as
 tightly packed RGBA8888 or BGRA8888 pixels. The image matrix maps its intrinsic
 unit square into page space, so `[width, 0, 0, height, x, y]` places an
 axis-aligned image.
+
+```ts
+const rgba = new Uint8Array(pixelWidth * pixelHeight * 4);
+// Fill rgba here. Its buffer is transferred by the call below.
+const image = {
+  kind: 'image' as const,
+  source: {
+    kind: 'pixels' as const,
+    pixels: rgba.buffer,
+    pixelWidth,
+    pixelHeight,
+    format: 'rgba8888' as const,
+  },
+  // Place at (48, 500), displayed at 160 × 90 points.
+  transform: [160, 0, 0, 90, 48, 500] as const,
+  opacity: 0.8,
+};
+```
 
 Binary buffers are transferred rather than copied and are therefore detached
 from the caller after the operation begins. Reusing the same buffer in more

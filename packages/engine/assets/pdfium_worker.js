@@ -3192,7 +3192,13 @@ function _insertTextContent(docHandle, pageHandle, spec) {
   for (const emoji of spec.emojiRuns || []) {
     _insertImageContent(docHandle, pageHandle, {
       kind: 'image',
-      source: { kind: 'pixels', pixels: emoji.pixels, pixelWidth: emoji.width, pixelHeight: emoji.height, format: 'rgba8888' },
+      source: {
+        kind: 'pixels',
+        pixels: emoji.pixels,
+        pixelWidth: emoji.pixelWidth || emoji.width,
+        pixelHeight: emoji.pixelHeight || emoji.height,
+        format: 'rgba8888',
+      },
       transform: [emoji.width, 0, 0, emoji.height, emoji.x, emoji.y],
     });
   }

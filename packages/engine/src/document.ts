@@ -783,6 +783,49 @@ export class PdfrxEngine {
    * and a y-axis pointing up. Fonts previously registered with {@link addFontData}
    * are embedded when a text run names their face.
    *
+   * Image and emoji buffers are transferred to the worker rather than copied,
+   * so their `ArrayBuffer`s are detached once the request is posted. Objects
+   * within each page are painted in array order.
+   *
+   * @example Create a page with a heading, vector rule, and JPEG logo
+   * ```ts
+   * const logo = await (await fetch('/logo.jpg')).arrayBuffer();
+   * const document = await engine.createFromPageContents([{
+   *   width: 595,
+   *   height: 842,
+   *   objects: [
+   *     {
+   *       kind: 'text',
+   *       runs: [{
+   *         text: 'Quarterly report',
+   *         fontFace: null,
+   *         x: 48,
+   *         y: 790,
+   *         fontSize: 24,
+   *       }],
+   *     },
+   *     {
+   *       kind: 'path',
+   *       segments: [
+   *         { op: 'moveTo', x: 48, y: 775 },
+   *         { op: 'lineTo', x: 547, y: 775 },
+   *       ],
+   *       stroke: { r: 40, g: 90, b: 160, a: 255 },
+   *       strokeWidth: 2,
+   *     },
+   *     {
+   *       kind: 'image',
+   *       source: { kind: 'jpeg', data: logo },
+   *       transform: [80, 0, 0, 40, 467, 48],
+   *     },
+   *   ],
+   * }]);
+   * const pdfBytes = await document.encodePdf();
+   * ```
+   *
+   * @param pages - One or more complete pages. An empty array is rejected.
+   * @param options - Source naming options for the returned document.
+   * @returns The newly created live document.
    * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
    */
   async createFromPageContents(
@@ -807,6 +850,29 @@ export class PdfrxEngine {
    * round trip. `pageIndex` is zero-based and may equal `document.pages.length`
    * to append. Pending edits are materialized before insertion.
    *
+   * The supplied document is updated in place and is also returned for fluent
+   * use. Existing `PdfPage` instances should be reacquired from
+   * `document.pages` after insertion because physical page indices may shift.
+   *
+   * @example Insert a generated cover, or append generated pages
+   * ```ts
+   * const cover = {
+   *   width: 595,
+   *   height: 842,
+   *   objects: [{
+   *     kind: 'text' as const,
+   *     runs: [{ text: 'Confidential', fontFace: null, x: 48, y: 760, fontSize: 30 }],
+   *   }],
+   * };
+   *
+   * await engine.insertPageContents(document, 0, [cover]);
+   * await engine.insertPageContents(document, document.pages.length, [cover]);
+   * ```
+   *
+   * @param document - Live document to modify.
+   * @param pageIndex - Zero-based insertion position, from `0` through `document.pages.length`.
+   * @param pages - One or more complete pages to insert in their supplied order.
+   * @returns The same `document` instance after its page list has been refreshed.
    * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
    */
   async insertPageContents(
@@ -1275,6 +1341,8 @@ export class PdfDocument {
    *
    * For runtime behavior and complete customization examples, read the
    * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
+   * To turn the analyzed runs into ordinary PDF page text and images, see the
+   * [practical multilingual Unicode page-content pipeline](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md#practical-multilingual-unicode-pipeline).
    *
    * @param spec - The spec value (PdfAnnotationSpec).
    * @param options - Options that customize the operation.

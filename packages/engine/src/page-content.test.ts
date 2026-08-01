@@ -30,6 +30,28 @@ describe('page content preparation', () => {
     }])).toThrow(/JPEG.*opacity 1/);
   });
 
+  it('accepts high-resolution emoji pixels independently of their placed size', () => {
+    const pixels = new Uint8Array(6 * 9 * 4);
+    const prepared = preparePageContents([{
+      width: 100,
+      height: 100,
+      objects: [{
+        kind: 'text',
+        runs: [],
+        emojiRuns: [{
+          x: 10,
+          y: 20,
+          width: 2,
+          height: 3,
+          pixelWidth: 6,
+          pixelHeight: 9,
+          pixels,
+        }],
+      }],
+    }]);
+    expect(prepared.transfer).toEqual([pixels.buffer]);
+  });
+
   it('rejects invalid page geometry and empty paths', () => {
     expect(() => preparePageContents([{ width: 0, height: 100, objects: [] }])).toThrow(/invalid size/);
     expect(() => preparePageContents([{

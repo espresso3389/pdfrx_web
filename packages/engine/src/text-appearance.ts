@@ -501,6 +501,9 @@ function resolveCjkKinds(kinds: FreeTextRunKind[], languages: readonly string[])
  *
  * For provider and deployment examples, read the
  * [Text, language, and emoji appearance guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md).
+ * To reuse the analyzed runs as ordinary PDF page text and images rather than
+ * an annotation, see the
+ * [practical multilingual Unicode page-content pipeline](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md#practical-multilingual-unicode-pipeline).
  * @param spec - The spec value (PdfAnnotationSpec).
  * @param options - Options that customize the operation.
  * @returns The resulting Promise.
