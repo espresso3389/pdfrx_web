@@ -392,6 +392,14 @@ export interface WorkerAnnotationSpec {
 /** Byte order of raw pixel data handed to the worker. */
 export type PdfPixelFormat = 'rgba8888' | 'bgra8888';
 
+/** Page-content wire shape. Kept structural so the public authoring types stay out of the worker protocol. */
+/** @internal */
+export interface WorkerPageContentSpec {
+  width: number;
+  height: number;
+  objects: Array<Record<string, unknown>>;
+}
+
 /**
  * One page of a document built by {@link WorkerCommandMap.createDocumentFromImages}.
  *
@@ -482,6 +490,16 @@ export interface WorkerCommandMap {
       pages: WorkerImagePage[];
     };
     result: WorkerDocument | WorkerError;
+  };
+  /** Creates all pages and their path, text, and image objects in one worker round trip. */
+  createDocumentFromPageContents: {
+    params: { pages: WorkerPageContentSpec[] };
+    result: WorkerDocument | WorkerError;
+  };
+  /** Inserts pages and all of their objects into a live document in one round trip. */
+  insertPageContents: {
+    params: { docHandle: number; pageIndex: number; pages: WorkerPageContentSpec[] };
+    result: { pages: WorkerPageInfo[] };
   };
   /** Loads the next chunk of pages during progressive loading, budgeted by `loadUnitDuration`. */
   loadPagesProgressively: {

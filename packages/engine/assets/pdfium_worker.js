@@ -3047,6 +3047,173 @@ function createDocumentFromImages(params) {
   return _loadDocument(docHandle, false, () => {});
 }
 
+/** Creates a document from declarative PDF page-content objects. */
+function createDocumentFromPageContents(params) {
+  const pages = params && params.pages;
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return { errorCode: -1, errorCodeStr: 'No page contents provided' };
+  }
+  const docHandle = Pdfium.wasmExports.FPDF_CreateNewDocument();
+  if (!docHandle) return { errorCode: -1, errorCodeStr: 'Failed to create PDF document' };
+  try {
+    _insertPageContents(docHandle, 0, pages);
+  } catch (e) {
+    _closeFreeTextFonts(docHandle);
+    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
+    return { errorCode: -1, errorCodeStr: e && e.message ? e.message : 'Failed to create page contents' };
+  }
+  return _loadDocument(docHandle, false, () => {});
+}
+
+/** Inserts declarative content pages into an existing document. */
+async function insertPageContents(params) {
+  const pages = params && params.pages;
+  if (!Array.isArray(pages) || pages.length === 0) throw new Error('No page contents provided');
+  const pageCount = Pdfium.wasmExports.FPDF_GetPageCount(params.docHandle);
+  if (!Number.isInteger(params.pageIndex) || params.pageIndex < 0 || params.pageIndex > pageCount) {
+    throw new RangeError(`pageIndex ${params.pageIndex} out of range (0..${pageCount})`);
+  }
+  _insertPageContents(params.docHandle, params.pageIndex, pages);
+  return { pages: await _loadPagesInLimitedTimeAsync(params.docHandle, 0, null, null) };
+}
+
+function _insertPageContents(docHandle, pageIndex, pages) {
+  for (let i = 0; i < pages.length; i++) {
+    const spec = pages[i];
+    if (!spec || !Number.isFinite(spec.width) || spec.width <= 0 || !Number.isFinite(spec.height) || spec.height <= 0) {
+      throw new Error(`Invalid page size at index ${i}`);
+    }
+    const pageHandle = Pdfium.wasmExports.FPDFPage_New(docHandle, pageIndex + i, spec.width, spec.height);
+    if (!pageHandle) throw new Error(`Failed to create PDF page ${i}`);
+    try {
+      for (const object of spec.objects || []) _insertPageContentObject(docHandle, pageHandle, object);
+      if (!Pdfium.wasmExports.FPDFPage_GenerateContent(pageHandle)) {
+        throw new Error(`Failed to generate content for page ${i}`);
+      }
+    } finally {
+      Pdfium.wasmExports.FPDF_ClosePage(pageHandle);
+    }
+  }
+}
+
+function _contentColor(color, opacity = 1) {
+  if (!color) return null;
+  return [color.r, color.g, color.b, Math.round((color.a ?? 255) * opacity)];
+}
+
+function _setContentMatrix(object, matrix, x = 0, y = 0) {
+  const m = matrix || [1, 0, 0, 1, 0, 0];
+  const ptr = Pdfium.wasmExports.malloc(24);
+  try {
+    new Float32Array(Pdfium.memory.buffer, ptr, 6).set([m[0], m[1], m[2], m[3], m[4] + x, m[5] + y]);
+    if (!Pdfium.wasmExports.FPDFPageObj_SetMatrix(object, ptr)) throw new Error('Failed to set content matrix');
+  } finally {
+    Pdfium.wasmExports.free(ptr);
+  }
+}
+
+function _insertPageContentObject(docHandle, pageHandle, spec) {
+  if (spec.kind === 'path') return _insertPathContent(pageHandle, spec);
+  if (spec.kind === 'text') return _insertTextContent(docHandle, pageHandle, spec);
+  if (spec.kind === 'image') return _insertImageContent(docHandle, pageHandle, spec);
+  throw new Error(`Unknown page content kind: ${spec.kind}`);
+}
+
+function _insertPathContent(pageHandle, spec) {
+  const w = Pdfium.wasmExports;
+  const first = spec.segments && spec.segments.find((segment) => segment.op !== 'close');
+  if (!first) throw new Error('Path has no drawable segments');
+  const object = w.FPDFPageObj_CreateNewPath(first.x, first.y);
+  if (!object) throw new Error('Failed to create path object');
+  let inserted = false;
+  try {
+    let skippedFirst = false;
+    for (const segment of spec.segments) {
+      if (!skippedFirst && segment === first) {
+        skippedFirst = true;
+        if (segment.op === 'moveTo') continue;
+      }
+      if (segment.op === 'moveTo') w.FPDFPath_MoveTo(object, segment.x, segment.y);
+      else if (segment.op === 'lineTo') w.FPDFPath_LineTo(object, segment.x, segment.y);
+      else if (segment.op === 'cubicTo') w.FPDFPath_BezierTo(object, segment.x1, segment.y1, segment.x2, segment.y2, segment.x, segment.y);
+      else if (segment.op === 'close') w.FPDFPath_Close(object);
+    }
+    const opacity = spec.opacity ?? 1;
+    const fill = _contentColor(spec.fill, opacity);
+    const stroke = _contentColor(spec.stroke, opacity);
+    if (fill) w.FPDFPageObj_SetFillColor(object, ...fill);
+    if (stroke) w.FPDFPageObj_SetStrokeColor(object, ...stroke);
+    w.FPDFPageObj_SetStrokeWidth(object, Math.max(0, spec.strokeWidth ?? 1));
+    w.FPDFPageObj_SetLineCap(object, { butt: 0, round: 1, square: 2 }[spec.lineCap || 'butt']);
+    w.FPDFPageObj_SetLineJoin(object, { miter: 0, round: 1, bevel: 2 }[spec.lineJoin || 'miter']);
+    w.FPDFPath_SetDrawMode(object, fill ? (spec.fillRule === 'evenodd' ? 2 : 1) : 0, stroke ? 1 : 0);
+    if (spec.transform) _setContentMatrix(object, spec.transform);
+    w.FPDFPage_InsertObject(pageHandle, object);
+    inserted = true;
+  } finally {
+    if (!inserted) w.FPDFPageObj_Destroy(object);
+  }
+}
+
+function _insertTextContent(docHandle, pageHandle, spec) {
+  const w = Pdfium.wasmExports;
+  for (const run of spec.runs || []) {
+    if (!run.text) continue;
+    const embeddedFont = _loadFreeTextFont(docHandle, run.fontFace);
+    let object = 0;
+    if (embeddedFont) object = w.FPDFPageObj_CreateTextObj(docHandle, embeddedFont, run.fontSize);
+    else {
+      const name = StringUtils.allocateUTF8(run.fontFace || 'Helvetica');
+      try { object = w.FPDFPageObj_NewTextObj(docHandle, name, run.fontSize); }
+      finally { StringUtils.freeUTF8(name); }
+    }
+    if (!object) throw new Error(`Failed to create text object for ${run.fontFace || 'Helvetica'}`);
+    let inserted = false;
+    try {
+      const value = StringUtils.allocateUTF16(run.text);
+      try {
+        if (!w.FPDFText_SetText(object, value)) throw new Error('Failed to set text content');
+      } finally { StringUtils.freeUTF8(value); }
+      const fill = _contentColor(run.fill === undefined ? { r: 0, g: 0, b: 0, a: 255 } : run.fill);
+      const stroke = _contentColor(run.stroke);
+      if (fill) w.FPDFPageObj_SetFillColor(object, ...fill);
+      if (stroke) {
+        w.FPDFPageObj_SetStrokeColor(object, ...stroke);
+        w.FPDFPageObj_SetStrokeWidth(object, Math.max(0, run.strokeWidth ?? 1));
+      }
+      w.FPDFTextObj_SetTextRenderMode(object, fill && stroke ? 2 : stroke ? 1 : fill ? 0 : 3);
+      _setContentMatrix(object, run.transform, run.x, run.y);
+      w.FPDFPage_InsertObject(pageHandle, object);
+      inserted = true;
+    } finally {
+      if (!inserted) w.FPDFPageObj_Destroy(object);
+    }
+  }
+  for (const emoji of spec.emojiRuns || []) {
+    _insertImageContent(docHandle, pageHandle, {
+      kind: 'image',
+      source: { kind: 'pixels', pixels: emoji.pixels, pixelWidth: emoji.width, pixelHeight: emoji.height, format: 'rgba8888' },
+      transform: [emoji.width, 0, 0, emoji.height, emoji.x, emoji.y],
+    });
+  }
+}
+
+function _insertImageContent(docHandle, pageHandle, spec) {
+  const w = Pdfium.wasmExports;
+  const object = w.FPDFPageObj_NewImageObj(docHandle);
+  if (!object) throw new Error('Failed to create image object');
+  let inserted = false;
+  try {
+    if (spec.source.kind === 'jpeg') _loadJpegIntoImageObj(pageHandle, object, spec.source.data);
+    else _setImageObjPixels(pageHandle, object, spec.source.pixels, spec.source.pixelWidth, spec.source.pixelHeight, spec.source.format, spec.opacity ?? 1);
+    _setContentMatrix(object, spec.transform);
+    w.FPDFPage_InsertObject(pageHandle, object);
+    inserted = true;
+  } finally {
+    if (!inserted) w.FPDFPageObj_Destroy(object);
+  }
+}
+
 /**
  * Adds one image page to a document at the given index. Throws on failure; the
  * caller is responsible for closing the document.
@@ -3145,7 +3312,7 @@ function _loadJpegIntoImageObj(pageHandle, imageObj, jpegData) {
  *   BGRA, so 'rgba8888' input has its R/B channels swapped while copying.
  * @returns {PdfDocument|PdfError}
  */
-function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeight, format) {
+function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeight, format, opacity = 1) {
   const src = new Uint8Array(pixels);
   const expected = pixelWidth * pixelHeight * 4;
   if (src.byteLength < expected) throw new Error('Pixel buffer smaller than width*height*4');
@@ -3157,10 +3324,13 @@ function _setImageObjPixels(pageHandle, imageObj, pixels, pixelWidth, pixelHeigh
       dst[i] = src[i + 2]; // B
       dst[i + 1] = src[i + 1]; // G
       dst[i + 2] = src[i]; // R
-      dst[i + 3] = src[i + 3]; // A
+      dst[i + 3] = Math.round(src[i + 3] * opacity); // A
     }
   } else {
     dst.set(src);
+    if (opacity !== 1) {
+      for (let i = 3; i < src.byteLength; i += 4) dst[i] = Math.round(dst[i] * opacity);
+    }
   }
   const FPDFBitmap_BGRA = 4;
   const bitmapHandle = Pdfium.wasmExports.FPDFBitmap_CreateEx(
@@ -4907,6 +5077,8 @@ const functions = {
   cancelDocumentFromData,
   createNewDocument,
   createDocumentFromImages,
+  createDocumentFromPageContents,
+  insertPageContents,
   loadPagesProgressively,
   reloadPages,
   closeDocument,

@@ -49,6 +49,20 @@ export {
   type PdfRawImage,
 } from './image-source.js';
 export { PdfPageRenderCancellationToken } from './render-queue.js';
+export type {
+  PdfColor,
+  PdfCreateFromPageContentsOptions,
+  PdfEmojiRun,
+  PdfImageContent,
+  PdfMatrix,
+  PdfPageContentObject,
+  PdfPageContentSpec,
+  PdfPageImageSource,
+  PdfPathContent,
+  PdfPathSegment,
+  PdfTextContent,
+  PdfTextRun,
+} from './page-content.js';
 export { deserializeAnnotationSnapshot, serializeAnnotationSnapshot } from './annotation-storage.js';
 export {
   PdfMemoryTextAssetCache,

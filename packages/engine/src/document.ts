@@ -7,6 +7,11 @@ import {
 } from './image-source.js';
 import { PdfPageRenderCancellationToken } from './render-queue.js';
 import {
+  preparePageContents,
+  type PdfCreateFromPageContentsOptions,
+  type PdfPageContentSpec,
+} from './page-content.js';
+import {
   prepareFreeTextAppearance,
   type PdfFreeTextAppearanceOptions,
 } from './text-appearance.js';
@@ -772,6 +777,50 @@ export class PdfrxEngine {
   }
 
   /**
+   * Creates a PDF from declarative page-content objects in one worker round trip.
+   *
+   * Coordinates and matrices use PDF page space: points, a bottom-left origin,
+   * and a y-axis pointing up. Fonts previously registered with {@link addFontData}
+   * are embedded when a text run names their face.
+   *
+   * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
+   */
+  async createFromPageContents(
+    pages: readonly PdfPageContentSpec[],
+    options: PdfCreateFromPageContentsOptions = {},
+  ): Promise<PdfDocument> {
+    await this.init();
+    const prepared = preparePageContents(pages);
+    const result = await this.comm.sendCommand(
+      'createDocumentFromPageContents',
+      { pages: prepared.pages },
+      prepared.transfer,
+    );
+    if (isWorkerError(result)) {
+      throw new Error(`Failed to create document from page contents: ${result.errorCodeStr} (${result.errorCode})`);
+    }
+    return new PdfDocument(this.comm, result, options.sourceName ?? 'page-contents', null);
+  }
+
+  /**
+   * Inserts declarative content pages into an existing document in one worker
+   * round trip. `pageIndex` is zero-based and may equal `document.pages.length`
+   * to append. Pending edits are materialized before insertion.
+   *
+   * @see [Page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
+   */
+  async insertPageContents(
+    document: PdfDocument,
+    pageIndex: number,
+    pages: readonly PdfPageContentSpec[],
+  ): Promise<PdfDocument> {
+    await this.init();
+    const prepared = preparePageContents(pages);
+    await document.insertPreparedPageContents(pageIndex, prepared.pages, prepared.transfer);
+    return document;
+  }
+
+  /**
    * Registers font data used to substitute missing fonts, then re-render affected pages.
    *
    * @param face - The face value (string).
@@ -1128,6 +1177,40 @@ export class PdfDocument {
   /** Pages of the document. With progressive loading, unloaded pages have `isLoaded === false`. */
   get pages(): readonly PdfPage[] {
     return this._pages;
+  }
+
+  /** @internal Used by {@link PdfrxEngine.insertPageContents}. */
+  async insertPreparedPageContents(
+    pageIndex: number,
+    pages: import('./protocol.js').WorkerPageContentSpec[],
+    transfer: Transferable[],
+  ): Promise<void> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    await this.materialize();
+    if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > this._pages.length) {
+      throw new RangeError(`pageIndex ${pageIndex} out of range (0..${this._pages.length})`);
+    }
+    const before = this.describePageArrangement(this._pages);
+    const identities: Array<PdfPageId | undefined> = this._pages.map((page) => page.id);
+    identities.splice(pageIndex, 0, ...pages.map(() => undefined));
+    const result = await this.sendCommand('insertPageContents', {
+      docHandle: this.docHandle,
+      pageIndex,
+      pages,
+    }, transfer);
+    this._pages = result.pages.map((page, index) => {
+      const identity = identities[index];
+      return identity === undefined ? new PdfPage(this, page) : new PdfPage(this, page, identity);
+    });
+    this.nativePageCount = this._pages.length;
+    const pageNumbers = this._pages.map((page) => page.pageNumber);
+    this.emit('pageStatusChanged', { pageNumbers });
+    this.emit('pagesRearranged', {
+      origin: 'api',
+      before,
+      after: this.describePageArrangement(this._pages),
+      pageNumbers,
+    });
   }
 
   /** Whether page, outline, or link edits are waiting to be {@link materialize | materialized}. */

@@ -17,6 +17,8 @@ browsers, Node.js, Bun, and Deno.
   annotations are exposed as typed data.
 - Annotation, form, outline, and page-arrangement edits can be encoded back to
   PDF, including non-destructive copy encoding.
+- Batched page-content authoring creates or inserts pages containing embedded
+  text, raster images, and vector paths in one worker round trip.
 - Mixed-script FreeText preparation handles grapheme-safe wrapping, CJK
   language hints, and cross-runtime emoji appearances with configurable asset,
   renderer, and cache services.
@@ -78,6 +80,13 @@ instances:
   creates an empty document.
 - [`createFromImages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfromimages)
   creates one PDF page per supplied image.
+- [`createFromPageContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfrompagecontents)
+  creates complete pages from declarative
+  [`PdfPageContentSpec`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfPageContentSpec.html)
+  values containing text, image, and vector-path objects;
+  [`insertPageContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#insertpagecontents)
+  inserts one or more of those pages at a zero-based position. See the
+  page-content guide below.
 
 ### Render and inspect pages
 
@@ -178,6 +187,9 @@ keeps the process alive.
 - The [text, language, and emoji guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/TEXT-APPEARANCE.md)
   covers automatic Noto fallback, caching, offline assets, and custom
   renderers.
+- The [page-content authoring guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/PAGE-CONTENTS.md)
+  covers coordinate conventions, fonts, binary ownership, images, and batched
+  page insertion.
 - The [`PdfrxEngine` API](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
   lists all open/create methods and engine options.
 - Use [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) for a
