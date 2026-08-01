@@ -8,6 +8,7 @@ custom gestures).
 
 <sub>Derived from the [pdfrx](https://github.com/espresso3389/pdfrx) project.</sub>
 
+**[npm package](https://www.npmjs.com/package/@pdfrx/viewer-core)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer-core.html)**
 
 ## Installation
@@ -65,6 +66,11 @@ See the complete
 for exported geometry, layout, text, and selection symbols. The
 [architecture notes](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ARCHITECTURE.md)
 define coordinate conventions and package boundaries.
+
+- Related packages:
+  [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) ·
+  [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) ·
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
 
 ## License
 

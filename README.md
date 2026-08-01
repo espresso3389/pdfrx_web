@@ -18,13 +18,13 @@ editing support.
 
 ## Choose a package
 
-| Package | Use it for |
-|---|---|
-| [`@pdfrx/react`](packages/react) | A ready-made React viewer, composable UI, or headless hooks. |
-| [`@pdfrx/viewer`](packages/viewer) | A framework-agnostic canvas viewer or custom element. |
-| [`@pdfrx/engine`](packages/engine) | Rendering, extraction, editing, and encoding without viewer UI. |
-| [`@pdfrx/colab`](packages/colab) | Multi-user page, annotation, and form synchronization. |
-| [`@pdfrx/viewer-core`](packages/viewer-core) | DOM-free geometry, layout, text, and selection logic. |
+| Package | npm | Use it for |
+|---|---|---|
+| [`@pdfrx/react`](packages/react) | [npm](https://www.npmjs.com/package/@pdfrx/react) | A ready-made React viewer, composable UI, or headless hooks. |
+| [`@pdfrx/viewer`](packages/viewer) | [npm](https://www.npmjs.com/package/@pdfrx/viewer) | A framework-agnostic canvas viewer or custom element. |
+| [`@pdfrx/engine`](packages/engine) | [npm](https://www.npmjs.com/package/@pdfrx/engine) | Rendering, extraction, editing, and encoding without viewer UI. |
+| [`@pdfrx/colab`](packages/colab) | [npm](https://www.npmjs.com/package/@pdfrx/colab) | Multi-user page, annotation, and form synchronization. |
+| [`@pdfrx/viewer-core`](packages/viewer-core) | [npm](https://www.npmjs.com/package/@pdfrx/viewer-core) | DOM-free geometry, layout, text, and selection logic. |
 
 Higher-level packages install their lower-level dependencies automatically.
 Most React applications should start with `@pdfrx/react`.

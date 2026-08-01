@@ -5,6 +5,7 @@ packages. Use it directly for PDF rendering, text and link extraction, forms,
 annotations, page editing, or PDF encoding without a viewer UI. It supports
 browsers, Node.js, Bun, and Deno.
 
+**[npm package](https://www.npmjs.com/package/@pdfrx/engine)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_engine.html)** ·
 **[Detailed guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/ENGINE-GUIDE.md)**
 
@@ -201,10 +202,10 @@ keeps the process alive.
   page insertion.
 - The [`PdfrxEngine` API](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
   lists all open/create methods and engine options.
-- Use [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) for a
-  framework-agnostic canvas viewer or
-  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react) for ready-made
-  React UI.
+- Related packages:
+  [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) ·
+  [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) ·
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
 
 ## License
 

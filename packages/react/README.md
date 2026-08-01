@@ -4,6 +4,7 @@ React components and hooks for the pdfrx_web canvas viewer. Start with the
 all-in-one [`PdfrxViewerApp`](https://espresso3389.github.io/pdfrx_web/functions/_pdfrx_react.PdfrxViewerApp.html),
 compose the supplied UI pieces, or build custom UI with headless hooks.
 
+**[npm package](https://www.npmjs.com/package/@pdfrx/react)** ·
 **[Live demo](https://espresso3389.github.io/pdfrx_web/demo-react/)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_react.html)** ·
 **[Detailed guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/REACT-GUIDE.md)**
@@ -103,6 +104,10 @@ not the application behind it.
   explains application-controlled open, page, and export operations.
 - Use [`@pdfrx/colab`](https://www.npmjs.com/package/@pdfrx/colab) for
   synchronized multi-user editing.
+- Related packages:
+  [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) ·
+  [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) ·
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
 
 ## License
 

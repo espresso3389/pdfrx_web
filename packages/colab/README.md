@@ -5,6 +5,7 @@ viewer plus the browser client, operation protocols, page-source adapter, and
 mixed-source export tools needed to synchronize page, annotation, and form
 changes through an application-hosted relay.
 
+**[npm package](https://www.npmjs.com/package/@pdfrx/colab)** ·
 **[Local example](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_colab.html)** ·
 **[Detailed guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/COLAB-GUIDE.md)**
@@ -84,6 +85,10 @@ reference relay for local development.
   documents all component inputs.
 - The [collaboration example](https://github.com/espresso3389/pdfrx_web/tree/master/examples/colab)
   documents local relay configuration, persistence, and deployment boundaries.
+- Related packages:
+  [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) ·
+  [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) ·
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
 
 ## License
 

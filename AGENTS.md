@@ -92,6 +92,11 @@ working setup without reading an architectural narrative first.
 
 - Keep the root README focused on repository/package selection and the shortest
   useful React and framework-agnostic examples.
+- Keep a direct npm package-page link for every published package in the root
+  README's package-selection table, and keep a direct self-link to its npm page
+  near the top of every package README. These npm links are required release
+  and discovery paths; do not remove them when shortening or reorganizing
+  documentation.
 - Keep a package README focused on purpose, a concise list of differentiating
   capabilities, installation, one minimal example, essential runtime
   prerequisites, and links to the package guide and API reference. The feature
@@ -111,6 +116,9 @@ working setup without reading an architectural narrative first.
 - Order README sections for first use: overview, install, minimal usage,
   prerequisites, next steps. Do not place architecture or other background
   reading before the first working example.
+- In every package README, keep npm links to `@pdfrx/engine`, `@pdfrx/viewer`,
+  and `@pdfrx/react` together under "Next steps" so readers can move between
+  the low-level engine, framework-agnostic viewer, and React integration.
 
 Package READMEs should link public classes, interfaces, types, functions, and
 components to their specific TypeDoc pages wherever those APIs are introduced

@@ -5,6 +5,7 @@ A framework-agnostic, canvas-based PDF viewer for the browser. It provides the
 class and the `<pdfrx-viewer>` custom element, with navigation, zoom, text
 selection, links, search, forms, annotations, and page editing.
 
+**[npm package](https://www.npmjs.com/package/@pdfrx/viewer)** ·
 **[Live demo](https://espresso3389.github.io/pdfrx_web/demo/)** ·
 **[API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html)** ·
 **[Detailed guide](https://github.com/espresso3389/pdfrx_web/blob/master/docs/VIEWER-GUIDE.md)**
@@ -94,8 +95,10 @@ PDF URLs must allow browser CORS access.
   and other viewer options.
 - See [`PdfrxViewerOptions`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_viewer.PdfrxViewerOptions.html)
   and the complete [API reference](https://espresso3389.github.io/pdfrx_web/modules/_pdfrx_viewer.html).
-- Building React UI? Use
-  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react).
+- Related packages:
+  [`@pdfrx/engine`](https://www.npmjs.com/package/@pdfrx/engine) ·
+  [`@pdfrx/viewer`](https://www.npmjs.com/package/@pdfrx/viewer) ·
+  [`@pdfrx/react`](https://www.npmjs.com/package/@pdfrx/react)
 
 ## License
 
