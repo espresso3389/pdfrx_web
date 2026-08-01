@@ -13,7 +13,7 @@
  * the directory that hosts the bundled WASM assets (`pdfium_worker.js` and
  * `pdfium.wasm`), then open documents with {@link PdfrxEngine.openUrl},
  * {@link PdfrxEngine.openData}, {@link PdfrxEngine.createNew}, or
- * {@link PdfrxEngine.createFromImages}. Opened documents are represented by
+ * {@link PdfDocument.createPagesFromImages}. Opened documents are represented by
  * {@link PdfDocument}, their pages by {@link PdfPage}, and rendered bitmaps by
  * {@link PdfImage}.
  *
@@ -42,7 +42,7 @@ export {
   canDecodeImages,
   isJpeg,
   readJpegSize,
-  type PdfCreateFromImagesOptions,
+  type PdfCreatePagesFromImagesOptions,
   type PdfImageDecoder,
   type PdfImageDecoderResult,
   type PdfImageSource,

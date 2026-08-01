@@ -4,6 +4,7 @@ import {
   type PdfAnnotationSpec,
   type PdfDocument,
   type PdfDocumentEventMap,
+  type PdfImageSource,
   type PdfRawObject,
 } from '@pdfrx/engine';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -12,10 +13,17 @@ import { mergeAcroForms, writeOutline } from '../src/outline-writer.js';
 const engine = new PdfrxEngine();
 afterAll(() => engine.dispose());
 
+async function createImageDocument(images: PdfImageSource[]): Promise<PdfDocument> {
+  const document = await engine.createNew();
+  const pages = await document.createPagesFromImages(images);
+  document.setPages(pages);
+  return document;
+}
+
 describe('raw PDF object API', () => {
   it('commits editor batches atomically and leaves the original untouched on either kind of failure', async () => {
     const pixel = { pixels: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel]);
+    const document = await createImageDocument([pixel]);
     try {
       const initialHandle = document.docHandle;
       await expect(document.editRawObjects((editor) => {
@@ -80,7 +88,7 @@ describe('raw PDF object API', () => {
 
   it('decodes, edits, saves, and reopens a stream object', async () => {
     const pixel = { pixels: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel]);
+    const document = await createImageDocument([pixel]);
     try {
       const page = await firstPageDictionary(document);
       const contents = page.entries.Contents;
@@ -128,7 +136,7 @@ describe('raw PDF object API', () => {
 describe('page-scoped annotation API', () => {
   it('edits links through the ordinary annotation API while preserving other annotations', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel, pixel]);
+    const document = await createImageDocument([pixel, pixel]);
     try {
       const linkPage = document.pages[0]!;
       const destinationPage = document.pages[1]!;
@@ -189,8 +197,8 @@ describe('page-scoped annotation API', () => {
 
   it('writes imported source pages while reporting placement page numbers from the host document', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
-    const host = await engine.createFromImages([pixel]);
-    const source = await engine.createFromImages([pixel]);
+    const host = await createImageDocument([pixel]);
+    const source = await createImageDocument([pixel]);
     const events: PdfDocumentEventMap['annotationsChanged'][] = [];
     const sourceEvents: PdfDocumentEventMap['annotationsChanged'][] = [];
     const unsubscribe = host.addEventListener('annotationsChanged', (event) => events.push(event));
@@ -232,7 +240,7 @@ describe('page-scoped annotation API', () => {
 describe('collaborative outline export', () => {
   it('keeps logical page destinations through proxies and distinguishes explicit duplicates', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel, pixel]);
+    const document = await createImageDocument([pixel, pixel]);
     try {
       const first = document.pages[0]!;
       const duplicate = first.duplicate();
@@ -264,7 +272,7 @@ describe('collaborative outline export', () => {
 
   it('replaces, clears, saves, and reloads the document outline', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel, pixel]);
+    const document = await createImageDocument([pixel, pixel]);
     const events: PdfDocumentEventMap['outlineChanged'][] = [];
     const unsubscribe = document.addEventListener('outlineChanged', (event) => events.push(event));
     try {
@@ -325,7 +333,7 @@ describe('collaborative outline export', () => {
 
   it('writes nested bookmarks with destinations in the final page order', async () => {
     const pixel = { pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 };
-    const document = await engine.createFromImages([pixel, pixel]);
+    const document = await createImageDocument([pixel, pixel]);
     await writeOutline(document, [
       {
         title: 'Document A',

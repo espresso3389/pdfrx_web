@@ -20,7 +20,7 @@ export interface PdfRawImage {
 }
 
 /**
- * One image handed to {@link PdfrxEngine.createFromImages}. Either encoded bytes
+ * One image handed to {@link PdfDocument.createPagesFromImages}. Either encoded bytes
  * (a `Blob`, `Uint8Array`, or `ArrayBuffer`) that get decoded, or a
  * {@link PdfRawImage} of pixels that are used as-is.
  *
@@ -29,7 +29,7 @@ export type PdfImageSource = Blob | Uint8Array | ArrayBuffer | PdfRawImage;
 
 /**
  * Decodes encoded image bytes to {@link PdfRawImage} pixels. Supply one via
- * {@link PdfCreateFromImagesOptions.decode} on runtimes without a built-in
+ * {@link PdfCreatePagesFromImagesOptions.decode} on runtimes without a built-in
  * decoder (JPEG never needs one — PDFium decodes it natively).
  *
  */
@@ -72,10 +72,8 @@ export type PdfImageDecoder = (
   mimeType?: string,
 ) => Promise<PdfImageDecoderResult | null> | PdfImageDecoderResult | null;
 
-/** Options for {@link PdfrxEngine.createFromImages}. */
-export interface PdfCreateFromImagesOptions {
-  /** Identifier used in error messages and for caching purposes. Default `'images'`. */
-  sourceName?: string;
+/** Options for {@link PdfDocument.createPagesFromImages}. */
+export interface PdfCreatePagesFromImagesOptions {
   /**
    * Pixels-per-inch used to convert an image's pixel size into the page size in
    * points. Default `72` (1 pixel = 1 point). Ignored for any image whose page
@@ -216,7 +214,7 @@ function toOwnedBuffer(data: Uint8Array | ArrayBuffer): ArrayBuffer {
 function pageSizeFor(
   pixelWidth: number,
   pixelHeight: number,
-  options: PdfCreateFromImagesOptions,
+  options: PdfCreatePagesFromImagesOptions,
 ): { width: number; height: number } {
   if (options.pageSize) return options.pageSize;
   const dpi = options.dpi && options.dpi > 0 ? options.dpi : 72;
@@ -234,7 +232,7 @@ function isRawImage(source: PdfImageSource): source is PdfRawImage {
   );
 }
 
-function rawImageToPage(image: PdfRawImage, options: PdfCreateFromImagesOptions): WorkerImagePage {
+function rawImageToPage(image: PdfRawImage, options: PdfCreatePagesFromImagesOptions): WorkerImagePage {
   if (!(image.width > 0) || !(image.height > 0)) {
     throw new Error('PdfRawImage requires positive width and height');
   }
@@ -270,7 +268,7 @@ function inferMimeTypeFromBlobName(source: Blob): string | undefined {
 }
 
 /** Converts one {@link PdfImageSource} into a {@link WorkerImagePage}. */
-async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImagesOptions): Promise<WorkerImagePage> {
+async function sourceToPage(source: PdfImageSource, options: PdfCreatePagesFromImagesOptions): Promise<WorkerImagePage> {
   if (isRawImage(source)) return rawImageToPage(source, options);
 
   const { bytes, mimeType } = await encodedSourceBytes(source);
@@ -317,8 +315,8 @@ async function sourceToPage(source: PdfImageSource, options: PdfCreateFromImages
  *
  */
 export async function imageSourcesToWorkerPages(
-  images: PdfImageSource[],
-  options: PdfCreateFromImagesOptions,
+  images: readonly PdfImageSource[],
+  options: PdfCreatePagesFromImagesOptions,
 ): Promise<{ pages: WorkerImagePage[]; transfer: ArrayBuffer[] }> {
   const pages: WorkerImagePage[] = [];
   const transfer: ArrayBuffer[] = [];

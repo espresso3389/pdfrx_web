@@ -27,10 +27,12 @@ viewer.addAnnotationPreviewChangeListener((changes) => {
 });
 
 const white = new Uint8Array(SIZE * SIZE * 4).fill(255);
-const seed = await viewer.engine.createFromImages([
+const seed = await viewer.engine.createNew();
+const seedPages = await seed.createPagesFromImages([
   { pixels: white, width: SIZE, height: SIZE },
   { pixels: white, width: SIZE, height: SIZE },
 ]);
+seed.setPages(seedPages);
 const bytes = await seed.encodePdf();
 await seed.dispose();
 await viewer.openData(bytes);

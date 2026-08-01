@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-02
+
+### Changed
+
+- Replaced `PdfrxEngine.createFromImages()` with
+  `PdfDocument.createPagesFromImages()`, which creates one unplaced page per
+  image in a single worker round trip and leaves final insertion, ordering, or
+  omission to `PdfDocument.setPages()`.
+- Renamed `PdfCreateFromImagesOptions` to
+  `PdfCreatePagesFromImagesOptions`, removed its document-level `sourceName`
+  option, and migrated React image-file opening, examples, tests, and engine
+  documentation to the document-centric workflow.
+
+### Added
+
+- Added a PDFium integration test covering image-page creation, unplaced-page
+  behavior, final arrangement, and encoding.
+
 ## [0.26.0] - 2026-08-02
 
 ### Changed
@@ -921,6 +939,7 @@ viewer for the browser, ported from the pdfrx viewer stack.
   and an MIT license.
 
 [Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...HEAD
+[0.27.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.24.3...v0.25.0

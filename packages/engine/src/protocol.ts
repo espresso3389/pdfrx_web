@@ -401,7 +401,7 @@ export interface WorkerPageContentSpec {
 }
 
 /**
- * One page of a document built by {@link WorkerCommandMap.createDocumentFromImages}.
+ * One page built by {@link WorkerCommandMap.createPagesFromImages}.
  *
  * `width`/`height` are the page dimensions in points (1/72 inch). A `jpeg` page
  * carries the encoded bytes and lets PDFium decode them natively (works on every
@@ -483,13 +483,10 @@ export interface WorkerCommandMap {
     params: Record<string, never>;
     result: WorkerDocument | WorkerError;
   };
-  /** Creates a document whose pages each display one image (one page per {@link WorkerImagePage}). */
-  createDocumentFromImages: {
-    params: {
-      /** One entry per page, in order. */
-      pages: WorkerImagePage[];
-    };
-    result: WorkerDocument | WorkerError;
+  /** Creates unplaced image pages in a live document in one worker round trip. */
+  createPagesFromImages: {
+    params: { docHandle: number; pages: WorkerImagePage[] };
+    result: { pages: WorkerPageInfo[]; pageCount: number };
   };
   /** Creates unplaced pages and all their objects in a live document in one round trip. */
   createPagesFromContents: {

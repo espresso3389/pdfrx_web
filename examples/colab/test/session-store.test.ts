@@ -89,12 +89,14 @@ describe('persistent collaboration session store', () => {
 });
 
 async function createTestPdf(engine: PdfrxEngine, pageCount: number): Promise<Uint8Array> {
-  const document = await engine.createFromImages(Array.from({ length: pageCount }, () => ({
+  const document = await engine.createNew();
+  const pages = await document.createPagesFromImages(Array.from({ length: pageCount }, () => ({
     pixels: new Uint8Array([255, 255, 255, 255]),
     width: 1,
     height: 1,
   })));
   try {
+    document.setPages(pages);
     return await document.encodePdf();
   } finally {
     await document.dispose();

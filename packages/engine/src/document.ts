@@ -2,7 +2,7 @@ import { WorkerCommunicator, type WorkerCommunicatorOptions } from './communicat
 import { evaluateCalc, parseCalcAction, type FormCalcSpec } from './form-calc.js';
 import {
   imageSourcesToWorkerPages,
-  type PdfCreateFromImagesOptions,
+  type PdfCreatePagesFromImagesOptions,
   type PdfImageSource,
 } from './image-source.js';
 import { PdfPageRenderCancellationToken } from './render-queue.js';
@@ -502,7 +502,7 @@ export interface PdfPageRenderOptions {
  * Construct one — in a browser, with the URL of the directory serving the
  * bundled WASM assets; on Node, Bun or Deno, with nothing at all, since the
  * assets ship inside this package — then open documents with {@link openUrl},
- * {@link openData}, {@link createNew}, or {@link createFromImages}. A single
+ * {@link openData} or {@link createNew}. A single
  * engine owns one worker shared by all documents it opens; call {@link dispose}
  * to tear it down.
  *
@@ -733,46 +733,6 @@ export class PdfrxEngine {
       throw new Error(`Failed to create new document: ${result.errorCodeStr} (${result.errorCode})`);
     }
     return new PdfDocument(this.comm, result, sourceName, null);
-  }
-
-  /**
-   * Creates a document with one page per image, in order.
-   *
-   * Each image is either encoded bytes (a `Blob`, `Uint8Array`, or
-   * `ArrayBuffer`) or a {@link PdfRawImage} of already-decoded pixels. JPEG bytes
-   * are decoded natively by PDFium on every runtime; other formats are decoded
-   * on the calling thread via `createImageBitmap` + `OffscreenCanvas` where
-   * available (browsers, workers, Deno, Bun). On runtimes without that (Node),
-   * pass {@link PdfCreateFromImagesOptions.decode} or pre-decoded
-   * {@link PdfRawImage} pixels.
-   *
-   * Page size defaults to the image's pixel size at
-   * {@link PdfCreateFromImagesOptions.dpi} (72 by default); override it for all
-   * pages with {@link PdfCreateFromImagesOptions.pageSize}.
-   *
-   * @example
-   * ```ts
-   * // A PNG and a JPEG, one per page:
-   * const doc = await engine.createFromImages([pngBlob, jpegBytes]);
-   * ```
-   *
-   * @param images - The images value (PdfImageSource[]).
-   * @param options - Options that customize the operation.
-   * @returns The resulting Promise.
-   *
-   */
-  async createFromImages(
-    images: PdfImageSource[],
-    options: PdfCreateFromImagesOptions = {},
-  ): Promise<PdfDocument> {
-    if (images.length === 0) throw new Error('createFromImages requires at least one image');
-    await this.init();
-    const { pages, transfer } = await imageSourcesToWorkerPages(images, options);
-    const result = await this.comm.sendCommand('createDocumentFromImages', { pages }, transfer);
-    if (isWorkerError(result)) {
-      throw new Error(`Failed to create document from images: ${result.errorCodeStr} (${result.errorCode})`);
-    }
-    return new PdfDocument(this.comm, result, options.sourceName ?? 'images', null);
   }
 
   /**
@@ -1132,6 +1092,45 @@ export class PdfDocument {
   /** Pages of the document. With progressive loading, unloaded pages have `isLoaded === false`. */
   get pages(): readonly PdfPage[] {
     return this._pages;
+  }
+
+  /**
+   * Creates one unplaced page per image in a single worker round trip. The
+   * returned pages do not change the document's logical {@link pages}
+   * arrangement; place them with {@link setPages}.
+   *
+   * JPEG bytes are decoded natively by PDFium. Other encoded formats use the
+   * supplied {@link PdfCreatePagesFromImagesOptions.decode} callback or the
+   * runtime's `createImageBitmap` support. Page dimensions default to the image
+   * pixel dimensions at 72 DPI and can be controlled with
+   * {@link PdfCreatePagesFromImagesOptions.dpi} or
+   * {@link PdfCreatePagesFromImagesOptions.pageSize}.
+   *
+   * @example Create and arrange image pages
+   * ```ts
+   * const document = await engine.createNew();
+   * const pages = await document.createPagesFromImages([pngBlob, jpegBytes]);
+   * document.setPages(pages);
+   * ```
+   *
+   * @param images - Images to turn into pages, in the returned page order.
+   * @param options - Image decoding and page-sizing options.
+   * @returns Newly created, currently unplaced pages.
+   */
+  async createPagesFromImages(
+    images: readonly PdfImageSource[],
+    options: PdfCreatePagesFromImagesOptions = {},
+  ): Promise<PdfPage[]> {
+    if (this._isDisposed) throw new Error(`Document ${this.sourceName} is disposed`);
+    if (images.length === 0) throw new Error('createPagesFromImages requires at least one image');
+    const prepared = await imageSourcesToWorkerPages(images, options);
+    const result = await this.sendCommand('createPagesFromImages', {
+      docHandle: this.docHandle,
+      pages: prepared.pages,
+    }, prepared.transfer);
+    this.nativePageCount = result.pageCount;
+    this.arrangementDirty = true;
+    return result.pages.map((page) => new PdfPage(this, page));
   }
 
   /**

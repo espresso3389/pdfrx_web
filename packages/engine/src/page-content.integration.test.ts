@@ -7,7 +7,7 @@ describe('page-content worker commands', () => {
     let document: PdfDocument | undefined;
     let reopened: PdfDocument | undefined;
     try {
-      document = await engine.createNew({ sourceName: 'page-contents-test' });
+      document = await engine.createNew('page-contents-test');
       const authored = await document.createPagesFromContents([{
         width: 200,
         height: 200,

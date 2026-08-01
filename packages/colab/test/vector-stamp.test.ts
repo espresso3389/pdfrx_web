@@ -1,8 +1,15 @@
-import { PdfrxEngine } from '@pdfrx/engine';
+import { PdfrxEngine, type PdfDocument, type PdfImageSource } from '@pdfrx/engine';
 import { afterAll, describe, expect, it } from 'vitest';
 
 const engine = new PdfrxEngine();
 afterAll(() => engine.dispose());
+
+async function createImageDocument(images: PdfImageSource[]): Promise<PdfDocument> {
+  const document = await engine.createNew();
+  const pages = await document.createPagesFromImages(images);
+  document.setPages(pages);
+  return document;
+}
 
 describe('vector stamp appearance round-trip', () => {
   it('keeps a raster stamp visible after an in-place move', async () => {
@@ -11,7 +18,7 @@ describe('vector stamp appearance round-trip', () => {
     for (let offset = 0; offset < stampPixels.length; offset += 4) {
       stampPixels.set([255, 0, 0, 255], offset);
     }
-    const document = await engine.createFromImages([background]);
+    const document = await createImageDocument([background]);
     try {
       const page = document.pages[0]!;
       const id = await page.addAnnotation({
@@ -39,7 +46,7 @@ describe('vector stamp appearance round-trip', () => {
 
   it('does not enable PDFium default fill colors on stroke-only paths', async () => {
     const background = { width: 32, height: 32, pixels: new Uint8Array(32 * 32 * 4).fill(255) };
-    const document = await engine.createFromImages([background]);
+    const document = await createImageDocument([background]);
     try {
       const id = await document.pages[0]!.addAnnotation({
         subtype: 'stamp',
@@ -97,7 +104,7 @@ describe('vector stamp appearance round-trip', () => {
       appearanceImage,
     });
 
-    const preserved = await engine.createFromImages([background]);
+    const preserved = await createImageDocument([background]);
     try {
       const page = preserved.pages[0]!;
       const id = await page.addAnnotation(makeSpec(0));
@@ -113,7 +120,7 @@ describe('vector stamp appearance round-trip', () => {
       await preserved.dispose();
     }
 
-    const replaced = await engine.createFromImages([background]);
+    const replaced = await createImageDocument([background]);
     try {
       const page = replaced.pages[0]!;
       const id = await page.addAnnotation(makeSpec(0));

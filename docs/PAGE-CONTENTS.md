@@ -270,7 +270,7 @@ const page: PdfPageContentSpec = {
   objects: [{ kind: 'text', runs, emojiRuns }],
 };
 
-const document = await engine.createNew({ sourceName: 'multilingual-example' });
+const document = await engine.createNew('multilingual-example');
 try {
   const pages = await document.createPagesFromContents([page]);
   document.setPages(pages);

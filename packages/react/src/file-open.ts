@@ -82,8 +82,10 @@ export async function imageBytesToPdf(
   bytes: Uint8Array | ArrayBuffer,
   imageDecoder?: PdfImageDecoder,
 ): Promise<Uint8Array> {
-  const doc = await engine.createFromImages([bytes], { decode: imageDecoder });
+  const doc = await engine.createNew();
   try {
+    const pages = await doc.createPagesFromImages([bytes], { decode: imageDecoder });
+    doc.setPages(pages);
     return await doc.encodePdf();
   } finally {
     await doc.dispose();
@@ -113,7 +115,7 @@ export async function openFileAsDocument(
   options: { passwordProvider?: PdfPasswordProvider; imageDecoder?: PdfImageDecoder } = {},
 ): Promise<PdfDocument> {
   if (isImageFile(file)) {
-    return engine.createFromImages([file], { sourceName: file.name, decode: options.imageDecoder });
+    return createImageDocument(engine, file.name, file, options.imageDecoder);
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (looksLikePdf(bytes)) {
@@ -121,5 +123,22 @@ export async function openFileAsDocument(
   }
   // Typeless and not a PDF: try to decode it as an image (createImageBitmap
   // sniffs the format from the bytes, so a missing MIME type is fine).
-  return engine.createFromImages([bytes], { sourceName: file.name, decode: options.imageDecoder });
+  return createImageDocument(engine, file.name, bytes, options.imageDecoder);
+}
+
+async function createImageDocument(
+  engine: PdfrxEngine,
+  sourceName: string,
+  image: Blob | Uint8Array | ArrayBuffer,
+  decode?: PdfImageDecoder,
+): Promise<PdfDocument> {
+  const document = await engine.createNew(sourceName);
+  try {
+    const pages = await document.createPagesFromImages([image], { decode });
+    document.setPages(pages);
+    return document;
+  } catch (error) {
+    await document.dispose();
+    throw error;
+  }
 }

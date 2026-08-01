@@ -3025,27 +3025,21 @@ function createNewDocument() {
  *   `'rgba8888'` or `'bgra8888'`.
  * @returns {PdfDocument|PdfError}
  */
-function createDocumentFromImages(params) {
+async function createPagesFromImages(params) {
   const pages = params && params.pages;
-  if (!Array.isArray(pages) || pages.length === 0) {
-    return { errorCode: -1, errorCodeStr: 'No image pages provided' };
-  }
-
-  const docHandle = Pdfium.wasmExports.FPDF_CreateNewDocument();
-  if (!docHandle) {
-    return { errorCode: -1, errorCodeStr: 'Failed to create PDF document' };
-  }
-
+  if (!Array.isArray(pages) || pages.length === 0) throw new Error('No image pages provided');
+  const pageCount = Pdfium.wasmExports.FPDF_GetPageCount(params.docHandle);
   try {
     for (let i = 0; i < pages.length; i++) {
-      _addImagePage(docHandle, i, pages[i]);
+      _addImagePage(params.docHandle, pageCount + i, pages[i]);
     }
-  } catch (e) {
-    Pdfium.wasmExports.FPDF_CloseDocument(docHandle);
-    return { errorCode: -1, errorCodeStr: e && e.message ? e.message : 'Failed to add image page' };
+  } catch (error) {
+    const createdCount = Pdfium.wasmExports.FPDF_GetPageCount(params.docHandle) - pageCount;
+    if (createdCount > 0) _removePages(params.docHandle, pageCount, createdCount);
+    throw error;
   }
-
-  return _loadDocument(docHandle, false, () => {});
+  const loaded = await _loadPagesInLimitedTimeAsync(params.docHandle, 0, null, null);
+  return { pages: loaded.slice(pageCount), pageCount: pageCount + pages.length };
 }
 
 /** Creates declarative content pages at the physical end of a live document. */
@@ -3212,7 +3206,7 @@ function _insertImageContent(docHandle, pageHandle, spec) {
  * caller is responsible for closing the document.
  * @param {number} docHandle Document handle
  * @param {number} index 0-based page index
- * @param {Object} page Page spec (see {@link createDocumentFromImages})
+ * @param {Object} page Page spec (see {@link createPagesFromImages})
  */
 function _addImagePage(docHandle, index, page) {
   const width = page && page.width;
@@ -5069,7 +5063,7 @@ const functions = {
   retryDocumentFromData,
   cancelDocumentFromData,
   createNewDocument,
-  createDocumentFromImages,
+  createPagesFromImages,
   createPagesFromContents,
   loadPagesProgressively,
   reloadPages,

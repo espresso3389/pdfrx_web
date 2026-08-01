@@ -40,7 +40,7 @@ npm install @pdfrx/engine
 import { PdfrxEngine } from '@pdfrx/engine';
 
 const engine = new PdfrxEngine({
-  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.26.0/assets/',
+  wasmModulesUrl: 'https://cdn.jsdelivr.net/npm/@pdfrx/engine@0.27.0/assets/',
 });
 const document = await engine.openUrl('/manual.pdf');
 const page = document.pages[0];
@@ -84,12 +84,13 @@ The same
 [`PdfrxEngine`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html)
 creates new
 [`PdfDocument`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html)
-instances from an empty document, images, or declarative page contents:
+instances, then creates and arranges their pages:
 
 - [`createNew()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createnew)
   creates an empty document.
-- [`createFromImages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfrxEngine.html#createfromimages)
-  creates one PDF page per supplied image.
+- [`createPagesFromImages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createpagesfromimages)
+  creates one unplaced PDF page per supplied image; arrange the returned pages
+  with [`setPages()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#setpages).
 - [`createPagesFromContents()`](https://espresso3389.github.io/pdfrx_web/classes/_pdfrx_engine.PdfDocument.html#createpagesfromcontents)
   creates complete, unplaced pages on a document from declarative
   [`PdfPageContentSpec`](https://espresso3389.github.io/pdfrx_web/interfaces/_pdfrx_engine.PdfPageContentSpec.html)
