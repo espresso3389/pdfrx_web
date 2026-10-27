@@ -55,6 +55,19 @@ export type PdfReactContextMenuBuilder = (
   helpers: PdfContextMenuHelpers,
 ) => HTMLElement | null | undefined;
 
+/** Options for {@link buildDefaultContextMenu}. */
+export interface DefaultContextMenuOptions {
+  /** Markup subtypes offered in the palette, in the default order. All by default. */
+  textMarkupTypes?: readonly TextMarkupAnnotationSubtype[];
+  /** Additional check for enabling the markup item, e.g. a host permission. */
+  canAddTextMarkup?: () => boolean;
+  /**
+   * Replaces the native PDF mutation. The host persists the markup for the
+   * current text selection itself, e.g. as an application annotation.
+   */
+  onAddTextMarkup?: (subtype: TextMarkupAnnotationSubtype, color: string) => void;
+}
+
 /**
  * Builds the localized Copy / Select All / text-markup / Add link context menu
  * that `@pdfrx/react` installs on the viewer by default (via
@@ -71,10 +84,12 @@ export type PdfReactContextMenuBuilder = (
  * {@link TEXT_MARKUP_LINE_COLORS} at full opacity.
  *
  * Apps that want different items can pass their own `contextMenuBuilder` prop
- * instead (it wins over this default).
+ * instead (it wins over this default). Apps that keep markup outside the PDF
+ * can reuse this menu with {@link DefaultContextMenuOptions}.
  * @param viewer - The viewer value (PdfrxViewer).
  * @param strings - The strings value (PdfrxStrings).
  * @param context - The context value (ContextMenuContext).
+ * @param options - The options value (DefaultContextMenuOptions).
  * @returns The resulting HTMLElement.
  *
  */
@@ -82,6 +97,7 @@ export function buildDefaultContextMenu(
   viewer: PdfrxViewer,
   strings: PdfrxStrings,
   context: ContextMenuContext,
+  options: DefaultContextMenuOptions = {},
 ): HTMLElement {
   const menu = document.createElement('div');
   menu.className = context.pointerType === 'touch' ? 'pdfrx-context-menu pdfrx-context-menu-touch' : 'pdfrx-context-menu';
@@ -96,7 +112,7 @@ export function buildDefaultContextMenu(
   };
 
   const addTextMarkupMenu = (): void => {
-    const enabled = viewer.canAddTextMarkupToSelection();
+    const enabled = viewer.canAddTextMarkupToSelection() && (options.canAddTextMarkup?.() ?? true);
     const host = document.createElement('div');
     host.className = 'pdfrx-context-menu-submenu-host';
     const item = document.createElement('button');
@@ -120,11 +136,15 @@ export function buildDefaultContextMenu(
         color: string,
       ): void => {
         viewer.clearTextMarkupSelectionPreview();
-        void viewer.addTextMarkupToSelection(
-          subtype,
-          color,
-          subtype === 'highlight' ? TEXT_HIGHLIGHT_OPACITY : 1,
-        );
+        if (options.onAddTextMarkup) {
+          options.onAddTextMarkup(subtype, color);
+        } else {
+          void viewer.addTextMarkupToSelection(
+            subtype,
+            color,
+            subtype === 'highlight' ? TEXT_HIGHLIGHT_OPACITY : 1,
+          );
+        }
         context.close();
       };
       const closePalette = (): void => {
@@ -151,6 +171,7 @@ export function buildDefaultContextMenu(
           ['strikeout', strings.strikeout],
         ];
         for (const [subtype, label] of markupTypes) {
+          if (options.textMarkupTypes && !options.textMarkupTypes.includes(subtype)) continue;
           const rowLabel = document.createElement('span');
           rowLabel.className = 'pdfrx-text-markup-row-label';
           rowLabel.textContent = label;
