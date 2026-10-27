@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import { pdfiumAssets } from '../basic/vite-pdfium-assets';
-import { pdfrxSrcAliases } from '../basic/vite-pdfrx-src';
+import { pdfiumAssets } from '../basic/vite-pdfium-assets.ts';
+import { pdfrxSrcAliases } from '../basic/vite-pdfrx-src.ts';
 
 export default defineConfig({
   // Relative base so the build works when hosted under a sub-path

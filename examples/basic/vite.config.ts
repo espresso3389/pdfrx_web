@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
-import { pdfiumAssets } from './vite-pdfium-assets';
-import { pdfrxSrcAliases } from './vite-pdfrx-src';
+import { pdfiumAssets } from './vite-pdfium-assets.ts';
+import { pdfrxSrcAliases } from './vite-pdfrx-src.ts';
 
 export default defineConfig({
   // Relative base so the build works when hosted under a sub-path

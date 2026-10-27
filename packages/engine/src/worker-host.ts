@@ -64,7 +64,8 @@ export function defaultWasmModulesUrl(): string {
       'pdfrx: wasmModulesUrl is required in a browser — set it to the URL of the directory serving pdfium_worker.js and pdfium.wasm',
     );
   }
-  return new URL('../assets/', import.meta.url).toString();
+  // Resolved at runtime on server hosts, relative to the installed module.
+  return new URL(/* @vite-ignore */ '../assets/', import.meta.url).toString();
 }
 
 /**
