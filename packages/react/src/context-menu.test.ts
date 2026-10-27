@@ -197,4 +197,29 @@ describe('buildDefaultContextMenu', () => {
     expect(palette.style.top).toBe('96px');
     rectSpy.mockRestore();
   });
+
+  it('lets the host limit, gate, and persist text markup', () => {
+    const addTextMarkupToSelection = vi.fn(() => Promise.resolve([]));
+    const onAddTextMarkup = vi.fn();
+    const close = vi.fn();
+    const menu = buildDefaultContextMenu(
+      viewerWithMarkup(addTextMarkupToSelection),
+      defaultPdfrxStrings,
+      context(close),
+      { textMarkupTypes: ['highlight'], onAddTextMarkup },
+    );
+    menu.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.click();
+    expect(menu.querySelector('.pdfrx-text-markup-underline')).toBeNull();
+    menu.querySelector<HTMLButtonElement>(
+      `[aria-label="${defaultPdfrxStrings.highlight} ${TEXT_HIGHLIGHT_COLORS[0]}"]`,
+    )!.click();
+    expect(onAddTextMarkup).toHaveBeenCalledWith('highlight', TEXT_HIGHLIGHT_COLORS[0]);
+    expect(addTextMarkupToSelection).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+
+    const gated = buildDefaultContextMenu(viewerWithMarkup(), defaultPdfrxStrings, context(), {
+      canAddTextMarkup: () => false,
+    });
+    expect(gated.querySelector<HTMLButtonElement>('.pdfrx-context-menu-submenu-trigger')!.disabled).toBe(true);
+  });
 });

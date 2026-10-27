@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `PdfrxViewer.setAnnotationModeModifierEnabled()` and
+  `isAnnotationModeModifierEnabled()` so hosts that own annotation input can
+  turn off the Alt/Option shortcut that inverts annotation mode.
+- Added an optional `options` argument to `buildDefaultContextMenu()`
+  (`DefaultContextMenuOptions`): `textMarkupTypes` limits the offered markup
+  subtypes, `canAddTextMarkup` adds a host check, and `onAddTextMarkup`
+  replaces the native PDF mutation with application-managed persistence.
+
+### Fixed
+
+- `PdfrxViewer.dispose()` now waits for the document's asynchronous close to
+  settle before terminating an owned engine, so leaving a document no longer
+  produces an unhandled `WorkerCommunicator is disposed` rejection.
+
 ## [0.27.0] - 2026-08-02
 
 ### Changed
