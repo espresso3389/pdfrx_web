@@ -2254,6 +2254,7 @@ export class PdfrxViewer {
   private annotationTool: AnnotationTool | null = null;
   private annotationMode = false;
   private annotationModeModifierHeld = false;
+  private annotationModeModifierEnabled = true;
   /** Current style applied to newly drawn annotations. */
   private annotationStyle: AnnotationStyle = {
     color: '#e53935',
@@ -3936,8 +3937,18 @@ export class PdfrxViewer {
     this.container.style.touchAction = this.previousContainerTouchAction;
     this.container.style.overscrollBehavior = this.previousContainerOverscrollBehavior;
     this.cache?.dispose();
-    void this.doc?.dispose();
-    if (this.ownsEngine) this.#engine.dispose();
+    // Closing a document sends an asynchronous command to the worker.
+    // Keep an owned engine alive until that command has settled.
+    const documentDisposal = this.doc?.dispose();
+    if (documentDisposal) {
+      void documentDisposal
+        .catch((error: unknown) => console.warn('Failed to close PDF document:', error))
+        .finally(() => {
+          if (this.ownsEngine) this.#engine.dispose();
+        });
+    } else if (this.ownsEngine) {
+      this.#engine.dispose();
+    }
     this.overlayRoot.remove();
     this.formOverlayRoot.remove();
     this.annotationHighlightOverlayRoot.remove();
@@ -5708,7 +5719,7 @@ export class PdfrxViewer {
   };
 
   private readonly onAnnotationModeModifierDown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Alt' || this.annotationModeModifierHeld) return;
+    if (!this.annotationModeModifierEnabled || event.key !== 'Alt' || this.annotationModeModifierHeld) return;
     this.annotationModeModifierHeld = true;
     this.refreshAnnotationSelectionAll();
     this.invalidate();
@@ -7545,6 +7556,32 @@ export class PdfrxViewer {
   }
 
   /**
+   * Enables or disables the Alt/Option shortcut that temporarily inverts
+   * annotation mode. Enabled by default; disable it when the host owns
+   * annotation input or uses Alt/Option for its own gestures.
+   *
+   * @param enabled - The enabled value (boolean).
+   *
+   */
+  setAnnotationModeModifierEnabled(enabled: boolean): void {
+    if (this.annotationModeModifierEnabled === enabled) return;
+    this.annotationModeModifierEnabled = enabled;
+    this.annotationModeModifierHeld = false;
+    this.refreshAnnotationSelectionAll();
+    this.invalidate();
+  }
+
+  /**
+   * Whether the Alt/Option annotation-mode shortcut is enabled.
+   *
+   * @returns Whether the condition is satisfied.
+   *
+   */
+  isAnnotationModeModifierEnabled(): boolean {
+    return this.annotationModeModifierEnabled;
+  }
+
+  /**
    * Switches between normal viewing/text selection and annotation-object
    * interaction. In annotation mode, left-dragging empty page space performs
    * marquee selection. Alt/Option temporarily inverts the effective mode.
@@ -7635,7 +7672,7 @@ export class PdfrxViewer {
   isAnnotationSelectMode(altOrOptionHeld = this.annotationModeModifierHeld): boolean {
     return this.annotationsEditable() && annotationObjectInteractionEnabled(
       this.annotationMode,
-      altOrOptionHeld,
+      this.annotationModeModifierEnabled && altOrOptionHeld,
     );
   }
 
