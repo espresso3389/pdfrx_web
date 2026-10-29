@@ -642,8 +642,8 @@ const emEnv = {
   emscripten_date_now: function () {
     return Date.now();
   },
-  emscripten_errn: function () {
-    _notImplemented('emscripten_errn');
+  emscripten_errn: function (ptr, length) {
+    console.error(new TextDecoder('utf-8').decode(new Uint8Array(Pdfium.memory.buffer, ptr, length)));
   },
   emscripten_resize_heap: function (requestedSizeInBytes) {
     const maxHeapSizeInBytes = 2 * 1024 * 1024 * 1024; // 2GB
