@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-10-30
+
+### Changed
+
+- Updated the bundled PDFium WASM to the Chromium 8078 branch and added a
+  reproducible, revision-pinned build workflow for future updates.
+- Updated GitHub Actions to Node 24-compatible versions.
+
 ## [0.28.0] - 2026-10-28
 
 ### Added
@@ -956,7 +964,8 @@ viewer for the browser, ported from the pdfrx viewer stack.
 - TypeDoc API reference with a GitHub Pages deploy workflow, per-package READMEs,
   and an MIT license.
 
-[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/espresso3389/pdfrx_web/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/espresso3389/pdfrx_web/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/espresso3389/pdfrx_web/compare/v0.25.1...v0.26.0
